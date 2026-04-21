@@ -1,354 +1,8 @@
 # UE Frontend Unified Handoff
 
-## 1. 这份文档怎么用
+## 1. 文档用途
 
-这份文档是 UE 前端从零开始联调后端时的统一入口。
-
-前端优先阅读这一份即可。只有在需要补充类型定义或 UE 插件侧说明时，再额外查看：
-
-- `forward.md`
-- `app/schemas/requests.py`
-- `app/schemas/responses.py`
-- `app/schemas/common.py`
-
-核心约束：
-
-- 所有接口统一走 `/api/v1/*`
-- 用户主界面只消费 `user_view`
-- 调试界面只消费 `debug_view`
-- 不要自己根据 `data` 重新拼主展示文案
-- 不要在前端复刻一套“文本路由器”
-
-## 2. 当前后端能力状态
-
-当前后端已经可以进入 UE 前端联调阶段，下面这些能力都可用：
-
-- `/api/v1/system/*` 启动探活、能力、配置、运行时 profile
-- `/api/v1/chat/runs` 统一聊天入口
-- `/api/v1/tasks/*` 显式任务入口
-- `user_view` / `debug_view` 双视图
-- Proposal 审批流
-- `config_generate` 确认后产生产物
-- `GET /api/v1/chat/runs/{run_id}/events/stream` 事件回放
-- `GET /metrics` 和 `GET /api/v1/system/alerts` 调试/运维接口
-
-## 3. 前端启动顺序
-
-建议启动后按这个顺序调用：
-
-1. `GET /api/v1/system/health`
-2. `GET /api/v1/system/bootstrap`
-3. `GET /api/v1/system/capabilities`
-4. `GET /api/v1/system/runtime-profiles`
-5. `GET /api/v1/knowledge-base/status`
-
-前端拿到这些信息后即可初始化：
-
-- 服务是否可用
-- 默认 profile
-- 能力开关
-- Knowledge Base 状态
-- 调试面板基础信息
-
-## 4. 主要接口
-
-### 4.1 统一聊天
-
-- `POST /api/v1/chat/runs`
-- `GET /api/v1/chat/runs/{run_id}`
-- `GET /api/v1/chat/runs/{run_id}/user-view`
-- `GET /api/v1/chat/runs/{run_id}/debug-view`
-- `GET /api/v1/chat/runs/{run_id}/events/stream`
-- `POST /api/v1/chat/runs/{run_id}/cancel`
-
-### 4.2 显式任务
-
-- `POST /api/v1/tasks/project-qa`
-- `POST /api/v1/tasks/code-review`
-- `POST /api/v1/tasks/code-generate`
-- `POST /api/v1/tasks/logs-analyze`
-- `POST /api/v1/tasks/config-generate`
-- `POST /api/v1/tasks/config-validate`
-- `POST /api/v1/tasks/assets-inspect`
-- `POST /api/v1/tasks/perf-analyze`
-- `GET /api/v1/tasks/recent`
-- `GET /api/v1/tasks/{task_id}`
-- `GET /api/v1/tasks/{task_id}/user-view`
-- `GET /api/v1/tasks/{task_id}/debug-view`
-- `GET /api/v1/tasks/{task_id}/trace`
-- `GET /api/v1/tasks/{task_id}/artifacts`
-
-### 4.3 Proposal
-
-- `GET /api/v1/proposals/pending`
-- `GET /api/v1/proposals/{proposal_id}`
-- `POST /api/v1/proposals/{proposal_id}/decision`
-- `GET /api/v1/proposals/decisions/{decision_id}`
-
-### 4.4 系统与运维
-
-- `GET /api/v1/system/settings`
-- `GET /api/v1/system/alerts`
-- `GET /metrics`
-
-## 5. Agent Chat 路由规则
-
-`POST /api/v1/chat/runs` 当前会落到四种主路径：
-
-- `direct_answer`
-- `project_qa`
-- `single_tool`
-- `workflow`
-
-前端需要看这几个字段：
-
-- `intent.route_type`
-- `task.task_type`
-- `task.status`
-- `task.finish_reason`
-
-### 5.1 这次路由策略的关键调整
-
-现在后端不会再因为“带了项目上下文”就直接强制走知识库问答。
-
-新的规则是：
-
-- 显式任务类型仍然优先
-  - 例如 `task_type=project_qa`、`code_review`、`config_generate`
-- 明确工具/工程动作信号仍然优先
-  - 例如 review、analyze、generate config、validate config
-- 明确项目问答信号会走 `project_qa`
-  - 例如问题直接提到“这个文件 / 当前模块 / 当前项目 / 项目文档 / 知识库 / backend.md”
-  - 或显式传了 `domain_filters` / `kb_domains_hint`
-- 只有弱上下文时，默认先走 `direct_answer`
-  - 例如前端带了 `project_name`、`current_file`，但用户其实只是在问通用知识
-- 如果场景模糊且后端已配置可用 LLM，后端会做一次 LLM 路由复核
-  - LLM 只在“弱上下文 + 非工具任务”的模糊聊天场景下参与
-  - 它只负责在 `direct_answer` 和 `project_qa` 之间二选一
-  - 它不会替代显式任务路由
-
-### 5.2 前端需要怎么配合
-
-前端应继续把真实上下文如实传给后端，包括：
-
-- `project_name`
-- `current_file`
-- `current_module`
-- `selected_assets`
-- `recent_open_files`
-- `kb_domains_hint`
-
-但前端不要为了“想要自由聊天”而故意删上下文，也不要自己在本地根据文本做二次路由。
-
-一句话原则：
-
-- 前端负责提供真实上下文
-- 后端负责判断这次应该自由聊天还是检索知识后回答
-
-### 5.3 新的调试字段
-
-为了让前端和调试面板更容易理解路由结果，`debug_view.route` 现在可以包含这些字段：
-
-- `decision_source`
-  - 例如 `explicit_task_type`、`heuristic_strong_project_signal`、`heuristic_weak_project_signal`、`llm_route_judge`
-- `project_signal_strength`
-  - `strong` / `weak` / `none`
-- `context_present`
-- `project_hint_count`
-- `context_reference_present`
-- `explicit_kb_scope`
-- `llm_route_decision`
-  - 仅在 LLM 参与模糊路由复核时出现
-  - 包含 `status`、`route_type`、`confidence`、`reason`、`model`、`profile_id`
-
-这些字段主要给调试界面使用，不要求用户主界面展示。
-
-## 6. 双视图消费规则
-
-### 6.1 User View
-
-用户主界面只读这些字段：
-
-- `user_view.title`
-- `user_view.text`
-- `user_view.blocks`
-- `user_view.citations_preview`
-- `user_view.quick_actions`
-- `user_view.status_hint`
-
-兜底字段：
-
-- `presentation.user_title`
-- `presentation.user_text`
-
-### 6.2 Debug View
-
-调试界面建议展示：
-
-- `debug_view.intent`
-- `debug_view.route`
-- `debug_view.retrieval`
-- `debug_view.retrieval_summary`
-- `debug_view.tools`
-- `debug_view.step_results`
-- `debug_view.metrics`
-- `debug_view.session_summary`
-- `debug_view.memory_summary`
-- `debug_view.output_complete`
-- `debug_view.finish_reason`
-- `debug_view.raw_result`
-- `debug_view.artifacts`
-- `trace_summary`
-- `usage`
-
-## 7. 当前新增但不破坏前端的字段变化
-
-这几轮后端改动都是增量增强，不是 breaking change。
-
-### 7.1 `direct_answer` 已接真实 LLM
-
-当后端配置了可用 LLM：
-
-- `direct_answer` 不再返回占位文本
-- `data.answer_generation.mode = live_llm`
-- `debug_view.tools[*].tool_id` 会出现 `llm_direct_answer`
-
-当 LLM 不可用：
-
-- 仍返回结构化结果
-- 路由仍是 `direct_answer`
-- `data.answer_generation.mode = degraded_fallback`
-- `debug_view.warnings` 会带降级原因
-
-### 7.2 `project_qa` 可能是 LLM 综合回答
-
-项目问答仍保留：
-
-- `citations`
-- `citations_preview`
-- `retrieval_trace`
-- `confidence`
-
-新增：
-
-- `data.answer_generation.mode`
-  - `llm_synthesized`
-  - `retrieval_summary_fallback`
-
-### 7.3 Proposal 确认后会产生产物
-
-以 `config_generate` 为例，用户确认 Proposal 后：
-
-- `task.status = completed`
-- `task.finish_reason = proposal_confirmed`
-- `data.approval_result` 会出现
-- `user_view.status_hint = approved`
-- `/api/v1/tasks/{task_id}/artifacts` 会新增 `approved_config`
-- `events/stream` 会新增 `proposal_followup_completed`
-
-拒绝时：
-
-- `task.status = cancelled`
-- `task.finish_reason = proposal_rejected`
-- `data.approval_result.decision = rejected`
-- `user_view.status_hint = rejected`
-
-## 8. Proposal 流程
-
-推荐流程：
-
-1. 触发任务或统一聊天
-2. 如果 `task.status = waiting_confirmation`，展示 Proposal 卡片
-3. 用户点击确认或拒绝
-4. 调 `POST /api/v1/proposals/{proposal_id}/decision`
-5. 重新拉取：
-   - `GET /api/v1/tasks/{task_id}`
-   - 或 `GET /api/v1/proposals/{proposal_id}`
-6. 如需看产物，再调：
-   - `GET /api/v1/tasks/{task_id}/artifacts`
-
-Proposal 卡片建议直接消费这些字段：
-
-- `proposal_id`
-- `title`
-- `proposal_type`
-- `before_summary`
-- `after_summary`
-- `rationale`
-- `risk_flags`
-- `dry_run_preview`
-- `display_hints`
-- `requires_confirmation`
-- `confirmation.state`
-- `confirmation.decision_endpoint`
-
-## 9. SSE / 轮询规则
-
-`GET /api/v1/chat/runs/{run_id}/events/stream` 当前是事件回放接口，适合：
-
-- 回看任务过程
-- 刷新后的恢复显示
-- 调试面板事件时间线
-
-它目前不是 token 级实时流，因此前端仍然要保留轮询/详情拉取能力。
-
-推荐组合：
-
-- 详情页：`GET /api/v1/tasks/{task_id}`
-- 调试事件：`GET /api/v1/chat/runs/{run_id}/events/stream`
-- 产物面板：`GET /api/v1/tasks/{task_id}/artifacts`
-
-## 10. 最小状态机
-
-前端至少支持这些任务状态：
-
-- `completed`
-- `waiting_confirmation`
-- `cancelled`
-- `failed`
-
-常见 `finish_reason`：
-
-- `completed`
-- `waiting_confirmation`
-- `proposal_confirmed`
-- `proposal_rejected`
-- `cancelled_by_user`
-- `execution_error`
-
-## 11. 错误处理建议
-
-常见错误码：
-
-- `task_not_found`
-- `run_not_found`
-- `profile_not_found`
-- `proposal_not_found`
-- `proposal_already_decided`
-- `proposal_decision_not_found`
-- `kb_job_not_found`
-- `kb_document_not_found`
-- `internal_error`
-
-前端建议：
-
-- 404 展示“资源不存在或已失效”
-- 409 展示“Proposal 已处理”
-- 500 展示“后端执行异常，请切到 Debug View 查看细节”
-
-## 12. 当前仍保留的边界
-
-- `events/stream` 仍是回放流，不是 token 实时流
-- `trace_summary.provider` 目前仍是本地 trace 元数据，不代表远端 LangSmith 已真实接通
-- `code_generate` 仍不会直接写入用户工程文件
-
-这些边界不影响前端开始开发。
-
-## 13. 需要交给前端的文件
-
-如果只给前端一份后端说明文档，就给这一份：
-
-- `docs/frontend-unified-handoff.md`
+这是 UE 前端当前唯一优先阅读的后端交接文档。如果前端只拿一份后端说明，就拿这一份。
 
 最小补充文件：
 
@@ -357,14 +11,450 @@ Proposal 卡片建议直接消费这些字段：
 - `app/schemas/responses.py`
 - `app/schemas/common.py`
 
-如果前端还要自己起后端或排查联调问题，再补：
+## 2. 当前正式范围
 
-- `README.md`
-- `docs/backend-user-guide.md`
-- `docs/task-debugging-guide.md`
+前端主菜单只保留 5 个核心功能：
 
-## 14. 一句话结论
+1. `Agent Chat / Project QA`
+2. `Code Review`
+3. `Code Generate`
+4. `Logs Analyze`
+5. `Assets Inspect`
 
-前端现在可以按这份文档直接开始搭 UE 面板和联调。
+以下任务虽然路由仍兼容存在，但应从前端主菜单隐藏：
 
-这次关于聊天路由的后端改动不会破坏原有接口，只是把“自由聊天 vs 项目检索问答”的判断做得更合理，也把调试字段补全了。
+- `config_generate`
+- `config_validate`
+- `assets_plan`
+- `assets_execute`
+- `perf_analyze`
+
+如果前端读取 `GET /api/v1/system/capabilities`，请以这些字段作为菜单依据：
+
+- `supported_task_types`
+- `deferred_task_types`
+- `feature_catalog`
+
+## 3. 当前前端节奏
+
+当前结论是：后端 5 个核心功能契约已经收口，前端可以开始统一调整 UI。
+
+原因：
+
+- 后端已经把能力范围冻结到 5 个核心功能
+- `capabilities`、任务接口、`user_view`、`debug_view` 和文档口径已经对齐
+- 前端现在可以一次性集中改菜单和 4 个专用面板，避免零碎返工
+
+前端现在可以做的事：
+
+- 按 5 个核心功能收缩主菜单
+- 按本文件的目标 UI 形态重构面板
+- 继续只把真实上下文和编辑器采集数据传给后端，不在前端硬编码 RAG 判断
+
+## 4. 前端启动顺序
+
+建议插件打开面板后按下面顺序调用：
+
+1. `GET /api/v1/system/health`
+2. `GET /api/v1/system/bootstrap`
+3. `GET /api/v1/system/capabilities`
+4. `GET /api/v1/system/runtime-profiles`
+5. `GET /api/v1/knowledge-base/status`
+6. `GET /api/v1/system/settings`
+7. `GET /metrics`
+8. `GET /api/v1/system/alerts`
+9. `POST /api/v1/sessions`
+10. `GET /api/v1/sessions/{session_id}`
+11. `GET /api/v1/sessions/{session_id}/history`
+12. `GET /api/v1/sessions/{session_id}/tasks`
+13. `GET /api/v1/tasks/recent`
+
+## 5. 核心接口
+
+### Agent Chat / Project QA
+
+- `POST /api/v1/chat/runs`
+- `GET /api/v1/chat/runs/{run_id}`
+- `GET /api/v1/chat/runs/{run_id}/user-view`
+- `GET /api/v1/chat/runs/{run_id}/debug-view`
+- `GET /api/v1/chat/runs/{run_id}/events/stream`
+- `POST /api/v1/chat/runs/{run_id}/cancel`
+
+### Code Review
+
+- `POST /api/v1/tasks/code-review/files`
+- `POST /api/v1/tasks/code-review`
+
+### Code Generate
+
+- `POST /api/v1/tasks/code-generate`
+
+### Logs Analyze
+
+- `POST /api/v1/tasks/logs-analyze`
+
+### Assets Inspect
+
+- `POST /api/v1/tasks/assets-inspect`
+
+### Session / Recovery
+
+- `POST /api/v1/sessions`
+- `GET /api/v1/sessions/{session_id}`
+- `GET /api/v1/sessions/{session_id}/history`
+- `GET /api/v1/sessions/{session_id}/tasks`
+- `POST /api/v1/sessions/{session_id}/clear`
+
+### Shared task recovery
+
+- `GET /api/v1/tasks/recent`
+- `GET /api/v1/tasks/{task_id}`
+- `GET /api/v1/tasks/{task_id}/user-view`
+- `GET /api/v1/tasks/{task_id}/debug-view`
+- `GET /api/v1/tasks/{task_id}/trace`
+- `GET /api/v1/tasks/{task_id}/artifacts`
+
+## 6. 双视图契约
+
+### User View
+
+用户面板只消费：
+
+- `user_view.title`
+- `user_view.text`
+- `user_view.blocks`
+- `user_view.citations_preview`
+- `user_view.quick_actions`
+- `user_view.status_hint`
+
+不要自己从 `data` 反推主显示文本。
+
+### Debug View
+
+调试面板建议消费：
+
+- `debug_view.intent`
+- `debug_view.route`
+- `debug_view.retrieval`
+- `debug_view.tools`
+- `debug_view.step_results`
+- `debug_view.metrics`
+- `debug_view.session_summary`
+- `debug_view.memory_summary`
+- `debug_view.raw_result`
+- `trace_summary`
+- `usage`
+
+## 7. Agent Chat / Project QA 的前后端分工
+
+前端职责：
+
+- 传真实用户消息
+- 传真实编辑器上下文
+- 不自行判断“这次要不要检索知识库”
+
+后端职责：
+
+- 判断当前应走 `direct_answer` 还是 `project_qa`
+- 需要时触发知识库检索
+- 返回 citations 与调试路由信息
+
+关键调试字段位于 `debug_view.route`：
+
+- `decision_source`
+- `project_signal_strength`
+- `context_present`
+- `project_hint_count`
+- `context_reference_present`
+- `explicit_kb_scope`
+- `llm_route_decision`
+
+## 8. 目标 UI 形态
+
+后续前端不要再把所有功能都做成同一种聊天 UI。只有 `Agent Chat / Project QA` 保留完整聊天时间线，其余 4 个功能都应做专用面板。
+
+### Agent Chat / Project QA
+
+- 完整聊天时间线
+- 底部固定输入框
+- 回答中显示 citation/source
+- Debug View 可展开 route / retrieval / trace
+
+### Code Review
+
+推荐 UI：
+
+- 文件搜索框
+- 代码文件列表
+- `Analyze Selected File` 按钮
+- 下方结果区
+
+新增接口：
+
+- `POST /api/v1/tasks/code-review/files`
+
+请求体建议：
+
+```json
+{
+  "project_root": "D:/MyProject",
+  "source_roots": ["Source", "Plugins"],
+  "query": "MyActor",
+  "limit": 200
+}
+```
+
+选中文件后再提交：
+
+```json
+{
+  "payload": {
+    "project_root": "D:/MyProject",
+    "source_roots": ["Source"],
+    "file_path": "Source/MyModule/MyActor.cpp"
+  }
+}
+```
+
+### Code Generate
+
+推荐 UI：
+
+- 顶部需求输入框
+- `Generate` 按钮
+- 时间线里保留用户需求
+- 生成结果不要整段堆在聊天气泡里
+- 结果应渲染为代码按钮 / Tab / 结果列表
+
+前端重点消费字段：
+
+- `data.generated_items`
+- `data.reference_lookup`
+- `data.generation_mode`
+- `data.retrieved_references`
+
+含义：
+
+- `generated_items`：渲染为代码结果按钮、Tab 或列表
+- `reference_lookup`：表示这次是否命中了代码参考
+- `generation_mode`：区分 live LLM 生成、参考增强生成或模板回退
+
+### Logs Analyze
+
+推荐 UI：
+
+- 日志预览区
+- `Analyze Log` 按钮
+- 结构化结果区
+- 可选“发送到聊天”继续追问
+
+建议 payload：
+
+```json
+{
+  "log_text": "...",
+  "log_source": "Saved/Logs/MyProject.log",
+  "time_range": {"start": "...", "end": "..."},
+  "line_window": {"start": 120, "end": 220}
+}
+```
+
+前端应重点消费 `user_view.blocks` 中的这些结构：
+
+- `Log Summary`
+- `Issue Families`
+- `Suggested Actions`
+- `Captured Log Window`
+- `Affected Modules / Resources`
+
+日志采集仍属于插件职责，后端只分析文本。
+
+### Assets Inspect
+
+推荐 UI：
+
+- 当前选中资产列表
+- `Inspect Selected Assets` 按钮
+- 结果分组显示：
+  - 命名与规则
+  - 类型说明
+  - 依赖与关系摘要
+
+建议 payload：
+
+```json
+{
+  "asset_items": [
+    {
+      "asset_path": "/Game/Demo/BP_Hero",
+      "asset_type": "Blueprint",
+      "package_path": "/Game/Demo",
+      "dependencies": ["/Game/Demo/SM_Hero"],
+      "referencers": ["/Game/Demo/Maps/MainMap"]
+    }
+  ]
+}
+```
+
+后端会返回这些重点字段：
+
+- `data.violations`
+- `data.rename_suggestions`
+- `data.type_insights`
+- `data.relationship_summary`
+- `data.supporting_notes`
+
+`user_view.blocks` 已按最终面板分组输出：
+
+- `Inspection Summary`
+- `Rule Findings`
+- `Rename Suggestions`
+- `Asset Types`
+- `Relationship Summary`
+- `Supporting Rules Summary`
+
+## 9. Session 恢复链
+
+建议前端本地持久化 `session_id`。
+
+恢复顺序：
+
+1. `GET /api/v1/sessions/{session_id}`
+2. `GET /api/v1/sessions/{session_id}/history`
+3. `GET /api/v1/sessions/{session_id}/tasks`
+4. 如果 session 不存在，再 `POST /api/v1/sessions`
+
+## 10. 当前边界
+
+- `events/stream` 仍是事件回放，不是 token 实时流
+- `code_generate` 不直接写用户工程，也不做编译验证
+- 资产关系图仍依赖插件从编辑器侧采集元数据
+- 后端契约已可用于前端统一调整；后续若只做后端内部优化，应保持向后兼容
+
+## 11. 2026-04-21 UE 联调修复后的前端注意事项
+
+### Agent Chat / Project QA
+
+后端已修复 LLM 路由复核成功分支返回 `None` 导致的 500。前端仍只需要发送真实聊天消息和编辑器上下文，不需要自己决定是否 RAG。
+
+Debug View 可继续读取：
+- `debug_view.route.llm_route_decision.status`
+- `debug_view.route.llm_route_decision.route_type`
+- `debug_view.route.llm_route_decision.confidence`
+- `debug_view.route.llm_route_decision.reason`
+- `debug_view.route.llm_route_decision.error`
+
+当 LLM 复核失败、返回非法 JSON 或返回空结构时，后端会把 `status` 标记为 `skipped` 并沿用原始路由，接口不应再 500。
+
+### Code Review 文件列表
+
+`POST /api/v1/tasks/code-review/files` 现在稳定返回以下字段，前端列表优先使用这些字段：
+
+```json
+{
+  "file_path": "Source/RushBa/MyActor.cpp",
+  "label": "MyActor.cpp",
+  "module_name": "RushBa",
+  "file_type": "cpp",
+  "relative_path": "Source/RushBa/MyActor.cpp"
+}
+```
+
+前端提交审查时继续把 `file_path` 原样放入 `payload.file_path`。接口支持：
+- Windows 路径、空格路径、正反斜杠混用、尾部斜杠
+- `Source` 和 `Plugins` 扫描
+- 按相对路径、文件名、模块名进行大小写不敏感搜索
+- 默认 `limit = 200`
+
+列表为空时读取 `scan_diagnostics.empty_reason`：
+- `project_file_access_error`
+- `source_roots_not_found`
+- `query_filtered_empty`
+- `no_matching_code_extensions`
+- `no_code_files_found`
+
+### Code Review 审查结果调试字段
+
+文件审查成功时，`data.review_scope` 和 `debug_view.raw_result.review_scope` 会包含：
+- `resolved_absolute_path`
+- `read_status`
+- `content_length`
+- `applied_focus`
+- `source_roots`
+
+如果 `read_status = "error"` 或存在 `load_error`，前端应把结果当成读文件失败提示，而不是普通审查结论。
+
+### Assets Inspect
+
+前端应继续发送 `asset_items[].asset_name`。后端现在会对默认/占位名做确定性 lint，例如：
+- `NewMap`
+- `Untitled`
+- `NewBlueprint`
+- `NewMaterial`
+- `NewTexture`
+- `NewDataAsset`
+
+`World` 类型资产遇到 `NewMap` 这类名称时，后端会返回 warning，并建议使用 `L_` 或 `Map_` 项目语义命名。
+
+前端渲染问题列表时优先读取：
+- `user_view.blocks[].block_type == "issues"`
+- `user_view.blocks[].data.items[].severity`
+- `user_view.blocks[].data.items[].reason`
+- `user_view.blocks[].data.items[].suggestion`
+
+### user_view.blocks 类型
+
+后端当前优先使用这些稳定类型：
+- `summary`
+- `issues`
+- `recommendations`
+- `generated_items`
+- `references`
+- `next_steps`
+
+前端可以保留未知 `block_type` 的通用 fallback，但主 UI 建议按以上类型做专门样式。
+
+## 12. 2026-04-21 二次联调补充
+
+### 用户可见语言
+
+前端仍可以本地化 `block_type`、状态枚举、severity、`read_status`、`review_scope` 这类派生 UI 标签；但自然语言解释由后端负责。
+
+后端当前承诺这些用户可见字段跟随最终输出语言：
+- `user_view.title`
+- `user_view.text`
+- `user_view.blocks[].title`
+- `user_view.blocks[].text`
+- `user_view.blocks[].data.items[].reason`
+- `user_view.blocks[].data.items[].suggestion`
+- `user_view.quick_actions[].label`
+
+Debug View、raw JSON key、API 字段名、代码符号、文件路径、资产名、`block_type` 枚举仍保持英文或原文。
+
+### Code Review 输出块
+
+`POST /api/v1/tasks/code-review` 现在会固定给前端更完整的用户视图，建议按顺序渲染：
+
+```text
+summary -> issues -> recommendations -> references -> next_steps
+```
+
+即使项目知识库没有命中足够证据，后端也会基于当前文件内容和通用 Unreal/C++/C# 规则返回可参考结果，并在 `references` 块中说明 fallback 来源。
+
+前端可优先读取：
+- `user_view.blocks`
+- `data.localized_review.issues`
+- `data.localized_review.recommendations`
+- `data.localized_review.references`
+- `data.localized_review.next_steps`
+- `data.llm_review`
+
+`data.llm_review.ok = true` 表示后端已用配置的 LLM 做过综合审查；`false` 时仍有确定性规则扫描结果可展示。常见跳过原因包括 `missing_openai_api_key`、`json_parse_failed`、`file_read_failed_or_empty_source`。
+
+### Code Review 读取失败
+
+如果 `data.review_scope.read_status = "error"` 或存在 `data.review_scope.load_error`，前端应把结果作为文件读取失败处理。此时 `user_view.status_hint = "read_error"`，`issues` 块会显示具体错误，不应把它当成正常审查结论。
+
+### Assets Inspect 中文 Highlight
+
+Assets Inspect 的 Highlight / `issues` block 中，`reason` 和 `suggestion` 已按最终输出语言本地化。中文工作流下选择 `NewMap` / `World` 时，前端应能直接显示中文原因与中文改名建议，例如说明默认占位命名风险，并保留 `L_` / `Map_` 前缀原文。

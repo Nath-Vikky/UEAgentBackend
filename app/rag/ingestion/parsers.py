@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 
 from app.agent.router import detect_language
@@ -24,6 +25,41 @@ PROJECT_DOC_STEMS = {
     "handoff",
 }
 
+TEXT_SOURCE_SUFFIXES = {
+    ".md",
+    ".txt",
+    ".html",
+    ".json",
+    ".csv",
+    ".h",
+    ".hpp",
+    ".hh",
+    ".inl",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".cs",
+    ".py",
+    ".ini",
+    ".cfg",
+}
+
+CODE_SOURCE_SUFFIXES = {
+    ".h",
+    ".hpp",
+    ".hh",
+    ".inl",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".cs",
+    ".py",
+}
+
+IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b")
+
 
 def _contains_any(value: str, tokens: tuple[str, ...]) -> bool:
     return any(token in value for token in tokens)
@@ -33,8 +69,12 @@ def _classify_domain(path: Path, text: str) -> str:
     path_lower = path.as_posix().lower()
     name_lower = path.name.lower()
     stem_lower = path.stem.lower()
+    suffix_lower = path.suffix.lower()
     preview_lower = text[:2000].lower()
     combined = f"{path_lower} {preview_lower}"
+
+    if suffix_lower in CODE_SOURCE_SUFFIXES or ("/source/" in path_lower and suffix_lower in TEXT_SOURCE_SUFFIXES):
+        return "code_reference"
 
     if _contains_any(combined, ("schema", "config", ".ini", ".json", ".yaml", ".yml", ".toml")):
         return "config_schema"
@@ -88,6 +128,8 @@ def _classify_domain(path: Path, text: str) -> str:
 
 def _classify_doc_type(path: Path) -> str:
     suffix = path.suffix.lower()
+    if suffix in CODE_SOURCE_SUFFIXES:
+        return "code"
     if suffix in {".json", ".csv"}:
         return "schema"
     if suffix in {".md", ".txt", ".html"}:
@@ -95,6 +137,24 @@ def _classify_doc_type(path: Path) -> str:
     if suffix in {".pdf", ".docx"}:
         return "manual"
     return "reference"
+
+
+def _expand_code_identifiers(text: str) -> str:
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for match in IDENTIFIER_RE.findall(text):
+        candidate = match.replace("_", " ")
+        candidate = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", candidate).strip()
+        lowered = candidate.lower()
+        if not candidate or lowered in seen or lowered == match.lower():
+            continue
+        expanded.append(candidate)
+        seen.add(lowered)
+        if len(expanded) >= 200:
+            break
+    if not expanded:
+        return text
+    return text.strip() + "\n\n" + "\n".join(expanded)
 
 
 def _parse_text_file(path: Path) -> str:
@@ -141,9 +201,11 @@ def _parse_unstructured(path: Path) -> tuple[str, str] | None:
 def parse_path(path: Path) -> ParsedDocument:
     suffix = path.suffix.lower()
     parser_name = "builtin"
-    if suffix in {".md", ".txt", ".html", ".json", ".csv"}:
+    if suffix in TEXT_SOURCE_SUFFIXES:
         raw_text = _parse_text_file(path)
         cleaned = clean_text(raw_text, is_html=suffix == ".html")
+        if suffix in CODE_SOURCE_SUFFIXES:
+            cleaned = _expand_code_identifiers(cleaned)
     else:
         parsed = _parse_docling(path) or _parse_unstructured(path)
         if not parsed:

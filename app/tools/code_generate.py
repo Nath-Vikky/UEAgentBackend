@@ -11,10 +11,36 @@ def _ue_class_name(requirement_description: str, fallback: str = "GeneratedFeatu
     return "".join(word[:1].upper() + word[1:] for word in words[:4])
 
 
+def _language_from_file_path(file_path: str) -> str:
+    lowered = file_path.lower()
+    if lowered.endswith((".h", ".hpp", ".hh", ".inl", ".c", ".cc", ".cpp", ".cxx")):
+        return "cpp"
+    if lowered.endswith(".cs"):
+        return "csharp"
+    if lowered.endswith(".py"):
+        return "python"
+    return "text"
+
+
+def _generated_items(code_draft: dict[str, str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "item_id": f"generated_{index}",
+            "label": file_path.split("/")[-1],
+            "file_path": file_path,
+            "language": _language_from_file_path(file_path),
+            "code": content,
+        }
+        for index, (file_path, content) in enumerate(code_draft.items(), start=1)
+    ]
+
+
 def generate_code_draft(payload: dict[str, Any]) -> dict[str, Any]:
     requirement = str(payload.get("requirement_description") or payload.get("user_query") or "").strip()
     target_type = str(payload.get("target_type") or "ue_cpp_class").strip().lower()
     class_name = _ue_class_name(requirement or target_type)
+    reference_items = list(payload.get("reference_items") or [])
+    reference_count = len(reference_items)
 
     if target_type in {"actor", "ue_actor", "ue_cpp_class", "cpp_class"}:
         header = dedent(
@@ -81,11 +107,17 @@ def generate_code_draft(payload: dict[str, Any]) -> dict[str, Any]:
             ).strip()
         }
 
+    generated_items = _generated_items(code_draft)
+    generation_mode = "template_reference_augmented_fallback" if reference_count else "template_direct_fallback"
     return {
         "code_draft": code_draft,
         "file_structure_suggestions": list(code_draft.keys()),
+        "generated_items": generated_items,
+        "generation_mode": generation_mode,
         "explanation": (
-            "Generated a non-destructive code draft. The backend is only proposing files and skeletons in Phase 3."
+            "Generated a non-destructive code draft."
+            if not reference_count
+            else "Generated a non-destructive code draft using retrieved code references as soft guidance."
         ),
         "assumptions": [
             "The generated draft is a starting point and still needs human review.",
@@ -100,4 +132,8 @@ def generate_code_draft(payload: dict[str, Any]) -> dict[str, Any]:
             "Drop the generated files into the target module.",
             "Compile and iterate on warnings or missing includes.",
         ],
+        "reference_summary": {
+            "reference_count": reference_count,
+            "reference_titles": [str(item.get("title") or "") for item in reference_items[:5] if item.get("title")],
+        },
     }

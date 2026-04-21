@@ -3,9 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.core.settings import Settings
+from app.rag.ingestion.parsers import TEXT_SOURCE_SUFFIXES
 from app.rag.schemas import resolve_local_path
 
-SUPPORTED_SUFFIXES = {".md", ".txt", ".html", ".json", ".csv", ".pdf", ".docx"}
+SUPPORTED_SUFFIXES = set(TEXT_SOURCE_SUFFIXES) | {".pdf", ".docx"}
 
 
 def discover_source_paths(settings: Settings, source_paths: list[str] | None = None) -> list[Path]:
@@ -20,4 +21,3 @@ def discover_source_paths(settings: Settings, source_paths: list[str] | None = N
         elif candidate.is_file() and candidate.suffix.lower() in SUPPORTED_SUFFIXES:
             resolved_items.append(candidate.resolve())
     return sorted(dict.fromkeys(resolved_items))
-

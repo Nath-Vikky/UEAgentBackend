@@ -153,3 +153,37 @@ class AlertsResponse(BaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
     items: list[dict[str, Any]] = Field(default_factory=list)
     errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class SessionResponse(BaseModel):
+    success: bool
+    item: dict[str, Any] = Field(default_factory=dict)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class SessionHistoryResponse(BaseModel):
+    success: bool
+    session_id: str
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class SessionTasksResponse(BaseModel):
+    success: bool
+    session_id: str
+    items: list[UnifiedTaskResponse] = Field(default_factory=list)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class CodeReviewFileListResponse(BaseModel):
+    success: bool
+    project_root: str
+    source_roots: list[str] = Field(default_factory=list)
+    extensions: list[str] = Field(default_factory=list)
+    query: str = ""
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    total_count: int = 0
+    returned_count: int = 0
+    truncated: bool = False
+    scan_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    errors: list[ErrorDetail] = Field(default_factory=list)

@@ -38,10 +38,10 @@ from app.observability.redaction import redact_payload
 from app.schemas.common import ActionProposal, ArtifactDescriptor, CitationPreview, QuickAction, UserViewBlock
 from app.schemas.requests import UnifiedTaskRequest
 from app.schemas.responses import UnifiedTaskResponse
+from app.services.code_generation_service import CodeGenerationService
 from app.services.kb_service import KnowledgeBaseService
 from app.services.llm_service import ChatRuntimeConfig, LLMService, chat_runtime_config
 from app.tools.asset_inspect import inspect_asset_metadata
-from app.tools.code_generate import generate_code_draft
 from app.tools.config_validate import validate_design_config
 from app.tools.registry import TOOL_ID_TO_TASK_TYPE
 from app.tools.retrieval import retrieve_support_notes
@@ -252,15 +252,29 @@ class TaskService:
         routing: dict[str, Any],
         *,
         output_language: str,
-        decision: dict[str, Any],
+        decision: dict[str, Any] | None,
     ) -> dict[str, Any]:
         refined = {
             "locale": dict(routing["locale"]),
             "intent": dict(routing["intent"]),
             "route": dict(routing["route"]),
         }
+        if not isinstance(decision, dict):
+            refined["route"]["llm_route_decision"] = {
+                "status": "skipped",
+                "route_type": None,
+                "confidence": 0.0,
+                "reason": "llm_route_decision_missing",
+                "error": "LLM route judge returned no structured decision.",
+                "provider": None,
+                "model": None,
+                "profile_id": None,
+            }
+            return refined
+
+        decision_ok = bool(decision.get("ok"))
         refined["route"]["llm_route_decision"] = {
-            "status": "completed" if decision["ok"] else "skipped",
+            "status": "completed" if decision_ok else "skipped",
             "route_type": decision.get("route_type"),
             "confidence": float(decision.get("confidence") or 0.0),
             "reason": decision.get("reason"),
@@ -269,7 +283,7 @@ class TaskService:
             "model": decision.get("model"),
             "profile_id": decision.get("profile_id"),
         }
-        if not decision["ok"] or decision.get("route_type") not in {"direct_answer", "project_qa"}:
+        if not decision_ok or decision.get("route_type") not in {"direct_answer", "project_qa"}:
             return refined
 
         route_type = str(decision["route_type"])
@@ -681,6 +695,7 @@ class TaskService:
                 run_id=run_id,
                 trace_id=trace_id,
                 output_language=output_language,
+                chat_config=chat_config,
             )
         if actual_task_type == "logs_analyze":
             return self._execute_logs_analyze(
@@ -724,11 +739,12 @@ class TaskService:
                 output_language=output_language,
             )
         if actual_task_type == "code_generate":
-            return self._execute_code_generate(
+            return self._execute_code_generate_v2(
                 request=request,
                 routing=routing,
                 trace_id=trace_id,
                 output_language=output_language,
+                chat_config=chat_config,
             )
         return self._execute_task_placeholder(
             request=request,
@@ -1219,6 +1235,351 @@ class TaskService:
             "artifacts": [],
         }
 
+    def _review_issue_reason(self, rule_id: str, output_language: str) -> str:
+        zh_reasons = {
+            "raw_pointer_ownership": "代码中出现裸 UObject 指针，当前片段里没有看到 UPROPERTY、TObjectPtr 或明确的所有权说明。",
+            "tick_hot_path": "代码启用了 Tick 路径，若其中包含同步加载或复杂逻辑，可能造成帧时间抖动。",
+            "thread_context": "代码涉及线程或异步执行，需要确认是否在非游戏线程访问 UObject、World 或编辑器对象。",
+            "hardcoded_asset_path": "代码中硬编码了 /Game/ 资产路径，后续重命名、迁移或打包时容易失效。",
+            "sync_load_usage": "代码使用同步加载 API，运行时可能阻塞游戏线程或编辑器交互。",
+            "blueprint_surface": "代码暴露了 Blueprint API，需要确认这确实是稳定的蓝图调用边界。",
+            "include_pollution": "include 数量偏多，可能扩大编译依赖和模块耦合。",
+        }
+        en_reasons = {
+            "raw_pointer_ownership": "The code uses a raw UObject pointer without visible UPROPERTY, TObjectPtr, or ownership notes.",
+            "tick_hot_path": "The code enables Tick, which can create frame-time pressure if expensive work runs there.",
+            "thread_context": "The code uses threading or async execution and should be checked for UObject or World access off the game thread.",
+            "hardcoded_asset_path": "The code hard-codes a /Game/ asset path, which can break after rename, migration, or packaging changes.",
+            "sync_load_usage": "The code uses synchronous loading APIs that may block the game thread or editor interaction.",
+            "blueprint_surface": "The code exposes Blueprint-facing API and should be checked against the intended public surface.",
+            "include_pollution": "The file has a large include surface, which may increase build cost and module coupling.",
+        }
+        return _localized(
+            output_language,
+            zh_reasons.get(rule_id, "该问题由通用 Unreal/C++/C# 规则扫描发现，需要结合项目语境复核。"),
+            en_reasons.get(rule_id, "This finding was produced by the general Unreal/C++/C# rule scan and should be reviewed in context."),
+        )
+
+    def _review_issue_suggestion(self, issue: dict[str, Any], output_language: str) -> str:
+        rule_id = str(issue.get("rule_id") or "")
+        zh_suggestions = {
+            "raw_pointer_ownership": "优先改为 TObjectPtr/TWeakObjectPtr，或补充 UPROPERTY 与生命周期说明。",
+            "tick_hot_path": "确认 Tick 内工作量足够轻；如存在加载、查询或复杂计算，考虑改为事件驱动或异步流程。",
+            "thread_context": "确认 UObject/World 访问发生在游戏线程；必要时用 AsyncTask(ENamedThreads::GameThread, ...) 切回主线程。",
+            "hardcoded_asset_path": "优先改为软引用、配置项或数据资产引用，并在注释中说明依赖原因。",
+            "sync_load_usage": "确认同步加载不会发生在高频路径；能延迟加载时优先使用软引用或异步加载。",
+            "blueprint_surface": "复核 BlueprintCallable/BlueprintReadWrite 是否必须公开；内部能力尽量保持 C++ 私有边界。",
+            "include_pollution": "尝试使用前向声明、拆分头文件依赖，或把重依赖移动到 .cpp。",
+        }
+        fallback = str(issue.get("suggestion") or "").strip()
+        return _localized(
+            output_language,
+            zh_suggestions.get(rule_id, fallback or "建议结合上下文进行人工复核，并补充必要测试。"),
+            fallback or "Review this in context and add focused tests where needed.",
+        )
+
+    def _localized_review_issues(
+        self,
+        issues: list[dict[str, Any]],
+        *,
+        output_language: str,
+    ) -> list[dict[str, Any]]:
+        localized: list[dict[str, Any]] = []
+        for issue in issues:
+            item = dict(issue)
+            rule_id = str(item.get("rule_id") or "")
+            item["reason"] = self._review_issue_reason(rule_id, output_language)
+            item["suggestion"] = self._review_issue_suggestion(item, output_language)
+            item["impact"] = _localized(
+                output_language,
+                "可能影响运行稳定性、维护成本或编辑器/打包流程，建议按严重度优先级处理。",
+                "This may affect runtime stability, maintenance cost, or editor/packaging workflows.",
+            )
+            if output_language.startswith("zh"):
+                title_map = {
+                    "raw_pointer_ownership": "潜在裸指针所有权风险",
+                    "tick_hot_path": "Tick 路径需要确认合理性",
+                    "thread_context": "潜在线程上下文风险",
+                    "hardcoded_asset_path": "检测到硬编码资产路径",
+                    "sync_load_usage": "检测到同步资产加载",
+                    "blueprint_surface": "Blueprint 暴露边界需要复核",
+                    "include_pollution": "include 依赖面偏大",
+                }
+                item["title"] = title_map.get(rule_id, str(item.get("title") or "代码审查发现"))
+            localized.append(item)
+        return localized
+
+    def _review_no_issue_item(self, result: dict[str, Any], output_language: str) -> dict[str, Any]:
+        dimensions = [
+            "UObject 生命周期",
+            "Tick / 高频路径",
+            "线程上下文",
+            "资产加载与硬编码路径",
+            "Blueprint 暴露边界",
+            "include 依赖面",
+        ]
+        return {
+            "rule_id": "no_high_risk_findings",
+            "severity": "info",
+            "title": _localized(
+                output_language,
+                "未发现高风险规则命中",
+                "No high-risk rule hits detected",
+            ),
+            "line": None,
+            "reason": _localized(
+                output_language,
+                f"本次规则扫描覆盖了 {', '.join(dimensions)}，没有发现明确的高风险问题。",
+                "The rule scan covered UObject lifetime, Tick paths, thread context, asset loading, Blueprint API surface, and include dependencies without obvious high-risk hits.",
+            ),
+            "suggestion": _localized(
+                output_language,
+                "如果仍需更深入审查，请补充设计意图、调用路径或项目编码规范到知识库后再次分析。",
+                "For deeper review, add design intent, call flow, or project coding rules to the knowledge base and run the analysis again.",
+            ),
+            "checked_dimensions": dimensions,
+            "review_scope": result.get("review_scope") or {},
+        }
+
+    def _review_recommendation_items(
+        self,
+        result: dict[str, Any],
+        *,
+        output_language: str,
+    ) -> list[dict[str, Any]]:
+        issues = self._localized_review_issues(result["issue_list"], output_language=output_language)
+        if issues:
+            return [
+                {
+                    "priority": index,
+                    "severity": item.get("severity"),
+                    "rule_id": item.get("rule_id"),
+                    "suggestion": item.get("suggestion"),
+                    "line": item.get("line"),
+                }
+                for index, item in enumerate(issues[:5], start=1)
+            ]
+        return [
+            {
+                "priority": 1,
+                "severity": "info",
+                "suggestion": _localized(
+                    output_language,
+                    "当前没有明显规则命中；建议把人工审查重点放在架构意图、命名一致性和测试覆盖上。",
+                    "No obvious rule hits were detected; focus human review on architecture intent, naming consistency, and test coverage.",
+                ),
+            }
+        ]
+
+    def _review_reference_items(
+        self,
+        result: dict[str, Any],
+        *,
+        output_language: str,
+    ) -> list[dict[str, Any]]:
+        references = [
+            {
+                "title": item.get("title"),
+                "source": item.get("source"),
+                "reason": _localized(
+                    output_language,
+                    "该片段作为项目知识库或规范参考参与了审查。",
+                    "This chunk was used as project knowledge-base or guideline evidence.",
+                ),
+            }
+            for item in result.get("retrieved_references", [])[:5]
+        ]
+        if references:
+            return references
+        return [
+            {
+                "title": _localized(output_language, "未命中足够项目知识库证据", "No project KB evidence matched"),
+                "source": "local_rule_fallback",
+                "reason": _localized(
+                    output_language,
+                    "以下审查基于当前文件内容和通用 Unreal/C++/C# 规则，仅供参考。",
+                    "The review below is based on the current file content and general Unreal/C++/C# rules.",
+                ),
+            }
+        ]
+
+    def _review_next_step_items(
+        self,
+        result: dict[str, Any],
+        *,
+        output_language: str,
+    ) -> list[dict[str, Any]]:
+        has_issues = bool(result["issue_list"])
+        return [
+            {
+                "step": "fix_or_confirm_findings",
+                "text": _localized(
+                    output_language,
+                    "优先处理 high / medium 问题；如果判断为误报，请在代码注释或知识库中补充项目约束。",
+                    "Prioritize high and medium findings; if a finding is expected, document the project constraint in code comments or the knowledge base.",
+                )
+                if has_issues
+                else _localized(
+                    output_language,
+                    "如果本次审查结论符合预期，可以继续做人工架构审查或补充更具体的审查 focus。",
+                    "If this result looks reasonable, continue with human architecture review or provide a more specific review focus.",
+                ),
+            },
+            {
+                "step": "run_editor_validation",
+                "text": _localized(
+                    output_language,
+                    "在 UE 编辑器或本地构建环境中运行编译、相关自动化测试或打开目标资产验证行为。",
+                    "Run compilation, relevant automated tests, or editor validation for the touched assets/classes.",
+                ),
+            },
+            {
+                "step": "improve_kb",
+                "text": _localized(
+                    output_language,
+                    "如果需要更贴合项目风格的审查，把团队编码规范、模块约束或示例代码导入知识库。",
+                    "For more project-specific review, import team coding rules, module constraints, or example code into the knowledge base.",
+                ),
+            },
+        ]
+
+    def _code_review_llm_messages(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        result: dict[str, Any],
+        output_language: str,
+    ) -> list[dict[str, str]]:
+        analysis_input = result.get("analysis_input") or {}
+        source_excerpt = str(analysis_input.get("source_excerpt") or "")
+        review_scope = result.get("review_scope") or {}
+        static_findings = [
+            {
+                "rule_id": item.get("rule_id"),
+                "severity": item.get("severity"),
+                "line": item.get("line"),
+                "title": item.get("title"),
+                "evidence": item.get("evidence"),
+            }
+            for item in result.get("issue_list", [])[:8]
+        ]
+        system_prompt = (
+            "You are a senior Unreal Engine code reviewer. "
+            f"Return natural language fields in {self._language_label(output_language)}. "
+            "Use the provided source excerpt, static rule findings, editor context, and retrieved guidance. "
+            "If project KB evidence is insufficient, say that explicitly and still review from the file content and general Unreal/C++/C# rules. "
+            "Return JSON only with keys: summary, issues, recommendations, next_steps. "
+            "Each issue must include severity, line, title, reason, impact, suggestion."
+        )
+        user_prompt = "\n\n".join(
+            [
+                f"Review scope:\n{dumps_pretty(review_scope)}",
+                f"Editor context:\n{build_context_summary(request)}",
+                f"Static findings:\n{dumps_pretty(static_findings)}",
+                f"Retrieved guidance count: {len(result.get('retrieved_references', []))}",
+                f"Source excerpt:\n{source_excerpt}",
+            ]
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _run_code_review_llm(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        result: dict[str, Any],
+        output_language: str,
+        chat_config: ChatRuntimeConfig,
+    ) -> dict[str, Any]:
+        review_scope = result.get("review_scope") or {}
+        analysis_input = result.get("analysis_input") or {}
+        if review_scope.get("load_error") or not analysis_input.get("source_excerpt"):
+            return {
+                "ok": False,
+                "payload": None,
+                "reason": "not_attempted",
+                "error": "file_read_failed_or_empty_source",
+                "provider": "openai_compatible",
+                "model": chat_config.model,
+                "profile_id": chat_config.profile_id,
+                "usage": {},
+            }
+        return self.llm_service.complete_json_object(
+            messages=self._code_review_llm_messages(
+                request=request,
+                result=result,
+                output_language=output_language,
+            ),
+            config=chat_config,
+        )
+
+    def _localized_asset_issue_items(
+        self,
+        issues: list[dict[str, Any]],
+        *,
+        output_language: str,
+    ) -> list[dict[str, Any]]:
+        localized: list[dict[str, Any]] = []
+        for issue in issues:
+            item = dict(issue)
+            asset_name = str(item.get("asset_name") or item.get("asset_path") or "")
+            asset_type = str(item.get("asset_type") or "")
+            rule_id = str(item.get("rule_id") or "")
+            if output_language.startswith("zh"):
+                if rule_id == "placeholder_asset_name":
+                    item["message"] = f"资产名称 `{asset_name}` 看起来是默认或占位名称。"
+                    item["reason"] = f"`{asset_name}` 属于默认/占位命名，进入正式项目后会降低资产可读性和可维护性。"
+                    item["suggestion"] = (
+                        "改成带项目语义的名称；地图资产建议使用 `L_项目语义名` 或 `Map_项目语义名`。"
+                        if asset_type == "World"
+                        else "改成带项目语义的稳定名称，并保留类型前缀。"
+                    )
+                elif rule_id == "asset_name_spaces":
+                    item["message"] = "资产名称不应包含空格。"
+                    item["reason"] = "空格会降低引用、搜索和批量处理时的一致性。"
+                    item["suggestion"] = "移除空格，并使用稳定的 PascalCase 或团队约定命名。"
+                elif rule_id == "content_root":
+                    item["message"] = "资产路径不在 `/Game/` 项目内容根下。"
+                    item["reason"] = "项目内容资产应稳定归档在 `/Game/` 下，方便打包、迁移和引用追踪。"
+                    item["suggestion"] = "将资产移动或引用到项目内容根目录下。"
+                elif rule_id == "duplicate_candidate":
+                    item["message"] = "存在疑似重复或高度相似的资产名称。"
+                    item["reason"] = "多个资产在去掉分隔符或数字后名称高度相似，后续维护时容易混淆。"
+                    item["suggestion"] = "确认它们是否是有意变体；如果不是，请用更明确的语义区分命名。"
+            localized.append(item)
+        return localized
+
+    def _localized_asset_recommendation_items(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        output_language: str,
+    ) -> list[dict[str, Any]]:
+        localized: list[dict[str, Any]] = []
+        for item in items:
+            payload = dict(item)
+            asset_name = str(payload.get("asset_name") or "")
+            suggested_name = str(payload.get("suggested_name") or "")
+            if output_language.startswith("zh"):
+                reason = str(payload.get("reason") or "")
+                if "placeholder" in reason.lower() or "default" in reason.lower():
+                    payload["reason"] = f"`{asset_name}` 是默认/占位命名，建议在进入正式内容前替换。"
+                elif "prefix" in reason.lower():
+                    payload["reason"] = "按资产类型补充前缀，方便 Content Browser 中快速识别。"
+                elif "spaces" in reason.lower():
+                    payload["reason"] = "移除空格，保持 UE 资产引用和批处理的一致性。"
+                elif "PascalCase" in reason:
+                    payload["reason"] = "使用稳定的 PascalCase 风格名称。"
+                payload["suggestion"] = (
+                    f"建议重命名为 `{suggested_name}`。"
+                    if suggested_name
+                    else "建议改成带项目语义的稳定名称。"
+                )
+            localized.append(payload)
+        return localized
+
     def _execute_code_review(
         self,
         *,
@@ -1228,6 +1589,7 @@ class TaskService:
         run_id: str,
         trace_id: str,
         output_language: str,
+        chat_config: ChatRuntimeConfig,
     ) -> dict[str, Any]:
         workflow = run_code_review_workflow(
             request=request,
@@ -1240,30 +1602,98 @@ class TaskService:
         base_debug = self._base_debug(request=request, routing=routing, trace_id=trace_id)
         severity_summary = result["severity_summary"]
         total_issues = len(result["issue_list"])
+        load_error = (result.get("review_scope") or {}).get("load_error")
+        llm_review = self._run_code_review_llm(
+            request=request,
+            result=result,
+            output_language=output_language,
+            chat_config=chat_config,
+        )
+        llm_payload = llm_review.get("payload") if llm_review.get("ok") else None
+        llm_payload = llm_payload if isinstance(llm_payload, dict) else {}
+        localized_issues = self._localized_review_issues(
+            result["issue_list"],
+            output_language=output_language,
+        )
+        issue_items = localized_issues or [self._review_no_issue_item(result, output_language)]
+        recommendation_items = self._review_recommendation_items(
+            result,
+            output_language=output_language,
+        )
+        reference_items = self._review_reference_items(result, output_language=output_language)
+        next_step_items = self._review_next_step_items(result, output_language=output_language)
+        review_scope = result.get("review_scope") or {}
+        kb_reference_count = len(result.get("retrieved_references", []))
+        evidence_note = _localized(
+            output_language,
+            "已结合项目知识库证据。" if kb_reference_count else "未命中足够项目知识库证据；以下审查基于当前文件内容和通用 Unreal/C++/C# 规则，仅供参考。",
+            "Project KB evidence was used." if kb_reference_count else "No sufficient project KB evidence matched; this review is based on the current file content and general Unreal/C++/C# rules.",
+        )
+        llm_note = ""
+        if llm_review.get("ok") and llm_payload.get("summary"):
+            llm_note = str(llm_payload["summary"]).strip()
+        elif llm_review.get("reason") not in {"not_attempted", "missing_openai_api_key"}:
+            llm_note = _localized(
+                output_language,
+                "LLM 综合审查未成功，本次结果使用确定性规则扫描与知识库检索降级生成。",
+                "LLM synthesis did not complete; this result falls back to deterministic rule scan and retrieval.",
+            )
         user_text = _localized(
             output_language,
-            f"已完成代码审查，共发现 {total_issues} 个潜在问题，其中高风险 {severity_summary['high']} 个。",
+            f"已完成代码审查，共发现 {total_issues} 个潜在问题，其中高风险 {severity_summary['high']} 个。{evidence_note}",
             f"Code review completed with {total_issues} potential findings, including {severity_summary['high']} high-severity item(s).",
         )
+        summary_lines = [
+            user_text,
+            _localized(
+                output_language,
+                f"审查范围：{review_scope.get('file_path') or 'inline input'}，共 {review_scope.get('line_count')} 行，读取状态 {review_scope.get('read_status') or 'unknown'}。",
+                f"Scope: {review_scope.get('file_path') or 'inline input'}, {review_scope.get('line_count')} line(s), read status {review_scope.get('read_status') or 'unknown'}.",
+            ),
+        ]
+        if llm_note:
+            summary_lines.append(llm_note)
         user_view = {
             "title": _localized(output_language, "代码审查结果", "Code Review Result"),
             "text": user_text,
             "blocks": [
                 UserViewBlock(
                     block_type="summary",
-                    title=_localized(output_language, "严重度摘要", "Severity Summary"),
-                    text=_localized(
-                        output_language,
-                        f"高 {severity_summary['high']} / 中 {severity_summary['medium']} / 低 {severity_summary['low']}",
-                        f"High {severity_summary['high']} / Medium {severity_summary['medium']} / Low {severity_summary['low']}",
-                    ),
-                    data=severity_summary,
+                    title=_localized(output_language, "审查摘要", "Review Summary"),
+                    text="\n".join(summary_lines),
+                    data={
+                        "severity_summary": severity_summary,
+                        "review_scope": review_scope,
+                        "kb_reference_count": kb_reference_count,
+                        "llm_review_status": "completed" if llm_review.get("ok") else "skipped",
+                    },
                 ).model_dump(mode="json"),
                 UserViewBlock(
-                    block_type="list",
-                    title=_localized(output_language, "重点建议", "Key Suggestions"),
-                    text="\n".join(result["suggestions"][:3]),
-                    data={"top_findings": result["issue_list"][:3]},
+                    block_type="issues",
+                    title=_localized(output_language, "具体问题", "Findings"),
+                    text="\n".join(
+                        f"[{item.get('severity')}] {item.get('title')} - {item.get('reason')}"
+                        for item in issue_items[:6]
+                    ),
+                    data={"items": issue_items[:8]},
+                ).model_dump(mode="json"),
+                UserViewBlock(
+                    block_type="recommendations",
+                    title=_localized(output_language, "修改建议", "Recommendations"),
+                    text="\n".join(str(item.get("suggestion") or "") for item in recommendation_items[:5]),
+                    data={"items": recommendation_items[:5]},
+                ).model_dump(mode="json"),
+                UserViewBlock(
+                    block_type="references",
+                    title=_localized(output_language, "证据与依据", "Evidence And References"),
+                    text="\n".join(str(item.get("reason") or item.get("title") or "") for item in reference_items[:5]),
+                    data={"items": reference_items[:5]},
+                ).model_dump(mode="json"),
+                UserViewBlock(
+                    block_type="next_steps",
+                    title=_localized(output_language, "下一步", "Next Steps"),
+                    text="\n".join(str(item.get("text") or "") for item in next_step_items),
+                    data={"items": next_step_items},
                 ).model_dump(mode="json"),
             ],
             "citations_preview": _citation_previews(result["retrieved_references"]),
@@ -1275,18 +1705,46 @@ class TaskService:
             ],
             "status_hint": "needs_human_followup" if result["need_human_followup"] else "review_complete",
         }
+        if load_error:
+            user_text = _localized(
+                output_language,
+                "代码审查未能读取选中的文件，请检查 project_root、file_path 和允许扫描的源码目录。",
+                "Code review could not read the selected file. Check project_root, file_path, and the allowed source roots.",
+            )
+            user_view["text"] = user_text
+            user_view["blocks"][0]["text"] = user_text
+            user_view["blocks"][1]["text"] = load_error
+            user_view["status_hint"] = "read_error"
         data = {
             **result,
+            "llm_review": llm_review,
+            "localized_review": {
+                "issues": issue_items,
+                "recommendations": recommendation_items,
+                "references": reference_items,
+                "next_steps": next_step_items,
+            },
             "sources": [{"title": item["title"], "source": item["source"]} for item in result["retrieved_references"]],
             "citations": result["retrieved_references"],
             "context_summary": build_context_summary(request),
             "warnings": workflow["warnings"],
         }
+        if load_error:
+            data["warnings"] = [*workflow["warnings"], load_error]
         base_debug["retrieval"] = workflow["retrieval_trace"]
-        base_debug["tools"] = workflow["tools"]
+        base_debug["tools"] = [
+            *workflow["tools"],
+            {
+                "tool_id": "llm_code_review_synthesis",
+                "status": "completed" if llm_review.get("ok") else "skipped",
+                "summary": llm_review.get("reason") or "not_attempted",
+            },
+        ]
         base_debug["step_results"] = workflow["step_results"]
         base_debug["raw_result"] = data
         base_debug["warnings"] = workflow["warnings"]
+        if load_error:
+            base_debug["warnings"] = [*workflow["warnings"], load_error]
         return {
             "user_view": user_view,
             "debug_view": base_debug,
@@ -1295,9 +1753,23 @@ class TaskService:
             "planner_diagnostics": routing["route"],
             "step_results": workflow["step_results"],
             "action_proposals": workflow["action_proposals"],
-            "errors": [],
+            "errors": (
+                [
+                    {
+                        "code": "code_review_file_read_failed",
+                        "message": user_text,
+                        "details": {
+                            "file_path": (result.get("review_scope") or {}).get("file_path"),
+                            "load_error": load_error,
+                        },
+                    }
+                ]
+                if load_error
+                else []
+            ),
             "assistant_message": user_text,
             "artifacts": workflow["artifacts"],
+            "usage": llm_review.get("usage") or {},
         }
 
     def _execute_logs_analyze(
@@ -1319,6 +1791,14 @@ class TaskService:
         )
         result = workflow["result"]
         base_debug = self._base_debug(request=request, routing=routing, trace_id=trace_id)
+        issue_family_labels = [
+            item.replace("_", " ").title() for item in result["issue_families"][:5]
+        ]
+        parser_diagnostics = result["parser_diagnostics"]
+        input_context = result.get("input_context") or {}
+        modules = parser_diagnostics.get("modules") or []
+        resource_paths = parser_diagnostics.get("resource_paths") or []
+        suggestions = result["suggestions"][:4]
         user_text = _localized(
             output_language,
             f"已完成日志分析，识别到 {len(result['issue_families']) or 1} 组问题特征。",
@@ -1332,13 +1812,33 @@ class TaskService:
                     block_type="summary",
                     title=_localized(output_language, "日志摘要", "Log Summary"),
                     text=result["summary"],
-                    data=result["log_summary"],
+                    data={
+                        **result["log_summary"],
+                        "issue_family_count": len(result["issue_families"]),
+                    },
                 ).model_dump(mode="json"),
                 UserViewBlock(
-                    block_type="list",
-                    title=_localized(output_language, "怀疑原因", "Suspected Causes"),
-                    text="\n".join(result["suspected_causes"][:3]),
-                    data={"issue_families": result["issue_families"]},
+                    block_type="issues",
+                    title=_localized(output_language, "问题类型", "Issue Families"),
+                    text="\n".join(issue_family_labels or result["findings"][:3]),
+                    data={
+                        "items": [
+                            {"issue_family": item}
+                            for item in (result["issue_families"][:5] or result["findings"][:5])
+                        ],
+                        "issue_families": result["issue_families"],
+                        "findings": result["findings"][:5],
+                    },
+                ).model_dump(mode="json"),
+                UserViewBlock(
+                    block_type="recommendations",
+                    title=_localized(output_language, "建议动作", "Suggested Actions"),
+                    text="\n".join(suggestions),
+                    data={
+                        "items": [{"suggestion": item} for item in suggestions],
+                        "suggestions": suggestions,
+                        "suspected_causes": result["suspected_causes"][:5],
+                    },
                 ).model_dump(mode="json"),
             ],
             "citations_preview": _citation_previews(result["retrieved_references"]),
@@ -1350,6 +1850,36 @@ class TaskService:
             ],
             "status_hint": "analysis_complete",
         }
+        if any(input_context.values()):
+            user_view["blocks"].append(
+                UserViewBlock(
+                    block_type="summary",
+                    title=_localized(output_language, "日志范围", "Captured Log Window"),
+                    text=str(input_context.get("log_source") or "clipboard_or_editor"),
+                    data=input_context,
+                ).model_dump(mode="json")
+            )
+        if modules or resource_paths:
+            details: list[str] = []
+            if modules:
+                details.append("Modules: " + ", ".join(modules[:5]))
+            if resource_paths:
+                details.append("Resources: " + ", ".join(resource_paths[:3]))
+            user_view["blocks"].append(
+                UserViewBlock(
+                    block_type="references",
+                    title=_localized(output_language, "关键上下文", "Affected Modules / Resources"),
+                    text="\n".join(details),
+                    data={
+                        "items": [
+                            *[{"kind": "module", "value": item} for item in modules[:8]],
+                            *[{"kind": "resource_path", "value": item} for item in resource_paths[:8]],
+                        ],
+                        "modules": modules[:8],
+                        "resource_paths": resource_paths[:8],
+                    },
+                ).model_dump(mode="json")
+            )
         data = {
             **result,
             "sources": [{"title": item["title"], "source": item["source"]} for item in result["retrieved_references"]],
@@ -1530,94 +2060,83 @@ class TaskService:
             "artifacts": workflow["artifacts"],
         }
 
-    def _execute_code_generate(
+    def _execute_code_generate_v2(
         self,
         *,
         request: UnifiedTaskRequest,
         routing: dict[str, Any],
         trace_id: str,
         output_language: str,
+        chat_config: ChatRuntimeConfig,
     ) -> dict[str, Any]:
         base_debug = self._base_debug(request=request, routing=routing, trace_id=trace_id)
-        result = generate_code_draft(request.payload)
-        action_proposals = [
-            {
-                "proposal_id": f"proposal_{uuid.uuid4().hex}",
-                "title": "Review Code Draft",
-                "proposal_type": "code_patch",
-                "before_summary": "No files have been written to the workspace.",
-                "after_summary": "Selected draft files could be adopted manually after review.",
-                "rationale": "Phase 3 only generates non-destructive code drafts and patch plans.",
-                "risk_flags": "LOW",
-                "dry_run_preview": {"files": result["file_structure_suggestions"]},
-                "display_hints": {"panel": "CodeGenerator"},
-                "requires_confirmation": False,
-                "confirmation": {"state": "not_required"},
-            }
-        ]
+        execution = CodeGenerationService(
+            kb_service=self.kb_service,
+            llm_service=self.llm_service,
+        ).execute(
+            request=request,
+            output_language=output_language,
+            chat_config=chat_config,
+        )
+        result = execution["result"]
         user_text = _localized(
             output_language,
-            "已生成代码草稿和文件结构建议，当前不会直接写入工程。",
-            "Generated a code draft and file-structure suggestions without writing into the project.",
+            "已生成代码结果草稿，当前只返回非破坏性的结果，不会直接写入工程。",
+            "Generated code results in a non-destructive way and did not write anything into the project.",
         )
-        step_results = [
-            {
-                "step_id": "generate_draft",
-                "title": "Generate Draft",
-                "status": "completed",
-                "summary": result["explanation"],
-                "details": {"files": result["file_structure_suggestions"]},
-            }
-        ]
         user_view = {
             "title": _localized(output_language, "代码生成结果", "Code Generation Result"),
             "text": user_text,
             "blocks": [
                 UserViewBlock(
+                    block_type="summary",
+                    title=_localized(output_language, "生成摘要", "Generation Summary"),
+                    text=result["summary"],
+                    data={
+                        "generation_mode": result["generation_mode"],
+                        "reference_count": result["reference_lookup"]["reference_count"],
+                    },
+                ).model_dump(mode="json"),
+                UserViewBlock(
                     block_type="list",
-                    title=_localized(output_language, "文件建议", "Suggested Files"),
-                    text="\n".join(result["file_structure_suggestions"]),
-                    data={"files": result["file_structure_suggestions"]},
-                ).model_dump(mode="json")
+                    title=_localized(output_language, "生成文件", "Generated Files"),
+                    text="\n".join(item["label"] for item in result["generated_items"]),
+                    data={"generated_items": result["generated_items"]},
+                ).model_dump(mode="json"),
             ],
-            "citations_preview": [],
+            "citations_preview": _citation_previews(result["retrieved_references"]),
             "quick_actions": [
                 QuickAction(
-                    action_id="review_draft",
-                    label=_localized(output_language, "查看草稿", "Review draft"),
+                    action_id="review_generated_items",
+                    label=_localized(output_language, "查看生成结果", "Review generated items"),
                 ).model_dump(mode="json")
             ],
             "status_hint": "draft_generated",
         }
         data = {
             **result,
-            "sources": [],
-            "citations": [],
+            "sources": result["reference_lookup"]["sources"],
+            "citations": result["retrieved_references"],
             "context_summary": build_context_summary(request),
-            "warnings": [],
+            "warnings": execution["warnings"],
         }
-        base_debug["retrieval"] = {"mode": "not_used", "degraded_mode": False, "reason": "route_code_generate", "filters_applied": {}, "retrieved_docs": []}
-        base_debug["tools"] = [{"tool_id": "generate_code_draft", "status": "completed", "summary": result["explanation"]}]
-        base_debug["step_results"] = step_results
+        base_debug["retrieval"] = execution["retrieval_trace"]
+        base_debug["tools"] = execution["tools"]
+        base_debug["step_results"] = execution["step_results"]
         base_debug["raw_result"] = data
+        base_debug["warnings"] = execution["warnings"]
         return {
             "user_view": user_view,
             "debug_view": base_debug,
             "data": data,
-            "retrieval_trace": base_debug["retrieval"],
+            "retrieval_trace": execution["retrieval_trace"],
             "planner_diagnostics": routing["route"],
-            "step_results": step_results,
-            "action_proposals": action_proposals,
+            "step_results": execution["step_results"],
+            "action_proposals": execution["action_proposals"],
             "errors": [],
             "assistant_message": user_text,
-            "artifacts": [
-                {
-                    "artifact_type": "code_draft",
-                    "label": "Generated Code Draft",
-                    "filename": "code_draft.json",
-                    "content": result["code_draft"],
-                }
-            ],
+            "artifacts": execution["artifacts"],
+            "usage": execution["usage"],
         }
 
     def _execute_config_validate(
@@ -1709,6 +2228,14 @@ class TaskService:
     ) -> dict[str, Any]:
         base_debug = self._base_debug(request=request, routing=routing, trace_id=trace_id)
         result = inspect_asset_metadata(request.payload, request.context)
+        localized_violations = self._localized_asset_issue_items(
+            result["violations"],
+            output_language=output_language,
+        )
+        localized_rename_suggestions = self._localized_asset_recommendation_items(
+            result["rename_suggestions"],
+            output_language=output_language,
+        )
         support = retrieve_support_notes(
             self.kb_service,
             query=request.payload.get("user_query") or "asset naming and folder rules",
@@ -1723,7 +2250,7 @@ class TaskService:
                 "status": "completed",
                 "summary": _localized(
                     output_language,
-                    f"检查了 {result['summary']['asset_count']} 个资产，发现 {result['summary']['violation_count']} 个问题。",
+                    f"已检查 {result['summary']['asset_count']} 个资产，发现 {result['summary']['violation_count']} 个问题。",
                     f"Inspected {result['summary']['asset_count']} asset(s) and found {result['summary']['violation_count']} issue(s).",
                 ),
                 "details": result["summary"],
@@ -1754,18 +2281,78 @@ class TaskService:
                     title=_localized(output_language, "检查摘要", "Inspection Summary"),
                     text=user_text,
                     data=result["summary"],
-                ).model_dump(mode="json"),
-                UserViewBlock(
-                    block_type="list",
-                    title=_localized(output_language, "重命名建议", "Rename Suggestions"),
-                    text="\n".join(item["suggested_name"] for item in result["rename_suggestions"][:5]) or _localized(output_language, "暂无。", "None."),
-                    data={"rename_suggestions": result["rename_suggestions"][:5]},
-                ).model_dump(mode="json"),
+                ).model_dump(mode="json")
             ],
             "citations_preview": _citation_previews(support["citations"]),
             "quick_actions": [],
             "status_hint": "inspection_complete",
         }
+        if result["violations"]:
+            user_view["blocks"].append(
+                UserViewBlock(
+                    block_type="issues",
+                    title=_localized(output_language, "规则问题", "Rule Findings"),
+                    text="\n".join(
+                        f"[{item['severity']}] {item.get('message') or item.get('reason')}"
+                        for item in localized_violations[:5]
+                    ),
+                    data={
+                        "items": localized_violations[:5],
+                        "violations": localized_violations[:5],
+                    },
+                ).model_dump(mode="json")
+            )
+        user_view["blocks"].append(
+            UserViewBlock(
+                block_type="recommendations",
+                title=_localized(output_language, "重命名建议", "Rename Suggestions"),
+                text="\n".join(
+                    item.get("suggestion") or item.get("suggested_name") or ""
+                    for item in localized_rename_suggestions[:5]
+                )
+                or _localized(output_language, "暂无。", "None."),
+                data={
+                    "items": localized_rename_suggestions[:5],
+                    "rename_suggestions": localized_rename_suggestions[:5],
+                },
+            ).model_dump(mode="json")
+        )
+        user_view["blocks"].append(
+            UserViewBlock(
+                block_type="references",
+                title=_localized(output_language, "资产类型", "Asset Types"),
+                text="\n".join(
+                    f"{item['asset_path']} -> {item['asset_type']}"
+                    for item in result["type_insights"][:5]
+                )
+                or _localized(output_language, "暂无。", "None."),
+                data={"items": result["type_insights"][:5], "type_insights": result["type_insights"][:5]},
+            ).model_dump(mode="json")
+        )
+        user_view["blocks"].append(
+            UserViewBlock(
+                block_type="references",
+                title=_localized(output_language, "关系摘要", "Relationship Summary"),
+                text="\n".join(
+                    f"{item['asset_path']} | deps {item['dependency_count']} | refs {item['referencer_count']}"
+                    for item in result["relationship_summary"][:5]
+                )
+                or _localized(output_language, "暂无。", "None."),
+                data={
+                    "items": result["relationship_summary"][:5],
+                    "relationship_summary": result["relationship_summary"][:5],
+                },
+            ).model_dump(mode="json")
+        )
+        if support["answer"]:
+            user_view["blocks"].append(
+                UserViewBlock(
+                    block_type="summary",
+                    title=_localized(output_language, "参考规则摘要", "Supporting Rules Summary"),
+                    text=support["answer"][:400],
+                    data={"citation_count": len(support["citations"])},
+                ).model_dump(mode="json")
+            )
         data = {
             **result,
             "retrieved_references": support["citations"],
@@ -1774,6 +2361,10 @@ class TaskService:
             "citations": support["citations"],
             "context_summary": build_context_summary(request),
             "warnings": support["warnings"],
+            "localized_asset_view": {
+                "violations": localized_violations,
+                "rename_suggestions": localized_rename_suggestions,
+            },
         }
         base_debug["retrieval"] = support["retrieval_trace"]
         base_debug["tools"] = [

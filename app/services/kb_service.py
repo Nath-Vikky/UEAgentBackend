@@ -47,6 +47,7 @@ class KnowledgeBaseService:
         counts = kb_counts(self.db)
         latest_job_model = latest_import_job(self.db)
         qdrant_ok, qdrant_reason = qdrant_available(self.settings)
+        embedding_ok = embedding_available(self.settings)
         return {
             "enabled": True,
             "mode": self.settings.rag_mode,
@@ -56,11 +57,32 @@ class KnowledgeBaseService:
             "chunks": counts["chunks"],
             "jobs": counts["jobs"],
             "embedding_enabled": self.settings.embedding_enabled,
-            "embedding_available": embedding_available(self.settings),
+            "embedding_available": embedding_ok,
             "qdrant_available": qdrant_ok,
             "qdrant_reason": qdrant_reason,
-            "degraded_mode": not (qdrant_ok and embedding_available(self.settings)),
-            "supported_formats": ["md", "txt", "html", "json", "csv", "pdf", "docx"],
+            "degraded_mode": self.settings.rag_mode != "lexical" and not (qdrant_ok and embedding_ok),
+            "vector_store_enabled": qdrant_ok and embedding_ok,
+            "supported_formats": [
+                "md",
+                "txt",
+                "html",
+                "json",
+                "csv",
+                "pdf",
+                "docx",
+                "h",
+                "hpp",
+                "hh",
+                "inl",
+                "c",
+                "cc",
+                "cpp",
+                "cxx",
+                "cs",
+                "py",
+                "ini",
+                "cfg",
+            ],
             "source_paths": self.settings.kb_source_paths,
             "latest_job": self._serialize_job(latest_job_model) if latest_job_model else None,
             "message": (
@@ -130,6 +152,7 @@ class KnowledgeBaseService:
                 except OSError:
                     pass
         delete_document(self.db, item)
+        self._rebuild_vector_index()
         return serialized
 
     def project_qa(
@@ -169,6 +192,7 @@ class KnowledgeBaseService:
                     "source_path": item.source_path,
                     "domain": item.domain,
                     "section_path": item.section_path,
+                    "text": item.text[:800],
                     "lexical_score": item.lexical_score,
                     "semantic_score": item.semantic_score,
                     "final_score": item.final_score,
@@ -187,6 +211,7 @@ class KnowledgeBaseService:
                         "source_path": item.source_path,
                         "domain": item.domain,
                         "section_path": item.section_path,
+                        "text": item.text[:400],
                         "lexical_score": item.lexical_score,
                         "semantic_score": item.semantic_score,
                         "final_score": item.final_score,
@@ -228,9 +253,10 @@ class KnowledgeBaseService:
                 failures.append({"source_path": str(path), "reason": str(exc)})
                 self._persist_failure(path)
 
+        vector_sync = self._rebuild_vector_index()
         job.status = "completed" if not failures else "completed"
         job.finished_at = utc_now()
-        job.stats_json = {**stats, "failures": failures}
+        job.stats_json = {**stats, "failures": failures, "vector_sync": vector_sync}
         job.error_message = None if not failures else f"{len(failures)} source(s) failed."
         update_import_job(self.db, job)
         return {"accepted": True, "job": self._serialize_job(job)}
@@ -315,6 +341,7 @@ class KnowledgeBaseService:
         document, chunks = self._persist_parsed_document(parsed_like)
         document.raw_storage_path = normalized_storage_path
         replace_document(self.db, document, chunks)
+        vector_sync = self._rebuild_vector_index()
         return {
             "accepted": True,
             "job": {
@@ -322,7 +349,12 @@ class KnowledgeBaseService:
                 "mode": "import",
                 "status": "completed",
                 "source_summary": {"source_type": "text", "title": title},
-                "stats": {"documents": 1, "chunks": len(chunks), "failed": 0},
+                "stats": {
+                    "documents": 1,
+                    "chunks": len(chunks),
+                    "failed": 0,
+                    "vector_sync": vector_sync,
+                },
             },
         }
 
@@ -383,4 +415,54 @@ class KnowledgeBaseService:
             "chunk_count": len(document.chunks),
             "created_at": document.created_at.isoformat() if document.created_at else None,
             "updated_at": document.updated_at.isoformat() if document.updated_at else None,
+        }
+
+    def _rebuild_vector_index(self) -> dict[str, Any]:
+        from app.rag.indexing.embeddings import embed_texts, embedding_available
+        from app.rag.indexing.qdrant_store import drop_collection, qdrant_available, upsert_chunk_vectors
+
+        chunks = list_chunks(self.db)
+        embedding_ok = embedding_available(self.settings)
+        qdrant_ok, qdrant_reason = qdrant_available(self.settings)
+        if not chunks:
+            if qdrant_ok:
+                drop_collection(self.settings)
+            return {"status": "empty", "indexed_chunks": 0}
+        if not embedding_ok:
+            return {"status": "embedding_not_available", "indexed_chunks": 0}
+        if not qdrant_ok:
+            return {"status": qdrant_reason, "indexed_chunks": 0}
+
+        drop_collection(self.settings)
+        indexed = 0
+        batch_size = 32
+        for start in range(0, len(chunks), batch_size):
+            batch = chunks[start : start + batch_size]
+            vectors = embed_texts(self.settings, [item.text for item in batch])
+            upsert_chunk_vectors(
+                self.settings,
+                [
+                    {
+                        "id": item.chunk_id,
+                        "vector": vector,
+                        "payload": {
+                            "chunk_id": item.chunk_id,
+                            "doc_id": item.doc_id,
+                            "title": item.title,
+                            "source_path": item.source_path,
+                            "domain": item.domain,
+                            "section_path": item.section_path,
+                            "module": item.module,
+                            "doc_type": item.doc_type,
+                            "text": item.text,
+                        },
+                    }
+                    for item, vector in zip(batch, vectors, strict=True)
+                ],
+            )
+            indexed += len(batch)
+        return {
+            "status": "synced",
+            "indexed_chunks": indexed,
+            "collection": self.settings.qdrant_collection,
         }

@@ -7,14 +7,16 @@ from app.api.deps import get_app_settings, get_db
 from app.api.errors import APIError
 from app.core.settings import Settings
 from app.schemas.common import DebugView, UserView
-from app.schemas.requests import UnifiedTaskRequest
+from app.schemas.requests import CodeReviewFileListRequest, UnifiedTaskRequest
 from app.schemas.responses import (
     ArtifactListResponse,
+    CodeReviewFileListResponse,
     TasksRecentResponse,
     TraceResponse,
     UnifiedTaskResponse,
 )
 from app.services.task_service import TaskService
+from app.utils.project_files import ProjectFileAccessError, list_project_code_files
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -45,6 +47,46 @@ def code_review(
     settings: Settings = Depends(get_app_settings),
 ) -> UnifiedTaskResponse:
     return _run_task("code_review", request, db, settings)
+
+
+@router.post("/code-review/files", response_model=CodeReviewFileListResponse)
+def list_code_review_files(
+    request: CodeReviewFileListRequest,
+) -> CodeReviewFileListResponse:
+    try:
+        payload = list_project_code_files(
+            project_root=request.project_root,
+            source_roots=request.source_roots,
+            extensions=request.extensions,
+            query=request.query,
+            limit=request.limit,
+        )
+    except ProjectFileAccessError as exc:
+        return CodeReviewFileListResponse(
+            success=False,
+            project_root=request.project_root,
+            source_roots=request.source_roots,
+            extensions=request.extensions,
+            query=request.query or "",
+            items=[],
+            total_count=0,
+            returned_count=0,
+            truncated=False,
+            scan_diagnostics={
+                "project_root": request.project_root,
+                "requested_source_roots": request.source_roots,
+                "empty_reason": "project_file_access_error",
+                "error": str(exc),
+            },
+            errors=[
+                {
+                    "code": "project_file_access_error",
+                    "message": str(exc),
+                    "details": {"project_root": request.project_root},
+                }
+            ],
+        )
+    return CodeReviewFileListResponse(success=True, **payload)
 
 
 @router.post("/code-generate", response_model=UnifiedTaskResponse)

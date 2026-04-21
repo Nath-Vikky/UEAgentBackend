@@ -38,6 +38,9 @@ ISSUE_PATTERNS = {
 
 
 def analyze_ue_log(payload: dict[str, Any]) -> dict[str, Any]:
+    log_source = str(payload.get("log_source") or payload.get("log_path") or "").strip()
+    time_range = payload.get("time_range") or {}
+    line_window = payload.get("line_window") or {}
     raw_text = "\n".join(
         [
             str(payload.get("log_text") or ""),
@@ -113,5 +116,10 @@ def analyze_ue_log(payload: dict[str, Any]) -> dict[str, Any]:
             "modules": modules,
             "resource_paths": resource_paths,
             "timeline": timeline,
+        },
+        "input_context": {
+            "log_source": log_source,
+            "time_range": time_range,
+            "line_window": line_window,
         },
     }

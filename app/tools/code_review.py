@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from app.schemas.requests import ContextInput
+from app.utils.project_files import ProjectFileAccessError, read_project_code_file
 
 DIFF_HUNK_RE = re.compile(r"^@@", re.MULTILINE)
 FUNCTION_RE = re.compile(r"\b(?:virtual\s+)?(?:void|bool|int32|float|double|F\w+|U\w+|A\w+)\s+(\w+)\s*\(")
@@ -11,15 +12,68 @@ CLASS_RE = re.compile(r"\bclass\s+(\w+)")
 INCLUDE_RE = re.compile(r'^\s*#include\s+["<]([^">]+)[">]', re.MULTILINE)
 
 
-def _collect_source(payload: dict[str, Any], context: ContextInput) -> tuple[str, str]:
+def _read_focus(payload: dict[str, Any]) -> str:
+    return str(payload.get("focus") or payload.get("review_focus") or "General").strip() or "General"
+
+
+def _collect_source(payload: dict[str, Any], context: ContextInput) -> tuple[str, str, str | None, dict[str, Any]]:
+    focus = _read_focus(payload)
     if payload.get("diff_text"):
-        return str(payload["diff_text"]), "diff_text"
+        text = str(payload["diff_text"])
+        return text, "diff_text", None, {"read_status": "inline", "content_length": len(text), "applied_focus": focus}
     if payload.get("code"):
-        return str(payload["code"]), "code"
+        text = str(payload["code"])
+        return text, "code", None, {"read_status": "inline", "content_length": len(text), "applied_focus": focus}
     if payload.get("file_content"):
-        return str(payload["file_content"]), "file_content"
+        text = str(payload["file_content"])
+        return text, "file_content", None, {"read_status": "inline", "content_length": len(text), "applied_focus": focus}
+    project_root = payload.get("project_root") or context.project_root
+    if payload.get("file_path") and project_root:
+        try:
+            file_payload = read_project_code_file(
+                project_root=str(project_root),
+                file_path=str(payload["file_path"]),
+                source_roots=list(payload.get("source_roots") or []),
+            )
+            payload.setdefault("file_path", file_payload["relative_path"])
+            metadata = {
+                key: file_payload.get(key)
+                for key in (
+                    "project_root",
+                    "relative_path",
+                    "file_path",
+                    "absolute_path",
+                    "resolved_absolute_path",
+                    "file_name",
+                    "module_name",
+                    "file_type",
+                    "size_bytes",
+                    "content_length",
+                    "read_status",
+                    "source_roots",
+                )
+            }
+            metadata["applied_focus"] = focus
+            return str(file_payload["text"]), "file_path", None, metadata
+        except ProjectFileAccessError as exc:
+            return (
+                "",
+                "file_path_error",
+                str(exc),
+                {
+                    "project_root": str(project_root),
+                    "requested_file_path": str(payload.get("file_path") or ""),
+                    "resolved_absolute_path": None,
+                    "read_status": "error",
+                    "content_length": 0,
+                    "load_error": str(exc),
+                    "applied_focus": focus,
+                    "source_roots": list(payload.get("source_roots") or []),
+                },
+            )
     fallback = payload.get("user_query") or context.current_file or ""
-    return str(fallback), "query_only"
+    text = str(fallback)
+    return text, "query_only", None, {"read_status": "query_only", "content_length": len(text), "applied_focus": focus}
 
 
 def _line_numbers(lines: list[str], predicate) -> list[int]:
@@ -38,7 +92,7 @@ def _issue(rule_id: str, severity: str, title: str, line_no: int | None, evidenc
 
 
 def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[str, Any]:
-    source_text, source_kind = _collect_source(payload, context)
+    source_text, source_kind, load_error, source_metadata = _collect_source(payload, context)
     lines = source_text.splitlines() or [source_text]
     issues: list[dict[str, Any]] = []
 
@@ -165,6 +219,14 @@ def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[
         "file_list": payload.get("file_list") or [],
         "module_dir": payload.get("module_dir") or context.current_module,
         "line_count": len(lines),
+        "load_error": load_error,
+        "project_root": source_metadata.get("project_root") or payload.get("project_root") or context.project_root,
+        "resolved_absolute_path": source_metadata.get("resolved_absolute_path") or source_metadata.get("absolute_path"),
+        "read_status": source_metadata.get("read_status"),
+        "content_length": source_metadata.get("content_length", len(source_text)),
+        "applied_focus": source_metadata.get("applied_focus"),
+        "source_roots": source_metadata.get("source_roots") or payload.get("source_roots") or [],
+        "source_excerpt_truncated": len(source_text) > 12000,
     }
     change_summary = {
         "diff_hunks": len(DIFF_HUNK_RE.findall(source_text)),
@@ -191,6 +253,8 @@ def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[
         if issues
         else f"Scanned {len(lines)} lines and did not detect any obvious rule-based issues."
     )
+    if load_error:
+        summary = f"Could not read the selected file, so the review fell back to an empty source. Error: {load_error}"
     return {
         "issue_list": issues,
         "severity_summary": severity_summary,
@@ -205,5 +269,16 @@ def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[
             "symbols": symbols,
             "includes": includes[:12],
             "source_kind": source_kind,
+            "load_error": load_error,
+            "file_read": source_metadata,
+            "static_analysis_trace": {
+                "rule_hits": rule_hits,
+                "static_analysis_summary": static_analysis_summary,
+            },
+        },
+        "analysis_input": {
+            "source_excerpt": source_text[:12000],
+            "source_length": len(source_text),
+            "source_excerpt_truncated": len(source_text) > 12000,
         },
     }

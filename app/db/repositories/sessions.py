@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models.session import MessageModel, SessionModel
+from app.db.models.task import TaskModel
 from app.utils.time import utc_isoformat
 
 
@@ -53,3 +55,61 @@ def append_messages(db: Session, session_id: str, messages: list[dict]) -> None:
         )
     db.commit()
 
+
+def get_session(db: Session, session_id: str) -> SessionModel | None:
+    return db.get(SessionModel, session_id)
+
+
+def list_session_messages(
+    db: Session,
+    session_id: str,
+    *,
+    limit: int = 100,
+) -> list[MessageModel]:
+    statement = (
+        select(MessageModel)
+        .where(MessageModel.session_id == session_id)
+        .order_by(MessageModel.created_at.asc())
+        .limit(limit)
+    )
+    return list(db.scalars(statement))
+
+
+def list_session_tasks(
+    db: Session,
+    session_id: str,
+    *,
+    limit: int = 50,
+) -> list[TaskModel]:
+    statement = (
+        select(TaskModel)
+        .where(TaskModel.session_id == session_id)
+        .order_by(desc(TaskModel.created_at))
+        .limit(limit)
+    )
+    return list(db.scalars(statement))
+
+
+def clear_session_state(db: Session, session_id: str) -> SessionModel | None:
+    session_model = db.get(SessionModel, session_id)
+    if not session_model:
+        return None
+    message_count = (
+        db.scalar(select(func.count()).select_from(MessageModel).where(MessageModel.session_id == session_id))
+        or 0
+    )
+    task_count = (
+        db.scalar(select(func.count()).select_from(TaskModel).where(TaskModel.session_id == session_id)) or 0
+    )
+    db.execute(delete(MessageModel).where(MessageModel.session_id == session_id))
+    db.execute(update(TaskModel).where(TaskModel.session_id == session_id).values(session_id=None))
+    session_model.preferred_output_language = None
+    session_model.metadata_json = {
+        **dict(session_model.metadata_json or {}),
+        "cleared": True,
+        "last_clear_message_count": message_count,
+        "last_clear_task_count": task_count,
+    }
+    db.commit()
+    db.refresh(session_model)
+    return session_model

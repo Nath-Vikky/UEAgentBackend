@@ -23,6 +23,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("UPLOAD_DIR", str((storage_dir / "uploads").resolve()))
     monkeypatch.setenv("ARTIFACT_DIR", str((storage_dir / "artifacts").resolve()))
     monkeypatch.setenv("KB_DIR", str((storage_dir / "kb").resolve()))
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     get_settings.cache_clear()
     get_engine.cache_clear()
     get_session_factory.cache_clear()
@@ -50,6 +51,26 @@ def test_system_bootstrap_and_runtime_profiles(client: TestClient) -> None:
 
     assert kb_status.status_code == 200
     assert "summary" in kb_status.json()
+
+
+def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) -> None:
+    response = client.get("/api/v1/system/capabilities")
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["capabilities"]["supported_task_types"] == [
+        "agent_chat",
+        "project_qa",
+        "code_review",
+        "code_generate",
+        "logs_analyze",
+        "assets_inspect",
+    ]
+    assert "config_generate" in body["capabilities"]["deferred_task_types"]
+    assert any(
+        item["task_type"] == "code_review" and item["frontend_ui"] == "file_picker"
+        for item in body["capabilities"]["feature_catalog"]
+    )
 
 
 def test_create_task_and_fetch_dual_views(client: TestClient) -> None:
@@ -121,6 +142,75 @@ def test_kb_refresh_builds_documents_and_chunks(client: TestClient) -> None:
     assert job.json()["job"]["status"] == "completed"
     assert status.json()["summary"]["documents"] >= 1
     assert status.json()["summary"]["chunks"] >= 1
+
+
+def test_session_create_restore_history_tasks_and_clear(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/sessions",
+        json={
+            "session_id": "restorable_session",
+            "project_name": "DemoProject",
+            "preferred_output_language": "en-US",
+            "profile_id": "default",
+            "metadata": {"created_from": "frontend_restore_test"},
+        },
+    )
+    chat = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "restorable_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Explain command-query separation in one paragraph.",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+                "current_file": "Source/MyModule/MyActor.cpp",
+            },
+            "payload": {"user_query": "Explain command-query separation in one paragraph."},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    summary = client.get("/api/v1/sessions/restorable_session")
+    history = client.get("/api/v1/sessions/restorable_session/history")
+    tasks = client.get("/api/v1/sessions/restorable_session/tasks")
+    cleared = client.post("/api/v1/sessions/restorable_session/clear")
+    history_after = client.get("/api/v1/sessions/restorable_session/history")
+    tasks_after = client.get("/api/v1/sessions/restorable_session/tasks")
+
+    assert created.status_code == 200
+    assert created.json()["item"]["session_id"] == "restorable_session"
+    assert chat.status_code == 200
+    assert summary.status_code == 200
+    assert summary.json()["item"]["message_count"] >= 1
+    assert summary.json()["item"]["task_count"] >= 1
+    assert history.status_code == 200
+    assert history.json()["items"]
+    assert history.json()["items"][-1]["role"] == "user"
+    assert tasks.status_code == 200
+    assert tasks.json()["items"]
+    assert tasks.json()["items"][0]["task"]["task_id"] == chat.json()["task"]["task_id"]
+    assert cleared.status_code == 200
+    assert cleared.json()["item"]["message_count"] == 0
+    assert cleared.json()["item"]["task_count"] == 0
+    assert history_after.status_code == 200
+    assert history_after.json()["items"] == []
+    assert tasks_after.status_code == 200
+    assert tasks_after.json()["items"] == []
 
 
 def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None:
@@ -411,6 +501,114 @@ def test_ambiguous_agent_chat_can_be_promoted_to_project_qa_by_llm_judge(
     assert body["debug_view"]["route"]["llm_route_decision"]["route_type"] == "project_qa"
 
 
+def test_agent_chat_llm_route_parse_failure_does_not_500(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fake_complete(self, *, messages, config):  # type: ignore[no-untyped-def]
+        return {
+            "ok": True,
+            "reason": "completed",
+            "error": "",
+            "provider": "openai_compatible",
+            "model": config.model,
+            "profile_id": config.profile_id,
+            "text": "not json",
+            "usage": {
+                "input_tokens": 4,
+                "output_tokens": 2,
+                "estimated_cost_usd": 0.0,
+                "latency_ms": 3,
+            },
+        }
+
+    monkeypatch.setattr("app.services.llm_service.LLMService.complete", _fake_complete)
+
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_session_llm_router_invalid_json",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "How is this organized?",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+                "current_file": "Source/Demo/DemoActor.cpp",
+                "current_module": "Demo",
+            },
+            "payload": {"user_query": "How is this organized?"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["debug_view"]["route"]["llm_route_decision"]["status"] == "skipped"
+    assert body["debug_view"]["route"]["llm_route_decision"]["reason"] == "route_parse_failed"
+
+
+def test_agent_chat_missing_llm_route_decision_does_not_500(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fake_route_judge(self, *, messages, config):  # type: ignore[no-untyped-def]
+        return None
+
+    monkeypatch.setattr("app.services.llm_service.LLMService.classify_agent_chat", _fake_route_judge)
+
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_session_llm_router_none",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "How is this organized?",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+                "current_file": "Source/Demo/DemoActor.cpp",
+                "current_module": "Demo",
+            },
+            "payload": {"user_query": "How is this organized?"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["debug_view"]["route"]["llm_route_decision"]["status"] == "skipped"
+    assert body["debug_view"]["route"]["llm_route_decision"]["reason"] == "llm_route_decision_missing"
+
+
 def test_direct_chat_uses_live_llm_when_available(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -524,6 +722,123 @@ def test_code_review_workflow_persists_artifacts_and_events(client: TestClient) 
     assert "event: step_completed" in stream.text
 
 
+def test_code_review_file_listing_and_selected_file_review(client: TestClient) -> None:
+    project_root = Path(".test-workspace") / f"code review {uuid.uuid4().hex}"
+    code_dir = project_root / "Source" / "MyModule"
+    plugin_code_dir = project_root / "Plugins" / "My Plugin" / "Source" / "MyPluginRuntime" / "Public"
+    shutil.rmtree(project_root, ignore_errors=True)
+    code_dir.mkdir(parents=True, exist_ok=True)
+    plugin_code_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        file_path = code_dir / "MyActor.cpp"
+        file_path.write_text(
+            '#include "MyActor.h"\n'
+            "void AMyActor::Tick(float DeltaTime)\n"
+            "{\n"
+            '    auto Asset = LoadObject<UObject>(nullptr, TEXT("/Game/Hero/Hero01"));\n'
+            "}\n",
+            encoding="utf-8",
+        )
+        plugin_file_path = plugin_code_dir / "MyTool.hpp"
+        plugin_file_path.write_text("class FMyTool {};\n", encoding="utf-8")
+
+        files = client.post(
+            "/api/v1/tasks/code-review/files",
+            json={
+                "project_root": str(project_root.resolve()),
+                "source_roots": ["Source"],
+                "query": "MyActor",
+                "limit": 50,
+            },
+        )
+        files_body = files.json()
+
+        assert files.status_code == 200
+        assert files_body["returned_count"] == 1
+        assert files_body["items"][0]["relative_path"] == "Source/MyModule/MyActor.cpp"
+        assert files_body["items"][0]["file_path"] == "Source/MyModule/MyActor.cpp"
+        assert files_body["items"][0]["label"] == "MyActor.cpp"
+        assert files_body["items"][0]["module_name"] == "MyModule"
+        assert files_body["items"][0]["file_type"] == "cpp"
+
+        plugin_files = client.post(
+            "/api/v1/tasks/code-review/files",
+            json={
+                "project_root": str(project_root.resolve()).replace("\\", "/") + "/",
+                "source_roots": ["Source", "Plugins"],
+                "query": "mypluginruntime",
+                "limit": 200,
+            },
+        )
+        plugin_body = plugin_files.json()
+
+        assert plugin_files.status_code == 200
+        assert plugin_body["returned_count"] == 1
+        assert plugin_body["items"][0]["file_path"] == "Plugins/My Plugin/Source/MyPluginRuntime/Public/MyTool.hpp"
+        assert plugin_body["items"][0]["module_name"] == "MyPluginRuntime"
+        assert plugin_body["scan_diagnostics"]["existing_source_roots"] == ["Source", "Plugins"]
+
+        review = client.post(
+            "/api/v1/tasks/code-review",
+            json={
+                "task_type": "code_review",
+                "session": {
+                    "session_id": "code_review_selected_file_session",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Review the selected file.",
+                            "language": "auto",
+                        }
+                    ],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "active_panel": "CodeReview",
+                    "current_file": "Source/MyModule/MyActor.cpp",
+                    "current_module": "MyModule",
+                },
+                "payload": {
+                    "user_query": "Review the selected file.",
+                    "project_root": str(project_root.resolve()),
+                    "source_roots": ["Source"],
+                    "file_path": "Source/MyModule/MyActor.cpp",
+                    "focus": "General",
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "CodeReview"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = review.json()
+
+        assert review.status_code == 200
+        assert body["task"]["status"] == "completed"
+        assert body["data"]["review_scope"]["source_kind"] == "file_path"
+        assert body["data"]["review_scope"]["file_path"] == "Source/MyModule/MyActor.cpp"
+        assert body["data"]["review_scope"]["resolved_absolute_path"]
+        assert body["data"]["review_scope"]["read_status"] == "ok"
+        assert body["data"]["review_scope"]["content_length"] > 0
+        assert body["data"]["review_scope"]["applied_focus"] == "General"
+        assert "hardcoded_asset_path" in body["data"]["rule_hits"]
+        assert [block["block_type"] for block in body["user_view"]["blocks"][:5]] == [
+            "summary",
+            "issues",
+            "recommendations",
+            "references",
+            "next_steps",
+        ]
+        assert body["data"]["localized_review"]["issues"]
+        assert body["data"]["llm_review"]["reason"] == "missing_openai_api_key"
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
+
+
 def test_logs_analyze_workflow_returns_structured_events(client: TestClient) -> None:
     response = client.post(
         "/api/v1/tasks/logs-analyze",
@@ -546,6 +861,7 @@ def test_logs_analyze_workflow_returns_structured_events(client: TestClient) -> 
             },
             "payload": {
                 "user_query": "Analyze this crash log.",
+                "log_source": "Saved/Logs/Demo.log",
                 "log_text": "[2026.04.17-10.00.00] LogTemp: Error: Access violation\nCallstack: 0x0001 Demo!MyModule\nLogStreaming: Warning: Failed to load /Game/Maps/TestMap",
             },
             "ui_state": {"active_view": "user", "selected_panel": "LogAnalyzer"},
@@ -565,6 +881,13 @@ def test_logs_analyze_workflow_returns_structured_events(client: TestClient) -> 
     assert body["data"]["findings"]
     assert body["data"]["structured_events"]
     assert body["data"]["parser_diagnostics"]["callstack_lines"]
+    assert [block["title"] for block in body["user_view"]["blocks"]] == [
+        "Log Summary",
+        "Issue Families",
+        "Suggested Actions",
+        "Captured Log Window",
+        "Affected Modules / Resources",
+    ]
 
 
 def test_config_generate_workflow_returns_draft_and_proposal(client: TestClient) -> None:
@@ -666,9 +989,79 @@ def test_code_generate_returns_draft_and_artifact(client: TestClient) -> None:
     assert body["intent"]["route_type"] == "single_tool"
     assert body["data"]["code_draft"]
     assert body["data"]["file_structure_suggestions"]
+    assert body["data"]["generated_items"]
+    assert body["data"]["generation_mode"]
     assert body["action_proposals"]
     assert artifacts.status_code == 200
     assert artifacts.json()["items"]
+
+
+def test_code_generate_can_use_code_reference_documents(client: TestClient) -> None:
+    project_root = Path(".test-workspace") / f"code-kb-{uuid.uuid4().hex}"
+    source_dir = project_root / "Source" / "Combat"
+    shutil.rmtree(project_root, ignore_errors=True)
+    source_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        reference_file = source_dir / "AbilityHelper.cpp"
+        reference_file.write_text(
+            '#include "AbilityHelper.h"\n'
+            "void UAbilityHelper::ApplyAbility()\n"
+            "{\n"
+            "    // Reference helper\n"
+            "}\n",
+            encoding="utf-8",
+        )
+
+        refresh = client.post(
+            "/api/v1/knowledge-base/refresh",
+            json={"source_paths": [str(project_root.resolve())], "force_rebuild": True},
+        )
+        assert refresh.status_code == 200
+
+        response = client.post(
+            "/api/v1/tasks/code-generate",
+            json={
+                "task_type": "code_generate",
+                "session": {
+                    "session_id": "code_generate_reference_session",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Generate a helper actor based on our code style.",
+                            "language": "auto",
+                        }
+                    ],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "active_panel": "CodeGenerator",
+                    "current_module": "Combat",
+                },
+                "payload": {
+                    "user_query": "Generate a helper actor based on our code style.",
+                    "requirement_description": "ability helper actor",
+                    "target_type": "ue_cpp_class",
+                    "domain_filters": ["code_reference"],
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "CodeGenerator"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = response.json()
+
+        assert response.status_code == 200
+        assert body["data"]["reference_lookup"]["reference_count"] >= 1
+        assert "reference_augmented" in body["data"]["generation_mode"]
+        assert body["data"]["generated_items"]
+        assert body["data"]["retrieved_references"]
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
 
 
 def test_config_validate_returns_report_and_artifact(client: TestClient) -> None:
@@ -812,6 +1205,122 @@ def test_assets_inspect_returns_violations(client: TestClient) -> None:
     assert body["intent"]["route_type"] == "single_tool"
     assert body["data"]["violations"]
     assert body["data"]["rename_suggestions"]
+    assert [block["title"] for block in body["user_view"]["blocks"]][:3] == [
+        "Inspection Summary",
+        "Rule Findings",
+        "Rename Suggestions",
+    ]
+
+
+def test_assets_inspect_can_summarize_types_and_relationships(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/tasks/assets-inspect",
+        json={
+            "task_type": "assets_inspect",
+            "session": {
+                "session_id": "asset_session_relationships",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Inspect the selected assets and summarize their relationships.",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AssetInspector",
+                "selected_assets": ["/Game/Demo/BP_Hero"],
+            },
+            "payload": {
+                "user_query": "Inspect the selected assets and summarize their relationships.",
+                "asset_items": [
+                    {
+                        "asset_path": "/Game/Demo/BP_Hero",
+                        "asset_type": "Blueprint",
+                        "package_path": "/Game/Demo",
+                        "dependencies": ["/Game/Demo/SM_Hero", "/Game/Demo/M_Hero"],
+                        "referencers": ["/Game/Demo/Maps/MainMap"],
+                    }
+                ],
+            },
+            "ui_state": {"active_view": "user", "selected_panel": "AssetInspector"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["data"]["type_insights"][0]["asset_type"] == "Blueprint"
+    assert body["data"]["relationship_summary"][0]["dependency_count"] == 2
+    assert body["data"]["relationship_summary"][0]["referencer_count"] == 1
+    assert "Asset Types" in [block["title"] for block in body["user_view"]["blocks"]]
+    assert "Relationship Summary" in [block["title"] for block in body["user_view"]["blocks"]]
+
+
+def test_assets_inspect_flags_default_world_asset_name(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/tasks/assets-inspect",
+        json={
+            "task_type": "assets_inspect",
+            "session": {
+                "session_id": "asset_session_new_map",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "检查这个地图资产命名。",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "RushBa",
+                "active_panel": "AssetInspector",
+                "selected_assets": ["/Game/NewMap.NewMap"],
+            },
+            "payload": {
+                "user_query": "检查这个地图资产命名。",
+                "asset_items": [
+                    {
+                        "asset_name": "NewMap",
+                        "asset_path": "/Game/NewMap.NewMap",
+                        "asset_type": "World",
+                        "package_path": "/Game/NewMap",
+                        "dependencies": [],
+                        "referencers": [],
+                    }
+                ],
+            },
+            "ui_state": {"active_view": "user", "selected_panel": "AssetInspector"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "zh-CN",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+    placeholder_issues = [
+        item for item in body["data"]["violations"] if item["rule_id"] == "placeholder_asset_name"
+    ]
+
+    assert response.status_code == 200
+    assert placeholder_issues
+    assert placeholder_issues[0]["severity"] == "warning"
+    assert "NewMap" in placeholder_issues[0]["reason"]
+    assert "L_ProjectSpecificName" in placeholder_issues[0]["suggestion"]
+    assert any(item["asset_name"] == "NewMap" for item in body["data"]["rename_suggestions"])
+    assert any(block["block_type"] == "issues" for block in body["user_view"]["blocks"])
+    issue_block = next(block for block in body["user_view"]["blocks"] if block["block_type"] == "issues")
+    assert "默认" in issue_block["data"]["items"][0]["reason"]
 
 
 def test_agent_chat_config_generate_waits_for_confirmation_and_records_decision(client: TestClient) -> None:

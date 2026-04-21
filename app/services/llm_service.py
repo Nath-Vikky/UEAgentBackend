@@ -214,6 +214,48 @@ class LLMService:
                 "usage": llm_result["usage"],
             }
 
+    def complete_json_object(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        config: ChatRuntimeConfig,
+    ) -> dict[str, Any]:
+        llm_result = self.complete(messages=messages, config=config)
+        if not llm_result["ok"]:
+            return {
+                "ok": False,
+                "payload": None,
+                "reason": llm_result["reason"],
+                "error": llm_result["error"],
+                "provider": llm_result["provider"],
+                "model": llm_result["model"],
+                "profile_id": llm_result["profile_id"],
+                "usage": llm_result["usage"],
+            }
+        try:
+            payload = _extract_json_object(llm_result["text"])
+            return {
+                "ok": True,
+                "payload": payload,
+                "reason": "completed",
+                "error": "",
+                "provider": llm_result["provider"],
+                "model": llm_result["model"],
+                "profile_id": llm_result["profile_id"],
+                "usage": llm_result["usage"],
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "payload": None,
+                "reason": "json_parse_failed",
+                "error": str(exc),
+                "provider": llm_result["provider"],
+                "model": llm_result["model"],
+                "profile_id": llm_result["profile_id"],
+                "usage": llm_result["usage"],
+            }
+
     def _chat_completions_url(self) -> str:
         base_url = (self.settings.openai_base_url or "").strip().rstrip("/")
         if not base_url:

@@ -17,6 +17,7 @@ class SessionInput(BaseModel):
 
 
 class ContextInput(BaseModel):
+    project_root: str | None = None
     project_name: str | None = None
     active_panel: str | None = None
     selected_assets: list[str] = Field(default_factory=list)
@@ -70,3 +71,21 @@ class ProposalDecisionRequest(BaseModel):
     actor: str | None = None
     comment: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SessionCreateRequest(BaseModel):
+    session_id: str
+    project_name: str | None = None
+    preferred_output_language: str | None = None
+    profile_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CodeReviewFileListRequest(BaseModel):
+    project_root: str
+    source_roots: list[str] = Field(default_factory=lambda: ["Source", "Plugins"])
+    extensions: list[str] = Field(
+        default_factory=lambda: [".h", ".hpp", ".hh", ".inl", ".c", ".cc", ".cpp", ".cxx", ".cs"]
+    )
+    query: str | None = None
+    limit: int = Field(default=200, ge=1, le=5000)
