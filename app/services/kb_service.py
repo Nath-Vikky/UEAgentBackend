@@ -23,11 +23,13 @@ from app.db.repositories.kb import (
     update_import_job,
 )
 from app.rag.ingestion.chunkers import chunk_text
+from app.rag.ingestion.capabilities import ingestion_capabilities
 from app.rag.ingestion.dedup import content_hash
 from app.rag.ingestion.jobs import utc_now
 from app.rag.ingestion.loaders import discover_source_paths
 from app.rag.ingestion.parsers import parse_path
 from app.rag.retrieval.hybrid import retrieve
+from app.rag.schemas import ParsedDocument
 from app.schemas.requests import ContextInput, KnowledgeBaseImportRequest
 
 
@@ -48,10 +50,13 @@ class KnowledgeBaseService:
         latest_job_model = latest_import_job(self.db)
         qdrant_ok, qdrant_reason = qdrant_available(self.settings)
         embedding_ok = embedding_available(self.settings)
+        ingestion = ingestion_capabilities()
         return {
             "enabled": True,
             "mode": self.settings.rag_mode,
             "fallback_mode": self.settings.rag_fallback_mode,
+            "ingestion_pipeline": ingestion["pipeline"],
+            "format_groups": ingestion["format_groups"],
             "collection": self.settings.qdrant_collection,
             "documents": counts["documents"],
             "chunks": counts["chunks"],
@@ -62,27 +67,11 @@ class KnowledgeBaseService:
             "qdrant_reason": qdrant_reason,
             "degraded_mode": self.settings.rag_mode != "lexical" and not (qdrant_ok and embedding_ok),
             "vector_store_enabled": qdrant_ok and embedding_ok,
-            "supported_formats": [
-                "md",
-                "txt",
-                "html",
-                "json",
-                "csv",
-                "pdf",
-                "docx",
-                "h",
-                "hpp",
-                "hh",
-                "inl",
-                "c",
-                "cc",
-                "cpp",
-                "cxx",
-                "cs",
-                "py",
-                "ini",
-                "cfg",
-            ],
+            "supported_formats": ingestion["supported_formats"],
+            "first_class_formats": ingestion["first_class_formats"],
+            "enhanced_formats": ingestion["enhanced_formats"],
+            "parser_dependencies": ingestion["parser_dependencies"],
+            "knowledge_domains": ingestion["knowledge_domains"],
             "source_paths": self.settings.kb_source_paths,
             "latest_job": self._serialize_job(latest_job_model) if latest_job_model else None,
             "message": (
@@ -315,29 +304,25 @@ class KnowledgeBaseService:
 
     def _import_text_payload(self, request: KnowledgeBaseImportRequest) -> dict[str, Any]:
         title = request.title or "Imported Text"
-        text = (request.text or "").strip()
+        text = (request.text or request.content or "").strip()
         if not text:
-            raise ValueError("text payload is required when source_type=text")
+            raise ValueError("text or content payload is required when source_type=text")
         source_path = f"text://{title.replace(' ', '_').lower()}"
         normalized_storage_path = self._write_normalized(f"text_{uuid.uuid4().hex[:8]}", text)
-        parsed_like = type(
-            "ParsedLike",
-            (),
-            {
-                "source_path": source_path,
-                "source_type": "text",
-                "title": title,
-                "text": text,
-                "language": "zh-CN" if any("\u4e00" <= ch <= "\u9fff" for ch in text) else "en-US",
-                "parser_name": "inline_text",
-                "doc_type": "reference",
-                "domain": request.domain or "project_docs",
-                "project_id": request.project_id,
-                "module": None,
-                "tags": [],
-                "metadata": {"import_mode": "text"},
-            },
-        )()
+        parsed_like = ParsedDocument(
+            source_path=source_path,
+            source_type="text",
+            title=title,
+            text=text,
+            language="zh-CN" if any("\u4e00" <= ch <= "\u9fff" for ch in text) else "en-US",
+            parser_name="inline_text",
+            doc_type=request.doc_type or self._infer_inline_doc_type(request.domain, text),
+            domain=request.domain or "project_docs",
+            project_id=request.project_id,
+            module=self._string_metadata(request.metadata, "module"),
+            tags=request.tags,
+            metadata={"import_mode": "text", **request.metadata},
+        )
         document, chunks = self._persist_parsed_document(parsed_like)
         document.raw_storage_path = normalized_storage_path
         replace_document(self.db, document, chunks)
@@ -357,6 +342,19 @@ class KnowledgeBaseService:
                 },
             },
         }
+
+    @staticmethod
+    def _infer_inline_doc_type(domain: str | None, text: str) -> str:
+        if domain in {"code_reference", "examples"}:
+            return "code"
+        preview = text[:500]
+        code_tokens = ("#include", "UCLASS", "UPROPERTY", "UFUNCTION", "class ", "def ", "namespace ")
+        return "code" if any(token in preview for token in code_tokens) else "reference"
+
+    @staticmethod
+    def _string_metadata(metadata: dict[str, Any], key: str) -> str | None:
+        value = metadata.get(key)
+        return value if isinstance(value, str) and value.strip() else None
 
     def _copy_raw_source(self, source_path: str, file_hash: str) -> str | None:
         path = Path(source_path)

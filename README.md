@@ -71,6 +71,8 @@
 - `POST /api/v1/knowledge-base/import`
 - `POST /api/v1/knowledge-base/reindex`
 - `GET /api/v1/knowledge-base/documents`
+- `GET /api/v1/knowledge-base/jobs/{job_id}`
+- `POST /api/v1/knowledge-base/jobs/{job_id}/retry`
 - `DELETE /api/v1/knowledge-base/documents/{doc_id}`
 
 ## 快速启动
@@ -129,3 +131,13 @@
 - `code_generate` 已支持“先查代码知识再生成”，但仍不直接写用户工程，也不做编译验证
 - `LangSmith / OTel` 仍是本地契约与元数据层，不是远端生产观测链路
 - 资产依赖与引用关系仍依赖插件从编辑器侧采集后传给后端
+
+## 2026-04-22 架构补充
+
+- `GET /api/v1/system/capabilities` 现在包含 `skill_catalog` 和 `skill_architecture`，用于说明 5 个固定内置 Skill 的边界。
+- 每次任务响应现在包含 `debug_view.skill`、`data.skill`、`trace_summary.skill_id`，用于确认本次执行对应哪个固定 Skill。
+- Code Review 的 UE 源码扫描/读取属于 `CodeReviewSkill` 内部 collector，不是单独主功能。
+- `CodeReviewSkill`、`CodeGenerateSkill`、`LogsAnalyzeSkill`、`AssetsInspectSkill` 已抽离为独立 executor，前端调用方式不变。
+- `GET /api/v1/knowledge-base/status` 现在包含 `ingestion_pipeline`、`format_groups`、`parser_dependencies`、`knowledge_domains`。
+- `POST /api/v1/knowledge-base/import` 的文本导入同时兼容 `text` 和 `content`，并保存 `metadata`、`tags`、`doc_type`。
+- 后续收缩计划已同步到 `docs/improveplan.md`，方便 GitHub 仓库内统一查看。

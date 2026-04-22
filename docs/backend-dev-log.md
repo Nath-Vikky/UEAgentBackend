@@ -104,3 +104,82 @@ UE 端二次反馈集中在两个体验问题：中文工作流下 `user_view` �
 
 - 受影响集成测试通过：Code Review 文件选择审查、Assets Inspect `NewMap`。
 - `ruff check app tests --no-cache` 通过。
+
+## 2026-04-22 Skill Registry 与 Knowledge Ingestion 优化
+
+这一轮把前面确定的架构方向落到代码里：后端采用固定内置 Skill，不做运行时动态 Skill 插件；知识库导入链路统一暴露能力状态，方便后续前端做知识库管理面板。
+
+### 主要代码改动
+
+- 新增 `app/skills/registry.py`，集中描述 5 个固定内置 Skill：`ProjectQASkill`、`CodeReviewSkill`、`CodeGenerateSkill`、`LogsAnalyzeSkill`、`AssetsInspectSkill`。
+- `system/capabilities` 新增 `skill_catalog`、`core_skill_ids`、`skill_architecture`，前端可以从这里读取菜单、UI 模式和 Skill 内部边界说明。
+- `feature_catalog` 和 `ui_recommendations` 改为从 Skill registry 派生，避免能力清单分散在多个文件里。
+- 修复 `TASK_TYPE_TO_TOOL_ID` 由字典推导覆盖主工具的问题，`logs_analyze` 现在稳定指向 `analyze_ue_log`，`config_generate` 稳定指向 `generate_design_config`。
+- `code_generate` 的工具描述改为 `requires_retrieval=True`，与“先查代码知识库，再生成”的当前功能边界一致。
+- 新增 `app/rag/ingestion/capabilities.py`，统一声明文本、代码、HTML、PDF、DOCX 的支持范围，以及 `docling` / `unstructured` 解析依赖状态。
+- `GET /api/v1/knowledge-base/status` 新增 `ingestion_pipeline`、`format_groups`、`first_class_formats`、`enhanced_formats`、`parser_dependencies`、`knowledge_domains`。
+- `POST /api/v1/knowledge-base/import` 的 `source_type=text` 现在同时支持 `text` 和 `content` 字段，并会保存 `doc_type`、`tags`、`metadata`。
+- 新增知识库任务别名接口：`GET /api/v1/knowledge-base/jobs/{job_id}` 和 `POST /api/v1/knowledge-base/jobs/{job_id}/retry`，保留旧的 `import-jobs` 路径兼容。
+- 新增 Skill runtime descriptor，每次任务响应都会在 `debug_view.skill`、`data.skill`、`trace_summary.skill_id` 标记当前固定 Skill、collector、rules、retrieval domains 和本次检索状态。
+
+### 文档更新
+
+- `frontend-unified-handoff.md` 补充 `skill_catalog`、`skill_architecture`、知识库管理接口和 inline text 导入字段说明。
+- `backend-user-guide.md` 已记录知识库、向量模型、Qdrant、LangSmith stub、RAG fallback 的使用方式。
+- `frontend-unified-handoff.md` 和 `backend-user-guide.md` 已补充 `debug_view.skill` 的消费方式。
+
+### 验证
+
+- `ruff check` 针对本轮受影响文件通过。
+- 关键集成测试通过：capabilities、KB refresh/status、inline content/metadata 导入、KB job alias/retry、direct chat skill runtime、project QA skill runtime、Code Review skill runtime。
+
+## 2026-04-22 CodeReviewSkill Executor 抽离
+
+这一轮开始把固定 Skill 从“描述层”推进到“执行层”。先选择 Code Review，因为它的边界最清晰：UE 文件 collector、规则扫描、知识库参考、LLM 综合审查、结构化投影。
+
+### 主要代码改动
+
+- 新增 `app/skills/executors/code_review.py`，提供 `CodeReviewSkillExecutor`。
+- `TaskService._execute_code_review()` 现在只负责创建 executor 并传入依赖，不再直接编排 Code Review workflow。
+- Code Review 的输出契约保持不变：`user_view.blocks` 仍固定为 `summary/issues/recommendations/references/next_steps`，`data.review_scope`、`data.localized_review`、`debug_view.skill` 继续保留。
+- Code Review 的本地化 helper、推荐项生成、证据说明、下一步建议和 LLM 综合审查 prompt 已搬入 executor。
+- `TaskService` 对 Code Review 基本只保留 executor 创建和任务生命周期调度。
+
+### 验证
+
+- `ruff check app/skills app/services/task_service.py --no-cache` 通过。
+- Code Review 文件列表与选中文件审查集成测试通过。
+
+## 2026-04-22 CodeGenerateSkill Executor 抽离
+
+这一轮按 Code Review 的模式继续抽离 Code Generate。由于代码生成主逻辑已经在 `CodeGenerationService` 中，executor 主要负责把 service 输出投影成统一响应结构。
+
+### 主要代码改动
+
+- 新增 `app/skills/executors/code_generate.py`，提供 `CodeGenerateSkillExecutor`。
+- `TaskService._execute_code_generate_v2()` 现在只创建 executor 并调用，不再直接组装 Code Generate 的 `user_view` 和 `debug_view`。
+- Code Generate 原有响应契约保持不变：`data.generated_items`、`data.reference_lookup`、`data.generation_mode`、`data.retrieved_references` 继续保留。
+- `debug_view.skill.skill_id` 和 `trace_summary.skill_id` 会稳定显示 `CodeGenerateSkill`。
+
+### 验证
+
+- `ruff check app/skills app/services/task_service.py tests/integration/test_system_and_tasks.py --no-cache` 通过。
+- Code Generate 直接生成和代码知识库参考增强生成集成测试通过。
+
+## 2026-04-22 LogsAnalyzeSkill 与 AssetsInspectSkill Executor 抽离
+
+这一轮继续把剩余两个工具型核心 Skill 从 `TaskService` 中抽离出来，让 `TaskService` 更接近任务生命周期调度器。
+
+### 主要代码改动
+
+- 新增 `app/skills/executors/logs_analyze.py`，提供 `LogsAnalyzeSkillExecutor`。
+- 新增 `app/skills/executors/assets_inspect.py`，提供 `AssetsInspectSkillExecutor`。
+- `TaskService._execute_logs_analyze()` 和 `TaskService._execute_assets_inspect()` 现在只创建 executor 并传入依赖。
+- Logs Analyze 原有响应契约保持不变：`data.findings`、`data.structured_events`、`data.parser_diagnostics`、`user_view.blocks` 继续保留。
+- Assets Inspect 原有响应契约保持不变：`data.violations`、`data.rename_suggestions`、`data.type_insights`、`data.relationship_summary`、`data.localized_asset_view` 继续保留。
+- 集成测试补充 `debug_view.skill.skill_id` 和 `trace_summary.skill_id` 断言，确认前端 Debug View 可以稳定识别当前 Skill。
+
+### 验证
+
+- `ruff check app/skills/executors app/services/task_service.py tests/integration/test_system_and_tasks.py --no-cache` 通过。
+- Logs Analyze 和 Assets Inspect 相关集成测试通过。

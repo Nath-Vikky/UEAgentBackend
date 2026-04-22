@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.skills.registry import PRIMARY_TOOL_ID_BY_TASK_TYPE
+
 
 @dataclass(frozen=True, slots=True)
 class ToolSpec:
@@ -40,7 +42,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Generate a code draft and file layout suggestions without writing to the project.",
         side_effect_level="plan_only",
         route_preference="single_tool",
-        requires_retrieval=False,
+        requires_retrieval=True,
     ),
     "analyze_ue_log": ToolSpec(
         tool_id="analyze_ue_log",
@@ -126,7 +128,12 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
 }
 
 TASK_TYPE_TO_TOOL_ID = {
-    spec.task_type: spec.tool_id for spec in TOOL_REGISTRY.values() if spec.task_type != "project_qa"
+    **PRIMARY_TOOL_ID_BY_TASK_TYPE,
+    "config_generate": "generate_design_config",
+    "config_validate": "validate_design_config",
+    "assets_plan": "plan_asset_operation",
+    "assets_execute": "execute_asset_operation",
+    "perf_analyze": "analyze_memory_perf_signals",
 }
 TOOL_ID_TO_TASK_TYPE = {tool_id: spec.task_type for tool_id, spec in TOOL_REGISTRY.items()}
 

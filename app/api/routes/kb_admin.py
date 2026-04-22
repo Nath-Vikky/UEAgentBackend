@@ -65,6 +65,15 @@ def kb_import_job(
     return KnowledgeBaseJobResponse(success=True, job=job)
 
 
+@router.get("/jobs/{job_id}", response_model=KnowledgeBaseJobResponse)
+def kb_job_alias(
+    job_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+) -> KnowledgeBaseJobResponse:
+    return kb_import_job(job_id, db, settings)
+
+
 @router.post("/reindex", response_model=KnowledgeBaseJobResponse)
 def kb_reindex(
     request: KnowledgeBaseRefreshRequest,
@@ -85,6 +94,15 @@ def kb_retry_import_job(
     if not result:
         raise APIError(404, "kb_job_not_found", f"KB import job `{job_id}` was not found.")
     return KnowledgeBaseJobResponse(success=True, job=result["job"])
+
+
+@router.post("/jobs/{job_id}/retry", response_model=KnowledgeBaseJobResponse)
+def kb_retry_job_alias(
+    job_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+) -> KnowledgeBaseJobResponse:
+    return kb_retry_import_job(job_id, db, settings)
 
 
 @router.get("/documents", response_model=KnowledgeBaseDocumentsResponse)

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.agent.router import detect_language
 from app.rag.ingestion.cleaners import clean_text
+from app.rag.ingestion.capabilities import CODE_SOURCE_SUFFIXES, TEXT_SOURCE_SUFFIXES
 from app.rag.schemas import ParsedDocument
 
 PROJECT_DOC_NAMES = {
@@ -23,39 +24,6 @@ PROJECT_DOC_STEMS = {
     "architecture",
     "roadmap",
     "handoff",
-}
-
-TEXT_SOURCE_SUFFIXES = {
-    ".md",
-    ".txt",
-    ".html",
-    ".json",
-    ".csv",
-    ".h",
-    ".hpp",
-    ".hh",
-    ".inl",
-    ".c",
-    ".cc",
-    ".cpp",
-    ".cxx",
-    ".cs",
-    ".py",
-    ".ini",
-    ".cfg",
-}
-
-CODE_SOURCE_SUFFIXES = {
-    ".h",
-    ".hpp",
-    ".hh",
-    ".inl",
-    ".c",
-    ".cc",
-    ".cpp",
-    ".cxx",
-    ".cs",
-    ".py",
 }
 
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b")

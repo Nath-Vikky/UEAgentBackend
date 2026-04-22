@@ -486,3 +486,370 @@ Code Review 的 `user_view.blocks` 当前固定优先输出：
 ### KB 不足时的审查策略
 
 如果项目知识库没有命中足够证据，Code Review 仍会基于当前文件内容和通用 Unreal/C++/C# 规则给出结果，并在 `references` 块中明确说明“仅供参考”。这能避免前端看到空洞总结，也能帮助用户知道下一步应补充哪些项目规范。
+
+## 17. 知识库、向量模型与向量数据库使用手册
+
+这一节是后端当前推荐的长期使用方式。简单说：项目资料统一进入知识库，检索层根据任务需要取上下文，LLM 负责自由回答、综合推理和生成内容。只配置 LLM 也能跑；补上 embedding 和 Qdrant 后，检索质量会更好。
+
+### 17.1 知识库导入链路
+
+知识库统一走这一条 pipeline：
+
+```text
+source paths / inline text
+-> loader
+-> parser
+-> cleaner
+-> chunker
+-> lexical index
+-> embedding
+-> vector store
+-> retrieval
+```
+
+当前优先稳定支持：
+- 文本文档：`.md`、`.txt`、`.json`、`.csv`、`.ini`、`.cfg`
+- 代码文件：`.h`、`.hpp`、`.hh`、`.inl`、`.c`、`.cc`、`.cpp`、`.cxx`、`.cs`、`.py`
+- HTML 文档：`.html`
+
+增强支持：
+- PDF：`.pdf`
+- Word：`.docx`
+
+PDF/DOCX 需要额外解析依赖，后端会优先尝试 `docling`，再尝试 `unstructured`。如果这些依赖没有安装，普通文本、代码和 HTML 导入不受影响。建议先把项目规范、代码示例、UE 插件说明整理成 Markdown、代码文件或 HTML，再把 PDF/DOCX 作为补充资料导入。
+
+### 17.2 推荐的知识库目录组织
+
+可以把资料按用途分目录，方便后续维护：
+
+```text
+knowledge/
+  project_docs/
+    gameplay-overview.md
+    plugin-workflow.md
+  code_reference/
+    actor-spawn-example.cpp
+    editor-subsystem-example.h
+  asset_rules/
+    naming-rules.md
+  team_rules/
+    code-style.md
+  engine_notes/
+    unreal-editor-api.html
+  examples/
+    inventory-component.cpp
+```
+
+后端会自动识别部分 domain，但更推荐在导入 inline text 时显式传 `domain`。常用 domain：
+- `project_docs`：项目说明、玩法系统、插件工作流
+- `code_reference`：可复用代码、示例类、UE API 用法
+- `examples`：代码生成可参考的完整片段
+- `team_rules`：团队规则、代码风格、提交流程
+- `asset_rules`：资产命名、目录结构、引用规范
+- `engine_notes`：Unreal Engine API、编辑器扩展笔记
+- `incident_history`：历史 Bug、崩溃、排查记录
+- `perf_notes`：性能分析记录
+- `config_schema`：配置字段说明
+
+### 17.3 通过配置导入本地资料
+
+在 `.env` 里配置默认知识库路径：
+
+```env
+KB_SOURCE_PATHS=../backend.md,../forward.md,./docs,../knowledge
+KB_DIR=./storage/kb
+KB_MAX_FILE_BYTES=5000000
+KB_CHUNK_SIZE=600
+KB_CHUNK_OVERLAP=100
+```
+
+启动后调用：
+
+```http
+POST /api/v1/knowledge-base/refresh
+```
+
+请求体可以为空，此时使用 `KB_SOURCE_PATHS`。如果只想刷新指定路径：
+
+```json
+{
+  "source_paths": [
+    "../knowledge/project_docs",
+    "../knowledge/code_reference"
+  ],
+  "force_rebuild": false
+}
+```
+
+如果要彻底重建本地知识库：
+
+```json
+{
+  "source_paths": [
+    "../knowledge"
+  ],
+  "force_rebuild": true
+}
+```
+
+`force_rebuild=true` 会清空本地已导入文档并重建索引，适合知识库结构大改、删除大量旧资料、或更换向量模型后使用。
+
+### 17.4 通过 API 导入一段文本
+
+适合从前端、脚本或临时笔记直接补充知识：
+
+```http
+POST /api/v1/knowledge-base/import
+```
+
+`source_type=text` 时，正文可以使用 `content` 或 `text` 字段；`domain`、`doc_type`、`tags`、`metadata` 会被保存到文档记录里，后续检索和 Debug View 都可以看到。
+
+```json
+{
+  "source_type": "text",
+  "title": "UE 资产命名规范",
+  "content": "World 资产建议使用 L_ 或 Map_ 前缀；Blueprint 建议使用 BP_ 前缀。",
+  "domain": "asset_rules",
+  "metadata": {
+    "author": "local",
+    "version": "2026-04-22"
+  }
+}
+```
+
+代码生成资料建议这样导入：
+
+```json
+{
+  "source_type": "text",
+  "title": "Actor Tick 禁用示例",
+  "content": "AMyActor::AMyActor() { PrimaryActorTick.bCanEverTick = false; }",
+  "domain": "code_reference",
+  "metadata": {
+    "language": "cpp",
+    "module": "RushBa"
+  }
+}
+```
+
+导入完成后，`CodeGenerateSkill` 可以优先检索 `code_reference` 和 `examples`，把命中的代码资料与用户需求一起交给 LLM 综合生成。
+
+### 17.5 查看、删除与重建知识库
+
+常用接口：
+- `GET /api/v1/knowledge-base/status`：查看知识库状态、支持格式、向量库状态、降级原因
+- `GET /api/v1/knowledge-base/documents`：查看已导入文档
+- `POST /api/v1/knowledge-base/reindex`：重建索引和向量
+- `DELETE /api/v1/knowledge-base/documents/{doc_id}`：删除指定文档并重建向量索引
+- `GET /api/v1/knowledge-base/jobs/{job_id}`：查看导入任务进度
+- `POST /api/v1/knowledge-base/jobs/{job_id}/retry`：重试失败导入任务
+
+旧路径 `GET /api/v1/knowledge-base/import-jobs/{job_id}` 和 `POST /api/v1/knowledge-base/import-jobs/{job_id}/retry` 仍保留兼容；新前端建议使用更短的 `/jobs` 路径。
+
+如果你只是新增少量资料，使用 `refresh` 或 `import` 即可。如果你换了 embedding 模型、换了 Qdrant collection、或删除了大量资料，建议使用 `reindex` 或 `force_rebuild=true`。
+
+### 17.6 只接入 LLM 时的检索方式
+
+只配置 LLM、不配置 embedding/Qdrant 时，后端仍能使用本地词法检索：
+
+```env
+OPENAI_API_KEY=你的 key
+OPENAI_BASE_URL=https://你的兼容服务/v1
+CHAT_MODEL=你的聊天模型
+
+EMBEDDING_ENABLED=false
+RAG_MODE=lexical
+RAG_FALLBACK_MODE=lexical_only
+```
+
+这种模式适合最小可运行调试：
+- Agent Chat 可以自由聊天，也可以按路由判断进入项目问答
+- 项目问答会使用本地 chunk 的关键词匹配
+- Code Review 在 KB 命中不足时会退回当前文件内容和通用规则
+- Code Generate 找不到代码参考时会直接让 LLM 生成
+
+局限是语义召回较弱，例如“生成一个编辑器工具按钮”和“Editor Utility Widget 扩展”可能无法稳定匹配。后续补上 embedding 和 Qdrant 后，这类同义表达会更容易命中。
+
+### 17.7 接入向量模型
+
+当前 embedding 使用 OpenAI-compatible `/embeddings` 接口，复用以下配置：
+
+```env
+OPENAI_API_KEY=你的 key
+OPENAI_BASE_URL=https://你的兼容服务/v1
+EMBEDDING_ENABLED=true
+EMBEDDING_MODEL=text-embedding-3-large
+```
+
+如果你的服务地址是 `https://example.com/v1`，后端会调用：
+
+```text
+https://example.com/v1/embeddings
+```
+
+更换向量模型时建议：
+- 修改 `EMBEDDING_MODEL`
+- 调用 `POST /api/v1/knowledge-base/reindex`
+- 如果向量维度变化，使用新的 `QDRANT_COLLECTION` 或让后端重建 collection
+
+如果聊天模型和向量模型来自不同供应商，当前版本推荐先使用兼容同一 `OPENAI_BASE_URL` 的服务。后续可以把配置拆成 `EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`、`CHAT_BASE_URL`，但这是下一阶段增强，不是当前必需项。
+
+### 17.8 接入 Qdrant 向量数据库
+
+本地启动 Qdrant 的一种方式：
+
+```powershell
+docker run -p 6333:6333 -v qdrant_storage:/qdrant/storage qdrant/qdrant
+```
+
+`.env` 配置：
+
+```env
+QDRANT_URL=http://127.0.0.1:6333
+QDRANT_API_KEY=
+QDRANT_COLLECTION=ue_agent_default
+RAG_MODE=hybrid
+RAG_FALLBACK_MODE=local_hybrid_fallback
+```
+
+推荐每个 UE 项目使用独立 collection，例如：
+
+```env
+QDRANT_COLLECTION=rushba_local
+```
+
+这样不同项目的向量不会互相污染。Qdrant 可用、embedding 可用时，知识库会把 chunk 写入向量库；不可用时，后端会记录 degraded reason，并退回本地检索。
+
+### 17.9 RAG 模式选择
+
+`RAG_MODE` 控制检索策略：
+- `lexical`：只使用本地词法检索，最稳、依赖最少
+- `hybrid`：词法 + 向量综合排序，推荐默认值
+- `semantic`：主要使用向量语义检索，适合资料量较多且 embedding 质量稳定时
+
+`RAG_FALLBACK_MODE` 控制向量不可用时的退化方式：
+- `lexical_only`：直接退回词法检索
+- `local_hybrid_fallback`：本地词法 + 简单相似度混合，适合没有 Qdrant 但想要稍微更强的本地召回
+
+推荐配置：
+- 最小调试：`RAG_MODE=lexical`，`EMBEDDING_ENABLED=false`
+- 本地作品集演示：`RAG_MODE=hybrid`，`EMBEDDING_ENABLED=true`，接入 Qdrant
+- 资料很多且表达差异大：`RAG_MODE=semantic` 或 `hybrid`
+
+### 17.10 各 Skill 如何使用知识库
+
+`ProjectQASkill`：
+- 先判断用户是在普通聊天还是项目问答
+- 项目问答才检索知识库
+- 回答中返回 citations 和 debug route
+
+`CodeReviewSkill`：
+- 文件扫描和读取属于内部 `collector`
+- 优先基于当前文件内容做确定性规则扫描
+- 再检索 `code_reference`、`team_rules`、`engine_notes`
+- LLM 可用时进行综合审查；不可用时返回规则扫描结果
+
+`CodeGenerateSkill`：
+- 先检索 `code_reference` 和 `examples`
+- 命中时把参考代码与用户需求一起给 LLM
+- 未命中时由 LLM 直接生成代码
+- 前端以“需求消息下挂代码结果按钮”的方式展示
+
+`LogsAnalyzeSkill`：
+- 日志采集由 UE 端或脚本完成
+- 后端接收日志文本后做模式识别和 LLM 分析
+- 如果知识库里有历史错误记录，可检索 `incident_history`
+
+`AssetsInspectSkill`：
+- 接收 UE 端选中资产的元数据
+- 本地检查命名、类型、依赖、引用关系
+- 可检索 `asset_rules` 和 `team_rules` 补充解释
+
+### 17.11 查看本次任务对应的 Skill
+
+每次任务响应都会带上 Skill runtime 信息，主要用于 Debug View 和前后端联调：
+
+```json
+{
+  "debug_view": {
+    "skill": {
+      "skill_id": "CodeReviewSkill",
+      "collector": "ue_project_code_file_scanner_and_reader",
+      "rules": ["file_access_guard", "ue_cpp_lifecycle_checks"],
+      "retrieval_domains": ["code_reference", "team_rules", "engine_notes"],
+      "retrieval_active": true,
+      "retrieval_mode": "hybrid",
+      "projector_outputs": ["user_view.blocks", "data.review_scope"]
+    }
+  },
+  "trace_summary": {
+    "skill_id": "CodeReviewSkill"
+  }
+}
+```
+
+字段含义：
+- `skill_id`：本次任务对应的固定内置 Skill
+- `collector`：后端如何收集输入，例如聊天消息、UE 源码文件、日志文本或资产元数据
+- `rules`：该 Skill 的确定性规则层
+- `retrieval_domains`：该 Skill 推荐检索的知识库 domain
+- `retrieval_active`：这次任务是否真的触发检索
+- `retrieval_mode`：这次检索使用的模式；没有检索时通常是 `not_used`
+- `projector_outputs`：前端优先消费哪些稳定输出字段
+
+如果是延期兼容任务，`skill_id` 可能为 `null`，并显示 `status=deferred_or_legacy`。这说明该任务不是当前 5 个核心 Skill 之一。
+
+当前执行层迁移状态：
+- `CodeReviewSkill` 已经使用独立 executor，代码审查的本地化投影和 LLM 综合审查 prompt 也已迁入该 executor
+- `CodeGenerateSkill` 已经使用独立 executor，代码生成的结果投影、引用预览和调试字段由 executor 统一组装
+- `LogsAnalyzeSkill` 已经使用独立 executor，日志结构化结果、上下文块和历史案例检索投影由 executor 统一组装
+- `AssetsInspectSkill` 已经使用独立 executor，资产规则、本地化问题、重命名建议、类型和关系摘要由 executor 统一组装
+- `ProjectQASkill` 仍由 `TaskService` 内部方法编排，因为它与聊天路由、普通对话降级和上下文管理耦合更高
+- 这属于后端内部结构优化，不改变 API 请求体或前端 UI 契约
+
+### 17.12 LangSmith 配置说明
+
+当前后端保留了 LangSmith 配置字段：
+
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=ue-agent-dev
+```
+
+当前实现是 `langsmith_stub`：它会在 `trace_summary` 里记录 `trace_id`、`route_type`、`finish_reason`、`langsmith_project` 等调试信息，但还没有真正把 span 上传到 LangSmith 平台。因此现在即使填了 `LANGSMITH_API_KEY`，主要作用仍是为后续真实 tracing 预留配置。
+
+后续如果要接入真实 LangSmith，建议按这些步骤增强：
+- 在 route、collector、retrieval、llm、projector 周围创建 trace span
+- 记录输入摘要，不直接上传完整源码或敏感日志
+- 把 `trace_id` 回填到 `debug_view`
+- 在 LangSmith 项目里观察检索命中、LLM 延迟、JSON 解析失败率、fallback 次数
+
+### 17.13 常见问题排查
+
+知识库没有命中：
+- 先看 `GET /api/v1/knowledge-base/status`
+- 确认 `document_count` 和 `chunk_count` 是否大于 0
+- 确认导入文档的 domain 是否符合当前 Skill
+- 只接 LLM 时把 `RAG_MODE` 改成 `lexical` 更容易定位问题
+
+向量不可用：
+- 确认 `EMBEDDING_ENABLED=true`
+- 确认 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`EMBEDDING_MODEL`
+- 确认 Qdrant 地址可访问
+- 调用 `POST /api/v1/knowledge-base/reindex`
+
+PDF/DOCX 导入失败：
+- 先把内容转成 Markdown 或 HTML 验证 pipeline
+- 再安装并验证 `docling` 或 `unstructured`
+- 避免一次导入过大的文件，必要时提高 `KB_MAX_FILE_BYTES`
+
+代码生成没有参考项目代码：
+- 把示例代码导入为 `code_reference` 或 `examples`
+- 在 metadata 里补 `language`、`module`
+- 重新导入或重建索引
+
+Agent Chat 总是检索：
+- 确认当前问题是否明显包含项目、文件、模块、UE 术语
+- 普通寒暄和开放聊天应走 `direct_answer`
+- 如果仍异常，查看 `debug_view.route` 和 `trace_summary.route_type`

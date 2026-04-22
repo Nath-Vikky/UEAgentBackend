@@ -98,6 +98,7 @@ class DebugView(BaseModel):
     normalized_request: dict[str, Any] = Field(default_factory=dict)
     intent: dict[str, Any] = Field(default_factory=dict)
     route: dict[str, Any] = Field(default_factory=dict)
+    skill: dict[str, Any] = Field(default_factory=dict)
     retrieval: dict[str, Any] = Field(default_factory=dict)
     retrieval_summary: dict[str, Any] = Field(default_factory=dict)
     tools: list[dict[str, Any]] = Field(default_factory=list)

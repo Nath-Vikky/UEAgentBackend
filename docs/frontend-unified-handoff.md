@@ -34,6 +34,17 @@
 - `supported_task_types`
 - `deferred_task_types`
 - `feature_catalog`
+- `skill_catalog`
+- `skill_architecture`
+
+`skill_catalog` 是后端固定内置 Skill 的稳定描述层。前端不需要动态加载 Skill，也不需要把 collector/rules/retrieval/projector 做成 UI；这些字段主要用于菜单、调试说明和能力展示。当前 5 个固定 Skill 是：
+- `ProjectQASkill`
+- `CodeReviewSkill`
+- `CodeGenerateSkill`
+- `LogsAnalyzeSkill`
+- `AssetsInspectSkill`
+
+特别注意：Code Review 的 UE 工程源码扫描和读取属于 `CodeReviewSkill.architecture.collector`，不是第 6 个主功能。前端仍然只需要渲染文件列表、文件选择和审查按钮。
 
 ## 3. 当前前端节奏
 
@@ -114,6 +125,22 @@
 - `GET /api/v1/tasks/{task_id}/trace`
 - `GET /api/v1/tasks/{task_id}/artifacts`
 
+### Knowledge Base Admin
+
+- `GET /api/v1/knowledge-base/status`
+- `POST /api/v1/knowledge-base/refresh`
+- `POST /api/v1/knowledge-base/import`
+- `POST /api/v1/knowledge-base/reindex`
+- `GET /api/v1/knowledge-base/documents`
+- `GET /api/v1/knowledge-base/documents/{doc_id}`
+- `DELETE /api/v1/knowledge-base/documents/{doc_id}`
+- `GET /api/v1/knowledge-base/jobs/{job_id}`
+- `POST /api/v1/knowledge-base/jobs/{job_id}/retry`
+
+`POST /api/v1/knowledge-base/import` 的 `source_type=text` 现在同时兼容 `text` 和 `content` 字段，并会保存 `domain`、`doc_type`、`tags`、`metadata`。如果前端后续做“补充知识库”面板，建议先支持文本/code/html 的路径刷新和 inline text 导入，PDF/DOCX 作为增强导入入口即可。
+
+`GET /api/v1/knowledge-base/status` 现在会返回 `ingestion_pipeline`、`format_groups`、`parser_dependencies`、`knowledge_domains`。这些字段适合放到 Debug View 或知识库设置页，不需要作为普通用户主流程强提示。
+
 ## 6. 双视图契约
 
 ### User View
@@ -135,6 +162,7 @@
 
 - `debug_view.intent`
 - `debug_view.route`
+- `debug_view.skill`
 - `debug_view.retrieval`
 - `debug_view.tools`
 - `debug_view.step_results`
@@ -144,6 +172,19 @@
 - `debug_view.raw_result`
 - `trace_summary`
 - `usage`
+
+`debug_view.skill` 是后端本轮新增的稳定调试块，建议 Debug View 直接展示：
+- `skill_id`
+- `collector`
+- `rules`
+- `retrieval_domains`
+- `retrieval_active`
+- `retrieval_mode`
+- `projector_outputs`
+
+同一份信息也会出现在 `data.skill` 和 `trace_summary.skill_id`。普通用户主界面不需要展示这些字段，但前端排查“为什么这次走了 RAG / 为什么没走 RAG / 当前面板对应哪个 Skill”时应优先看这里。
+
+后端内部实现状态：`CodeReviewSkill`、`CodeGenerateSkill`、`LogsAnalyzeSkill`、`AssetsInspectSkill` 已经使用独立 executor。这个变化不改变前端调用方式，前端继续使用当前 5 个核心接口即可；调试时可通过 `debug_view.skill.skill_id` 分别看到本次任务对应的固定 Skill。
 
 ## 7. Agent Chat / Project QA 的前后端分工
 

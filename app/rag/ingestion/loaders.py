@@ -3,10 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.core.settings import Settings
-from app.rag.ingestion.parsers import TEXT_SOURCE_SUFFIXES
+from app.rag.ingestion.capabilities import SUPPORTED_SUFFIXES
 from app.rag.schemas import resolve_local_path
-
-SUPPORTED_SUFFIXES = set(TEXT_SOURCE_SUFFIXES) | {".pdf", ".docx"}
 
 
 def discover_source_paths(settings: Settings, source_paths: list[str] | None = None) -> list[Path]:

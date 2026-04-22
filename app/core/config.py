@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+from app.skills.registry import (
+    CORE_SKILL_IDS,
+    CORE_TASK_TYPES,
+    SKILL_CATALOG,
+    UI_RECOMMENDATIONS as SKILL_UI_RECOMMENDATIONS,
+)
+
 SUPPORTED_LANGUAGES = ["zh-CN", "en-US"]
 SUPPORTED_VIEWS = ["user", "debug"]
-
-CORE_TASK_TYPES = [
-    "agent_chat",
-    "project_qa",
-    "code_review",
-    "code_generate",
-    "logs_analyze",
-    "assets_inspect",
-]
+UI_RECOMMENDATIONS = SKILL_UI_RECOMMENDATIONS
 
 DEFERRED_TASK_TYPES = [
     "config_generate",
@@ -21,51 +20,7 @@ DEFERRED_TASK_TYPES = [
 ]
 
 FEATURE_CATALOG = [
-    {
-        "task_type": "agent_chat",
-        "title": "Agent Chat / Project QA",
-        "status": "core",
-        "entry_mode": "chat",
-        "panel_id": "AgentChat",
-        "frontend_ui": "chat_timeline",
-        "notes": "The backend decides whether to stay in direct chat or promote the request to retrieval-backed project QA.",
-    },
-    {
-        "task_type": "code_review",
-        "title": "Code Review",
-        "status": "core",
-        "entry_mode": "explicit_task",
-        "panel_id": "CodeReview",
-        "frontend_ui": "file_picker",
-        "notes": "Use the dedicated file list endpoint and submit a selected file for single-file review.",
-    },
-    {
-        "task_type": "code_generate",
-        "title": "Code Generation",
-        "status": "core",
-        "entry_mode": "explicit_task",
-        "panel_id": "CodeGenerator",
-        "frontend_ui": "prompt_plus_code_results",
-        "notes": "Show the user prompt in the timeline, but render generated code as result buttons or tabs instead of one long chat block.",
-    },
-    {
-        "task_type": "logs_analyze",
-        "title": "Log Analysis",
-        "status": "core",
-        "entry_mode": "explicit_task",
-        "panel_id": "LogAnalyzer",
-        "frontend_ui": "log_preview_plus_result",
-        "notes": "The plugin should collect or preview logs locally and send log_text to the backend for analysis.",
-    },
-    {
-        "task_type": "assets_inspect",
-        "title": "Asset Inspection",
-        "status": "core",
-        "entry_mode": "explicit_task",
-        "panel_id": "AssetInspector",
-        "frontend_ui": "selected_assets_plus_groups",
-        "notes": "The plugin must send selected asset metadata from the editor; the backend does not inspect raw .uasset files directly.",
-    },
+    *SKILL_CATALOG,
     {
         "task_type": "config_generate",
         "title": "Config Generation",
@@ -124,6 +79,14 @@ CAPABILITIES = {
     ],
     "supported_task_types": CORE_TASK_TYPES,
     "deferred_task_types": DEFERRED_TASK_TYPES,
+    "core_skill_ids": CORE_SKILL_IDS,
+    "skill_catalog": SKILL_CATALOG,
+    "skill_architecture": {
+        "mode": "fixed_built_in_skills",
+        "runtime_dynamic_skills": False,
+        "extension_policy": "Add collectors, rules, retrieval domains, and projectors inside an existing built-in skill before adding a new user-visible feature.",
+        "public_skill_count": len(CORE_SKILL_IDS),
+    },
     "feature_catalog": FEATURE_CATALOG,
     "supported_languages": SUPPORTED_LANGUAGES,
     "supported_views": SUPPORTED_VIEWS,
@@ -142,28 +105,4 @@ CAPABILITIES = {
     "approval_policies": ["read_only", "plan_only", "confirmed_write"],
     "proposal_states": ["pending", "confirmed", "rejected"],
     "run_controls": ["cancel"],
-}
-
-UI_RECOMMENDATIONS = {
-    "initial_endpoints": [
-        "/api/v1/system/health",
-        "/api/v1/system/bootstrap",
-        "/api/v1/system/capabilities",
-        "/api/v1/system/runtime-profiles",
-    ],
-    "preferred_user_view_source": "user_view",
-    "preferred_debug_view_source": "debug_view",
-    "core_panels": [
-        {"panel_id": "AgentChat", "task_type": "agent_chat", "ui_mode": "chat_timeline"},
-        {"panel_id": "CodeReview", "task_type": "code_review", "ui_mode": "file_picker"},
-        {"panel_id": "CodeGenerator", "task_type": "code_generate", "ui_mode": "prompt_plus_code_results"},
-        {"panel_id": "LogAnalyzer", "task_type": "logs_analyze", "ui_mode": "log_preview_plus_result"},
-        {"panel_id": "AssetInspector", "task_type": "assets_inspect", "ui_mode": "selected_assets_plus_groups"},
-    ],
-    "notes": [
-        "User View should render `user_view` or `presentation` instead of inferring content from raw data.",
-        "Debug View should show route, usage, trace summary, retrieval details, task events, proposals, and raw structured results.",
-        "The narrowed scope keeps only five core plugin panels. Deferred backend tasks should be hidden from the main frontend menu.",
-        "Do not force every feature into the same chat UI. Only Agent Chat / Project QA should use a full chat timeline.",
-    ],
 }

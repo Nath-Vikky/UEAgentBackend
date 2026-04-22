@@ -66,6 +66,15 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
         "logs_analyze",
         "assets_inspect",
     ]
+    assert body["capabilities"]["skill_architecture"]["mode"] == "fixed_built_in_skills"
+    assert body["capabilities"]["skill_architecture"]["runtime_dynamic_skills"] is False
+    assert body["capabilities"]["skill_architecture"]["public_skill_count"] == 5
+    assert len(body["capabilities"]["skill_catalog"]) == 5
+    assert any(
+        item["skill_id"] == "CodeReviewSkill"
+        and item["architecture"]["collector"] == "ue_project_code_file_scanner_and_reader"
+        for item in body["capabilities"]["skill_catalog"]
+    )
     assert "config_generate" in body["capabilities"]["deferred_task_types"]
     assert any(
         item["task_type"] == "code_review" and item["frontend_ui"] == "file_picker"
@@ -142,6 +151,44 @@ def test_kb_refresh_builds_documents_and_chunks(client: TestClient) -> None:
     assert job.json()["job"]["status"] == "completed"
     assert status.json()["summary"]["documents"] >= 1
     assert status.json()["summary"]["chunks"] >= 1
+    assert status.json()["summary"]["ingestion_pipeline"] == [
+        "loader",
+        "parser",
+        "cleaner",
+        "chunker",
+        "lexical_index",
+        "embedding",
+        "vector_store",
+        "retrieval",
+    ]
+    assert "cpp" in status.json()["summary"]["format_groups"]["code"]
+
+
+def test_kb_import_text_accepts_content_metadata_and_tags(client: TestClient) -> None:
+    imported = client.post(
+        "/api/v1/knowledge-base/import",
+        json={
+            "source_type": "text",
+            "title": "Actor Tick Example",
+            "content": "AMyActor::AMyActor() { PrimaryActorTick.bCanEverTick = false; }",
+            "domain": "code_reference",
+            "metadata": {"module": "RushBa", "language": "cpp"},
+            "tags": ["example", "actor"],
+        },
+    )
+    documents = client.get("/api/v1/knowledge-base/documents")
+    matching = [
+        item for item in documents.json()["items"] if item["title"] == "Actor Tick Example"
+    ]
+
+    assert imported.status_code == 200
+    assert imported.json()["job"]["status"] == "completed"
+    assert matching
+    assert matching[0]["domain"] == "code_reference"
+    assert matching[0]["doc_type"] == "code"
+    assert matching[0]["module"] == "RushBa"
+    assert matching[0]["tags"] == ["example", "actor"]
+    assert matching[0]["metadata"]["language"] == "cpp"
 
 
 def test_session_create_restore_history_tasks_and_clear(client: TestClient) -> None:
@@ -341,6 +388,10 @@ def test_direct_chat_skips_kb_retrieval(client: TestClient) -> None:
     assert response.status_code == 200
     assert body["intent"]["route_type"] == "direct_answer"
     assert body["retrieval_trace"]["mode"] == "not_used"
+    assert body["debug_view"]["skill"]["skill_id"] == "ProjectQASkill"
+    assert body["debug_view"]["skill"]["retrieval_active"] is False
+    assert body["data"]["skill"]["collector"] == "chat_messages_and_editor_context"
+    assert body["trace_summary"]["skill_id"] == "ProjectQASkill"
 
 
 def test_direct_chat_with_project_context_still_skips_kb_when_query_is_generic(client: TestClient) -> None:
@@ -429,6 +480,8 @@ def test_agent_chat_with_explicit_project_reference_routes_to_project_qa(client:
     assert body["intent"]["route_type"] == "project_qa"
     assert body["retrieval_trace"]["retrieved_docs"]
     assert body["debug_view"]["route"]["decision_source"] == "heuristic_strong_project_signal"
+    assert body["debug_view"]["skill"]["skill_id"] == "ProjectQASkill"
+    assert body["debug_view"]["skill"]["retrieval_active"] is True
 
 
 def test_ambiguous_agent_chat_can_be_promoted_to_project_qa_by_llm_judge(
@@ -819,6 +872,8 @@ def test_code_review_file_listing_and_selected_file_review(client: TestClient) -
 
         assert review.status_code == 200
         assert body["task"]["status"] == "completed"
+        assert body["debug_view"]["skill"]["skill_id"] == "CodeReviewSkill"
+        assert body["debug_view"]["skill"]["collector"] == "ue_project_code_file_scanner_and_reader"
         assert body["data"]["review_scope"]["source_kind"] == "file_path"
         assert body["data"]["review_scope"]["file_path"] == "Source/MyModule/MyActor.cpp"
         assert body["data"]["review_scope"]["resolved_absolute_path"]
@@ -888,6 +943,9 @@ def test_logs_analyze_workflow_returns_structured_events(client: TestClient) -> 
         "Captured Log Window",
         "Affected Modules / Resources",
     ]
+    assert body["debug_view"]["skill"]["skill_id"] == "LogsAnalyzeSkill"
+    assert body["debug_view"]["skill"]["collector"] == "ue_log_text_payload"
+    assert body["trace_summary"]["skill_id"] == "LogsAnalyzeSkill"
 
 
 def test_config_generate_workflow_returns_draft_and_proposal(client: TestClient) -> None:
@@ -991,6 +1049,9 @@ def test_code_generate_returns_draft_and_artifact(client: TestClient) -> None:
     assert body["data"]["file_structure_suggestions"]
     assert body["data"]["generated_items"]
     assert body["data"]["generation_mode"]
+    assert body["debug_view"]["skill"]["skill_id"] == "CodeGenerateSkill"
+    assert body["debug_view"]["skill"]["collector"] == "user_requirement_and_optional_editor_context"
+    assert body["trace_summary"]["skill_id"] == "CodeGenerateSkill"
     assert body["action_proposals"]
     assert artifacts.status_code == 200
     assert artifacts.json()["items"]
@@ -1060,6 +1121,7 @@ def test_code_generate_can_use_code_reference_documents(client: TestClient) -> N
         assert "reference_augmented" in body["data"]["generation_mode"]
         assert body["data"]["generated_items"]
         assert body["data"]["retrieved_references"]
+        assert body["debug_view"]["skill"]["retrieval_active"] is True
     finally:
         shutil.rmtree(project_root, ignore_errors=True)
 
@@ -1205,6 +1267,9 @@ def test_assets_inspect_returns_violations(client: TestClient) -> None:
     assert body["intent"]["route_type"] == "single_tool"
     assert body["data"]["violations"]
     assert body["data"]["rename_suggestions"]
+    assert body["debug_view"]["skill"]["skill_id"] == "AssetsInspectSkill"
+    assert body["debug_view"]["skill"]["collector"] == "selected_asset_metadata_payload"
+    assert body["trace_summary"]["skill_id"] == "AssetsInspectSkill"
     assert [block["title"] for block in body["user_view"]["blocks"]][:3] == [
         "Inspection Summary",
         "Rule Findings",
@@ -1528,7 +1593,9 @@ def test_kb_document_management_and_retry_reindex(client: TestClient) -> None:
     documents = client.get("/api/v1/knowledge-base/documents")
     first_doc_id = documents.json()["items"][0]["doc_id"]
     detail = client.get(f"/api/v1/knowledge-base/documents/{first_doc_id}")
+    job_alias = client.get(f"/api/v1/knowledge-base/jobs/{job_id}")
     retry = client.post(f"/api/v1/knowledge-base/import-jobs/{job_id}/retry")
+    retry_alias = client.post(f"/api/v1/knowledge-base/jobs/{job_id}/retry")
     reindex = client.post(
         "/api/v1/knowledge-base/reindex",
         json={"source_paths": ["../backend.md"], "force_rebuild": True},
@@ -1540,8 +1607,12 @@ def test_kb_document_management_and_retry_reindex(client: TestClient) -> None:
     assert documents.json()["items"]
     assert detail.status_code == 200
     assert detail.json()["item"]["doc_id"] == first_doc_id
+    assert job_alias.status_code == 200
+    assert job_alias.json()["job"]["job_id"] == job_id
     assert retry.status_code == 200
     assert retry.json()["job"]["status"] == "completed"
+    assert retry_alias.status_code == 200
+    assert retry_alias.json()["job"]["status"] == "completed"
     assert reindex.status_code == 200
     assert reindex.json()["job"]["status"] == "completed"
     assert deleted.status_code == 200

@@ -61,9 +61,13 @@ class KnowledgeBaseImportRequest(BaseModel):
     source_type: Literal["paths", "text"] = "paths"
     source_paths: list[str] = Field(default_factory=list)
     text: str | None = None
+    content: str | None = None
     title: str | None = None
     domain: str | None = None
     project_id: str | None = None
+    doc_type: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProposalDecisionRequest(BaseModel):
