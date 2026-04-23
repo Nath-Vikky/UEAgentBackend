@@ -130,6 +130,7 @@
 - 专注单文件审查
 - 不做全工程自动巡检
 - 不自动修复、不自动写回工程
+- `user_view.blocks` 会包含 `llm_analysis`，用于展示 LLM 综合解释；LLM 未配置时会标记为 `status=skipped`
 
 ### 4.3 Code Generate
 
@@ -181,11 +182,13 @@
 - 返回命名、目录、重复候选、类型说明、关系摘要
 - `user_view` 已按资产检查面板输出：
   - 检查摘要
+  - LLM 综合分析
   - 规则问题
   - 重命名建议
   - 资产类型
   - 关系摘要
   - 参考规则摘要
+- `data.llm_analysis` 会说明 LLM 分析状态、跳过原因、优先级和关键点
 
 边界：
 
@@ -364,6 +367,8 @@ POST /api/v1/knowledge-base/import
 9. `POST /api/v1/tasks/code-generate`
 10. `POST /api/v1/tasks/logs-analyze`
 11. `POST /api/v1/tasks/assets-inspect`
+12. `POST /api/v1/project-inventory/snapshot`
+13. `GET /api/v1/project-inventory/summary`
 
 ## 14. 当前真实边界
 
@@ -440,6 +445,57 @@ LLM 复核只负责判断是否需要项目知识检索，不负责生成最终�
 
 后端会先做确定性规则检查，再补充知识库参考。默认/占位名如 `NewMap`、`Untitled`、`NewBlueprint`、`NewMaterial`、`NewTexture`、`NewDataAsset` 会稳定返回 warning 和重命名建议；`World` 资产会建议使用 `L_` 或 `Map_` 前缀的项目语义命名。
 
+### Project Inventory 快照
+
+`POST /api/v1/project-inventory/snapshot` 用于接收 UE 插件提交的项目快照。后端只保存和查询结构化 JSON，不直接解析 `.uasset`。
+
+建议提交：
+
+```json
+{
+  "project_id": "RushBa",
+  "project_name": "RushBa",
+  "source": "ue_plugin",
+  "assets": [
+    {
+      "asset_path": "/Game/Environment/SM_Rock.SM_Rock",
+      "asset_name": "SM_Rock",
+      "asset_type": "StaticMesh",
+      "package_path": "/Game/Environment",
+      "dependencies": ["/Game/Materials/M_Rock"],
+      "referencers": ["/Game/Maps/L_Test"],
+      "settings": {
+        "nanite_enabled": true,
+        "lod_count": 3,
+        "collision_complexity": "UseComplexAsSimple"
+      },
+      "properties": {
+        "material_slots": ["M_Rock"],
+        "triangle_count": 12000
+      }
+    }
+  ],
+  "code_files": [
+    {
+      "file_path": "Source/RushBa/Player/RBPlayerCharacter.cpp",
+      "module_name": "RushBa",
+      "file_type": "cpp",
+      "classes": ["ARBPlayerCharacter"]
+    }
+  ]
+}
+```
+
+常用查询：
+
+- `GET /api/v1/project-inventory/summary`：资产和代码文件总览
+- `GET /api/v1/project-inventory/assets?asset_type=StaticMesh`：按资产类型查询
+- `GET /api/v1/project-inventory/assets/{asset_id}`：查看单个资产详情
+- `GET /api/v1/project-inventory/code-files?module_name=RushBa`：查询代码文件索引
+- `POST /api/v1/project-inventory/query`：按自然语言关键词查询资产或代码索引
+
+Project Inventory 已经最小接入 Agent Chat / Project QA。用户问“工程里有哪些资产”“有哪些开启 Nanite 的静态网格体”“某模块有哪些 C++ 文件”这类项目事实问题时，后端会先查询项目快照，并把命中的资产 / 代码摘要并入回答上下文。LLM 不可用时也会返回基于快照的基础回答。
+
 ## 16. 用户可见语言与 Code Review 输出质量
 
 ### 用户可见语言
@@ -465,6 +521,7 @@ LLM 复核只负责判断是否需要项目知识检索，不负责生成最终�
 
 Code Review 的 `user_view.blocks` 当前固定优先输出：
 - `summary`：审查范围、读取状态、严重度摘要、KB/LLM 情况
+- `llm_analysis`：面向普通用户的 LLM 综合解释；LLM 未配置时为 `status=skipped`
 - `issues`：具体问题；如果没有明显问题，会返回“未发现高风险规则命中”
 - `recommendations`：可执行修改建议
 - `references`：引用的知识库证据；没有命中时说明使用通用规则 fallback
@@ -482,6 +539,8 @@ Code Review 的 `user_view.blocks` 当前固定优先输出：
 - `missing_openai_api_key`
 - `json_parse_failed`
 - `file_read_failed_or_empty_source`
+
+面向前端展示时优先使用 `data.llm_analysis` 和 `user_view.blocks[].block_type == "llm_analysis"`。该块是给用户看的解释卡片，`data.llm_review` 则保留为 Debug View 的原始 LLM 调用诊断。
 
 ### KB 不足时的审查策略
 
@@ -853,3 +912,69 @@ Agent Chat 总是检索：
 - 确认当前问题是否明显包含项目、文件、模块、UE 术语
 - 普通寒暄和开放聊天应走 `direct_answer`
 - 如果仍异常，查看 `debug_view.route` 和 `trace_summary.route_type`
+
+## 18. 2026-04-23 联调字段补充
+
+### 18.1 Project Inventory Snapshot 响应
+
+UE 插件提交项目快照时，后端会保存资产和代码索引，并返回稳定摘要。请求体建议包含：
+
+- `project_id` / `project_name`
+- `snapshot_time`
+- `source`
+- `plugin_version`
+- `assets`
+- `code_files`
+- `scan_diagnostics`
+
+代码文件时间字段可传 `last_modified` 或 `modified_at`，后端会同时保留这两个别名，方便前端列表和 Debug View 复用。
+
+成功响应示例：
+
+```json
+{
+  "success": true,
+  "snapshot": {
+    "status": "saved",
+    "snapshot_id": "rushba_2026-04-23T100000Z",
+    "project_id": "rushba",
+    "asset_count": 2,
+    "code_file_count": 1,
+    "summary": {
+      "asset_count": 2,
+      "code_file_count": 1,
+      "asset_type_counts": {"StaticMesh": 1, "Blueprint": 1},
+      "code_file_type_counts": {"cpp": 1}
+    },
+    "scan_diagnostics": {
+      "asset_count_from_editor": 2,
+      "code_file_count_from_scanner": 1
+    }
+  }
+}
+```
+
+### 18.2 LLM Analysis 字段含义
+
+Code Review 和 Assets Inspect 都会返回 `llm_analysis`。它是给用户看的“综合解释卡片”，不是替代规则结果。
+
+字段含义：
+
+- `status`：`completed` 表示 LLM 已综合解释；`skipped` 表示未执行在线 LLM。
+- `reason`：本地化自然语言原因，适合直接展示给用户。
+- `reason_code`：稳定机器可读原因码，适合前端调试和条件样式。
+- `text`：卡片正文。
+- `key_points` / `recommendations`：可选要点。
+- `priority`：`low` / `medium` / `high`。
+
+常见 `reason_code`：
+
+- `missing_openai_api_key`
+- `missing_chat_model`
+- `json_parse_failed`
+- `request_failed`
+- `file_read_failed_or_empty_source`
+- `empty_asset_selection`
+- `not_attempted`
+
+如果只配置了 LLM，Code Review / Assets Inspect 会尝试在线综合解释；如果未配置或调用失败，仍会返回确定性规则扫描、知识库引用和建议。前端不应把 `status=skipped` 展示成任务失败。

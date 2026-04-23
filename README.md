@@ -75,6 +75,15 @@
 - `POST /api/v1/knowledge-base/jobs/{job_id}/retry`
 - `DELETE /api/v1/knowledge-base/documents/{doc_id}`
 
+### Project Inventory
+
+- `POST /api/v1/project-inventory/snapshot`
+- `GET /api/v1/project-inventory/summary`
+- `GET /api/v1/project-inventory/assets`
+- `GET /api/v1/project-inventory/assets/{asset_id}`
+- `GET /api/v1/project-inventory/code-files`
+- `POST /api/v1/project-inventory/query`
+
 ## 快速启动
 
 在 `backend/` 目录下执行：
@@ -141,3 +150,9 @@
 - `GET /api/v1/knowledge-base/status` 现在包含 `ingestion_pipeline`、`format_groups`、`parser_dependencies`、`knowledge_domains`。
 - `POST /api/v1/knowledge-base/import` 的文本导入同时兼容 `text` 和 `content`，并保存 `metadata`、`tags`、`doc_type`。
 - 后续收缩计划已同步到 `docs/improveplan.md`，方便 GitHub 仓库内统一查看。
+
+## 2026-04-23 前端联调补充
+
+- Project Inventory 快照响应已稳定包含 `snapshot.status`、`snapshot.summary`、`snapshot.scan_diagnostics`。
+- `code_files[].last_modified` 已与 `modified_at` 兼容，前端扫描结果可直接提交。
+- Code Review / Assets Inspect 的 `llm_analysis` 已包含用户可见 `reason` 和调试用 `reason_code`。

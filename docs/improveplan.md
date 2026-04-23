@@ -353,3 +353,182 @@ UE 端进一步指出两个体验问题：中文工作流下 Highlight 仍有英
 
 - 4 个工具型核心 Skill 已经进入独立 executor
 - `ProjectQASkill` 暂时保留在 `TaskService`，后续如果要强化上下文压缩、RAG 策略或聊天记忆，再单独抽离更合适
+
+## 2026-04-23 功能体验增强计划：LLM 分析层与 Project Inventory
+
+当前 5 个核心功能已经能形成闭环，但 Code Review 和 Assets Inspect 的用户体验仍偏“规则检查器”：能指出问题，却缺少更像 Agent 的综合解释、风险判断和优先级说明。下一轮优化优先补齐“人类可读的 LLM 分析层”，随后再建设项目级 Inventory，让自由聊天可以回答项目事实问题。
+
+### 阶段 F：为工具型 Skill 增加 `llm_analysis`
+
+目标：
+
+- Code Review 除了 `summary/issues/recommendations/references/next_steps`，新增用户可见的 `llm_analysis` 块
+- Assets Inspect 除了命名、类型和依赖规则结果，新增用户可见的 `llm_analysis` 块
+- `llm_analysis` 用自然语言解释“为什么这些问题重要、哪些优先处理、哪些可能只是提示”
+- LLM 不可用时不阻塞主结果，返回明确的 skipped / fallback 状态
+
+推荐响应结构：
+
+```json
+{
+  "block_type": "llm_analysis",
+  "title": "LLM 综合分析",
+  "text": "这段代码当前最值得注意的是 UObject 生命周期和同步加载路径，它们不一定马上报错，但在运行时或资产迁移后可能放大风险。",
+  "data": {
+    "status": "completed",
+    "reason": null,
+    "reason_code": null,
+    "key_points": [],
+    "priority": "medium"
+  }
+}
+```
+
+前端 UI 建议：
+
+- 在 Code Review / Assets Inspect 结果区新增“LLM 分析结果”卡片
+- 位置建议放在 `summary` 后、`issues` 前
+- 如果 `status=skipped`，显示为轻提示，不要当作错误
+- `reason` 给普通用户展示，`reason_code` 给前端和 Debug View 判断
+- Debug View 继续展示完整 `data.llm_analysis` / `data.llm_review`
+
+### 阶段 G：Project Inventory / 项目快照
+
+目标：
+
+- 后端提供统一的项目快照导入和查询能力
+- UE 插件负责扫描编辑器内资产和工程代码元数据，再提交给后端
+- 后端保存轻量 JSON inventory，不直接解析 `.uasset` 二进制
+- Project QA 在自由聊天中可以按需检索 inventory，回答“工程里有哪些资产”“某个资产有哪些设置”“哪些 C++ 类属于某模块”等问题
+
+建议接口：
+
+- `POST /api/v1/project-inventory/snapshot`：导入一次完整或增量项目快照
+- `GET /api/v1/project-inventory/summary`：查看资产/代码总览
+- `GET /api/v1/project-inventory/assets`：按类型、路径、名称搜索资产
+- `GET /api/v1/project-inventory/assets/{asset_id}`：查看单个资产详情
+- `GET /api/v1/project-inventory/code-files`：查看代码文件索引
+- `POST /api/v1/project-inventory/query`：给 Project QA / Debug View 使用的轻量查询入口
+
+后端保存的数据边界：
+
+- 资产路径、名称、类型、包路径
+- 依赖、引用、标签、Asset Registry tag
+- 资产关键设置的结构化摘要
+- 代码文件路径、模块、类型、大小、最后修改时间、类名/符号摘要
+- 快照时间、项目名、扫描来源、插件版本
+
+后端不做的事情：
+
+- 不直接读取或解析 `.uasset` 二进制
+- 不替代 Unreal Editor 的 Asset Registry
+- 不执行资产重命名、迁移、保存或批量修改
+- 不保证所有引擎私有属性都能获取，只消费 UE 插件能安全导出的元数据
+
+### 常见 UE 资产属性采集建议
+
+`StaticMesh`：
+- Nanite 是否启用
+- LOD 数量与屏幕尺寸策略
+- 三角面 / 顶点数量摘要
+- 碰撞复杂度、简单碰撞是否存在
+- Material slot 列表
+- Lightmap UV、Lightmap resolution
+- Distance Field / Virtual Shadow Map 相关标记
+
+`SkeletalMesh`：
+- Skeleton / PhysicsAsset 关联
+- LOD 数量
+- Morph Target 数量
+- Cloth / Chaos cloth 相关标记
+- 使用的 Animation Blueprint 或主要动画引用
+
+`Blueprint` / `WidgetBlueprint`：
+- Parent class
+- Component 列表
+- 是否启用 Tick
+- Replication / NetLoad / NetAddressable 相关标记
+- 暴露变量、接口、主要事件数量摘要
+- Construction Script 是否复杂
+- Widget 层级和绑定数量摘要
+
+`Material` / `MaterialInstance`：
+- Parent material
+- Shading model
+- Blend mode、Two Sided、Translucency 相关设置
+- Texture / Scalar / Vector 参数摘要
+- 使用的纹理数量
+- 是否启用 Nanite 不兼容或高成本渲染特征的提示
+
+`Texture`：
+- 分辨率
+- Compression settings
+- sRGB
+- Mip Gen Settings
+- Texture Group / LOD Group
+- Virtual Texture Streaming
+- 是否 Power-of-two
+
+`World` / `Map`：
+- World Partition 是否启用
+- Streaming Levels / Data Layers 摘要
+- Actor 数量
+- Lighting / Sky / PostProcess 关键对象摘要
+- NavMesh、Landscape、Level Blueprint 是否存在
+
+`NiagaraSystem` / 粒子：
+- Emitter 数量
+- CPU/GPU simulation
+- Fixed Bounds 是否设置
+- Renderer 类型
+- 主要材质和纹理引用
+
+`SoundCue` / `MetaSound`：
+- Duration / Looping
+- Attenuation
+- Concurrency
+- SoundClass / SoundSubmix
+- 主要引用关系
+
+`DataAsset` / `DataTable`：
+- RowStruct / 数据类型
+- Row count
+- 关键字段摘要
+- 引用的 GameplayTag / SoftObjectPath 数量
+
+### 阶段 H：Project QA 接入 Inventory
+
+目标：
+
+- 用户在 Agent Chat 中问项目事实问题时，后端优先查询 Project Inventory
+- 如果问题涉及规则、解释或做法，再结合知识库 RAG
+- 如果问题只是普通聊天，不触发 Inventory 或 RAG
+
+示例问题：
+
+- “这个工程里有哪些 StaticMesh？”
+- “有没有开启 Nanite 的网格体？”
+- “BP_PlayerCharacter 的父类和组件有哪些？”
+- “哪些材质是 Translucent？”
+- “某个纹理是不是 sRGB，分辨率多大？”
+- “这个地图里大概有哪些关键 Actor？”
+- “Gameplay 模块下有哪些 C++ 文件？”
+
+Project QA 的上下文优先级建议：
+
+1. 显式选中资产 / 当前文件
+2. Project Inventory 精确命中
+3. 知识库 RAG
+4. 普通 LLM 回答
+
+这个方向能让后端更像真正的 Agent：不仅能执行固定工具，还能理解项目事实、调用长期知识、用 LLM 做人类可读的解释。
+
+当前落地状态：
+
+- 已新增 Project Inventory 快照、summary、assets、asset detail、code-files、query 接口
+- 已最小接入 Agent Chat / Project QA
+- Project QA 命中 Inventory 时会把结果放入 `data.inventory` 和 `debug_view.inventory`
+- LLM 不可用时会返回基于 Inventory 的基础回答
+- Snapshot 已支持 `snapshot_time`、`scan_diagnostics`、`code_files[].last_modified`
+- Snapshot 响应已稳定返回 `status`、`summary.asset_count`、`summary.code_file_count`
+- 下一步需要继续扩展 UE 前端的 Asset Registry / Editor API 采集质量，让 Inventory 覆盖更多常用资产属性

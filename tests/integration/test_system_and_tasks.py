@@ -82,6 +82,141 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
     )
 
 
+def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "RushBa",
+            "project_name": "RushBa",
+            "source": "ue_plugin",
+            "plugin_version": "0.1-test",
+            "snapshot_time": "2026-04-23T10:00:00Z",
+            "scan_diagnostics": {"asset_count_from_editor": 2, "code_file_count_from_scanner": 1},
+            "assets": [
+                {
+                    "asset_path": "/Game/Environment/SM_Rock.SM_Rock",
+                    "asset_name": "SM_Rock",
+                    "asset_type": "StaticMesh",
+                    "package_path": "/Game/Environment",
+                    "dependencies": ["/Game/Materials/M_Rock"],
+                    "referencers": ["/Game/Maps/L_Test"],
+                    "settings": {
+                        "nanite_enabled": True,
+                        "lod_count": 3,
+                        "collision_complexity": "UseComplexAsSimple",
+                    },
+                    "properties": {"material_slots": ["M_Rock"], "triangle_count": 12000},
+                },
+                {
+                    "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                    "asset_name": "BP_PlayerCharacter",
+                    "asset_type": "Blueprint",
+                    "package_path": "/Game/Blueprints",
+                    "settings": {"parent_class": "ACharacter", "tick_enabled": True},
+                    "properties": {"components": ["Capsule", "SkeletalMesh", "Camera"]},
+                },
+            ],
+            "code_files": [
+                {
+                    "file_path": "Source/RushBa/Player/RBPlayerCharacter.cpp",
+                    "module_name": "RushBa",
+                    "file_type": "cpp",
+                    "classes": ["ARBPlayerCharacter"],
+                    "size_bytes": 4096,
+                    "last_modified": "2026-04-23T09:59:00Z",
+                }
+            ],
+        },
+    )
+    summary = client.get("/api/v1/project-inventory/summary", params={"project_id": "RushBa"})
+    static_meshes = client.get(
+        "/api/v1/project-inventory/assets",
+        params={"project_id": "RushBa", "asset_type": "StaticMesh"},
+    )
+    nanite_query = client.post(
+        "/api/v1/project-inventory/query",
+        json={"project_id": "RushBa", "query": "有哪些开启 Nanite 的静态网格体？"},
+    )
+    code_files = client.get(
+        "/api/v1/project-inventory/code-files",
+        params={"project_id": "RushBa", "module_name": "RushBa"},
+    )
+    asset_id = static_meshes.json()["items"][0]["asset_id"]
+    asset_detail = client.get(f"/api/v1/project-inventory/assets/{asset_id}", params={"project_id": "RushBa"})
+
+    assert snapshot.status_code == 200
+    assert snapshot.json()["snapshot"]["status"] == "saved"
+    assert snapshot.json()["snapshot"]["asset_count"] == 2
+    assert snapshot.json()["snapshot"]["summary"]["asset_count"] == 2
+    assert snapshot.json()["snapshot"]["summary"]["code_file_count"] == 1
+    assert snapshot.json()["snapshot"]["scan_diagnostics"]["asset_count_from_editor"] == 2
+    assert summary.status_code == 200
+    assert summary.json()["summary"]["asset_type_counts"]["StaticMesh"] == 1
+    assert summary.json()["summary"]["scan_diagnostics"]["code_file_count_from_scanner"] == 1
+    assert static_meshes.status_code == 200
+    assert static_meshes.json()["items"][0]["settings"]["nanite_enabled"] is True
+    assert nanite_query.status_code == 200
+    assert nanite_query.json()["items"][0]["asset_name"] == "SM_Rock"
+    assert code_files.status_code == 200
+    assert code_files.json()["items"][0]["classes"] == ["ARBPlayerCharacter"]
+    assert code_files.json()["items"][0]["last_modified"] == "2026-04-23T09:59:00Z"
+    assert asset_detail.status_code == 200
+    assert asset_detail.json()["item"]["asset_path"] == "/Game/Environment/SM_Rock.SM_Rock"
+
+
+def test_agent_chat_project_qa_can_answer_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "RushBa",
+            "project_name": "RushBa",
+            "assets": [
+                {
+                    "asset_path": "/Game/Environment/SM_Rock.SM_Rock",
+                    "asset_name": "SM_Rock",
+                    "asset_type": "StaticMesh",
+                    "settings": {"nanite_enabled": True, "lod_count": 3},
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_chat_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "这个工程里有哪些开启 Nanite 的静态网格体？",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {"project_name": "RushBa", "active_panel": "AgentChat"},
+            "payload": {"user_query": "这个工程里有哪些开启 Nanite 的静态网格体？"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    assert body["intent"]["route_type"] == "project_qa"
+    assert body["data"]["inventory"]["items"]
+    assert body["data"]["inventory"]["items"][0]["asset_name"] == "SM_Rock"
+    assert "SM_Rock" in body["assistant_message"]
+    assert body["debug_view"]["inventory"]["summary"]["asset_match_count"] == 1
+
+
 def test_create_task_and_fetch_dual_views(client: TestClient) -> None:
     created = client.post(
         "/api/v1/tasks/project-qa",
@@ -881,13 +1016,17 @@ def test_code_review_file_listing_and_selected_file_review(client: TestClient) -
         assert body["data"]["review_scope"]["content_length"] > 0
         assert body["data"]["review_scope"]["applied_focus"] == "General"
         assert "hardcoded_asset_path" in body["data"]["rule_hits"]
-        assert [block["block_type"] for block in body["user_view"]["blocks"][:5]] == [
+        assert [block["block_type"] for block in body["user_view"]["blocks"][:6]] == [
             "summary",
+            "llm_analysis",
             "issues",
             "recommendations",
             "references",
             "next_steps",
         ]
+        assert body["data"]["llm_analysis"]["status"] == "skipped"
+        assert body["data"]["llm_analysis"]["reason_code"] == "missing_openai_api_key"
+        assert "api key" in body["data"]["llm_analysis"]["reason"].lower()
         assert body["data"]["localized_review"]["issues"]
         assert body["data"]["llm_review"]["reason"] == "missing_openai_api_key"
     finally:
@@ -1049,6 +1188,10 @@ def test_code_generate_returns_draft_and_artifact(client: TestClient) -> None:
     assert body["data"]["file_structure_suggestions"]
     assert body["data"]["generated_items"]
     assert body["data"]["generation_mode"]
+    assert [block["block_type"] for block in body["user_view"]["blocks"]] == [
+        "summary",
+        "generated_items",
+    ]
     assert body["debug_view"]["skill"]["skill_id"] == "CodeGenerateSkill"
     assert body["debug_view"]["skill"]["collector"] == "user_requirement_and_optional_editor_context"
     assert body["trace_summary"]["skill_id"] == "CodeGenerateSkill"
@@ -1270,11 +1413,15 @@ def test_assets_inspect_returns_violations(client: TestClient) -> None:
     assert body["debug_view"]["skill"]["skill_id"] == "AssetsInspectSkill"
     assert body["debug_view"]["skill"]["collector"] == "selected_asset_metadata_payload"
     assert body["trace_summary"]["skill_id"] == "AssetsInspectSkill"
-    assert [block["title"] for block in body["user_view"]["blocks"]][:3] == [
-        "Inspection Summary",
-        "Rule Findings",
-        "Rename Suggestions",
+    assert [block["block_type"] for block in body["user_view"]["blocks"]][:4] == [
+        "summary",
+        "llm_analysis",
+        "issues",
+        "recommendations",
     ]
+    assert body["data"]["llm_analysis"]["status"] == "skipped"
+    assert body["data"]["llm_analysis"]["reason_code"] == "missing_openai_api_key"
+    assert "api key" in body["data"]["llm_analysis"]["reason"].lower()
 
 
 def test_assets_inspect_can_summarize_types_and_relationships(client: TestClient) -> None:

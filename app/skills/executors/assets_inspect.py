@@ -8,12 +8,46 @@ from app.agent.context_builder import build_context_summary
 from app.schemas.common import CitationPreview, UserViewBlock
 from app.schemas.requests import UnifiedTaskRequest
 from app.services.kb_service import KnowledgeBaseService
+from app.services.llm_service import ChatRuntimeConfig, LLMService
 from app.tools.asset_inspect import inspect_asset_metadata
 from app.tools.retrieval import retrieve_support_notes
+from app.utils.json_tools import dumps_pretty
 
 
 def _localized(language: str, zh_text: str, en_text: str) -> str:
     return zh_text if language.startswith("zh") else en_text
+
+
+def _llm_skip_reason_code(result: dict[str, Any]) -> str:
+    reason = str(result.get("reason") or "").strip()
+    error = str(result.get("error") or "").strip()
+    if reason == "not_attempted" and error:
+        return error
+    return reason or error or "not_attempted"
+
+
+def _localized_llm_skip_reason(reason_code: str, output_language: str) -> str:
+    zh_reasons = {
+        "missing_openai_api_key": "未配置 LLM API Key，本次未执行在线综合分析。",
+        "missing_chat_model": "未配置聊天模型，本次未执行在线综合分析。",
+        "json_parse_failed": "LLM 返回内容无法解析为结构化 JSON，本次改用规则检查结果。",
+        "request_failed": "LLM 请求失败，本次改用资产规则和关系摘要结果。",
+        "empty_asset_selection": "没有可分析的资产输入，未执行 LLM 综合分析。",
+        "not_attempted": "本次未尝试 LLM 综合分析。",
+    }
+    en_reasons = {
+        "missing_openai_api_key": "No LLM API key is configured, so live synthesis was skipped.",
+        "missing_chat_model": "No chat model is configured, so live synthesis was skipped.",
+        "json_parse_failed": "The LLM response could not be parsed as structured JSON, so rule results were used.",
+        "request_failed": "The LLM request failed, so asset rules and relationship summaries were used.",
+        "empty_asset_selection": "No analyzable asset input was provided, so live synthesis was skipped.",
+        "not_attempted": "Live LLM synthesis was not attempted for this run.",
+    }
+    return _localized(
+        output_language,
+        zh_reasons.get(reason_code, f"LLM 综合分析未执行，原因码：{reason_code}。"),
+        en_reasons.get(reason_code, f"LLM synthesis was skipped. Reason code: {reason_code}."),
+    )
 
 
 def _citation_previews(citations: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -95,7 +129,135 @@ def _localized_asset_recommendation_items(
 @dataclass(slots=True)
 class AssetsInspectSkillExecutor:
     kb_service: KnowledgeBaseService
+    llm_service: LLMService
     base_debug_builder: Callable[..., dict[str, Any]]
+
+    def _language_label(self, language: str) -> str:
+        return "Simplified Chinese" if language.startswith("zh") else "English"
+
+    def _asset_llm_messages(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        result: dict[str, Any],
+        support: dict[str, Any],
+        localized_violations: list[dict[str, Any]],
+        localized_rename_suggestions: list[dict[str, Any]],
+        output_language: str,
+    ) -> list[dict[str, str]]:
+        compact_payload = {
+            "summary": result["summary"],
+            "violations": localized_violations[:8],
+            "rename_suggestions": localized_rename_suggestions[:8],
+            "type_insights": result["type_insights"][:8],
+            "relationship_summary": result["relationship_summary"][:8],
+            "supporting_rule_count": len(support["citations"]),
+        }
+        system_prompt = (
+            "You are a senior Unreal Engine technical artist and gameplay tools reviewer. "
+            f"Return natural language fields in {self._language_label(output_language)}. "
+            "Explain the selected assets in a practical, human-readable way. "
+            "Use the deterministic rule results as facts, but avoid sounding like a raw linter. "
+            "If no serious issue exists, say that clearly and suggest what to inspect next. "
+            "Return JSON only with keys: analysis, key_points, priority, recommendations. "
+            "key_points and recommendations must be arrays of short strings."
+        )
+        user_prompt = "\n\n".join(
+            [
+                f"User request:\n{request.payload.get('user_query') or 'Inspect selected assets.'}",
+                f"Editor context:\n{build_context_summary(request)}",
+                f"Asset inspection facts:\n{dumps_pretty(compact_payload)}",
+            ]
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _run_asset_llm_analysis(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        result: dict[str, Any],
+        support: dict[str, Any],
+        localized_violations: list[dict[str, Any]],
+        localized_rename_suggestions: list[dict[str, Any]],
+        output_language: str,
+        chat_config: ChatRuntimeConfig,
+    ) -> dict[str, Any]:
+        if not result["summary"]["asset_count"]:
+            return {
+                "ok": False,
+                "payload": None,
+                "reason": "not_attempted",
+                "error": "empty_asset_selection",
+                "provider": "openai_compatible",
+                "model": chat_config.model,
+                "profile_id": chat_config.profile_id,
+                "usage": {},
+            }
+        return self.llm_service.complete_json_object(
+            messages=self._asset_llm_messages(
+                request=request,
+                result=result,
+                support=support,
+                localized_violations=localized_violations,
+                localized_rename_suggestions=localized_rename_suggestions,
+                output_language=output_language,
+            ),
+            config=chat_config,
+        )
+
+    def _asset_llm_analysis_view(
+        self,
+        *,
+        result: dict[str, Any],
+        llm_result: dict[str, Any],
+        output_language: str,
+    ) -> dict[str, Any]:
+        payload = llm_result.get("payload") if llm_result.get("ok") else None
+        payload = payload if isinstance(payload, dict) else {}
+        status = "completed" if llm_result.get("ok") else "skipped"
+        reason_code = None if status == "completed" else _llm_skip_reason_code(llm_result)
+        reason = None if reason_code is None else _localized_llm_skip_reason(reason_code, output_language)
+        key_points = [str(item).strip() for item in payload.get("key_points") or [] if str(item).strip()]
+        recommendations = [
+            str(item).strip() for item in payload.get("recommendations") or [] if str(item).strip()
+        ]
+        priority = str(payload.get("priority") or "").strip().lower()
+        if priority not in {"low", "medium", "high"}:
+            violation_count = result["summary"]["violation_count"]
+            if violation_count >= 3:
+                priority = "high"
+            elif violation_count:
+                priority = "medium"
+            else:
+                priority = "low"
+        if status == "completed":
+            text = str(payload.get("analysis") or "").strip()
+            if not text:
+                text = _localized(
+                    output_language,
+                    "LLM 已完成资产综合分析，但没有返回额外说明；请结合下方规则问题和关系摘要继续判断。",
+                    "The LLM asset analysis completed but did not return additional prose; use the findings and relationship summary below.",
+                )
+        else:
+            text = _localized(
+                output_language,
+                "LLM 资产综合分析未执行；当前结果来自确定性资产规则、类型摘要和依赖关系检查。",
+                "LLM asset analysis was skipped; this result comes from deterministic asset rules, type summaries, and dependency checks.",
+            )
+        return {
+            "status": status,
+            "reason": reason,
+            "reason_code": reason_code,
+            "text": text,
+            "key_points": key_points[:5],
+            "recommendations": recommendations[:5],
+            "priority": priority,
+            "model": llm_result.get("model"),
+            "profile_id": llm_result.get("profile_id"),
+        }
 
     def execute(
         self,
@@ -104,6 +266,7 @@ class AssetsInspectSkillExecutor:
         routing: dict[str, Any],
         trace_id: str,
         output_language: str,
+        chat_config: ChatRuntimeConfig,
     ) -> dict[str, Any]:
         base_debug = self.base_debug_builder(request=request, routing=routing, trace_id=trace_id)
         result = inspect_asset_metadata(request.payload, request.context)
@@ -121,6 +284,20 @@ class AssetsInspectSkillExecutor:
             context=request.context,
             output_language=output_language,
             domain_filters=["asset_rules", "team_rules", "project_docs"],
+        )
+        llm_result = self._run_asset_llm_analysis(
+            request=request,
+            result=result,
+            support=support,
+            localized_violations=localized_violations,
+            localized_rename_suggestions=localized_rename_suggestions,
+            output_language=output_language,
+            chat_config=chat_config,
+        )
+        llm_analysis = self._asset_llm_analysis_view(
+            result=result,
+            llm_result=llm_result,
+            output_language=output_language,
         )
         step_results = [
             {
@@ -169,6 +346,14 @@ class AssetsInspectSkillExecutor:
             "quick_actions": [],
             "status_hint": "inspection_complete",
         }
+        user_view["blocks"].append(
+            UserViewBlock(
+                block_type="llm_analysis",
+                title=_localized(output_language, "LLM 综合分析", "LLM Analysis"),
+                text=llm_analysis["text"],
+                data=llm_analysis,
+            ).model_dump(mode="json")
+        )
         if result["violations"]:
             user_view["blocks"].append(
                 UserViewBlock(
@@ -243,6 +428,8 @@ class AssetsInspectSkillExecutor:
             "citations": support["citations"],
             "context_summary": build_context_summary(request),
             "warnings": support["warnings"],
+            "llm_analysis": llm_analysis,
+            "llm_analysis_raw": llm_result,
             "localized_asset_view": {
                 "violations": localized_violations,
                 "rename_suggestions": localized_rename_suggestions,
@@ -255,6 +442,11 @@ class AssetsInspectSkillExecutor:
                 "tool_id": "retrieve_project_knowledge",
                 "status": "completed",
                 "summary": f"Retrieved {len(support['retrieved_docs'])} asset-rule chunk(s).",
+            },
+            {
+                "tool_id": "llm_asset_inspection_synthesis",
+                "status": "completed" if llm_result.get("ok") else "skipped",
+                "summary": llm_result.get("reason") or "not_attempted",
             },
         ]
         base_debug["step_results"] = step_results
@@ -278,7 +470,9 @@ class AssetsInspectSkillExecutor:
                     "content": {
                         "inspection": result,
                         "support": support,
+                        "llm_analysis": llm_analysis,
                     },
                 }
             ],
+            "usage": llm_result.get("usage") or {},
         }

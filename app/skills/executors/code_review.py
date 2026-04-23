@@ -17,6 +17,40 @@ def _localized(language: str, zh_text: str, en_text: str) -> str:
     return zh_text if language.startswith("zh") else en_text
 
 
+def _llm_skip_reason_code(result: dict[str, Any]) -> str:
+    reason = str(result.get("reason") or "").strip()
+    error = str(result.get("error") or "").strip()
+    if reason == "not_attempted" and error:
+        return error
+    return reason or error or "not_attempted"
+
+
+def _localized_llm_skip_reason(reason_code: str, output_language: str) -> str:
+    zh_reasons = {
+        "missing_openai_api_key": "未配置 LLM API Key，本次未执行在线综合分析。",
+        "missing_chat_model": "未配置聊天模型，本次未执行在线综合分析。",
+        "json_parse_failed": "LLM 返回内容无法解析为结构化 JSON，本次改用规则扫描结果。",
+        "request_failed": "LLM 请求失败，本次改用规则扫描和知识库检索结果。",
+        "file_read_failed_or_empty_source": "文件读取失败或源码内容为空，未执行 LLM 综合分析。",
+        "empty_asset_selection": "没有可分析的资产输入，未执行 LLM 综合分析。",
+        "not_attempted": "本次未尝试 LLM 综合分析。",
+    }
+    en_reasons = {
+        "missing_openai_api_key": "No LLM API key is configured, so live synthesis was skipped.",
+        "missing_chat_model": "No chat model is configured, so live synthesis was skipped.",
+        "json_parse_failed": "The LLM response could not be parsed as structured JSON, so rule results were used.",
+        "request_failed": "The LLM request failed, so rule scanning and retrieval results were used.",
+        "file_read_failed_or_empty_source": "The file could not be read or the source excerpt was empty.",
+        "empty_asset_selection": "No analyzable asset input was provided, so live synthesis was skipped.",
+        "not_attempted": "Live LLM synthesis was not attempted for this run.",
+    }
+    return _localized(
+        output_language,
+        zh_reasons.get(reason_code, f"LLM 综合分析未执行，原因码：{reason_code}。"),
+        en_reasons.get(reason_code, f"LLM synthesis was skipped. Reason code: {reason_code}."),
+    )
+
+
 def _citation_previews(citations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         CitationPreview(
@@ -317,6 +351,67 @@ class CodeReviewSkillExecutor:
             config=chat_config,
         )
 
+    def _llm_analysis_from_review(
+        self,
+        *,
+        result: dict[str, Any],
+        llm_review: dict[str, Any],
+        llm_payload: dict[str, Any],
+        output_language: str,
+    ) -> dict[str, Any]:
+        status = "completed" if llm_review.get("ok") else "skipped"
+        reason_code = None if status == "completed" else _llm_skip_reason_code(llm_review)
+        reason = None if reason_code is None else _localized_llm_skip_reason(reason_code, output_language)
+        issues = llm_payload.get("issues") if isinstance(llm_payload.get("issues"), list) else []
+        recommendations = (
+            llm_payload.get("recommendations")
+            if isinstance(llm_payload.get("recommendations"), list)
+            else []
+        )
+        key_points: list[str] = []
+        for item in issues[:3]:
+            if isinstance(item, dict):
+                text = str(item.get("title") or item.get("reason") or "").strip()
+            else:
+                text = str(item).strip()
+            if text:
+                key_points.append(text)
+        for item in recommendations[:2]:
+            text = str(item.get("suggestion") if isinstance(item, dict) else item).strip()
+            if text:
+                key_points.append(text)
+        severity_summary = result.get("severity_summary") or {}
+        if severity_summary.get("high"):
+            priority = "high"
+        elif severity_summary.get("medium"):
+            priority = "medium"
+        else:
+            priority = "low"
+        if status == "completed":
+            text = str(llm_payload.get("summary") or "").strip()
+            if not text:
+                text = _localized(
+                    output_language,
+                    "LLM 已完成综合审查，但没有返回额外摘要；请结合下方问题和建议继续判断。",
+                    "The LLM synthesis completed but did not return an additional summary; use the findings and recommendations below.",
+                )
+        else:
+            text = _localized(
+                output_language,
+                "LLM 综合分析未执行；当前结果来自确定性规则扫描、项目知识库检索和后端降级解释。",
+                "LLM analysis was skipped; this result comes from deterministic rule scanning, project retrieval, and backend fallback explanation.",
+            )
+        return {
+            "status": status,
+            "reason": reason,
+            "reason_code": reason_code,
+            "text": text,
+            "key_points": key_points[:5],
+            "priority": priority,
+            "model": llm_review.get("model"),
+            "profile_id": llm_review.get("profile_id"),
+        }
+
     def execute(
         self,
         *,
@@ -359,6 +454,12 @@ class CodeReviewSkillExecutor:
         )
         reference_items = self._review_reference_items(result, output_language=output_language)
         next_step_items = self._review_next_step_items(result, output_language=output_language)
+        llm_analysis = self._llm_analysis_from_review(
+            result=result,
+            llm_review=llm_review,
+            llm_payload=llm_payload,
+            output_language=output_language,
+        )
         review_scope = result.get("review_scope") or {}
         kb_reference_count = len(result.get("retrieved_references", []))
         evidence_note = _localized(
@@ -404,6 +505,12 @@ class CodeReviewSkillExecutor:
                         "kb_reference_count": kb_reference_count,
                         "llm_review_status": "completed" if llm_review.get("ok") else "skipped",
                     },
+                ).model_dump(mode="json"),
+                UserViewBlock(
+                    block_type="llm_analysis",
+                    title=_localized(output_language, "LLM 综合分析", "LLM Analysis"),
+                    text=llm_analysis["text"],
+                    data=llm_analysis,
                 ).model_dump(mode="json"),
                 UserViewBlock(
                     block_type="issues",
@@ -455,7 +562,9 @@ class CodeReviewSkillExecutor:
         data = {
             **result,
             "llm_review": llm_review,
+            "llm_analysis": llm_analysis,
             "localized_review": {
+                "llm_analysis": llm_analysis,
                 "issues": issue_items,
                 "recommendations": recommendation_items,
                 "references": reference_items,

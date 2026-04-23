@@ -183,3 +183,72 @@ UE 端二次反馈集中在两个体验问题：中文工作流下 `user_view` �
 
 - `ruff check app/skills/executors app/services/task_service.py tests/integration/test_system_and_tasks.py --no-cache` 通过。
 - Logs Analyze 和 Assets Inspect 相关集成测试通过。
+
+## 2026-04-23 前端交接契约复核
+
+UE 前端回传的 `backend-action-items.md` 和 `frontend-unified-handoff.md` 与后端主体契约基本一致。本轮只发现一个小偏差：Code Generate 的用户视图第二个块仍使用通用 `list` 类型，而交接文档已把 `generated_items` 列为稳定块类型。
+
+### 主要代码改动
+
+- `CodeGenerateSkillExecutor` 的生成结果块从 `block_type="list"` 调整为 `block_type="generated_items"`。
+- 集成测试补充 Code Generate 的 `user_view.blocks` 顺序断言：`summary -> generated_items`。
+
+### 验证目标
+
+- 前端可以按 `generated_items` 专门渲染代码结果按钮、Tab 或列表。
+- `data.generated_items`、`data.reference_lookup`、`data.generation_mode`、`data.retrieved_references` 不变。
+
+## 2026-04-23 LLM Analysis 用户可见块
+
+这一轮开始改善工具型 Skill 的“人味”：保留确定性规则结果，同时把 LLM 综合解释显式投影到用户界面。
+
+### 主要代码改动
+
+- Code Review 新增 `llm_analysis` 用户视图块，顺序为 `summary -> llm_analysis -> issues -> recommendations -> references -> next_steps`。
+- Code Review 复用已有 `data.llm_review`，将 LLM 摘要、关键点、优先级和 skipped 原因投影为 `data.llm_analysis`。
+- Assets Inspect 新增 LLM 综合解释调用，基于资产规则结果、类型摘要、依赖关系和知识库参考生成自然语言分析。
+- Assets Inspect 新增 `data.llm_analysis` 和 `data.llm_analysis_raw`，LLM 未配置时返回 `status=skipped`，不影响原有规则结果。
+- `TaskService` 向 `AssetsInspectSkillExecutor` 传入 `llm_service` 和 `chat_config`。
+
+### 前端影响
+
+- Code Review 和 Assets Inspect 建议新增“LLM 分析结果”卡片。
+- `status=skipped` 不是失败，只表示当前未配置 LLM 或本次未尝试 LLM。
+- 原有 `issues`、`recommendations`、`references`、`next_steps` 读取方式保持不变。
+
+## 2026-04-23 Project Inventory 最小闭环
+
+这一轮补了项目快照后端能力，为后续 Agent Chat / Project QA 回答项目事实问题做准备。
+
+### 主要代码改动
+
+- 新增 `ProjectInventoryService`，使用 `storage/project_inventory.json` 保存最新项目快照。
+- 新增 `POST /api/v1/project-inventory/snapshot`，接收 UE 插件提交的资产和代码文件摘要。
+- 新增 `GET /api/v1/project-inventory/summary`、`/assets`、`/assets/{asset_id}`、`/code-files`、`POST /query`。
+- 支持按资产类型、名称、路径、设置、属性、模块名查询。
+- Query 能识别 StaticMesh / Nanite / Blueprint / Material / Texture / World / Niagara / Sound / DataTable 等常见 UE 关键词。
+- 集成测试覆盖 StaticMesh Nanite 设置、Blueprint 属性、C++ 文件索引和自然语言 query。
+
+### 边界
+
+- 后端不直接解析 `.uasset`，只消费 UE 插件提交的 Asset Registry / Editor API 元数据。
+- Project Inventory 已经最小接入 Agent Chat / Project QA，命中结果会进入 `data.inventory` 和 `debug_view.inventory`。
+- LLM 不可用时，Project QA 可以基于 Inventory 命中项返回基础项目事实回答。
+
+## 2026-04-23 UE 前端二次回传契约补齐
+
+UE 前端已经接入 Debug View 的 Project Inventory 提交按钮，并回传了需要稳定化的字段。后端本轮保持主流程不变，只补齐快照响应结构、时间字段别名和 LLM 跳过原因展示。
+
+### 主要代码改动
+
+- `ProjectInventorySnapshotRequest` 明确支持 `snapshot_time` 和 `scan_diagnostics`。
+- `ProjectInventoryService.save_snapshot()` 返回 `status="saved"`、`summary.asset_count`、`summary.code_file_count`、类型统计和扫描诊断。
+- `ProjectInventoryService.summary()` 返回 `scan_diagnostics`，方便 Debug View 展示 UE 侧采集状态。
+- `code_files[].last_modified` 与 `modified_at` 双向兼容，后端返回时两个字段都会保留。
+- Code Review 与 Assets Inspect 的 `data.llm_analysis` 新增 `reason_code`，`reason` 改为本地化用户可读说明。
+
+### 前端影响
+
+- Project Inventory 提交成功后可优先读 `snapshot.status` 和 `snapshot.summary`，不用从顶层 count 自己拼状态。
+- `llm_analysis.status=skipped` 时前端展示 `reason` 作为轻提示，Debug View 展示 `reason_code`。
+- 原有 `data.inventory`、`debug_view.inventory`、`data.llm_review.reason` 继续保留兼容。

@@ -40,6 +40,7 @@ from app.schemas.requests import UnifiedTaskRequest
 from app.schemas.responses import UnifiedTaskResponse
 from app.services.kb_service import KnowledgeBaseService
 from app.services.llm_service import ChatRuntimeConfig, LLMService, chat_runtime_config
+from app.services.project_inventory_service import ProjectInventoryService
 from app.skills.executors import (
     AssetsInspectSkillExecutor,
     CodeGenerateSkillExecutor,
@@ -79,6 +80,7 @@ class TaskService:
         self.settings = settings
         self.kb_service = KnowledgeBaseService(db, settings)
         self.llm_service = LLMService(settings)
+        self.inventory_service = ProjectInventoryService(settings)
 
     def _resolve_chat_config(self, request: UnifiedTaskRequest) -> ChatRuntimeConfig:
         requested_profile_id = (request.runtime_options.profile_id or "").strip()
@@ -152,10 +154,34 @@ class TaskService:
                     ]
                 )
             )
+        inventory_lines: list[str] = []
+        for index, item in enumerate(qa_result.get("inventory_items", [])[:6], start=1):
+            if item.get("kind") == "code_file":
+                inventory_lines.append(
+                    "\n".join(
+                        [
+                            f"[I{index}] Code file: {item.get('file_path')}",
+                            f"Module: {item.get('module_name') or 'n/a'}",
+                            f"Classes: {', '.join(item.get('classes') or []) or 'n/a'}",
+                        ]
+                    )
+                )
+                continue
+            inventory_lines.append(
+                "\n".join(
+                    [
+                        f"[I{index}] Asset: {item.get('asset_name') or item.get('asset_path')}",
+                        f"Type: {item.get('asset_type') or 'Unknown'}",
+                        f"Path: {item.get('asset_path') or 'n/a'}",
+                        f"Settings: {dumps_pretty(item.get('settings') or {})[:350]}",
+                        f"Properties: {dumps_pretty(item.get('properties') or {})[:350]}",
+                    ]
+                )
+            )
         system_prompt = (
             "You are synthesizing an answer from project knowledge-base evidence. "
             f"Reply in {self._language_label(output_language)}. "
-            "Use only the supplied evidence. "
+            "Use only the supplied knowledge-base evidence and project inventory facts. "
             "If the evidence is insufficient, say so clearly instead of guessing. "
             "Prefer a short answer followed by 2-4 concrete evidence-backed points."
         )
@@ -165,6 +191,8 @@ class TaskService:
                 f"Context summary:\n{build_context_summary(request)}",
                 "Evidence:",
                 "\n\n".join(evidence_lines) if evidence_lines else "No retrieved evidence.",
+                "Project inventory facts:",
+                "\n\n".join(inventory_lines) if inventory_lines else "No project inventory facts.",
             ]
         )
         return [
@@ -184,6 +212,54 @@ class TaskService:
             "当前未能成功调用已配置的 LLM，因此返回了降级回复。请检查 OPENAI_BASE_URL、CHAT_MODEL 和网络连通性。",
             "The backend could not reach the configured LLM, so it returned a degraded fallback. Check OPENAI_BASE_URL, CHAT_MODEL, and network connectivity.",
         )
+
+    def _inventory_project_id(self, request: UnifiedTaskRequest) -> str | None:
+        return str(
+            request.payload.get("project_id")
+            or request.context.project_name
+            or request.context.project_root
+            or ""
+        ).strip() or None
+
+    def _inventory_fallback_answer(
+        self,
+        *,
+        inventory_result: dict[str, Any],
+        output_language: str,
+    ) -> str:
+        items = inventory_result.get("items") or []
+        if not items:
+            return _localized(
+                output_language,
+                "当前没有命中项目快照信息。请先让 UE 插件提交 Project Inventory 快照，或补充更具体的资产/代码名称。",
+                "No project inventory facts matched. Submit a Project Inventory snapshot from the UE plugin or ask with a more specific asset/code name.",
+            )
+        lines = [
+            _localized(
+                output_language,
+                f"我从 Project Inventory 中找到了 {len(items)} 条相关项目事实：",
+                f"I found {len(items)} matching project inventory item(s):",
+            )
+        ]
+        for item in items[:8]:
+            if item.get("kind") == "code_file":
+                classes = ", ".join(item.get("classes") or [])
+                lines.append(
+                    f"- {item.get('file_path')} | module={item.get('module_name') or 'n/a'}"
+                    + (f" | classes={classes}" if classes else "")
+                )
+                continue
+            settings = item.get("settings") if isinstance(item.get("settings"), dict) else {}
+            setting_bits = []
+            for key in ("nanite_enabled", "lod_count", "parent_class", "tick_enabled", "blend_mode", "srgb"):
+                if key in settings:
+                    setting_bits.append(f"{key}={settings[key]}")
+            lines.append(
+                f"- {item.get('asset_name') or item.get('asset_path')} | "
+                f"type={item.get('asset_type') or 'Unknown'} | path={item.get('asset_path')}"
+                + (f" | {', '.join(setting_bits)}" if setting_bits else "")
+            )
+        return "\n".join(lines)
 
     def _agent_chat_route_messages(
         self,
@@ -753,6 +829,7 @@ class TaskService:
                 routing=routing,
                 trace_id=trace_id,
                 output_language=output_language,
+                chat_config=chat_config,
             )
         if actual_task_type == "code_generate":
             return self._execute_code_generate_v2(
@@ -787,6 +864,13 @@ class TaskService:
             payload=request.payload,
             output_language=output_language,
         )
+        inventory_result = self.inventory_service.query(
+            query=str(query),
+            project_id=self._inventory_project_id(request),
+            limit=8,
+        )
+        qa_result["inventory_items"] = inventory_result["items"]
+        qa_result["inventory_summary"] = inventory_result["summary"]
         base_debug = self._base_debug(request=request, routing=routing, trace_id=trace_id)
         llm_result = {
             "ok": False,
@@ -798,7 +882,14 @@ class TaskService:
             "usage": {},
         }
         answer_generation_mode = "retrieval_summary_fallback"
-        if qa_result["retrieved_docs"]:
+        if inventory_result["items"]:
+            qa_result["answer"] = self._inventory_fallback_answer(
+                inventory_result=inventory_result,
+                output_language=output_language,
+            )
+            qa_result["confidence"] = max(float(qa_result["confidence"]), 0.72)
+            answer_generation_mode = "inventory_summary_fallback"
+        if qa_result["retrieved_docs"] or inventory_result["items"]:
             llm_result = self.llm_service.complete(
                 messages=self._project_qa_messages(
                     request=request,
@@ -831,6 +922,17 @@ class TaskService:
                     f"Retrieved {len(qa_result['retrieved_docs'])} relevant chunks.",
                 ),
                 "details": qa_result["retrieval_trace"],
+            },
+            {
+                "step_id": "query_project_inventory",
+                "title": "Project Inventory Query",
+                "status": "completed",
+                "summary": _localized(
+                    output_language,
+                    f"命中 {len(inventory_result['items'])} 条项目快照记录。",
+                    f"Matched {len(inventory_result['items'])} project inventory item(s).",
+                ),
+                "details": inventory_result["summary"],
             },
             {
                 "step_id": "compose_answer",
@@ -877,10 +979,14 @@ class TaskService:
                     title=_localized(output_language, "检索摘要", "Retrieval Summary"),
                     text=_localized(
                         output_language,
-                        f"命中 {len(qa_result['retrieved_docs'])} 个片段，当前置信度 {confidence:.2f}。",
-                        f"Retrieved {len(qa_result['retrieved_docs'])} chunks with confidence {confidence:.2f}.",
+                        f"命中 {len(qa_result['retrieved_docs'])} 个知识库片段、{len(inventory_result['items'])} 条项目快照记录，当前置信度 {confidence:.2f}。",
+                        f"Retrieved {len(qa_result['retrieved_docs'])} KB chunk(s) and {len(inventory_result['items'])} inventory item(s) with confidence {confidence:.2f}.",
                     ),
-                    data={"confidence": confidence},
+                    data={
+                        "confidence": confidence,
+                        "kb_chunk_count": len(qa_result["retrieved_docs"]),
+                        "inventory_item_count": len(inventory_result["items"]),
+                    },
                 ).model_dump(mode="json")
             ],
             "citations_preview": _citation_previews(qa_result["citations"]),
@@ -895,6 +1001,7 @@ class TaskService:
             "filters_applied": qa_result["filters_applied"],
             "citations": qa_result["citations"],
             "warnings": qa_result["warnings"],
+            "inventory": inventory_result,
             "answer_generation": {
                 "mode": answer_generation_mode,
                 "provider": llm_result["provider"],
@@ -904,11 +1011,17 @@ class TaskService:
             "context_summary": build_context_summary(request),
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
+        base_debug["inventory"] = inventory_result
         base_debug["tools"] = [
             {
                 "tool_id": "retrieve_project_knowledge",
                 "status": "completed",
                 "summary": f"Retrieved {len(qa_result['retrieved_docs'])} relevant chunk(s).",
+            },
+            {
+                "tool_id": "query_project_inventory",
+                "status": "completed",
+                "summary": f"Matched {len(inventory_result['items'])} project inventory item(s).",
             },
             {
                 "tool_id": "llm_answer_synthesis",
@@ -1563,9 +1676,11 @@ class TaskService:
         routing: dict[str, Any],
         trace_id: str,
         output_language: str,
+        chat_config: ChatRuntimeConfig,
     ) -> dict[str, Any]:
         executor = AssetsInspectSkillExecutor(
             kb_service=self.kb_service,
+            llm_service=self.llm_service,
             base_debug_builder=self._base_debug,
         )
         return executor.execute(
@@ -1573,6 +1688,7 @@ class TaskService:
             routing=routing,
             trace_id=trace_id,
             output_language=output_language,
+            chat_config=chat_config,
         )
 
     def _execute_task_placeholder(

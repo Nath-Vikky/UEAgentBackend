@@ -93,3 +93,24 @@ class CodeReviewFileListRequest(BaseModel):
     )
     query: str | None = None
     limit: int = Field(default=200, ge=1, le=5000)
+
+
+class ProjectInventorySnapshotRequest(BaseModel):
+    project_id: str | None = None
+    project_name: str | None = None
+    snapshot_id: str | None = None
+    snapshot_time: str | None = None
+    mode: Literal["full", "incremental"] = "full"
+    source: str = "ue_plugin"
+    plugin_version: str | None = None
+    assets: list[dict[str, Any]] = Field(default_factory=list)
+    code_files: list[dict[str, Any]] = Field(default_factory=list)
+    scan_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectInventoryQueryRequest(BaseModel):
+    query: str
+    project_id: str | None = None
+    asset_type: str | None = None
+    limit: int = Field(default=20, ge=1, le=200)

@@ -127,6 +127,39 @@ class KnowledgeBaseDocumentResponse(BaseModel):
     errors: list[ErrorDetail] = Field(default_factory=list)
 
 
+class ProjectInventorySnapshotResponse(BaseModel):
+    success: bool
+    snapshot: dict[str, Any]
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class ProjectInventorySummaryResponse(BaseModel):
+    success: bool
+    summary: dict[str, Any]
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class ProjectInventoryItemsResponse(BaseModel):
+    success: bool
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class ProjectInventoryItemResponse(BaseModel):
+    success: bool
+    item: dict[str, Any]
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class ProjectInventoryQueryResponse(BaseModel):
+    success: bool
+    query: str
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
 class ProposalListResponse(BaseModel):
     success: bool
     items: list[ActionProposal] = Field(default_factory=list)

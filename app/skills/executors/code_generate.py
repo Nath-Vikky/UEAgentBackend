@@ -71,7 +71,7 @@ class CodeGenerateSkillExecutor:
                     },
                 ).model_dump(mode="json"),
                 UserViewBlock(
-                    block_type="list",
+                    block_type="generated_items",
                     title=_localized(output_language, "生成文件", "Generated Files"),
                     text="\n".join(item["label"] for item in result["generated_items"]),
                     data={"generated_items": result["generated_items"]},

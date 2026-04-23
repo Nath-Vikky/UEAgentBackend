@@ -101,6 +101,7 @@ class DebugView(BaseModel):
     skill: dict[str, Any] = Field(default_factory=dict)
     retrieval: dict[str, Any] = Field(default_factory=dict)
     retrieval_summary: dict[str, Any] = Field(default_factory=dict)
+    inventory: dict[str, Any] = Field(default_factory=dict)
     tools: list[dict[str, Any]] = Field(default_factory=list)
     step_results: list[dict[str, Any]] = Field(default_factory=list)
     raw_result: dict[str, Any] = Field(default_factory=dict)

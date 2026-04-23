@@ -141,6 +141,27 @@
 
 `GET /api/v1/knowledge-base/status` 现在会返回 `ingestion_pipeline`、`format_groups`、`parser_dependencies`、`knowledge_domains`。这些字段适合放到 Debug View 或知识库设置页，不需要作为普通用户主流程强提示。
 
+### Project Inventory
+
+后端新增项目快照接口，供 UE 插件后续把 Asset Registry 和代码文件扫描结果提交给后端。当前它不替代 5 个核心主菜单，但已经最小接入 Agent Chat / Project QA：用户询问项目资产、资产设置或代码文件索引时，后端会优先查询 Project Inventory，并把命中结果放入 `data.inventory` 和 `debug_view.inventory`。
+
+- `POST /api/v1/project-inventory/snapshot`
+- `GET /api/v1/project-inventory/summary`
+- `GET /api/v1/project-inventory/assets`
+- `GET /api/v1/project-inventory/assets/{asset_id}`
+- `GET /api/v1/project-inventory/code-files`
+- `POST /api/v1/project-inventory/query`
+
+前端扫描边界：
+
+- 代码文件可以复用当前 `Source/Plugins` 扫描结果，提交 `file_path`、`module_name`、`file_type`、`classes` 等摘要。
+- 资产必须由 UE 插件通过 Asset Registry / Editor API 采集，后端不直接解析 `.uasset`。
+- StaticMesh 建议提交 Nanite、LOD、碰撞、材质槽、三角面摘要。
+- Blueprint 建议提交父类、组件、Tick、Replication、接口、暴露变量摘要。
+- Material / Texture / World / Niagara / Sound / DataAsset 等常见资产可按 `settings` 和 `properties` 扩展。
+
+前端可以先把这些接口放进 Debug View 或 Monitor，不必立刻做普通用户管理面板。若 UE 插件暂未提交 snapshot，Project QA 会正常降级到知识库 RAG 或普通回答。
+
 ## 6. 双视图契约
 
 ### User View
@@ -477,13 +498,14 @@ Debug View、raw JSON key、API 字段名、代码符号、文件路径、资产
 `POST /api/v1/tasks/code-review` 现在会固定给前端更完整的用户视图，建议按顺序渲染：
 
 ```text
-summary -> issues -> recommendations -> references -> next_steps
+summary -> llm_analysis -> issues -> recommendations -> references -> next_steps
 ```
 
 即使项目知识库没有命中足够证据，后端也会基于当前文件内容和通用 Unreal/C++/C# 规则返回可参考结果，并在 `references` 块中说明 fallback 来源。
 
 前端可优先读取：
 - `user_view.blocks`
+- `data.llm_analysis`
 - `data.localized_review.issues`
 - `data.localized_review.recommendations`
 - `data.localized_review.references`
@@ -492,6 +514,8 @@ summary -> issues -> recommendations -> references -> next_steps
 
 `data.llm_review.ok = true` 表示后端已用配置的 LLM 做过综合审查；`false` 时仍有确定性规则扫描结果可展示。常见跳过原因包括 `missing_openai_api_key`、`json_parse_failed`、`file_read_failed_or_empty_source`。
 
+`llm_analysis` 是给普通用户看的自然语言分析卡片。`status=completed` 表示已由 LLM 综合解释；`status=skipped` 表示 LLM 未执行，前端应显示为轻提示，不要当成任务失败。
+
 ### Code Review 读取失败
 
 如果 `data.review_scope.read_status = "error"` 或存在 `data.review_scope.load_error`，前端应把结果作为文件读取失败处理。此时 `user_view.status_hint = "read_error"`，`issues` 块会显示具体错误，不应把它当成正常审查结论。
@@ -499,3 +523,60 @@ summary -> issues -> recommendations -> references -> next_steps
 ### Assets Inspect 中文 Highlight
 
 Assets Inspect 的 Highlight / `issues` block 中，`reason` 和 `suggestion` 已按最终输出语言本地化。中文工作流下选择 `NewMap` / `World` 时，前端应能直接显示中文原因与中文改名建议，例如说明默认占位命名风险，并保留 `L_` / `Map_` 前缀原文。
+
+Assets Inspect 现在同样会返回 `llm_analysis` 块，建议放在检查摘要后、规则问题前。该块用于解释资产命名、类型、依赖关系的综合影响；LLM 未配置时会返回 `status=skipped`，原有规则问题、重命名建议、资产类型和关系摘要仍然可用。
+
+## 13. 2026-04-23 Project Inventory / LLM Analysis 契约补齐
+
+本轮已按 UE 前端回传的联调文档补齐几个稳定字段，前端可以直接按下面规则消费。
+
+### Project Inventory Snapshot
+
+`POST /api/v1/project-inventory/snapshot` 请求体现在明确支持：
+
+- `snapshot_time`：UE 侧扫描时间；如果不传，后端使用当前 UTC 时间。
+- `scan_diagnostics`：UE 侧扫描诊断，例如资产扫描数量、代码扫描数量、失败原因。
+- `code_files[].last_modified`：前端可继续传这个字段；后端会同时保存为 `last_modified` 和 `modified_at`。
+
+成功响应中的 `snapshot` 会稳定包含：
+
+- `status: "saved"`
+- `snapshot_id`
+- `asset_count`
+- `code_file_count`
+- `summary.asset_count`
+- `summary.code_file_count`
+- `summary.asset_type_counts`
+- `summary.code_file_type_counts`
+- `scan_diagnostics`
+
+`GET /api/v1/project-inventory/summary` 也会返回 `scan_diagnostics`，方便 Debug View 展示“本次扫描从 UE 侧采集到了什么”。
+
+### Agent Chat / Project QA Inventory
+
+当用户在 Agent Chat 里问“工程里有哪些资产”“有哪些 C++ 文件”“某个 StaticMesh 的 Nanite / LOD / 碰撞 / 材质设置是什么”等项目事实问题时，后端会优先查询 Project Inventory。命中结果继续放在：
+
+- `data.inventory`
+- `debug_view.inventory`
+
+如果没有 snapshot，后端会正常降级到知识库 RAG 或普通回答，不要求前端阻断聊天。
+
+### LLM Analysis Skipped 展示
+
+Code Review 和 Assets Inspect 的 `llm_analysis` 现在同时返回：
+
+- `status`：`completed` 或 `skipped`
+- `reason`：给用户看的本地化自然语言原因
+- `reason_code`：给前端和 Debug View 判断用的稳定枚举
+
+常见 `reason_code`：
+
+- `missing_openai_api_key`
+- `missing_chat_model`
+- `json_parse_failed`
+- `request_failed`
+- `file_read_failed_or_empty_source`
+- `empty_asset_selection`
+- `not_attempted`
+
+前端推荐展示 `reason`，调试面板再展示 `reason_code`。`status=skipped` 不是任务失败，只表示本次没有执行在线 LLM 综合解释，原有规则扫描、引用、建议仍然有效。
