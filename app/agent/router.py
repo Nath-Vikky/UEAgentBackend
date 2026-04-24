@@ -74,8 +74,13 @@ TOOL_KEYWORDS = {
     "config validate": "validate_design_config",
     "validate config": "validate_design_config",
     "校验配置": "validate_design_config",
-    "asset": "inspect_asset_metadata",
-    "资产": "inspect_asset_metadata",
+    "asset inspect": "inspect_asset_metadata",
+    "inspect asset": "inspect_asset_metadata",
+    "selected asset": "inspect_asset_metadata",
+    "资产检查": "inspect_asset_metadata",
+    "检查资产": "inspect_asset_metadata",
+    "检查当前资产": "inspect_asset_metadata",
+    "检查选中资产": "inspect_asset_metadata",
     "perf": "analyze_memory_perf_signals",
     "performance": "analyze_memory_perf_signals",
     "memory": "analyze_memory_perf_signals",
@@ -164,6 +169,81 @@ DETERMINISTIC_PANELS = {
     "perfanalysis",
 }
 PROJECT_QA_PANELS = {"projectqa"}
+PROJECT_INVENTORY_SCOPE_HINTS = {
+    "current project",
+    "current game project",
+    "this project",
+    "that project",
+    "project assets",
+    "project inventory",
+    "current repository",
+    "当前项目",
+    "当前工程",
+    "这个项目",
+    "这个工程",
+    "项目里",
+    "项目中",
+    "工程里",
+    "工程中",
+}
+PROJECT_INVENTORY_FACT_HINTS = {
+    "asset",
+    "assets",
+    "blueprint",
+    "staticmesh",
+    "static mesh",
+    "skeletalmesh",
+    "skeletal mesh",
+    "material",
+    "texture",
+    "nanite",
+    "lod",
+    "mesh",
+    "code file",
+    "cpp",
+    ".cpp",
+    ".h",
+    "module",
+    "setting",
+    "settings",
+    "property",
+    "properties",
+    "dependency",
+    "dependencies",
+    "referencer",
+    "referencers",
+    "资产",
+    "蓝图",
+    "静态网格体",
+    "骨骼网格体",
+    "材质",
+    "贴图",
+    "网格体",
+    "代码文件",
+    "模块",
+    "属性",
+    "设置",
+    "依赖",
+    "引用",
+}
+PROJECT_INVENTORY_QUESTION_HINTS = {
+    "which",
+    "what",
+    "list",
+    "show",
+    "find",
+    "search",
+    "how many",
+    "有哪些",
+    "哪些",
+    "列出",
+    "列一下",
+    "列举",
+    "查看",
+    "查询",
+    "有没有",
+    "多少",
+}
 
 
 def _hint_present(latest_text: str, text_lower: str, hint: str) -> bool:
@@ -240,6 +320,19 @@ def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
     return None
 
 
+def _looks_like_project_inventory_query(latest_text: str, text_lower: str) -> bool:
+    has_scope = any(
+        _hint_present(latest_text, text_lower, hint) for hint in PROJECT_INVENTORY_SCOPE_HINTS
+    )
+    has_fact = any(
+        _hint_present(latest_text, text_lower, hint) for hint in PROJECT_INVENTORY_FACT_HINTS
+    )
+    has_question = any(
+        _hint_present(latest_text, text_lower, hint) for hint in PROJECT_INVENTORY_QUESTION_HINTS
+    )
+    return has_scope and has_fact and has_question
+
+
 def _explicit_task_routing(task_type: str, language: str) -> dict[str, Any]:
     tool_id = TASK_TYPE_TO_TOOL_ID.get(task_type)
     spec = get_tool_spec(tool_id)
@@ -295,7 +388,11 @@ def _agent_chat_signals(
     explicit_kb_scope = bool(request.context.kb_domains_hint or domain_filters)
     explicit_project_panel = active_panel in PROJECT_QA_PANELS
     strong_project_signal = bool(
-        explicit_project_panel or explicit_kb_scope or context_reference_present or project_hint_count >= 2
+        explicit_project_panel
+        or explicit_kb_scope
+        or context_reference_present
+        or project_hint_count >= 2
+        or _looks_like_project_inventory_query(latest_text, text_lower)
     )
     weak_project_signal = bool(not strong_project_signal and (context_present or project_hint_count == 1))
     return {
@@ -309,6 +406,7 @@ def _agent_chat_signals(
         "explicit_project_panel": explicit_project_panel,
         "strong_project_signal": strong_project_signal,
         "weak_project_signal": weak_project_signal,
+        "project_inventory_query": _looks_like_project_inventory_query(latest_text, text_lower),
     }
 
 
@@ -320,21 +418,24 @@ def _project_qa_response(
     decision_source: str,
     signal_strength: str,
     signals: dict[str, Any],
+    selected_tool_id: str | None = None,
+    candidate_tool_ids: list[str] | None = None,
 ) -> dict[str, Any]:
+    candidates = candidate_tool_ids or ["retrieve_project_knowledge"]
     return {
         "intent": {
             "intent_type": "project_qa",
             "knowledge_relevance": "strong" if signal_strength == "strong" else "possible",
-            "requires_rag": True,
-            "requires_tool": False,
+            "requires_rag": "retrieve_project_knowledge" in candidates,
+            "requires_tool": bool(selected_tool_id),
             "route_type": "project_qa",
             "reason": reason,
         },
         "route": {
             "route_type": "project_qa",
             "route_reason": reason,
-            "selected_tool_id": None,
-            "candidate_tool_ids": ["retrieve_project_knowledge"],
+            "selected_tool_id": selected_tool_id,
+            "candidate_tool_ids": candidates,
             "planner_confidence": planner_confidence,
             "decision_source": decision_source,
             "routing_mode": "heuristic" if decision_source != "explicit_task_type" else "deterministic",
@@ -343,6 +444,7 @@ def _project_qa_response(
             "project_hint_count": signals["project_hint_count"],
             "context_reference_present": signals["context_reference_present"],
             "explicit_kb_scope": signals["explicit_kb_scope"],
+            "project_inventory_query": signals.get("project_inventory_query", False),
         },
     }
 
@@ -379,6 +481,7 @@ def _direct_answer_response(
             "project_hint_count": signals["project_hint_count"],
             "context_reference_present": signals["context_reference_present"],
             "explicit_kb_scope": signals["explicit_kb_scope"],
+            "project_inventory_query": signals.get("project_inventory_query", False),
         },
     }
 
@@ -400,6 +503,25 @@ def classify_request(
 
     if request.task_type == "project_qa":
         signals = _agent_chat_signals(request, latest_text=latest_text, text_lower=text_lower)
+        if signals["project_inventory_query"]:
+            reason = _localized(
+                language,
+                "前端显式发起项目问答，且问题询问当前项目资产、代码或元数据事实，因此后端选择 Project Inventory 查询。",
+                "The frontend explicitly requested project QA, and the question asks for current-project asset, code, or metadata facts, so the backend selected Project Inventory query.",
+            )
+            return {
+                "locale": locale,
+                **_project_qa_response(
+                    language=language,
+                    reason=reason,
+                    planner_confidence=0.98,
+                    decision_source="explicit_project_qa_inventory_signal",
+                    signal_strength="strong",
+                    signals=signals,
+                    selected_tool_id="query_project_inventory",
+                    candidate_tool_ids=["query_project_inventory", "retrieve_project_knowledge"],
+                ),
+            }
         reason = _localized(
             language,
             "前端已经显式要求项目问答，后端将优先走知识检索路径。",
@@ -423,6 +545,26 @@ def classify_request(
 
     signals = _agent_chat_signals(request, latest_text=latest_text, text_lower=text_lower)
     selected_tool_id = _detect_tool_id(latest_text, text_lower)
+
+    if signals["project_inventory_query"]:
+        reason = _localized(
+            language,
+            "用户在自由聊天中询问当前项目的资产、代码或元数据事实，因此后端选择查询 Project Inventory。",
+            "The user asked for current-project asset, code, or metadata facts in chat, so the backend selected Project Inventory query.",
+        )
+        return {
+            "locale": locale,
+            **_project_qa_response(
+                language=language,
+                reason=reason,
+                planner_confidence=0.9,
+                decision_source="heuristic_project_inventory_signal",
+                signal_strength="strong",
+                signals=signals,
+                selected_tool_id="query_project_inventory",
+                candidate_tool_ids=["query_project_inventory", "retrieve_project_knowledge"],
+            ),
+        }
 
     if signals["deterministic_panel"] or signals["task_hint_count"] > 0 or selected_tool_id:
         spec = get_tool_spec(selected_tool_id)

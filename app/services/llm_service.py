@@ -126,7 +126,7 @@ class LLMService:
 
         started = time.perf_counter()
         try:
-            with httpx.Client(timeout=max(config.timeout_ms, 1000) / 1000) as client:
+            with httpx.Client(timeout=self._client_timeout(config)) as client:
                 response = client.post(url, headers=headers, json=request_payload)
                 response.raise_for_status()
             body = response.json()
@@ -242,6 +242,7 @@ class LLMService:
                 "provider": llm_result["provider"],
                 "model": llm_result["model"],
                 "profile_id": llm_result["profile_id"],
+                "text": llm_result["text"],
                 "usage": llm_result["usage"],
             }
         except Exception as exc:
@@ -253,6 +254,7 @@ class LLMService:
                 "provider": llm_result["provider"],
                 "model": llm_result["model"],
                 "profile_id": llm_result["profile_id"],
+                "text": llm_result["text"],
                 "usage": llm_result["usage"],
             }
 
@@ -263,3 +265,13 @@ class LLMService:
         if base_url.endswith("/chat/completions"):
             return base_url
         return f"{base_url}/chat/completions"
+
+    @staticmethod
+    def _client_timeout(config: ChatRuntimeConfig) -> httpx.Timeout:
+        read_timeout = max(config.timeout_ms, 1000) / 1000
+        return httpx.Timeout(
+            connect=min(read_timeout, 15.0),
+            read=read_timeout,
+            write=min(read_timeout, 15.0),
+            pool=min(read_timeout, 15.0),
+        )

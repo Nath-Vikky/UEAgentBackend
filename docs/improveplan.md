@@ -532,3 +532,68 @@ Project QA 的上下文优先级建议：
 - Snapshot 已支持 `snapshot_time`、`scan_diagnostics`、`code_files[].last_modified`
 - Snapshot 响应已稳定返回 `status`、`summary.asset_count`、`summary.code_file_count`
 - 下一步需要继续扩展 UE 前端的 Asset Registry / Editor API 采集质量，让 Inventory 覆盖更多常用资产属性
+
+## 2026-04-24 本阶段收尾：会话恢复、Agent Chat Inventory 工具选择、LLM 稳定性
+
+这一轮已完成当前已知问题的后端侧修复：
+
+- Session History 不再整段重复写库，而是按增量合并；assistant 回复也会进入 `sessions/{id}/history`
+- 会话恢复后，历史顺序以后端返回为准，稳定按 `created_at + message_id` 排序
+- Agent Chat 会识别项目级资产、代码和元数据事实问题，并选择 `query_project_inventory`
+- Project QA 执行层新增 `tool_plan`，纯项目事实查询可跳过知识库检索，直接查询 Project Inventory
+- Assets Inspect 边界收回为“只检查选中资产”，不承担项目级资产盘点
+- Code Review / Assets Inspect 的在线 LLM 综合分析已改为更紧凑 prompt，并单独提高 timeout、收紧 `max_tokens`
+
+当前这几个问题的状态：
+
+- 聊天历史恢复错序：已修复
+- 自由聊天问“当前项目有哪些蓝图资产”却走到 Assets Inspect：已修复，改为 Agent Chat / Project QA 选择 `query_project_inventory`
+- Code Review LLM 总是 skipped：已确认主因是 `request_failed` 超时，并已做后端稳定性优化
+
+下一步保留项：
+
+- 继续观察真实联调下 `request_failed` 是否仍高频，如果仍高，再按供应商特性拆分 chat/JSON 配置
+- 如果要正式补 UE 官方文档，优先走“官方 URL 白名单 + 本地摘要/HTML 落盘 + refresh 导入”方案，不做全站镜像
+- 继续扩展 UE 前端采集的资产属性覆盖面，尤其是 Blueprint / Material / Texture / World / Niagara
+
+## 2026-04-24 二次排查收尾：Inventory 空结果、Code Review LLM 兜底
+
+本轮继续围绕“功能可测、问题可定位”做收口，不扩展新主功能。
+
+已完成：
+
+- Agent Chat 对“我当前项目的蓝图资产有哪些，你列一下”“当前项目蓝图资产有哪些”等中文问法稳定选择 `query_project_inventory`
+- Project Inventory 空结果不再空回复，新增 `data.inventory.summary.empty_reason`
+- `empty_reason = "no_project_inventory_snapshot"` 时，明确提示先在 UE 插件 Debug View 提交 `Submit Inventory`
+- 有明确 `project_id/project_name` 时不再 fallback 到其他项目的 latest snapshot，避免串项目
+- Code Review 增加 `missing_selected_code_content`，用于区分“前端没提交可读文件内容”和“LLM 调用失败”
+- LLM 返回普通文本但不是 JSON 时，Code Review / Assets Inspect 使用 `completed_text_fallback` 兜底为 `llm_analysis.status = "completed"`
+
+当前判断：
+
+- 前端暂不需要新增 UI，只需按现有 `llm_analysis`、`data.inventory`、`debug_view.route` 和 `review_scope` 渲染与排查
+- 如果 Code Review 仍 skipped，先看 `data.review_scope.read_status/content_length/source_kind`，再看 `data.llm_review.reason/error`
+- 如果 Agent Chat 项目资产问题无结果，先看 `data.inventory.summary.has_snapshot` 和 `empty_reason`
+
+## 2026-04-24 Code Review 高亮展示收口
+
+问题：Code Review 面板没有聊天框，前端通过高亮按钮查看 LLM 回答、建议和概要；联调中发现高亮内容变成完整 JSON。
+
+判断：
+
+- 后端应保证用户展示字段是自然语言，Debug/raw 字段才允许保留完整 JSON
+- 前端高亮按钮应读取 `user_view.blocks[].text`、`user_view.blocks[].data.items` 或 `data.localized_review`
+- 不应读取 `data.llm_review`、`debug_view.raw_result`、artifact 原始内容或源码 excerpt 作为普通用户弹窗内容
+
+已完成：
+
+- Code Review LLM payload 展示层归一化，嵌套 dict/list 不再直接 `str()` 成 JSON-like 文本
+- `completed_text_fallback` 会尝试从 JSON-like 原始文本提取概要、问题和建议
+- 原始 LLM 文本继续保留在 `data.llm_review.text`，仅用于 Debug View
+- 文档明确高亮按钮的推荐字段和禁止字段
+
+前端是否需要改：
+
+- 接口和编辑器采集项暂不需要改
+- 如果当前高亮按钮仍显示 JSON，需要前端把数据源切回 `user_view.blocks` 或 `data.localized_review`
+- Code Review 仍需稳定提交 `payload.project_root`、`payload.file_path`、`payload.source_roots`，以及 `context.current_file/current_module`

@@ -580,3 +580,164 @@ Code Review 和 Assets Inspect 的 `llm_analysis` 现在同时返回：
 - `not_attempted`
 
 前端推荐展示 `reason`，调试面板再展示 `reason_code`。`status=skipped` 不是任务失败，只表示本次没有执行在线 LLM 综合解释，原有规则扫描、引用、建议仍然有效。
+
+## 14. 2026-04-24 会话恢复 / Agent Chat 项目级 Inventory 工具
+
+本轮没有新增主菜单，但有两处会影响前端联调和测试验收。
+
+### Session History 恢复
+
+后端现在会把 `assistant_message` 也持久化到 session history，并按 `created_at + message_id` 稳定排序返回。
+
+前端恢复建议：
+
+1. `GET /api/v1/sessions/{session_id}/history`
+2. 直接按返回顺序渲染，不要再按本地发送时间重排
+3. 用户发下一条消息时，把后端返回的完整 history 作为基线，再在尾部追加新的 user message
+
+预期效果：
+
+- 恢复后不应再出现两个 user 连在一起、assistant 丢失、或顺序错乱
+- 正常顺序应是 `user -> assistant -> user -> assistant`
+
+### Agent Chat / Project QA Inventory 工具选择
+
+项目级资产盘点问题只属于 `Agent Chat / Project QA`。例如“当前项目有哪些蓝图资产”“项目里哪些 StaticMesh 开启了 Nanite”“某模块有哪些 C++ 文件”，前端仍只调用：
+
+```http
+POST /api/v1/chat/runs
+```
+
+后端路由层会把这类自由聊天问题提升为 `project_qa`，并选择只读工具 `query_project_inventory`。
+
+新增可消费字段：
+
+- `data.inventory`
+- `data.tool_plan`
+- `debug_view.inventory`
+- `debug_view.tool_plan`
+- `debug_view.route.selected_tool_id = "query_project_inventory"`
+- `debug_view.tools[]` 中的 `query_project_inventory`
+- `step_results[]` 中的 `query_project_inventory`
+
+前端建议：
+
+- 聊天时间线显示 `assistant_message`
+- 结果区继续按 `user_view.blocks` 渲染
+- 如果 `data.inventory.items` 非空但用户视图里没有单独块，前端可以补一个“项目资产匹配”卡片作为兜底
+- 不要把这类自由聊天问题转发到 `POST /api/v1/tasks/assets-inspect`
+
+### Assets Inspect 边界
+
+Assets Inspect 面板只处理 Content Browser 当前选中资产和用户在该面板提交的 inspection 要求。它不负责回答“当前项目有哪些资产”这类项目级盘点问题。
+
+### Code Review / Assets Inspect 的 LLM 状态
+
+后端已经对这两类任务做了更紧凑的 prompt 和更宽松的 timeout，但前端展示逻辑不变：
+
+- `llm_analysis.status=completed`：按正常 LLM 综合分析展示
+- `llm_analysis.status=skipped`：显示轻提示，不作为失败
+- `reason` 给用户看，`reason_code` 给 Debug View 看
+
+## 15. 2026-04-24 二次排查：Inventory 空结果与 Code Review LLM 兜底
+
+本轮后端没有要求前端新增 UI，但补强了两个测试时容易误判的返回契约。
+
+### Agent Chat / Project Inventory
+
+用户在 Agent Chat 输入以下问法都应由后端自动选择 `query_project_inventory`：
+
+- `我当前项目的蓝图资产有哪些，你列一下`
+- `当前项目蓝图资产有哪些`
+- `当前项目有哪些 cpp 文件`
+- `某个 StaticMesh 的 Nanite / LOD / collision / material 设置是什么`
+
+前端继续只调用：
+
+```http
+POST /api/v1/chat/runs
+```
+
+后端现在会在 `data.inventory.summary.empty_reason` 返回空结果原因：
+
+- `no_project_inventory_snapshot`：当前 `project_id/project_name` 没有提交过 Project Inventory 快照。
+- `no_matching_inventory_items`：有快照，但本次 query 没匹配到资产或代码文件。
+
+当 `empty_reason = "no_project_inventory_snapshot"` 时，Agent Chat 不再空回复，也不会只说“知识库没找到”，而是明确提示用户先在 UE 插件 Debug View 点击 `Submit Inventory`。前端已有 `data.inventory` fallback 的话无需改 UI，只建议测试时优先看：
+
+- `debug_view.route.selected_tool_id`
+- `data.tool_plan`
+- `data.inventory.summary.has_snapshot`
+- `data.inventory.summary.empty_reason`
+- `data.inventory.items`
+
+注意：后端现在不会在传入了明确 `project_id/project_name` 但找不到快照时偷用其他项目的 latest snapshot，避免多项目测试时串数据。
+
+### Code Review LLM 状态
+
+后端现在把 Code Review 的 LLM 状态拆成三类，前端按已有 `llm_analysis` 卡片展示即可：
+
+- `data.review_scope.read_status = "ok"` 且 `content_length > 0`：后端确实读到了选中的代码文件。
+- `data.llm_analysis.reason_code = "missing_selected_code_content"`：没有收到可解析的选中文件内容，通常是前端没有提交 `payload.project_root + payload.file_path`，或文件不在 `source_roots` 允许范围内。
+- `data.llm_review.reason = "completed_text_fallback"`：LLM 已经返回自然语言，但没有按 JSON schema 返回；后端会把原始文本作为 `llm_analysis.text` 展示，`llm_analysis.status = "completed"`，不再显示 skipped。
+
+前端暂不需要新增字段渲染。测试 Code Review 时，如果仍看到 skipped，优先检查：
+
+- `data.review_scope.source_kind`
+- `data.review_scope.read_status`
+- `data.review_scope.load_error`
+- `data.review_scope.resolved_absolute_path`
+- `data.llm_review.reason`
+- `data.llm_review.error`
+
+## 16. 2026-04-24 Code Review 高亮按钮展示字段
+
+Code Review 面板没有聊天输入框，所以高亮按钮 / Highlights 弹窗应只消费后端的用户展示字段，不要消费 Debug 或 raw LLM 字段。
+
+推荐读取顺序：
+
+- 概要：`user_view.blocks[block_type="summary"].text`
+- LLM 分析结果：`user_view.blocks[block_type="llm_analysis"].text`
+- LLM 要点：`user_view.blocks[block_type="llm_analysis"].data.key_points`
+- 问题列表：`user_view.blocks[block_type="issues"].data.items`
+- 建议列表：`user_view.blocks[block_type="recommendations"].data.items`
+- 证据依据：`user_view.blocks[block_type="references"].data.items`
+- 下一步：`user_view.blocks[block_type="next_steps"].data.items`
+
+不要用于普通用户高亮弹窗的字段：
+
+- `data.llm_review`
+- `debug_view.raw_result`
+- `debug_view.normalized_request`
+- `artifacts[].content`
+- `data.analysis_input.source_excerpt`
+
+这些字段可以继续放在 Debug View / Raw JSON 里。它们可能包含完整 JSON、源码片段、LLM 原始响应或诊断信息，不适合直接展示给普通用户。
+
+后端本轮已保证：
+
+- `user_view.blocks[].text` 是自然语言展示文本。
+- `data.llm_analysis.text` 是自然语言展示文本。
+- 如果 LLM 返回 JSON-like 文本但解析失败，后端会尝试清洗为自然语言；原始文本只留在 `data.llm_review.text` 给 Debug View。
+
+### Code Review 编辑器侧必传信息
+
+前端暂不需要新增编辑器采集项，但每次审查选中文件时必须稳定提交：
+
+```json
+{
+  "payload": {
+    "project_root": "F:/Epic Games/project/RushBa",
+    "source_roots": ["Source", "Plugins"],
+    "file_path": "Source/RushBa/Player/RBPlayerCharacter.cpp",
+    "focus": "General"
+  },
+  "context": {
+    "active_panel": "CodeReview",
+    "current_file": "Source/RushBa/Player/RBPlayerCharacter.cpp",
+    "current_module": "RushBa"
+  }
+}
+```
+
+`file_path` 应优先使用 `POST /api/v1/tasks/code-review/files` 返回的 `file_path` 或 `relative_path`。如果后端和 UE 编辑器不在同一台机器、后端无法读取这个路径，再考虑额外发送 `payload.file_content`；当前本地个人作品场景下，`project_root + file_path` 就够。

@@ -252,3 +252,72 @@ UE 前端已经接入 Debug View 的 Project Inventory 提交按钮，并回传�
 - Project Inventory 提交成功后可优先读 `snapshot.status` 和 `snapshot.summary`，不用从顶层 count 自己拼状态。
 - `llm_analysis.status=skipped` 时前端展示 `reason` 作为轻提示，Debug View 展示 `reason_code`。
 - 原有 `data.inventory`、`debug_view.inventory`、`data.llm_review.reason` 继续保留兼容。
+
+## 2026-04-24 会话恢复 / Agent Chat Inventory 工具选择 / LLM 稳定性
+
+这一轮集中处理三个真实使用问题：聊天历史恢复后顺序错乱、自由聊天里的项目资产问题被误路由到 Assets Inspect、Code Review 的 LLM 综合分析容易因为超时而跳过。
+
+### 主要代码改动
+
+- `append_messages()` 改为按历史增量写入，不再把前端传来的整段 `session.messages` 每次都重复入库。
+- 会话消息恢复现在稳定按 `created_at + message_id` 排序；`TaskService.create_task()` 会把每次 `assistant_message` 也持久化进 session history。
+- 新增会话恢复回归测试，验证“第一次聊天 -> 从后端恢复历史 -> 第二次继续聊天”后历史顺序为 `user -> assistant -> user -> assistant`。
+- 新增 `query_project_inventory` 只读工具注册，任务类型归属 `project_qa`。
+- Agent Chat 路由器会识别“当前项目有哪些蓝图资产”“项目里哪些资产开了 Nanite”等项目事实问题，选择 `query_project_inventory`，不再误选 `inspect_asset_metadata`。
+- Project QA 执行层新增 `tool_plan`，纯项目事实查询可以跳过知识库检索，直接查询 Project Inventory；带解释/规范/风险的问题再组合 KB/RAG。
+- Code Review 与 Assets Inspect 的在线 LLM 综合分析改为使用更紧凑的 prompt，缩短输入摘要，并为这两类请求单独放宽 timeout、收紧 `max_tokens`。
+- `LLMService` 改为使用分离的 `httpx.Timeout` 配置，减少读超时导致的 `request_failed`。
+
+### 当前效果
+
+- Session History 现在以后端 `/sessions/{session_id}/history` 为准，恢复后不会再只看到连续的 user 消息。
+- Agent Chat 中的项目级资产/代码盘点问题现在会进入 `project_qa`，并在 `debug_view.route.selected_tool_id` 标记为 `query_project_inventory`。
+- Assets Inspect 继续只负责选中资产检查，不承担项目级资产盘点。
+- Code Review / Assets Inspect 仍保留 `status=skipped` 的稳定降级，但在已配置 LLM 的情况下，实际命中 `request_failed` 的概率应该会明显下降。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- `python -m pytest tests/integration/test_system_and_tasks.py -q` 通过，`37 passed`。
+
+## 2026-04-24 二次排查：Inventory 空结果与 Code Review LLM 兜底
+
+用户继续联调后发现两个真实问题：Agent Chat 询问“我当前项目的蓝图资产有哪些，你列一下”时可能空回复或只返回“知识库没找到”，Code Review 的 LLM 分析仍容易显示 skipped。后端本轮重点补强可诊断性和稳定兜底。
+
+### 主要代码改动
+
+- `ProjectInventoryService.query()` 调整查询顺序：项目资产列表类问题先按资产类型/代码文件列表查询，再按完整 query 和 query terms 做精确匹配，避免中文整句 query 导致空命中。
+- Project Inventory 空结果新增 `summary.empty_reason`，当前支持 `no_project_inventory_snapshot` 和 `no_matching_inventory_items`。
+- 明确 `project_id/project_name` 时不再偷用其他项目的 latest snapshot，避免多项目测试串数据。
+- `TaskService._execute_project_qa_live()` 在选择了 Inventory 但没有命中时也会生成明确自然语言回答，不再返回空 `assistant_message`。
+- `classify_request()` 对显式 `project_qa` 也会识别项目级 Inventory 问题，并选择 `query_project_inventory`。
+- `LLMService.complete_json_object()` 在 JSON 解析失败时保留原始 `text`，供上层做文本兜底。
+- Code Review / Assets Inspect 在 LLM 返回文本但不是 JSON 时，会转为 `completed_text_fallback`，把文本放进 `llm_analysis.text`，不再直接 skipped。
+- Code Review 若请求没有提供可解析的选中文件内容，会返回 `llm_analysis.reason_code = "missing_selected_code_content"`，帮助判断是前端 payload 不足还是 LLM 问题。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- `python -m pytest tests/unit/test_router.py tests/unit/test_llm_service.py -q` 通过，`6 passed`。
+- `python -m pytest tests/integration/test_system_and_tasks.py -q` 通过，`41 passed`。
+
+## 2026-04-24 Code Review 高亮展示字段收口
+
+UE 端反馈 Code Review 高亮按钮原本展示 LLM 回答、建议和概要，现在变成完整 JSON。后端判断这是展示契约边界不够硬：Debug/raw 字段可以保留 JSON，但用户展示字段必须保持自然语言。
+
+### 主要代码改动
+
+- Code Review LLM payload 新增展示层归一化：`summary/issues/recommendations/next_steps` 即使出现嵌套 dict/list，也会提取为用户可读字符串。
+- `completed_text_fallback` 遇到 JSON-like 原始文本时会尝试解析并提取概要、问题和建议；解析不可靠时不再把整段 JSON 暴露给 `llm_analysis.text`。
+- `data.llm_review.text` 继续保留原始 LLM 文本，仅用于 Debug View。
+- `user_view.blocks[block_type="llm_analysis"].text` 和 `data.llm_analysis.text` 继续作为前端高亮按钮的首选字段。
+
+### 前端影响
+
+- 不需要改接口和 payload。
+- 如果高亮按钮仍显示完整 JSON，说明前端消费了 `data.llm_review`、`debug_view.raw_result`、artifact 或 `analysis_input.source_excerpt` 这类 Debug/raw 字段；应切回 `user_view.blocks[].text` 或 `data.localized_review`。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- 新增 Code Review JSON-like LLM fallback 集成测试，确认高亮展示字段不再以 `{` 开头，也不包含原始 `overview` key。

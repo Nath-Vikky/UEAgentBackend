@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.orm import Session
 
@@ -41,16 +43,85 @@ def get_or_create_session(
     return session_model
 
 
-def append_messages(db: Session, session_id: str, messages: list[dict]) -> None:
+def _normalize_messages(messages: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
     for item in messages:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "user").strip() or "user"
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        language = str(item.get("language") or "").strip() or None
+        metadata_json = item.get("metadata_json") or item.get("metadata") or {}
+        normalized.append(
+            {
+                "role": role,
+                "content": content,
+                "language": language,
+                "metadata_json": dict(metadata_json) if isinstance(metadata_json, dict) else {},
+            }
+        )
+    return normalized
+
+
+def _message_signature(item: dict[str, object]) -> tuple[str, str, str]:
+    return (
+        str(item.get("role") or "user"),
+        str(item.get("content") or ""),
+        str(item.get("language") or ""),
+    )
+
+
+def _longest_prefix_match(existing: list[tuple[str, str, str]], incoming: list[tuple[str, str, str]]) -> int:
+    max_size = min(len(existing), len(incoming))
+    for size in range(max_size, 0, -1):
+        prefix = incoming[:size]
+        for start in range(len(existing) - size + 1):
+            if existing[start : start + size] == prefix:
+                return size
+    return 0
+
+
+def append_messages(db: Session, session_id: str, messages: list[dict]) -> None:
+    normalized = _normalize_messages(messages)
+    if not normalized:
+        return
+
+    existing_models = list(
+        db.scalars(
+            select(MessageModel)
+            .where(MessageModel.session_id == session_id)
+            .order_by(MessageModel.created_at.asc(), MessageModel.message_id.asc())
+        )
+    )
+    existing = [
+        {
+            "role": item.role,
+            "content": item.content,
+            "language": item.language,
+        }
+        for item in existing_models
+    ]
+    existing_signatures = [_message_signature(item) for item in existing]
+    incoming_signatures = [_message_signature(item) for item in normalized]
+
+    if len(normalized) == 1:
+        overlap = 1 if existing_signatures and existing_signatures[-1] == incoming_signatures[0] else 0
+    else:
+        overlap = _longest_prefix_match(existing_signatures, incoming_signatures)
+        if overlap == len(normalized):
+            return
+
+    for item in normalized[overlap:]:
         db.add(
             MessageModel(
-                message_id=f"msg_{utc_isoformat()}_{abs(hash(item['content']))}",
+                message_id=f"msg_{utc_isoformat()}_{uuid.uuid4().hex}",
                 session_id=session_id,
                 role=item["role"],
                 content=item["content"],
-                language=item.get("language"),
-                metadata_json={},
+                language=item["language"],
+                metadata_json=item["metadata_json"],
             )
         )
     db.commit()
@@ -69,7 +140,7 @@ def list_session_messages(
     statement = (
         select(MessageModel)
         .where(MessageModel.session_id == session_id)
-        .order_by(MessageModel.created_at.asc())
+        .order_by(MessageModel.created_at.asc(), MessageModel.message_id.asc())
         .limit(limit)
     )
     return list(db.scalars(statement))

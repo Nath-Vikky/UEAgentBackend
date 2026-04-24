@@ -228,11 +228,18 @@ class TaskService:
         output_language: str,
     ) -> str:
         items = inventory_result.get("items") or []
+        summary = inventory_result.get("summary") or {}
         if not items:
+            if not summary.get("has_snapshot"):
+                return _localized(
+                    output_language,
+                    "当前还没有可用的 Project Inventory 快照，所以我无法列出当前工程里的资产或代码文件。请先在 UE 插件 Debug View 点击 Submit Inventory，提交一次项目快照后再询问。",
+                    "No Project Inventory snapshot is available yet, so I cannot list assets or code files from the current project. Submit a Project Inventory snapshot from the UE plugin Debug View first, then ask again.",
+                )
             return _localized(
                 output_language,
-                "当前没有命中项目快照信息。请先让 UE 插件提交 Project Inventory 快照，或补充更具体的资产/代码名称。",
-                "No project inventory facts matched. Submit a Project Inventory snapshot from the UE plugin or ask with a more specific asset/code name.",
+                "Project Inventory 已有快照，但本次问题没有命中匹配的资产或代码文件。你可以换一个更具体的资产名、类型、模块名，或重新提交一次最新快照。",
+                "A Project Inventory snapshot exists, but no assets or code files matched this question. Try a more specific asset name, asset type, module name, or submit a fresh snapshot.",
             )
         lines = [
             _localized(
@@ -260,6 +267,102 @@ class TaskService:
                 + (f" | {', '.join(setting_bits)}" if setting_bits else "")
             )
         return "\n".join(lines)
+
+    def _project_qa_tool_plan(self, *, query: str, routing: dict[str, Any]) -> dict[str, Any]:
+        selected_tool_id = routing["route"].get("selected_tool_id")
+        query_lower = query.lower()
+        inventory_tokens = (
+            "asset",
+            "assets",
+            "blueprint",
+            "staticmesh",
+            "static mesh",
+            "skeletal",
+            "material",
+            "texture",
+            "nanite",
+            "lod",
+            "code file",
+            ".cpp",
+            ".h",
+            "module",
+            "settings",
+            "properties",
+            "资产",
+            "蓝图",
+            "静态网格体",
+            "材质",
+            "贴图",
+            "代码文件",
+            "模块",
+            "属性",
+            "设置",
+        )
+        knowledge_tokens = (
+            "why",
+            "how",
+            "should",
+            "best practice",
+            "rule",
+            "guideline",
+            "explain",
+            "risk",
+            "为什么",
+            "怎么",
+            "如何",
+            "应该",
+            "规范",
+            "规则",
+            "建议",
+            "风险",
+            "解释",
+        )
+        use_inventory = selected_tool_id == "query_project_inventory" or any(
+            token in query_lower or token in query for token in inventory_tokens
+        )
+        needs_knowledge = selected_tool_id != "query_project_inventory" or any(
+            token in query_lower or token in query for token in knowledge_tokens
+        )
+        return {
+            "selected_tool_id": selected_tool_id,
+            "use_inventory": use_inventory,
+            "use_knowledge": needs_knowledge,
+            "reason": (
+                "inventory_first"
+                if selected_tool_id == "query_project_inventory"
+                else "retrieval_backed_project_qa"
+            ),
+        }
+
+    def _empty_project_qa_result(self, *, query: str) -> dict[str, Any]:
+        return {
+            "answer": "",
+            "confidence": 0.0,
+            "sources": [],
+            "citations": [],
+            "retrieved_docs": [],
+            "filters_applied": {},
+            "retrieval_trace": {
+                "mode": "not_used",
+                "degraded_mode": False,
+                "reason": "tool_plan_skipped_knowledge_retrieval",
+                "filters_applied": {},
+                "retrieved_docs": [],
+                "query": query,
+            },
+            "warnings": [],
+        }
+
+    def _empty_inventory_result(self, *, query: str) -> dict[str, Any]:
+        return {
+            "items": [],
+            "summary": {
+                "query": query,
+                "asset_match_count": 0,
+                "code_file_match_count": 0,
+                "tool_skipped": True,
+            },
+        }
 
     def _agent_chat_route_messages(
         self,
@@ -564,6 +667,23 @@ class TaskService:
             event_payloads=event_payloads,
             artifact_payloads=artifact_payloads,
         )
+        if response.assistant_message.strip():
+            append_messages(
+                self.db,
+                request.session.session_id,
+                [
+                    {
+                        "role": "assistant",
+                        "content": response.assistant_message,
+                        "language": response.locale.final_output_language,
+                        "metadata": {
+                            "task_id": task_id,
+                            "run_id": run_id,
+                            "task_type": actual_task_type,
+                        },
+                    }
+                ],
+            )
         return response
 
     def list_recent(self) -> list[UnifiedTaskResponse]:
@@ -858,16 +978,26 @@ class TaskService:
         query = request.payload.get("user_query") or (
             request.session.messages[-1].content if request.session.messages else ""
         )
-        qa_result = self.kb_service.project_qa(
-            query=query,
-            context=request.context,
-            payload=request.payload,
-            output_language=output_language,
+        query_text = str(query)
+        tool_plan = self._project_qa_tool_plan(query=query_text, routing=routing)
+        qa_result = (
+            self.kb_service.project_qa(
+                query=query_text,
+                context=request.context,
+                payload=request.payload,
+                output_language=output_language,
+            )
+            if tool_plan["use_knowledge"]
+            else self._empty_project_qa_result(query=query_text)
         )
-        inventory_result = self.inventory_service.query(
-            query=str(query),
-            project_id=self._inventory_project_id(request),
-            limit=8,
+        inventory_result = (
+            self.inventory_service.query(
+                query=query_text,
+                project_id=self._inventory_project_id(request),
+                limit=8,
+            )
+            if tool_plan["use_inventory"]
+            else self._empty_inventory_result(query=query_text)
         )
         qa_result["inventory_items"] = inventory_result["items"]
         qa_result["inventory_summary"] = inventory_result["summary"]
@@ -882,18 +1012,24 @@ class TaskService:
             "usage": {},
         }
         answer_generation_mode = "retrieval_summary_fallback"
-        if inventory_result["items"]:
+        if tool_plan["use_inventory"]:
             qa_result["answer"] = self._inventory_fallback_answer(
                 inventory_result=inventory_result,
                 output_language=output_language,
             )
-            qa_result["confidence"] = max(float(qa_result["confidence"]), 0.72)
+            if inventory_result["items"]:
+                qa_result["confidence"] = max(float(qa_result["confidence"]), 0.72)
+            else:
+                qa_result["confidence"] = max(
+                    float(qa_result["confidence"]),
+                    0.25 if inventory_result["summary"].get("has_snapshot") else 0.12,
+                )
             answer_generation_mode = "inventory_summary_fallback"
         if qa_result["retrieved_docs"] or inventory_result["items"]:
             llm_result = self.llm_service.complete(
                 messages=self._project_qa_messages(
                     request=request,
-                    query=str(query),
+                    query=query_text,
                     qa_result=qa_result,
                     output_language=output_language,
                 ),
@@ -915,22 +1051,38 @@ class TaskService:
             {
                 "step_id": "retrieve_knowledge",
                 "title": "Knowledge Retrieval",
-                "status": "completed",
+                "status": "completed" if tool_plan["use_knowledge"] else "skipped",
                 "summary": _localized(
                     output_language,
-                    f"检索到 {len(qa_result['retrieved_docs'])} 个相关片段。",
-                    f"Retrieved {len(qa_result['retrieved_docs'])} relevant chunks.",
+                    (
+                        f"检索到 {len(qa_result['retrieved_docs'])} 个相关片段。"
+                        if tool_plan["use_knowledge"]
+                        else "本次问题优先查询项目快照，未触发知识库检索。"
+                    ),
+                    (
+                        f"Retrieved {len(qa_result['retrieved_docs'])} relevant chunks."
+                        if tool_plan["use_knowledge"]
+                        else "This question used project inventory first, so knowledge retrieval was not triggered."
+                    ),
                 ),
                 "details": qa_result["retrieval_trace"],
             },
             {
                 "step_id": "query_project_inventory",
                 "title": "Project Inventory Query",
-                "status": "completed",
+                "status": "completed" if tool_plan["use_inventory"] else "skipped",
                 "summary": _localized(
                     output_language,
-                    f"命中 {len(inventory_result['items'])} 条项目快照记录。",
-                    f"Matched {len(inventory_result['items'])} project inventory item(s).",
+                    (
+                        f"命中 {len(inventory_result['items'])} 条项目快照记录。"
+                        if tool_plan["use_inventory"]
+                        else "本次问题未选择 Project Inventory 工具。"
+                    ),
+                    (
+                        f"Matched {len(inventory_result['items'])} project inventory item(s)."
+                        if tool_plan["use_inventory"]
+                        else "Project Inventory was not selected for this question."
+                    ),
                 ),
                 "details": inventory_result["summary"],
             },
@@ -1008,6 +1160,7 @@ class TaskService:
                 "model": llm_result["model"],
                 "profile_id": chat_config.profile_id,
             },
+            "tool_plan": tool_plan,
             "context_summary": build_context_summary(request),
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
@@ -1015,13 +1168,21 @@ class TaskService:
         base_debug["tools"] = [
             {
                 "tool_id": "retrieve_project_knowledge",
-                "status": "completed",
-                "summary": f"Retrieved {len(qa_result['retrieved_docs'])} relevant chunk(s).",
+                "status": "completed" if tool_plan["use_knowledge"] else "skipped",
+                "summary": (
+                    f"Retrieved {len(qa_result['retrieved_docs'])} relevant chunk(s)."
+                    if tool_plan["use_knowledge"]
+                    else "Skipped by Project QA tool plan."
+                ),
             },
             {
                 "tool_id": "query_project_inventory",
-                "status": "completed",
-                "summary": f"Matched {len(inventory_result['items'])} project inventory item(s).",
+                "status": "completed" if tool_plan["use_inventory"] else "skipped",
+                "summary": (
+                    f"Matched {len(inventory_result['items'])} project inventory item(s)."
+                    if tool_plan["use_inventory"]
+                    else "Skipped by Project QA tool plan."
+                ),
             },
             {
                 "tool_id": "llm_answer_synthesis",
@@ -1035,6 +1196,7 @@ class TaskService:
         ]
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
+        base_debug["tool_plan"] = tool_plan
         base_debug["warnings"] = qa_result["warnings"] + (
             [] if llm_result["ok"] or llm_result["reason"] == "not_attempted" else [llm_result["reason"]]
         )

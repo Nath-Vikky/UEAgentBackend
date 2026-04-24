@@ -41,8 +41,8 @@ BUILT_IN_SKILLS: tuple[BuiltInSkillSpec, ...] = (
         task_type="agent_chat",
         title="Agent Chat / Project QA",
         description=(
-            "Free chat by default; promotes to retrieval-backed project QA only when the "
-            "message clearly asks for project-specific knowledge."
+            "Free chat by default; promotes to project QA and selects read-only tools "
+            "when the message asks for project knowledge or inventory facts."
         ),
         panel_id="AgentChat",
         frontend_ui="chat_timeline",
@@ -52,12 +52,12 @@ BUILT_IN_SKILLS: tuple[BuiltInSkillSpec, ...] = (
         side_effect_level="read_only",
         requires_retrieval=False,
         collector="chat_messages_and_editor_context",
-        rules=["direct_answer_vs_project_qa_router"],
+        rules=["direct_answer_vs_project_qa_router", "project_inventory_tool_selection"],
         retrieval_domains=["project_docs", "engine_notes", "team_rules"],
-        projector_outputs=["user_view", "debug_view", "citations", "trace_summary"],
+        projector_outputs=["user_view", "debug_view", "citations", "data.inventory", "trace_summary"],
         notes=(
-            "The backend decides whether to stay in direct chat or promote the request to "
-            "retrieval-backed project QA."
+            "The backend decides whether to stay in direct chat, query Project Inventory, "
+            "retrieve project knowledge, or combine both read-only tools."
         ),
     ),
     BuiltInSkillSpec(

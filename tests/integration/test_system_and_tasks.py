@@ -143,6 +143,20 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     )
     asset_id = static_meshes.json()["items"][0]["asset_id"]
     asset_detail = client.get(f"/api/v1/project-inventory/assets/{asset_id}", params={"project_id": "RushBa"})
+    asset_name_query = client.post(
+        "/api/v1/project-inventory/query",
+        json={
+            "project_id": "RushBa",
+            "query": "\u8bf7\u67e5\u770bBP_PlayerCharacter\u7684\u5c5e\u6027\u662f\u4ec0\u4e48",
+        },
+    )
+    code_name_query = client.post(
+        "/api/v1/project-inventory/query",
+        json={
+            "project_id": "RushBa",
+            "query": "\u67e5\u770bRBPlayerCharacter.cpp\u7684\u4ee3\u7801\u6587\u4ef6\u4fe1\u606f",
+        },
+    )
 
     assert snapshot.status_code == 200
     assert snapshot.json()["snapshot"]["status"] == "saved"
@@ -162,6 +176,10 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert code_files.json()["items"][0]["last_modified"] == "2026-04-23T09:59:00Z"
     assert asset_detail.status_code == 200
     assert asset_detail.json()["item"]["asset_path"] == "/Game/Environment/SM_Rock.SM_Rock"
+    assert asset_name_query.status_code == 200
+    assert asset_name_query.json()["items"][0]["asset_name"] == "BP_PlayerCharacter"
+    assert code_name_query.status_code == 200
+    assert code_name_query.json()["items"][0]["file_path"] == "Source/RushBa/Player/RBPlayerCharacter.cpp"
 
 
 def test_agent_chat_project_qa_can_answer_from_project_inventory(client: TestClient) -> None:
@@ -215,6 +233,160 @@ def test_agent_chat_project_qa_can_answer_from_project_inventory(client: TestCli
     assert body["data"]["inventory"]["items"][0]["asset_name"] == "SM_Rock"
     assert "SM_Rock" in body["assistant_message"]
     assert body["debug_view"]["inventory"]["summary"]["asset_match_count"] == 1
+
+
+def test_agent_chat_project_asset_listing_selects_inventory_tool(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "RushBa",
+            "project_name": "RushBa",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                    "asset_name": "BP_PlayerCharacter",
+                    "asset_type": "Blueprint",
+                    "settings": {"parent_class": "ACharacter"},
+                },
+                {
+                    "asset_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
+                    "asset_name": "BP_EnemySpawner",
+                    "asset_type": "Blueprint",
+                    "settings": {"parent_class": "AActor"},
+                },
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_blueprint_chat_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "当前项目有哪些蓝图资产？",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {"project_name": "RushBa", "active_panel": "AgentChat"},
+            "payload": {"user_query": "当前项目有哪些蓝图资产？"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    assert body["intent"]["route_type"] == "project_qa"
+    assert body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
+    assert "inspect_asset_metadata" not in body["debug_view"]["route"]["candidate_tool_ids"]
+    assert body["data"]["tool_plan"]["selected_tool_id"] == "query_project_inventory"
+    assert body["data"]["inventory"]["summary"]["inferred_asset_type"] == "Blueprint"
+    assert len(body["data"]["inventory"]["items"]) == 2
+    assert body["debug_view"]["tools"][0]["tool_id"] == "retrieve_project_knowledge"
+    assert body["debug_view"]["tools"][0]["status"] == "skipped"
+    assert body["debug_view"]["tools"][1]["tool_id"] == "query_project_inventory"
+    assert body["debug_view"]["tools"][1]["status"] == "completed"
+    assert "BP_PlayerCharacter" in body["assistant_message"]
+    assert "BP_EnemySpawner" in body["assistant_message"]
+
+
+def test_agent_chat_project_asset_listing_handles_prefix_and_missing_snapshot(client: TestClient) -> None:
+    query = "\u6211\u5f53\u524d\u9879\u76ee\u7684\u84dd\u56fe\u8d44\u4ea7\u6709\u54ea\u4e9b\uff0c\u4f60\u5217\u4e00\u4e0b"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_missing_snapshot_chat_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {"project_name": "MissingSnapshotProject", "active_panel": "AgentChat"},
+            "payload": {"user_query": query},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["intent"]["route_type"] == "project_qa"
+    assert body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
+    assert body["data"]["inventory"]["items"] == []
+    assert body["data"]["inventory"]["summary"]["empty_reason"] == "no_project_inventory_snapshot"
+    assert body["data"]["tool_plan"]["use_inventory"] is True
+    assert body["assistant_message"].strip()
+    assert "Project Inventory" in body["assistant_message"]
+
+
+def test_agent_chat_project_asset_listing_supports_compact_chinese_query(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "CompactQueryProject",
+            "project_name": "CompactQueryProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                    "asset_name": "BP_PlayerCharacter",
+                    "asset_type": "Blueprint",
+                    "settings": {"parent_class": "ACharacter"},
+                },
+                {
+                    "asset_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
+                    "asset_name": "BP_EnemySpawner",
+                    "asset_type": "Blueprint",
+                    "settings": {"parent_class": "AActor"},
+                },
+            ],
+        },
+    )
+    query = "\u5f53\u524d\u9879\u76ee\u84dd\u56fe\u8d44\u4ea7\u6709\u54ea\u4e9b"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_compact_query_chat_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {"project_name": "CompactQueryProject", "active_panel": "AgentChat"},
+            "payload": {"user_query": query},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    assert body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
+    assert body["data"]["inventory"]["summary"]["inferred_asset_type"] == "Blueprint"
+    assert len(body["data"]["inventory"]["items"]) == 2
+    assert "BP_PlayerCharacter" in body["assistant_message"]
+    assert "BP_EnemySpawner" in body["assistant_message"]
 
 
 def test_create_task_and_fetch_dual_views(client: TestClient) -> None:
@@ -382,7 +554,7 @@ def test_session_create_restore_history_tasks_and_clear(client: TestClient) -> N
     assert summary.json()["item"]["task_count"] >= 1
     assert history.status_code == 200
     assert history.json()["items"]
-    assert history.json()["items"][-1]["role"] == "user"
+    assert history.json()["items"][-1]["role"] == "assistant"
     assert tasks.status_code == 200
     assert tasks.json()["items"]
     assert tasks.json()["items"][0]["task"]["task_id"] == chat.json()["task"]["task_id"]
@@ -393,6 +565,85 @@ def test_session_create_restore_history_tasks_and_clear(client: TestClient) -> N
     assert history_after.json()["items"] == []
     assert tasks_after.status_code == 200
     assert tasks_after.json()["items"] == []
+
+
+def test_session_history_restore_keeps_user_assistant_order_across_turns(client: TestClient) -> None:
+    first_chat = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "restored_order_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "What is dependency inversion in one sentence?",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {"project_name": "DemoProject", "active_panel": "AgentChat"},
+            "payload": {"user_query": "What is dependency inversion in one sentence?"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    first_history = client.get("/api/v1/sessions/restored_order_session/history")
+    restored_messages = [
+        {
+            "role": item["role"],
+            "content": item["content"],
+            "language": item["language"],
+        }
+        for item in first_history.json()["items"]
+    ]
+    second_chat = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "restored_order_session",
+                "messages": [
+                    *restored_messages,
+                    {
+                        "role": "user",
+                        "content": "And when should I care about it?",
+                        "language": "auto",
+                    },
+                ],
+            },
+            "context": {"project_name": "DemoProject", "active_panel": "AgentChat"},
+            "payload": {"user_query": "And when should I care about it?"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    final_history = client.get("/api/v1/sessions/restored_order_session/history")
+    items = final_history.json()["items"]
+
+    assert first_chat.status_code == 200
+    assert first_history.status_code == 200
+    assert len(restored_messages) == 2
+    assert restored_messages[0]["role"] == "user"
+    assert restored_messages[1]["role"] == "assistant"
+    assert second_chat.status_code == 200
+    assert final_history.status_code == 200
+    assert [item["role"] for item in items] == ["user", "assistant", "user", "assistant"]
+    assert items[0]["content"] == "What is dependency inversion in one sentence?"
+    assert items[2]["content"] == "And when should I care about it?"
+    assert items[-1]["content"] == second_chat.json()["assistant_message"]
 
 
 def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None:
@@ -1033,6 +1284,350 @@ def test_code_review_file_listing_and_selected_file_review(client: TestClient) -
         shutil.rmtree(project_root, ignore_errors=True)
 
 
+def test_code_review_live_llm_uses_compact_timeout_config(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = Path(".test-workspace") / f"code-review-llm-{uuid.uuid4().hex}"
+    code_dir = project_root / "Source" / "MyModule"
+    shutil.rmtree(project_root, ignore_errors=True)
+    code_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        file_path = code_dir / "MyActor.cpp"
+        file_path.write_text(
+            '#include "MyActor.h"\n'
+            "void AMyActor::Tick(float DeltaTime)\n"
+            "{\n"
+            '    auto Asset = LoadObject<UObject>(nullptr, TEXT("/Game/Hero/Hero01"));\n'
+            "}\n",
+            encoding="utf-8",
+        )
+
+        def _fake_complete_json_object(self, *, messages, config):  # type: ignore[no-untyped-def]
+            assert messages
+            assert config.timeout_ms >= 60000
+            assert config.max_tokens <= 700
+            return {
+                "ok": True,
+                "payload": {
+                    "summary": "The file should avoid synchronous asset loads on hot paths.",
+                    "issues": [
+                        {
+                            "severity": "medium",
+                            "line": 4,
+                            "title": "Synchronous load in Tick",
+                            "reason": "Tick should stay lightweight.",
+                            "impact": "May stall the game thread.",
+                            "suggestion": "Switch to a soft reference or preload path.",
+                        }
+                    ],
+                    "recommendations": [
+                        {"suggestion": "Move loading out of Tick."},
+                    ],
+                    "next_steps": ["Validate the actor in PIE."],
+                },
+                "reason": "completed",
+                "error": "",
+                "provider": "openai_compatible",
+                "model": config.model,
+                "profile_id": config.profile_id,
+                "usage": {
+                    "input_tokens": 40,
+                    "output_tokens": 24,
+                    "estimated_cost_usd": 0.0,
+                    "latency_ms": 11,
+                },
+            }
+
+        monkeypatch.setattr(
+            "app.services.llm_service.LLMService.complete_json_object",
+            _fake_complete_json_object,
+        )
+
+        review = client.post(
+            "/api/v1/tasks/code-review",
+            json={
+                "task_type": "code_review",
+                "session": {
+                    "session_id": "code_review_live_llm_session",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Review the selected file.",
+                            "language": "auto",
+                        }
+                    ],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "active_panel": "CodeReview",
+                    "current_file": "Source/MyModule/MyActor.cpp",
+                    "current_module": "MyModule",
+                },
+                "payload": {
+                    "user_query": "Review the selected file.",
+                    "project_root": str(project_root.resolve()),
+                    "source_roots": ["Source"],
+                    "file_path": "Source/MyModule/MyActor.cpp",
+                    "focus": "General",
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "CodeReview"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = review.json()
+
+        assert review.status_code == 200
+        assert body["data"]["llm_analysis"]["status"] == "completed"
+        assert body["data"]["llm_review"]["reason"] == "completed"
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
+
+
+def test_code_review_llm_text_fallback_is_rendered_as_analysis(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = Path(".test-workspace") / f"code-review-text-fallback-{uuid.uuid4().hex}"
+    code_dir = project_root / "Source" / "MyModule"
+    shutil.rmtree(project_root, ignore_errors=True)
+    code_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        file_path = code_dir / "MyActor.cpp"
+        file_path.write_text(
+            '#include "MyActor.h"\n'
+            "void AMyActor::Tick(float DeltaTime)\n"
+            "{\n"
+            '    auto Asset = LoadObject<UObject>(nullptr, TEXT("/Game/Hero/Hero01"));\n'
+            "}\n",
+            encoding="utf-8",
+        )
+
+        def _fake_complete_json_object(self, *, messages, config):  # type: ignore[no-untyped-def]
+            assert messages
+            return {
+                "ok": False,
+                "payload": None,
+                "reason": "json_parse_failed",
+                "error": "json_object_not_found",
+                "provider": "openai_compatible",
+                "model": config.model,
+                "profile_id": config.profile_id,
+                "text": "LLM saw the selected C++ file and recommends moving synchronous asset loading out of Tick.",
+                "usage": {
+                    "input_tokens": 40,
+                    "output_tokens": 24,
+                    "estimated_cost_usd": 0.0,
+                    "latency_ms": 11,
+                },
+            }
+
+        monkeypatch.setattr(
+            "app.services.llm_service.LLMService.complete_json_object",
+            _fake_complete_json_object,
+        )
+
+        review = client.post(
+            "/api/v1/tasks/code-review",
+            json={
+                "task_type": "code_review",
+                "session": {
+                    "session_id": "code_review_text_fallback_session",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Review the selected file.",
+                            "language": "auto",
+                        }
+                    ],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "active_panel": "CodeReview",
+                    "current_file": "Source/MyModule/MyActor.cpp",
+                    "current_module": "MyModule",
+                },
+                "payload": {
+                    "user_query": "Review the selected file.",
+                    "project_root": str(project_root.resolve()),
+                    "source_roots": ["Source"],
+                    "file_path": "Source/MyModule/MyActor.cpp",
+                    "focus": "General",
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "CodeReview"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = review.json()
+
+        assert review.status_code == 200
+        assert body["data"]["review_scope"]["read_status"] == "ok"
+        assert body["data"]["llm_analysis"]["status"] == "completed"
+        assert body["data"]["llm_review"]["reason"] == "completed_text_fallback"
+        assert body["data"]["llm_review"]["structured"] is False
+        assert "selected C++ file" in body["data"]["llm_analysis"]["text"]
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
+
+
+def test_code_review_llm_json_like_text_fallback_is_sanitized_for_highlights(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = Path(".test-workspace") / f"code-review-json-fallback-{uuid.uuid4().hex}"
+    code_dir = project_root / "Source" / "MyModule"
+    shutil.rmtree(project_root, ignore_errors=True)
+    code_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        file_path = code_dir / "MyActor.cpp"
+        file_path.write_text(
+            '#include "MyActor.h"\n'
+            "void AMyActor::Tick(float DeltaTime)\n"
+            "{\n"
+            '    auto Asset = LoadObject<UObject>(nullptr, TEXT("/Game/Hero/Hero01"));\n'
+            "}\n",
+            encoding="utf-8",
+        )
+
+        def _fake_complete_json_object(self, *, messages, config):  # type: ignore[no-untyped-def]
+            assert messages
+            return {
+                "ok": False,
+                "payload": None,
+                "reason": "json_parse_failed",
+                "error": "json_object_not_found",
+                "provider": "openai_compatible",
+                "model": config.model,
+                "profile_id": config.profile_id,
+                "text": (
+                    "```json\n"
+                    '{"summary":{"overview":"The code still loads assets inside Tick."},'
+                    '"issues":[{"title":{"text":"Synchronous load in Tick"},'
+                    '"reason":{"message":"Tick runs every frame."},'
+                    '"suggestion":{"text":"Move the load to initialization or async loading."}}],'
+                    '"recommendations":[{"suggestion":"Use soft references for the asset path."}]}\n'
+                    "```"
+                ),
+                "usage": {
+                    "input_tokens": 40,
+                    "output_tokens": 24,
+                    "estimated_cost_usd": 0.0,
+                    "latency_ms": 11,
+                },
+            }
+
+        monkeypatch.setattr(
+            "app.services.llm_service.LLMService.complete_json_object",
+            _fake_complete_json_object,
+        )
+
+        review = client.post(
+            "/api/v1/tasks/code-review",
+            json={
+                "task_type": "code_review",
+                "session": {
+                    "session_id": "code_review_json_fallback_session",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Review the selected file.",
+                            "language": "auto",
+                        }
+                    ],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "active_panel": "CodeReview",
+                    "current_file": "Source/MyModule/MyActor.cpp",
+                    "current_module": "MyModule",
+                },
+                "payload": {
+                    "user_query": "Review the selected file.",
+                    "project_root": str(project_root.resolve()),
+                    "source_roots": ["Source"],
+                    "file_path": "Source/MyModule/MyActor.cpp",
+                    "focus": "General",
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "CodeReview"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = review.json()
+        llm_block = next(
+            block for block in body["user_view"]["blocks"] if block["block_type"] == "llm_analysis"
+        )
+
+        assert review.status_code == 200
+        assert body["data"]["llm_analysis"]["status"] == "completed"
+        assert body["data"]["llm_review"]["reason"] == "completed_text_fallback"
+        assert body["data"]["llm_analysis"]["text"] == "The code still loads assets inside Tick."
+        assert llm_block["text"] == "The code still loads assets inside Tick."
+        assert not llm_block["text"].lstrip().startswith("{")
+        assert "overview" not in llm_block["text"]
+        assert body["data"]["llm_review"]["payload"]["issues"][0]["title"] == "Synchronous load in Tick"
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
+
+
+def test_code_review_without_selected_file_reports_frontend_payload_gap(client: TestClient) -> None:
+    review = client.post(
+        "/api/v1/tasks/code-review",
+        json={
+            "task_type": "code_review",
+            "session": {
+                "session_id": "code_review_missing_file_payload_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Review the selected file.",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "CodeReview",
+                "current_file": "Source/MyModule/MyActor.cpp",
+                "current_module": "MyModule",
+            },
+            "payload": {"user_query": "Review the selected file.", "focus": "General"},
+            "ui_state": {"active_view": "user", "selected_panel": "CodeReview"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = review.json()
+
+    assert review.status_code == 200
+    assert body["data"]["review_scope"]["source_kind"] == "query_only"
+    assert body["data"]["llm_analysis"]["status"] == "skipped"
+    assert body["data"]["llm_analysis"]["reason_code"] == "missing_selected_code_content"
+    assert body["data"]["llm_review"]["error"] == "missing_selected_code_content"
+
+
 def test_logs_analyze_workflow_returns_structured_events(client: TestClient) -> None:
     response = client.post(
         "/api/v1/tasks/logs-analyze",
@@ -1474,6 +2069,87 @@ def test_assets_inspect_can_summarize_types_and_relationships(client: TestClient
     assert body["data"]["relationship_summary"][0]["referencer_count"] == 1
     assert "Asset Types" in [block["title"] for block in body["user_view"]["blocks"]]
     assert "Relationship Summary" in [block["title"] for block in body["user_view"]["blocks"]]
+
+
+def test_assets_inspect_live_llm_uses_compact_timeout_config(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fake_complete_json_object(self, *, messages, config):  # type: ignore[no-untyped-def]
+        assert messages
+        assert config.timeout_ms >= 45000
+        assert config.max_tokens <= 650
+        return {
+            "ok": True,
+            "payload": {
+                "analysis": "The selected asset is structurally clean, but you should verify downstream dependencies.",
+                "key_points": ["Naming is acceptable.", "Check runtime dependencies."],
+                "priority": "low",
+                "recommendations": ["Confirm references inside the target map."],
+            },
+            "reason": "completed",
+            "error": "",
+            "provider": "openai_compatible",
+            "model": config.model,
+            "profile_id": config.profile_id,
+            "usage": {
+                "input_tokens": 32,
+                "output_tokens": 18,
+                "estimated_cost_usd": 0.0,
+                "latency_ms": 8,
+            },
+        }
+
+    monkeypatch.setattr(
+        "app.services.llm_service.LLMService.complete_json_object",
+        _fake_complete_json_object,
+    )
+
+    response = client.post(
+        "/api/v1/tasks/assets-inspect",
+        json={
+            "task_type": "assets_inspect",
+            "session": {
+                "session_id": "asset_session_live_llm",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Inspect this blueprint asset.",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AssetInspector",
+                "selected_assets": ["/Game/Demo/BP_Hero"],
+            },
+            "payload": {
+                "user_query": "Inspect this blueprint asset.",
+                "asset_items": [
+                    {
+                        "asset_path": "/Game/Demo/BP_Hero",
+                        "asset_name": "BP_Hero",
+                        "asset_type": "Blueprint",
+                        "package_path": "/Game/Demo",
+                    }
+                ],
+            },
+            "ui_state": {"active_view": "user", "selected_panel": "AssetInspector"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["data"]["llm_analysis"]["status"] == "completed"
+    assert body["data"]["llm_analysis_raw"]["reason"] == "completed"
 
 
 def test_assets_inspect_flags_default_world_asset_name(client: TestClient) -> None:

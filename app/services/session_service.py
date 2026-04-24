@@ -81,7 +81,10 @@ class SessionService:
             return {}
         messages = sorted(
             list(session_model.messages),
-            key=lambda item: item.created_at.isoformat() if item.created_at else "",
+            key=lambda item: (
+                item.created_at.isoformat() if item.created_at else "",
+                item.message_id,
+            ),
         )
         tasks = sorted(
             list(session_model.tasks),

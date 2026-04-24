@@ -913,6 +913,45 @@ Agent Chat 总是检索：
 - 普通寒暄和开放聊天应走 `direct_answer`
 - 如果仍异常，查看 `debug_view.route` 和 `trace_summary.route_type`
 
+### 17.14 UE 官方文档补充到知识库的合规做法
+
+推荐只补充公开可访问的 Epic / Unreal Engine 官方文档页面，并且把它们当作本地 RAG 检索资料，而不是训练数据。
+
+当前可执行原则：
+
+- 只抓取公开文档页，优先 `https://dev.epicgames.com/documentation/` 下的 Unreal Engine 文档。
+- 不抓取登录、搜索、账户、过滤器、portal 一类页面；`https://dev.epicgames.com/robots.txt` 当前明确限制了这些路径，并提供了文档 sitemap。
+- 不把抓取到的 Epic 内容用于模型训练、微调或任何“模型会从输入继续学习”的流程。保持在本地知识库检索、引用和摘要范围内即可。
+- 控制抓取频率，保留原始来源 URL、标题和抓取时间，便于后续删除或更新。
+- 对作品集项目，优先使用“官方文档摘要 + 原始链接”方式入库；不要把整站镜像直接塞进仓库。
+
+推荐先补这些官方主题：
+
+- Unreal Engine Programming Quick Start
+  - https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-cpp-quick-start
+- Programming with C++
+  - https://dev.epicgames.com/documentation/en-us/unreal-engine/programming-with-cplusplus-in-unreal-engine
+- Blueprints Visual Scripting
+  - https://dev.epicgames.com/documentation/en-us/unreal-engine/blueprints-visual-scripting-in-unreal-engine
+- Nanite Virtualized Geometry
+  - https://dev.epicgames.com/documentation/en-us/unreal-engine/nanite-virtualized-geometry-in-unreal-engine
+- Asset Registry
+  - https://dev.epicgames.com/documentation/en-us/unreal-engine/asset-registry-in-unreal-engine
+
+推荐落地方式：
+
+1. 先把这些页面整理成你自己的 Markdown / HTML 摘要笔记，保留官方链接。
+2. 存到例如 `knowledge/engine_notes/unreal_official/`。
+3. 调用 `POST /api/v1/knowledge-base/refresh` 或把该路径加入 `KB_SOURCE_PATHS`。
+4. domain 建议使用 `engine_notes`，metadata 里补 `source=epic_official_docs`、`captured_at`、`original_url`。
+
+如果你后面要做“合法合规爬取脚本”，建议边界也保持简单：
+
+- 输入：一组明确的官方 URL 白名单
+- 输出：本地 `.html` 或 `.md` 文件
+- 规则：限速、失败重试、记录 `original_url`
+- 禁止：全站镜像、登录态抓取、搜索页抓取、训练数据导出
+
 ## 18. 2026-04-23 联调字段补充
 
 ### 18.1 Project Inventory Snapshot 响应
@@ -978,3 +1017,91 @@ Code Review 和 Assets Inspect 都会返回 `llm_analysis`。它是给用户看�
 - `not_attempted`
 
 如果只配置了 LLM，Code Review / Assets Inspect 会尝试在线综合解释；如果未配置或调用失败，仍会返回确定性规则扫描、知识库引用和建议。前端不应把 `status=skipped` 展示成任务失败。
+
+### 18.3 Session History 恢复顺序
+
+后端现在会把每次 `assistant_message` 也写入 session history，`GET /api/v1/sessions/{session_id}/history` 返回的消息顺序以数据库为准，稳定按 `created_at + message_id` 排序。
+
+这意味着：
+
+- 会话恢复后，历史通常应呈现为 `user -> assistant -> user -> assistant`
+- 前端恢复历史时不需要再按本地“发送时间”二次重排
+- 同一次会话的后续请求，直接把后端返回的 history 当作权威历史，再在末尾追加新的 user 消息即可
+
+### 18.4 Agent Chat 项目级 Inventory 工具选择
+
+用户在自由聊天里问项目事实时，后端会像判断是否需要知识库一样判断是否需要 Project Inventory。例如：
+
+- “当前项目有哪些蓝图资产？”
+- “项目里哪些 StaticMesh 开启了 Nanite？”
+- “这个工程里有哪些材质资产？”
+- “Gameplay 模块下有哪些 C++ 文件？”
+
+这类请求仍然调用：
+
+```http
+POST /api/v1/chat/runs
+```
+
+后端会返回：
+
+- `intent.route_type = "project_qa"`
+- `debug_view.route.selected_tool_id = "query_project_inventory"`
+- `data.inventory`
+- `debug_view.inventory`
+- `data.tool_plan`
+- `debug_view.tool_plan`
+
+如果是纯项目事实查询，后端可以跳过知识库检索，只查询 Project Inventory。如果问题还包含“为什么、怎么做、规范、风险、建议”等解释性需求，后端会组合 `query_project_inventory` 和 `retrieve_project_knowledge`。
+
+Assets Inspect 的边界保持不变：它只分析 Content Browser 里当前选中的资产和该面板提交的 inspection 要求，不负责项目级资产盘点。
+
+### 18.5 Code Review / Assets Inspect 的 LLM 超时优化
+
+如果你已经配置了 LLM，但之前经常看到：
+
+- `data.llm_analysis.status = "skipped"`
+- `data.llm_analysis.reason_code = "request_failed"`
+
+这轮后端已经做了两类优化：
+
+- 压缩 Code Review / Assets Inspect 的 LLM prompt 负载
+- 对这两类任务单独放宽 timeout，并收紧 `max_tokens`
+
+如果后续仍频繁出现 `request_failed`，优先检查：
+
+- `OPENAI_BASE_URL`
+- `CHAT_MODEL`
+- 当前模型供应商的响应延迟
+- 本机到模型服务的网络连通性
+
+### 18.6 Inventory 空结果与 Code Review LLM 排查
+
+Agent Chat 的项目事实问题现在会优先走 Project Inventory。常见中文问法，例如“我当前项目的蓝图资产有哪些，你列一下”和“当前项目蓝图资产有哪些”，都会进入 `project_qa`，并在 `debug_view.route.selected_tool_id` 中标记为 `query_project_inventory`。
+
+如果回答提示没有 Project Inventory 快照，请先在 UE 插件 Debug View 点击 `Submit Inventory`。后端会在 `data.inventory.summary.empty_reason` 给出稳定原因：
+
+- `no_project_inventory_snapshot`：当前项目还没有提交快照。
+- `no_matching_inventory_items`：快照存在，但没有匹配到本次查询。
+
+Code Review 判断是否真的读到了 cpp/h/cs 文件，优先看 `data.review_scope`：
+
+- `read_status = "ok"` 且 `content_length > 0`：后端已经读取到选中文件内容。
+- `source_kind = "query_only"` 或 `llm_analysis.reason_code = "missing_selected_code_content"`：请求缺少可解析的选中文件内容，通常需要前端补齐 `payload.project_root + payload.file_path`。
+- `llm_review.reason = "completed_text_fallback"`：LLM 已返回自然语言但未按 JSON 返回，后端已把文本放入 `llm_analysis.text`，状态仍是 `completed`。
+
+### 18.7 Code Review 高亮展示与 raw JSON 边界
+
+Code Review 是工具面板，不是聊天面板。前端的高亮按钮应展示 `user_view.blocks` 中的自然语言字段：
+
+- `summary.text`：审查概要
+- `llm_analysis.text`：LLM 综合解释
+- `llm_analysis.data.key_points`：LLM 要点
+- `issues.data.items`：问题列表
+- `recommendations.data.items`：建议列表
+- `references.data.items`：依据
+- `next_steps.data.items`：下一步
+
+不要把 `data.llm_review`、`debug_view.raw_result`、artifact 原始内容或 `analysis_input.source_excerpt` 放进普通用户高亮弹窗。这些属于 Debug View，可能包含原始 JSON、源码片段和模型诊断。
+
+后端现在会尽量保证 `user_view.blocks[].text` 和 `data.llm_analysis.text` 是自然语言。如果 LLM 返回 JSON-like 文本但没有严格符合 schema，后端会清洗成可展示文本，原始内容只保留在 `data.llm_review.text` 供 Debug 使用。

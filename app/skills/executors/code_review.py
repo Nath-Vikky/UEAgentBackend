@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.agent.context_builder import build_context_summary
@@ -15,6 +16,121 @@ from app.workflows.graphs.code_review import run_code_review_workflow
 
 def _localized(language: str, zh_text: str, en_text: str) -> str:
     return zh_text if language.startswith("zh") else en_text
+
+
+def _strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    stripped = stripped.strip("`").strip()
+    if "\n" in stripped:
+        first_line, rest = stripped.split("\n", 1)
+        if first_line.strip().lower() in {"json", "javascript", "js", "text"}:
+            stripped = rest
+    if stripped.endswith("```"):
+        stripped = stripped[:-3]
+    return stripped.strip()
+
+
+def _looks_json_like(text: str) -> bool:
+    stripped = _strip_code_fence(text)
+    lowered = text.lower()
+    return stripped.startswith(("{", "[")) or "```json" in lowered
+
+
+def _try_parse_json_text(text: str) -> Any | None:
+    stripped = _strip_code_fence(text)
+    candidates = [stripped]
+    object_start = stripped.find("{")
+    object_end = stripped.rfind("}")
+    if object_start >= 0 and object_end > object_start:
+        candidates.append(stripped[object_start : object_end + 1])
+    array_start = stripped.find("[")
+    array_end = stripped.rfind("]")
+    if array_start >= 0 and array_end > array_start:
+        candidates.append(stripped[array_start : array_end + 1])
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except Exception:
+            continue
+    return None
+
+
+def _display_text(value: Any, *, max_lines: int = 6) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return _strip_code_fence(value)
+    if isinstance(value, bool | int | float):
+        return str(value)
+    if isinstance(value, list):
+        parts = [_display_text(item, max_lines=max_lines) for item in value]
+        return "\n".join(f"- {item}" for item in parts[:max_lines] if item.strip()).strip()
+    if isinstance(value, dict):
+        preferred_keys = (
+            "summary",
+            "analysis",
+            "overview",
+            "conclusion",
+            "text",
+            "message",
+            "title",
+            "reason",
+            "impact",
+            "suggestion",
+            "recommendation",
+            "description",
+        )
+        for key in preferred_keys:
+            text = _display_text(value.get(key), max_lines=max_lines)
+            if text:
+                return text
+        lines: list[str] = []
+        for key, item in value.items():
+            if key in {"metadata", "debug", "raw", "raw_text", "payload"}:
+                continue
+            text = _display_text(item, max_lines=2)
+            if text:
+                lines.append(f"{key}: {text}")
+        return "\n".join(lines[:max_lines]).strip()
+    return str(value).strip()
+
+
+def _normalize_text_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    items = value if isinstance(value, list) else [value]
+    normalized: list[str] = []
+    for item in items:
+        text = _display_text(item)
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def _normalize_llm_issue(item: Any) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        text = _display_text(item)
+        return {
+            "severity": "medium",
+            "line": None,
+            "title": text,
+            "reason": text,
+            "impact": "",
+            "suggestion": "",
+        }
+    title = _display_text(item.get("title") or item.get("rule") or item.get("name") or item)
+    reason = _display_text(item.get("reason") or item.get("description") or item.get("analysis") or item)
+    suggestion = _display_text(item.get("suggestion") or item.get("recommendation") or item.get("fix"))
+    return {
+        "severity": _display_text(item.get("severity")) or "medium",
+        "line": item.get("line"),
+        "title": title,
+        "reason": reason,
+        "impact": _display_text(item.get("impact")),
+        "suggestion": suggestion,
+    }
 
 
 def _llm_skip_reason_code(result: dict[str, Any]) -> str:
@@ -32,6 +148,7 @@ def _localized_llm_skip_reason(reason_code: str, output_language: str) -> str:
         "json_parse_failed": "LLM 返回内容无法解析为结构化 JSON，本次改用规则扫描结果。",
         "request_failed": "LLM 请求失败，本次改用规则扫描和知识库检索结果。",
         "file_read_failed_or_empty_source": "文件读取失败或源码内容为空，未执行 LLM 综合分析。",
+        "missing_selected_code_content": "没有收到可解析的选中文件内容，请确认前端提交了 project_root、file_path，并且文件位于允许的 Source/Plugins 目录内。",
         "empty_asset_selection": "没有可分析的资产输入，未执行 LLM 综合分析。",
         "not_attempted": "本次未尝试 LLM 综合分析。",
     }
@@ -41,6 +158,7 @@ def _localized_llm_skip_reason(reason_code: str, output_language: str) -> str:
         "json_parse_failed": "The LLM response could not be parsed as structured JSON, so rule results were used.",
         "request_failed": "The LLM request failed, so rule scanning and retrieval results were used.",
         "file_read_failed_or_empty_source": "The file could not be read or the source excerpt was empty.",
+        "missing_selected_code_content": "The selected code file content was not provided or could not be resolved.",
         "empty_asset_selection": "No analyzable asset input was provided, so live synthesis was skipped.",
         "not_attempted": "Live LLM synthesis was not attempted for this run.",
     }
@@ -70,6 +188,14 @@ class CodeReviewSkillExecutor:
 
     def _language_label(self, language: str) -> str:
         return "Simplified Chinese" if language.startswith("zh") else "English"
+
+    def _llm_review_config(self, chat_config: ChatRuntimeConfig) -> ChatRuntimeConfig:
+        return replace(
+            chat_config,
+            temperature=min(chat_config.temperature, 0.2),
+            max_tokens=min(chat_config.max_tokens, 700),
+            timeout_ms=max(chat_config.timeout_ms, 60000),
+        )
 
     def _review_issue_reason(self, rule_id: str, output_language: str) -> str:
         zh_reasons = {
@@ -287,7 +413,7 @@ class CodeReviewSkillExecutor:
         output_language: str,
     ) -> list[dict[str, str]]:
         analysis_input = result.get("analysis_input") or {}
-        source_excerpt = str(analysis_input.get("source_excerpt") or "")
+        source_excerpt = str(analysis_input.get("source_excerpt") or "")[:5000]
         review_scope = result.get("review_scope") or {}
         static_findings = [
             {
@@ -297,7 +423,14 @@ class CodeReviewSkillExecutor:
                 "title": item.get("title"),
                 "evidence": item.get("evidence"),
             }
-            for item in result.get("issue_list", [])[:8]
+            for item in result.get("issue_list", [])[:5]
+        ]
+        reference_titles = [
+            {
+                "title": item.get("title"),
+                "source": item.get("source"),
+            }
+            for item in result.get("retrieved_references", [])[:3]
         ]
         system_prompt = (
             "You are a senior Unreal Engine code reviewer. "
@@ -312,7 +445,7 @@ class CodeReviewSkillExecutor:
                 f"Review scope:\n{dumps_pretty(review_scope)}",
                 f"Editor context:\n{build_context_summary(request)}",
                 f"Static findings:\n{dumps_pretty(static_findings)}",
-                f"Retrieved guidance count: {len(result.get('retrieved_references', []))}",
+                f"Retrieved guidance:\n{dumps_pretty(reference_titles)}",
                 f"Source excerpt:\n{source_excerpt}",
             ]
         )
@@ -320,6 +453,86 @@ class CodeReviewSkillExecutor:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+
+    def _normalize_llm_review_payload(
+        self,
+        payload: Any,
+        *,
+        raw_text: str = "",
+        output_language: str,
+    ) -> dict[str, Any]:
+        parsed_payload = payload if isinstance(payload, dict) else None
+        if parsed_payload is None and raw_text:
+            parsed = _try_parse_json_text(raw_text)
+            parsed_payload = parsed if isinstance(parsed, dict) else None
+            if parsed_payload is None and isinstance(parsed, list):
+                return {
+                    "summary": _display_text(parsed),
+                    "issues": [],
+                    "recommendations": [],
+                    "next_steps": [],
+                }
+        if parsed_payload is None:
+            if _looks_json_like(raw_text):
+                summary = _localized(
+                    output_language,
+                    "LLM 返回了类似 JSON 的结构化内容，但后端无法可靠解析；原始内容已保留在 Debug View，本卡片改用规则审查结果兜底。",
+                    "The LLM returned structured-looking JSON, but the backend could not parse it reliably. The raw text is kept in Debug View, and this card falls back to rule review.",
+                )
+            else:
+                summary = _display_text(raw_text)
+            return {
+                "summary": summary,
+                "issues": [],
+                "recommendations": [],
+                "next_steps": [],
+            }
+
+        summary = _display_text(
+            parsed_payload.get("summary")
+            or parsed_payload.get("analysis")
+            or parsed_payload.get("overview")
+            or parsed_payload.get("conclusion")
+        )
+        issues_value = (
+            parsed_payload.get("issues")
+            or parsed_payload.get("findings")
+            or parsed_payload.get("problems")
+            or []
+        )
+        recommendations_value = (
+            parsed_payload.get("recommendations")
+            or parsed_payload.get("suggestions")
+            or parsed_payload.get("fixes")
+            or []
+        )
+        next_steps_value = parsed_payload.get("next_steps") or parsed_payload.get("nextSteps") or []
+        issues = [
+            _normalize_llm_issue(item)
+            for item in (issues_value if isinstance(issues_value, list) else [issues_value])
+            if _display_text(item)
+        ]
+        recommendations = _normalize_text_list(recommendations_value)
+        next_steps = _normalize_text_list(next_steps_value)
+        if not summary:
+            summary = _localized(
+                output_language,
+                "LLM 已完成综合审查，但没有返回单独概要；请结合下方问题和建议继续判断。",
+                "The LLM synthesis completed but did not return a standalone summary; use the findings and recommendations below.",
+            )
+        return {
+            "summary": summary,
+            "issues": issues,
+            "recommendations": recommendations,
+            "next_steps": next_steps,
+        }
+
+    def _text_fallback_review_payload(self, text: str, *, output_language: str) -> dict[str, Any]:
+        return self._normalize_llm_review_payload(
+            None,
+            raw_text=text,
+            output_language=output_language,
+        )
 
     def _run_code_review_llm(
         self,
@@ -342,14 +555,37 @@ class CodeReviewSkillExecutor:
                 "profile_id": chat_config.profile_id,
                 "usage": {},
             }
-        return self.llm_service.complete_json_object(
+        if review_scope.get("source_kind") == "query_only":
+            return {
+                "ok": False,
+                "payload": None,
+                "reason": "not_attempted",
+                "error": "missing_selected_code_content",
+                "provider": "openai_compatible",
+                "model": chat_config.model,
+                "profile_id": chat_config.profile_id,
+                "usage": {},
+            }
+        result_payload = self.llm_service.complete_json_object(
             messages=self._code_review_llm_messages(
                 request=request,
                 result=result,
                 output_language=output_language,
             ),
-            config=chat_config,
+            config=self._llm_review_config(chat_config),
         )
+        raw_text = str(result_payload.get("text") or "").strip()
+        if not result_payload.get("ok") and result_payload.get("reason") == "json_parse_failed" and raw_text:
+            return {
+                **result_payload,
+                "ok": True,
+                "payload": self._text_fallback_review_payload(raw_text, output_language=output_language),
+                "reason": "completed_text_fallback",
+                "structured": False,
+            }
+        if result_payload.get("ok"):
+            result_payload["structured"] = True
+        return result_payload
 
     def _llm_analysis_from_review(
         self,
@@ -371,13 +607,13 @@ class CodeReviewSkillExecutor:
         key_points: list[str] = []
         for item in issues[:3]:
             if isinstance(item, dict):
-                text = str(item.get("title") or item.get("reason") or "").strip()
+                text = _display_text(item.get("title") or item.get("reason") or item)
             else:
-                text = str(item).strip()
+                text = _display_text(item)
             if text:
                 key_points.append(text)
         for item in recommendations[:2]:
-            text = str(item.get("suggestion") if isinstance(item, dict) else item).strip()
+            text = _display_text(item.get("suggestion") if isinstance(item, dict) else item)
             if text:
                 key_points.append(text)
         severity_summary = result.get("severity_summary") or {}
@@ -388,7 +624,7 @@ class CodeReviewSkillExecutor:
         else:
             priority = "low"
         if status == "completed":
-            text = str(llm_payload.get("summary") or "").strip()
+            text = _display_text(llm_payload.get("summary"))
             if not text:
                 text = _localized(
                     output_language,
@@ -442,7 +678,17 @@ class CodeReviewSkillExecutor:
             chat_config=chat_config,
         )
         llm_payload = llm_review.get("payload") if llm_review.get("ok") else None
-        llm_payload = llm_payload if isinstance(llm_payload, dict) else {}
+        llm_payload = (
+            self._normalize_llm_review_payload(
+                llm_payload,
+                raw_text=str(llm_review.get("text") or ""),
+                output_language=output_language,
+            )
+            if llm_review.get("ok")
+            else {}
+        )
+        if llm_review.get("ok"):
+            llm_review["payload"] = llm_payload
         localized_issues = self._localized_review_issues(
             result["issue_list"],
             output_language=output_language,

@@ -176,18 +176,55 @@ class ProjectInventoryService:
     ) -> dict[str, Any]:
         needle = query.lower().strip()
         inferred_type = asset_type or self._infer_asset_type(needle)
-        assets = self.list_assets(project_id=project_id, asset_type=inferred_type, query=query, limit=limit)
-        if not assets and "nanite" in needle:
-            assets = [
-                item
-                for item in self.list_assets(project_id=project_id, asset_type="StaticMesh", limit=10000)
-                if self._matches_nanite_query(item, needle)
-            ][:limit]
-        if not assets and self._looks_like_asset_listing(needle):
-            assets = self.list_assets(project_id=project_id, asset_type=inferred_type, limit=limit)
+        is_code_query = self._looks_like_code_query(needle)
+        is_asset_query = inferred_type is not None or self._mentions_asset_domain(needle)
+        assets: list[dict[str, Any]] = []
+        if not is_code_query or is_asset_query:
+            if not assets and "nanite" in needle:
+                assets = [
+                    item
+                    for item in self.list_assets(project_id=project_id, asset_type="StaticMesh", limit=10000)
+                    if self._matches_nanite_query(item, needle)
+                ][:limit]
+            if not assets and query.strip():
+                referenced_candidates = self.list_assets(project_id=project_id, asset_type=inferred_type, limit=10000)
+                assets = [
+                    item for item in referenced_candidates if self._asset_referenced_by_query(item, needle)
+                ][:limit]
+            if not assets and self._looks_like_asset_listing(needle):
+                assets = self.list_assets(project_id=project_id, asset_type=inferred_type, limit=limit)
+            if not assets and query.strip():
+                assets = self.list_assets(project_id=project_id, asset_type=inferred_type, query=query, limit=limit)
+            if not assets and query.strip():
+                query_terms = self._query_terms(needle, inferred_type)
+                candidates = self.list_assets(project_id=project_id, asset_type=inferred_type, limit=10000)
+                assets = [
+                    item
+                    for item in candidates
+                    if self._asset_referenced_by_query(item, needle)
+                    or any(self._asset_matches(item, term) for term in query_terms)
+                ][:limit]
         code_files = []
-        if self._looks_like_code_query(needle):
-            code_files = self.list_code_files(project_id=project_id, query=query, limit=limit)
+        if is_code_query:
+            listing_query = self._looks_like_asset_listing(needle)
+            code_files = (
+                []
+                if listing_query
+                else self.list_code_files(project_id=project_id, query=query, limit=limit)
+            )
+            if not code_files and query.strip():
+                code_candidates = self.list_code_files(project_id=project_id, limit=10000)
+                code_files = [
+                    item for item in code_candidates if self._code_file_referenced_by_query(item, needle)
+                ][:limit]
+            if not code_files and listing_query:
+                code_files = self.list_code_files(project_id=project_id, limit=limit)
+        summary = self.summary(project_id)
+        empty_reason = ""
+        if not summary.get("has_snapshot"):
+            empty_reason = "no_project_inventory_snapshot"
+        elif not assets and not code_files:
+            empty_reason = "no_matching_inventory_items"
         items = [
             {"kind": "asset", "score_reason": "asset_inventory_match", **item}
             for item in assets
@@ -199,11 +236,12 @@ class ProjectInventoryService:
         return {
             "items": items[:limit],
             "summary": {
-                **self.summary(project_id),
+                **summary,
                 "query": query,
                 "inferred_asset_type": inferred_type,
                 "asset_match_count": len(assets),
                 "code_file_match_count": len(code_files),
+                "empty_reason": empty_reason,
             },
         }
 
@@ -285,7 +323,10 @@ class ProjectInventoryService:
         snapshot_id = None
         if project_id:
             snapshot_id = store["latest_by_project"].get(_slug(project_id))
-        snapshot_id = snapshot_id or store.get("latest_snapshot_id")
+            if not snapshot_id:
+                return None
+        else:
+            snapshot_id = store.get("latest_snapshot_id")
         snapshot = store["snapshots"].get(snapshot_id or "")
         return snapshot if isinstance(snapshot, dict) else None
 
@@ -313,6 +354,36 @@ class ProjectInventoryService:
             _contains_text(item.get(key), needle)
             for key in ("asset_path", "asset_name", "asset_type", "package_path", "tags", "properties", "settings")
         )
+
+    def _asset_referenced_by_query(self, item: dict[str, Any], query: str) -> bool:
+        candidates = [
+            str(item.get("asset_name") or "").lower(),
+            str(item.get("asset_path") or "").lower(),
+            str(item.get("package_path") or "").lower(),
+        ]
+        for value in candidates:
+            if not value:
+                continue
+            leaf = value.rstrip("/").rsplit("/", 1)[-1].split(".", 1)[0]
+            if value in query or (leaf and leaf in query):
+                return True
+        return False
+
+    def _code_file_referenced_by_query(self, item: dict[str, Any], query: str) -> bool:
+        candidates = [
+            str(item.get("file_path") or "").lower(),
+            str(item.get("relative_path") or "").lower(),
+            str(item.get("label") or "").lower(),
+            str(item.get("module_name") or "").lower(),
+        ]
+        for value in candidates:
+            if not value:
+                continue
+            leaf = value.rstrip("/").rsplit("/", 1)[-1]
+            stem = leaf.rsplit(".", 1)[0]
+            if value in query or leaf in query or (stem and stem in query):
+                return True
+        return False
 
     def _infer_asset_type(self, query: str) -> str | None:
         mapping = {
@@ -343,10 +414,109 @@ class ProjectInventoryService:
         return None
 
     def _looks_like_code_query(self, query: str) -> bool:
-        return any(token in query for token in ("cpp", ".cpp", ".h", "c++", "代码", "类", "module", "模块"))
+        return any(
+            token in query
+            for token in ("cpp", ".cpp", ".h", "c++", "代码", "类", "class", "file", "module", "模块", "文件")
+        )
 
     def _looks_like_asset_listing(self, query: str) -> bool:
-        return any(token in query for token in ("asset", "assets", "资产", "有哪些", "列表", "settings", "属性", "设置"))
+        return any(
+            token in query
+            for token in (
+                "asset",
+                "assets",
+                "list",
+                "show",
+                "which",
+                "what",
+                "资产",
+                "有哪些",
+                "哪些",
+                "列出",
+                "列一下",
+                "列举",
+                "列表",
+                "查看",
+                "查询",
+                "settings",
+                "属性",
+                "设置",
+            )
+        )
+
+    def _mentions_asset_domain(self, query: str) -> bool:
+        return any(
+            token in query
+            for token in (
+                "asset",
+                "assets",
+                "blueprint",
+                "staticmesh",
+                "static mesh",
+                "skeletalmesh",
+                "skeletal mesh",
+                "material",
+                "texture",
+                "mesh",
+                "nanite",
+                "lod",
+                "资产",
+                "蓝图",
+                "静态网格",
+                "骨骼网格",
+                "材质",
+                "贴图",
+                "网格体",
+            )
+        )
+
+    def _query_terms(self, query: str, inferred_asset_type: str | None) -> list[str]:
+        separators = "，。！？、；：,.!?;:()[]{}<>|/\\\"'"
+        normalized = query
+        for char in separators:
+            normalized = normalized.replace(char, " ")
+        stopwords = {
+            "current",
+            "project",
+            "this",
+            "that",
+            "assets",
+            "asset",
+            "list",
+            "show",
+            "which",
+            "what",
+            "please",
+            "当前项目",
+            "当前工程",
+            "这个项目",
+            "这个工程",
+            "项目",
+            "工程",
+            "里面",
+            "里",
+            "中",
+            "的",
+            "有哪些",
+            "哪些",
+            "列出",
+            "列一下",
+            "列举",
+            "一下",
+            "资产",
+            "设置",
+            "属性",
+        }
+        if inferred_asset_type:
+            stopwords.add(inferred_asset_type.lower())
+        raw_terms = [term.strip().lower() for term in normalized.split() if term.strip()]
+        terms: list[str] = []
+        for term in raw_terms:
+            if term in stopwords or len(term) < 2:
+                continue
+            if term not in terms:
+                terms.append(term)
+        return terms[:8]
 
     def _matches_nanite_query(self, item: dict[str, Any], query: str) -> bool:
         settings = item.get("settings") if isinstance(item.get("settings"), dict) else {}

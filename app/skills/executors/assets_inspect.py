@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.agent.context_builder import build_context_summary
@@ -135,6 +135,14 @@ class AssetsInspectSkillExecutor:
     def _language_label(self, language: str) -> str:
         return "Simplified Chinese" if language.startswith("zh") else "English"
 
+    def _llm_analysis_config(self, chat_config: ChatRuntimeConfig) -> ChatRuntimeConfig:
+        return replace(
+            chat_config,
+            temperature=min(chat_config.temperature, 0.2),
+            max_tokens=min(chat_config.max_tokens, 650),
+            timeout_ms=max(chat_config.timeout_ms, 45000),
+        )
+
     def _asset_llm_messages(
         self,
         *,
@@ -147,10 +155,10 @@ class AssetsInspectSkillExecutor:
     ) -> list[dict[str, str]]:
         compact_payload = {
             "summary": result["summary"],
-            "violations": localized_violations[:8],
-            "rename_suggestions": localized_rename_suggestions[:8],
-            "type_insights": result["type_insights"][:8],
-            "relationship_summary": result["relationship_summary"][:8],
+            "violations": localized_violations[:5],
+            "rename_suggestions": localized_rename_suggestions[:5],
+            "type_insights": result["type_insights"][:5],
+            "relationship_summary": result["relationship_summary"][:5],
             "supporting_rule_count": len(support["citations"]),
         }
         system_prompt = (
@@ -196,7 +204,7 @@ class AssetsInspectSkillExecutor:
                 "profile_id": chat_config.profile_id,
                 "usage": {},
             }
-        return self.llm_service.complete_json_object(
+        llm_result = self.llm_service.complete_json_object(
             messages=self._asset_llm_messages(
                 request=request,
                 result=result,
@@ -205,8 +213,25 @@ class AssetsInspectSkillExecutor:
                 localized_rename_suggestions=localized_rename_suggestions,
                 output_language=output_language,
             ),
-            config=chat_config,
+            config=self._llm_analysis_config(chat_config),
         )
+        raw_text = str(llm_result.get("text") or "").strip()
+        if not llm_result.get("ok") and llm_result.get("reason") == "json_parse_failed" and raw_text:
+            return {
+                **llm_result,
+                "ok": True,
+                "payload": {
+                    "analysis": raw_text,
+                    "key_points": [],
+                    "priority": "medium" if result["summary"]["violation_count"] else "low",
+                    "recommendations": [],
+                },
+                "reason": "completed_text_fallback",
+                "structured": False,
+            }
+        if llm_result.get("ok"):
+            llm_result["structured"] = True
+        return llm_result
 
     def _asset_llm_analysis_view(
         self,
