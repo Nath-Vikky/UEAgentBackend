@@ -10,6 +10,7 @@ def _request(
     content: str,
     context: dict | None = None,
     payload: dict | None = None,
+    preferred_output_language: str = "auto",
 ) -> UnifiedTaskRequest:
     return UnifiedTaskRequest(
         task_type=task_type,
@@ -24,7 +25,7 @@ def _request(
             "profile_id": "default",
             "stream": False,
             "debug": True,
-            "preferred_output_language": "auto",
+            "preferred_output_language": preferred_output_language,
             "return_debug_projection": True,
         },
     )
@@ -78,3 +79,59 @@ def test_explicit_project_qa_task_type_forces_retrieval_route() -> None:
 
     assert routing["intent"]["route_type"] == "project_qa"
     assert routing["route"]["decision_source"] == "explicit_task_type"
+
+
+def test_auto_language_defaults_to_chinese_even_for_english_question() -> None:
+    request = _request(content="Explain dependency injection in simple terms.")
+
+    routing = classify_request(request)
+
+    assert routing["locale"]["detected_input_language"] == "en-US"
+    assert routing["locale"]["preferred_output_language"] == "zh-CN"
+    assert routing["locale"]["final_output_language"] == "zh-CN"
+    assert routing["locale"]["language_source"] == "default"
+
+
+def test_runtime_language_preference_overrides_default() -> None:
+    request = _request(
+        content="Explain dependency injection in simple terms.",
+        preferred_output_language="en-US",
+    )
+
+    routing = classify_request(request)
+
+    assert routing["locale"]["final_output_language"] == "en-US"
+    assert routing["locale"]["language_source"] == "explicit_override"
+
+
+def test_session_language_preference_is_used_when_runtime_is_auto() -> None:
+    request = _request(content="Explain dependency injection in simple terms.")
+
+    routing = classify_request(request, session_preference="en-US")
+
+    assert routing["locale"]["final_output_language"] == "en-US"
+    assert routing["locale"]["language_source"] == "session_preference"
+
+
+def test_editor_locale_is_used_before_default() -> None:
+    request = _request(
+        content="Explain dependency injection in simple terms.",
+        context={"active_panel": "AgentChat", "editor_state": {"locale": "en-US"}},
+    )
+
+    routing = classify_request(request)
+
+    assert routing["locale"]["final_output_language"] == "en-US"
+    assert routing["locale"]["language_source"] == "editor_locale"
+
+
+def test_message_language_override_is_single_turn_source() -> None:
+    request = _request(
+        content="Explain dependency injection in simple terms, reply in English.",
+        preferred_output_language="zh-CN",
+    )
+
+    routing = classify_request(request, session_preference="zh-CN")
+
+    assert routing["locale"]["final_output_language"] == "en-US"
+    assert routing["locale"]["language_source"] == "message_override"

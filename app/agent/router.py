@@ -3,10 +3,16 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.i18n.language import (
+    CHINESE_REPLY_HINTS,
+    DEFAULT_OUTPUT_LANGUAGE,
+    ENGLISH_REPLY_HINTS,
+    detect_language,
+    localized as _localized,
+    normalize_output_language,
+)
 from app.schemas.requests import UnifiedTaskRequest
 from app.tools.registry import TASK_TYPE_TO_TOOL_ID, candidate_tools_for_text, get_tool_spec
-
-_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 PROJECT_HINTS = {
     "project",
@@ -253,64 +259,100 @@ def _hint_present(latest_text: str, text_lower: str, hint: str) -> bool:
     return bool(pattern.search(text_lower))
 
 
-def detect_language(text: str) -> str:
-    if _CJK_RE.search(text):
+def _language_payload(
+    *,
+    detected_language: str,
+    preferred_output_language: str,
+    final_output_language: str,
+    language_source: str,
+) -> dict[str, str]:
+    return {
+        "detected_input_language": detected_language,
+        "preferred_output_language": preferred_output_language,
+        "final_output_language": final_output_language,
+        "language_source": language_source,
+    }
+
+
+def _message_language_override(latest_text: str, lowered: str) -> str | None:
+    if any(hint in lowered or hint in latest_text for hint in ENGLISH_REPLY_HINTS):
+        return "en-US"
+    if any(hint in lowered or hint in latest_text for hint in CHINESE_REPLY_HINTS):
         return "zh-CN"
-    return "en-US"
+    return None
 
 
-def _localized(language: str, zh_text: str, en_text: str) -> str:
-    return zh_text if language.startswith("zh") else en_text
+def _editor_language_preference(request: UnifiedTaskRequest) -> str | None:
+    candidates = [
+        request.payload.get("preferred_output_language"),
+        request.payload.get("output_language"),
+        request.payload.get("locale"),
+        request.context.editor_state.get("preferred_output_language"),
+        request.context.editor_state.get("output_language"),
+        request.context.editor_state.get("language"),
+        request.context.editor_state.get("locale"),
+        request.context.editor_state.get("culture"),
+        request.context.editor_state.get("editor_locale"),
+        request.context.editor_state.get("user_locale"),
+    ]
+    for value in candidates:
+        normalized = normalize_output_language(str(value) if value is not None else None)
+        if normalized and normalized != "auto":
+            return normalized
+    return None
 
 
 def _preferred_language(
     latest_text: str,
     runtime_preference: str,
     session_preference: str | None,
+    editor_preference: str | None = None,
 ) -> dict[str, str]:
     detected_language = detect_language(latest_text)
     lowered = latest_text.lower()
-    if "用英文回答" in latest_text or "reply in english" in lowered:
-        return {
-            "detected_input_language": detected_language,
-            "preferred_output_language": "en-US",
-            "final_output_language": "en-US",
-            "language_source": "explicit_override",
-        }
-    if "用中文回答" in latest_text or "reply in chinese" in lowered:
-        return {
-            "detected_input_language": detected_language,
-            "preferred_output_language": "zh-CN",
-            "final_output_language": "zh-CN",
-            "language_source": "explicit_override",
-        }
-    if runtime_preference != "auto":
-        return {
-            "detected_input_language": detected_language,
-            "preferred_output_language": runtime_preference,
-            "final_output_language": runtime_preference,
-            "language_source": "explicit_override",
-        }
-    if latest_text.strip():
-        return {
-            "detected_input_language": detected_language,
-            "preferred_output_language": "auto",
-            "final_output_language": detected_language,
-            "language_source": "latest_user_message",
-        }
-    if session_preference:
-        return {
-            "detected_input_language": detected_language,
-            "preferred_output_language": "auto",
-            "final_output_language": session_preference,
-            "language_source": "session_preference",
-        }
-    return {
-        "detected_input_language": detected_language,
-        "preferred_output_language": "auto",
-        "final_output_language": detected_language,
-        "language_source": "default",
-    }
+
+    message_override = _message_language_override(latest_text, lowered)
+    if message_override:
+        return _language_payload(
+            detected_language=detected_language,
+            preferred_output_language=message_override,
+            final_output_language=message_override,
+            language_source="message_override",
+        )
+
+    normalized_runtime = normalize_output_language(runtime_preference)
+    if normalized_runtime and normalized_runtime != "auto":
+        return _language_payload(
+            detected_language=detected_language,
+            preferred_output_language=normalized_runtime,
+            final_output_language=normalized_runtime,
+            language_source="explicit_override",
+        )
+
+    normalized_session = normalize_output_language(session_preference)
+    if normalized_session and normalized_session != "auto":
+        return _language_payload(
+            detected_language=detected_language,
+            preferred_output_language=normalized_session,
+            final_output_language=normalized_session,
+            language_source="session_preference",
+        )
+
+    normalized_editor = normalize_output_language(editor_preference)
+    if normalized_editor and normalized_editor != "auto":
+        return _language_payload(
+            detected_language=detected_language,
+            preferred_output_language=normalized_editor,
+            final_output_language=normalized_editor,
+            language_source="editor_locale",
+        )
+
+    return _language_payload(
+        detected_language=detected_language,
+        preferred_output_language=DEFAULT_OUTPUT_LANGUAGE,
+        final_output_language=DEFAULT_OUTPUT_LANGUAGE,
+        language_source="default",
+    )
 
 
 def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
@@ -497,6 +539,7 @@ def classify_request(
         latest_text,
         request.runtime_options.preferred_output_language,
         session_preference,
+        _editor_language_preference(request),
     )
     language = locale["final_output_language"]
     text_lower = latest_text.lower()

@@ -19,6 +19,7 @@ from app.db.repositories.proposals import (
     save_proposal,
 )
 from app.db.repositories.tasks import add_task_artifact, add_task_event, get_task, save_task
+from app.i18n.language import DEFAULT_OUTPUT_LANGUAGE
 from app.observability.audit import build_audit_entry
 from app.schemas.requests import ProposalDecisionRequest
 from app.utils.json_tools import dumps_pretty
@@ -32,7 +33,7 @@ class ProposalService:
         self.settings = settings
 
     def _language_of_task(self, task: TaskModel) -> str:
-        return str((task.locale_json or {}).get("final_output_language") or "en-US")
+        return str((task.locale_json or {}).get("final_output_language") or DEFAULT_OUTPUT_LANGUAGE)
 
     def _localized(self, task: TaskModel, zh_text: str, en_text: str) -> str:
         return zh_text if self._language_of_task(task).startswith("zh") else en_text

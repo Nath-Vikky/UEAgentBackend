@@ -10,6 +10,7 @@ from app.db.repositories.sessions import (
     list_session_messages,
     list_session_tasks,
 )
+from app.i18n.language import DEFAULT_OUTPUT_LANGUAGE
 from app.schemas.requests import SessionCreateRequest
 from app.schemas.responses import UnifiedTaskResponse
 from app.services.task_service import TaskService
@@ -95,7 +96,7 @@ class SessionService:
         return {
             "session_id": session_model.session_id,
             "project_name": session_model.project_name,
-            "preferred_output_language": session_model.preferred_output_language or "auto",
+            "preferred_output_language": session_model.preferred_output_language or DEFAULT_OUTPUT_LANGUAGE,
             "current_profile_id": session_model.current_profile_id,
             "message_count": len(messages),
             "task_count": len(tasks),

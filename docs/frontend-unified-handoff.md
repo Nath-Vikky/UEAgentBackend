@@ -741,3 +741,70 @@ Code Review 面板没有聊天输入框，所以高亮按钮 / Highlights 弹窗
 ```
 
 `file_path` 应优先使用 `POST /api/v1/tasks/code-review/files` 返回的 `file_path` 或 `relative_path`。如果后端和 UE 编辑器不在同一台机器、后端无法读取这个路径，再考虑额外发送 `payload.file_content`；当前本地个人作品场景下，`project_root + file_path` 就够。
+
+## 17. 2026-04-24 语言切换按钮接入
+
+本轮后端已经把输出语言策略收口为“前端按钮优先，默认中文”。UE 前端需要新增一个轻量语言切换控件，建议放在 Agent Chat 顶部工具条或插件全局设置区，只有两个选项：
+
+- `中文`：默认值，发送 `zh-CN`
+- `English`：发送 `en-US`
+
+每次调用后端任务接口时，都在 `runtime_options` 里带上：
+
+```json
+{
+  "runtime_options": {
+    "preferred_output_language": "zh-CN"
+  }
+}
+```
+
+用户切换英文后改为：
+
+```json
+{
+  "runtime_options": {
+    "preferred_output_language": "en-US"
+  }
+}
+```
+
+后端兼容 `auto`，但新策略下 `auto` 不再跟随用户输入语言，而是按以下顺序决策：
+
+- 用户消息里明确要求“用英文回答 / 用中文回答”或 `reply in English / reply in Chinese`
+- `runtime_options.preferred_output_language`
+- session 已保存的语言偏好
+- `context.editor_state.locale` / `context.editor_state.culture` 等编辑器语言字段
+- 默认 `zh-CN`
+
+注意：消息内临时指定语言是单轮覆盖，不会改写 session 偏好；前端按钮传入的 `zh-CN/en-US` 会写入 session，后续 `auto` 请求也会沿用。
+
+如果前端在启动或恢复会话时希望提前同步语言，可以调用：
+
+```http
+POST /api/v1/sessions
+```
+
+```json
+{
+  "session_id": "rushba_agent_chat",
+  "project_name": "RushBa",
+  "preferred_output_language": "zh-CN",
+  "profile_id": "default"
+}
+```
+
+后端会在所有响应的 `locale` 中返回：
+
+- `detected_input_language`：后端检测到的用户输入语言，只用于诊断
+- `preferred_output_language`：本轮采用的偏好语言
+- `final_output_language`：最终用户可见输出语言
+- `language_source`：来源，可能是 `explicit_override`、`message_override`、`session_preference`、`editor_locale` 或 `default`
+
+前端渲染时不需要自己翻译后端文本，直接展示 `assistant_message`、`user_view.text`、`user_view.blocks[].title/text`、`data.llm_analysis.text` 等用户可见字段即可。Debug View、raw JSON、枚举值、路径、代码符号仍然保持英文或原文。
+
+### 前端本轮需要读取的文件
+
+- `docs/frontend-unified-handoff.md`：主交接文档，重点看本节和 Code Review 高亮字段章节
+- `docs/backend-user-guide.md`：需要理解后端语言策略、知识库和模型配置时查看
+- `docs/improveplan.md`：只作为阶段计划和边界确认，不需要按它逐条实现 UI

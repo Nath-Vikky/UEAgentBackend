@@ -597,3 +597,36 @@ Project QA 的上下文优先级建议：
 - 接口和编辑器采集项暂不需要改
 - 如果当前高亮按钮仍显示 JSON，需要前端把数据源切回 `user_view.blocks` 或 `data.localized_review`
 - Code Review 仍需稳定提交 `payload.project_root`、`payload.file_path`、`payload.source_roots`，以及 `context.current_file/current_module`
+
+## 2026-04-24 语言偏好统一控制计划
+
+目标：让后端所有用户可见输出都遵循用户选择的语言。UE 插件前端提供 `中文 / English` 切换按钮，默认中文；后端负责把语言偏好应用到 Agent Chat、Project QA 和 4 个工具型 Skill 的自然语言输出。
+
+策略：
+
+- 前端默认传 `runtime_options.preferred_output_language = "zh-CN"`
+- 用户切换英文时传 `runtime_options.preferred_output_language = "en-US"`
+- 后端会把显式语言偏好写入 session，后续请求可继续沿用
+- `auto` 不再默认跟随用户输入语言，而是按 `session preference -> editor locale -> zh-CN` 决定
+- 用户在消息中明确说“用英文回答 / 用中文回答”时，仍可作为单次显式覆盖
+
+边界：
+
+- `user_view.title/text`、`user_view.blocks[].title/text`、`assistant_message`、`reason/suggestion`、LLM prompt 的语言都要跟随最终语言
+- Debug View、API 字段名、枚举、文件路径、代码符号和 raw JSON 保持英文或原文
+- 当前先支持 `zh-CN` 和 `en-US`，后续如需日文/韩文再扩展枚举
+
+前端影响：
+
+- 需要新增语言切换按钮，并把选择保存到 UE 插件本地配置
+- 每次请求都带上 `runtime_options.preferred_output_language`
+- 启动/恢复 session 时可调用 `POST /api/v1/sessions` 同步 `preferred_output_language`
+
+完成状态：
+
+- 后端已新增统一语言工具模块，支持 `zh-CN/en-US/auto` 标准化
+- `classify_request()` 已改为 `message override -> runtime preference -> session preference -> editor locale -> zh-CN`
+- `auto` 不再跟随用户输入语言，英文问题默认仍按中文输出，除非前端按钮或 session 指定 `en-US`
+- session 只持久化前端按钮、session 或默认语言；消息内“用英文回答/用中文回答”作为单轮 `message_override`
+- `LocaleDescriptor.language_source` 新增 `message_override` 和 `editor_locale`
+- 前端交接文档已明确语言切换按钮、请求字段和需要阅读的文档

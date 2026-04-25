@@ -646,6 +646,50 @@ def test_session_history_restore_keeps_user_assistant_order_across_turns(client:
     assert items[-1]["content"] == second_chat.json()["assistant_message"]
 
 
+def test_tool_tasks_do_not_pollute_agent_chat_session_history(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/tasks/code-review",
+        json={
+            "task_type": "code_review",
+            "session": {
+                "session_id": "tool_task_history_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Review this Unreal snippet.",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "CodeReview",
+                "current_file": "Source/Demo/MyActor.cpp",
+            },
+            "payload": {
+                "user_query": "Review this Unreal snippet.",
+                "code": "void AMyActor::Tick(float DeltaTime) { Super::Tick(DeltaTime); }",
+            },
+            "ui_state": {"active_view": "user", "selected_panel": "CodeReview"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    history = client.get("/api/v1/sessions/tool_task_history_session/history")
+    tasks = client.get("/api/v1/sessions/tool_task_history_session/tasks")
+
+    assert response.status_code == 200
+    assert history.status_code == 200
+    assert history.json()["items"] == []
+    assert tasks.status_code == 200
+    assert tasks.json()["items"]
+
+
 def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None:
     client.post(
         "/api/v1/knowledge-base/refresh",
@@ -695,7 +739,7 @@ def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None
     assert body["retrieval_trace"]["retrieved_docs"]
 
 
-def test_project_qa_english_query_keeps_english_locale(client: TestClient) -> None:
+def test_project_qa_explicit_english_preference_keeps_english_locale(client: TestClient) -> None:
     client.post(
         "/api/v1/knowledge-base/refresh",
         json={"source_paths": ["../backend.md"], "force_rebuild": True},
@@ -729,7 +773,7 @@ def test_project_qa_english_query_keeps_english_locale(client: TestClient) -> No
                 "profile_id": "default",
                 "stream": False,
                 "debug": True,
-                "preferred_output_language": "auto",
+                "preferred_output_language": "en-US",
                 "return_debug_projection": True,
             },
         },
@@ -1658,7 +1702,7 @@ def test_logs_analyze_workflow_returns_structured_events(client: TestClient) -> 
                 "profile_id": "default",
                 "stream": False,
                 "debug": True,
-                "preferred_output_language": "auto",
+                "preferred_output_language": "en-US",
                 "return_debug_projection": True,
             },
         },
@@ -2056,7 +2100,7 @@ def test_assets_inspect_can_summarize_types_and_relationships(client: TestClient
                 "profile_id": "default",
                 "stream": False,
                 "debug": True,
-                "preferred_output_language": "auto",
+                "preferred_output_language": "en-US",
                 "return_debug_projection": True,
             },
         },

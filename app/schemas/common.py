@@ -22,7 +22,14 @@ RouteType = Literal[
     "proposal_wait",
     "fallback",
 ]
-LanguageSource = Literal["latest_user_message", "session_preference", "explicit_override", "default"]
+LanguageSource = Literal[
+    "latest_user_message",
+    "session_preference",
+    "explicit_override",
+    "message_override",
+    "editor_locale",
+    "default",
+]
 
 
 class ErrorDetail(BaseModel):

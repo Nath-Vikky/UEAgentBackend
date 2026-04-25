@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 
-from app.agent.router import detect_language
+from app.i18n.language import detect_language
 from app.rag.ingestion.cleaners import clean_text
 from app.rag.ingestion.capabilities import CODE_SOURCE_SUFFIXES, TEXT_SOURCE_SUFFIXES
 from app.rag.schemas import ParsedDocument

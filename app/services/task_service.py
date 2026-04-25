@@ -58,6 +58,8 @@ from app.workflows.graphs import (
     run_perf_analyze_workflow,
 )
 
+CHAT_HISTORY_TASK_TYPES = {"agent_chat", "project_qa"}
+
 
 def _localized(language: str, zh_text: str, en_text: str) -> str:
     return zh_text if language.startswith("zh") else en_text
@@ -528,6 +530,10 @@ class TaskService:
             decision=decision,
         )
 
+    @staticmethod
+    def _should_persist_session_history(requested_task_type: str, actual_task_type: str) -> bool:
+        return requested_task_type in CHAT_HISTORY_TASK_TYPES and actual_task_type in CHAT_HISTORY_TASK_TYPES
+
     def create_task(self, request: UnifiedTaskRequest) -> UnifiedTaskResponse:
         session_model = get_or_create_session(
             self.db,
@@ -539,23 +545,33 @@ class TaskService:
         chat_config = self._resolve_chat_config(request)
         routing = classify_request(request, session_preference=session_model.preferred_output_language)
         routing = self._refine_agent_chat_route(request=request, routing=routing, chat_config=chat_config)
+        preferred_language_to_store = (
+            None
+            if routing["locale"].get("language_source") == "message_override"
+            else routing["locale"]["final_output_language"]
+        )
         get_or_create_session(
             self.db,
             request.session.session_id,
             project_name=request.context.project_name,
-            preferred_output_language=routing["locale"]["final_output_language"],
+            preferred_output_language=preferred_language_to_store,
             profile_id=request.runtime_options.profile_id,
         )
-        append_messages(
-            self.db,
-            request.session.session_id,
-            [message.model_dump(mode="json") for message in request.session.messages],
+        actual_task_type = self._actual_task_type(request.task_type, routing)
+        persist_session_history = self._should_persist_session_history(
+            request.task_type,
+            actual_task_type,
         )
+        if persist_session_history:
+            append_messages(
+                self.db,
+                request.session.session_id,
+                [message.model_dump(mode="json") for message in request.session.messages],
+            )
 
         task_id = f"task_{uuid.uuid4().hex}"
         run_id = f"run_{uuid.uuid4().hex}"
         trace_id = f"trace_{uuid.uuid4().hex}"
-        actual_task_type = self._actual_task_type(request.task_type, routing)
 
         started = time.perf_counter()
         execution = self._execute_route(
@@ -667,7 +683,7 @@ class TaskService:
             event_payloads=event_payloads,
             artifact_payloads=artifact_payloads,
         )
-        if response.assistant_message.strip():
+        if persist_session_history and response.assistant_message.strip():
             append_messages(
                 self.db,
                 request.session.session_id,

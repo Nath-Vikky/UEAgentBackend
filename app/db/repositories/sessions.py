@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.session import MessageModel, SessionModel
 from app.db.models.task import TaskModel
+from app.i18n.language import normalize_output_language
 from app.utils.time import utc_isoformat
 
 
@@ -18,12 +19,13 @@ def get_or_create_session(
     preferred_output_language: str | None,
     profile_id: str | None,
 ) -> SessionModel:
+    normalized_language = normalize_output_language(preferred_output_language)
     session_model = db.get(SessionModel, session_id)
     if session_model:
         if project_name:
             session_model.project_name = project_name
-        if preferred_output_language and preferred_output_language != "auto":
-            session_model.preferred_output_language = preferred_output_language
+        if normalized_language and normalized_language != "auto":
+            session_model.preferred_output_language = normalized_language
         if profile_id:
             session_model.current_profile_id = profile_id
         db.commit()
@@ -33,7 +35,9 @@ def get_or_create_session(
     session_model = SessionModel(
         session_id=session_id,
         project_name=project_name,
-        preferred_output_language=preferred_output_language,
+        preferred_output_language=(
+            normalized_language if normalized_language and normalized_language != "auto" else None
+        ),
         current_profile_id=profile_id,
         metadata_json={"created_via": "phase_1_scaffold"},
     )

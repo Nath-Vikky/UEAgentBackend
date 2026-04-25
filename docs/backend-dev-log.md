@@ -321,3 +321,29 @@ UE 端反馈 Code Review 高亮按钮原本展示 LLM 回答、建议和概要�
 
 - `python -m ruff check app tests --no-cache` 通过。
 - 新增 Code Review JSON-like LLM fallback 集成测试，确认高亮展示字段不再以 `{` 开头，也不包含原始 `overview` key。
+
+## 2026-04-24 输出语言偏好统一
+
+本轮开始支持 UE 前端的 `中文 / English` 切换按钮，默认中文。核心目标是让 Agent Chat、Project QA 和工具型 Skill 的用户可见文本不再因为用户输入语言而漂移。
+
+### 主要代码改动
+
+- 新增 `app/i18n/language.py`，统一处理语言检测、`zh-CN/en-US/auto` 标准化和消息内语言覆盖识别。
+- `classify_request()` 的语言优先级调整为：消息内显式覆盖、`runtime_options.preferred_output_language`、session 偏好、编辑器 locale、默认 `zh-CN`。
+- `auto` 不再跟随用户输入语言；英文问题如果没有前端按钮或 session 指定英文，也会默认输出中文。
+- `LocaleDescriptor.language_source` 新增 `message_override` 和 `editor_locale`，便于 Debug View 判断语言来源。
+- session 持久化只记录稳定语言偏好；消息里的“用英文回答/用中文回答”是单轮覆盖，不改写 session 偏好。
+- `SessionService` 的默认语言展示从 `auto` 改为 `zh-CN`。
+- 根据 UE 前端 2026-04-25 handoff 复核，工具型任务不再写入 Agent Chat session history，只保留在 task 列表、Debug View 和 Trace 中。
+
+### 前端影响
+
+- 需要新增语言切换按钮，默认 `zh-CN`，英文时传 `en-US`。
+- 每次任务请求都建议带 `runtime_options.preferred_output_language`。
+- 启动或恢复 session 时可通过 `POST /api/v1/sessions` 同步 `preferred_output_language`。
+
+### 验证
+
+- `python -m pytest tests/unit/test_router.py -q` 通过。
+- `python -m pytest tests/integration/test_system_and_tasks.py::test_logs_analyze_workflow_returns_structured_events tests/integration/test_system_and_tasks.py::test_assets_inspect_can_summarize_types_and_relationships -q` 通过。
+- `python -m pytest tests/unit/test_router.py tests/integration/test_system_and_tasks.py -q` 通过，`51 passed`。

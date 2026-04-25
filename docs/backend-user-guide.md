@@ -1027,6 +1027,7 @@ Code Review 和 Assets Inspect 都会返回 `llm_analysis`。它是给用户看�
 - 会话恢复后，历史通常应呈现为 `user -> assistant -> user -> assistant`
 - 前端恢复历史时不需要再按本地“发送时间”二次重排
 - 同一次会话的后续请求，直接把后端返回的 history 当作权威历史，再在末尾追加新的 user 消息即可
+- 工具型任务（Code Review、Code Generate、Logs Analyze、Assets Inspect）不会写入 Agent Chat session history；它们只进入 task 列表和 Debug/Trace 数据，避免污染后续自由聊天上下文
 
 ### 18.4 Agent Chat 项目级 Inventory 工具选择
 
@@ -1105,3 +1106,75 @@ Code Review 是工具面板，不是聊天面板。前端的高亮按钮应展�
 不要把 `data.llm_review`、`debug_view.raw_result`、artifact 原始内容或 `analysis_input.source_excerpt` 放进普通用户高亮弹窗。这些属于 Debug View，可能包含原始 JSON、源码片段和模型诊断。
 
 后端现在会尽量保证 `user_view.blocks[].text` 和 `data.llm_analysis.text` 是自然语言。如果 LLM 返回 JSON-like 文本但没有严格符合 schema，后端会清洗成可展示文本，原始内容只保留在 `data.llm_review.text` 供 Debug 使用。
+
+### 18.8 输出语言偏好
+
+后端当前支持 `zh-CN` 和 `en-US` 两种用户可见输出语言，默认是 `zh-CN`。推荐 UE 插件前端提供 `中文 / English` 切换按钮，并把选择写入每次请求的 `runtime_options.preferred_output_language`。
+
+最小请求示例：
+
+```json
+{
+  "runtime_options": {
+    "preferred_output_language": "zh-CN"
+  }
+}
+```
+
+英文模式：
+
+```json
+{
+  "runtime_options": {
+    "preferred_output_language": "en-US"
+  }
+}
+```
+
+后端语言优先级如下：
+
+- 用户消息里显式说“用英文回答 / 用中文回答”或 `reply in English / reply in Chinese`
+- `runtime_options.preferred_output_language`
+- session 保存的语言偏好
+- `context.editor_state.locale`、`culture`、`editor_locale` 等编辑器语言字段
+- 默认 `zh-CN`
+
+`auto` 仍然兼容，但不再表示“跟随用户输入语言”。如果用户用英文提问但前端没有传 `en-US`，后端仍会默认用中文回答。这是为了让插件体验和用户选择保持一致，而不是让模型根据每句话自行漂移。
+
+会被本地化的内容包括：
+
+- `assistant_message`
+- `user_view.text`
+- `user_view.blocks[].title/text`
+- `data.llm_analysis.text`
+- 面向用户的 `reason`、`suggestion`、`summary`、`recommendations`
+
+不会被强制本地化的内容包括：
+
+- Debug View
+- API 字段名
+- 枚举值和 `reason_code`
+- 文件路径、代码符号、类名、函数名
+- raw JSON 和 artifact 原文
+
+如果希望在创建或恢复 session 时先保存语言偏好，可以调用：
+
+```http
+POST /api/v1/sessions
+```
+
+```json
+{
+  "session_id": "rushba_agent_chat",
+  "project_name": "RushBa",
+  "preferred_output_language": "zh-CN",
+  "profile_id": "default"
+}
+```
+
+响应里的 `locale` 可用于调试：
+
+- `detected_input_language`：检测到的输入语言
+- `preferred_output_language`：本轮偏好语言
+- `final_output_language`：最终输出语言
+- `language_source`：`explicit_override`、`message_override`、`session_preference`、`editor_locale` 或 `default`
