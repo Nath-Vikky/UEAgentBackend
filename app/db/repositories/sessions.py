@@ -179,8 +179,11 @@ def clear_session_state(db: Session, session_id: str) -> SessionModel | None:
     db.execute(delete(MessageModel).where(MessageModel.session_id == session_id))
     db.execute(update(TaskModel).where(TaskModel.session_id == session_id).values(session_id=None))
     session_model.preferred_output_language = None
+    metadata = dict(session_model.metadata_json or {})
+    metadata.pop("memory_summary", None)
+    metadata.pop("session_summary", None)
     session_model.metadata_json = {
-        **dict(session_model.metadata_json or {}),
+        **metadata,
         "cleared": True,
         "last_clear_message_count": message_count,
         "last_clear_task_count": task_count,

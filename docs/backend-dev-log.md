@@ -347,3 +347,164 @@ UE 端反馈 Code Review 高亮按钮原本展示 LLM 回答、建议和概要�
 - `python -m pytest tests/unit/test_router.py -q` 通过。
 - `python -m pytest tests/integration/test_system_and_tasks.py::test_logs_analyze_workflow_returns_structured_events tests/integration/test_system_and_tasks.py::test_assets_inspect_can_summarize_types_and_relationships -q` 通过。
 - `python -m pytest tests/unit/test_router.py tests/integration/test_system_and_tasks.py -q` 通过，`51 passed`。
+
+## 2026-04-25 Context Manager v1
+
+本轮开始执行后续优化路线中的阶段 A：统一上下文管理。目标是让 Agent Chat、Project QA 和工具型 Skill 不再各自拼上下文，而是先生成一份可解释、可裁剪、可调试的 compact context。
+
+### 主要代码改动
+
+- 新增 `app/agent/context_manager.py`，生成 `context_bundle_v1`。
+- `TaskService.create_task()` 在路由后统一构造 `context_bundle`，并传给 `direct_answer`、`project_qa`、`CodeReviewSkill` 和 `CodeGenerateSkill`。
+- `direct_answer` 和 `project_qa` 的 LLM prompt 现在会读取 compact context bundle，而不是只依赖请求里的当前消息。
+- `DebugView` schema 新增 `context_bundle` 字段，避免响应投影时丢弃上下文调试信息。
+- `debug_view.memory_summary.context_budget` 记录本轮上下文预算摘要，方便后续阶段 B 做真正的 Memory Summary / 上下文压缩。
+- 工具型任务继续不写入 Agent Chat session history，但最近工具任务摘要会进入 `context_bundle.tool_context`，方便后续自由聊天引用“刚才做过什么工具任务”。
+
+### 前端影响
+
+- 主 UI 暂不需要修改。
+- 如果 UE 前端要增强 Debug View，可新增 `Context Bundle` 分区读取 `debug_view.context_bundle` 和 `debug_view.memory_summary.context_budget`。
+- 前端回传文档时建议说明是否展示了 `recent_messages`、`tool_context` 和 `budget.warnings`。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- 重点集成测试通过：工具任务不污染聊天历史但可进入 tool context、Project QA 返回 context bundle、direct chat 跳过 RAG 但仍携带 context bundle。
+
+## 2026-04-25 Memory Summary v1
+
+本轮继续完成阶段 B：轻量会话记忆摘要。实现目标是让长会话不必把全部历史都塞进 prompt，同时保持个人作品级边界，不做复杂长期用户画像。
+
+### 主要代码改动
+
+- 新增 `app/agent/memory_manager.py`，使用确定性压缩策略生成 `memory_summary_v1`。
+- `TaskService.create_task()` 在 Agent Chat / Project QA 持久化 assistant 回复后更新 session memory。
+- `Context Manager` 现在能读取 dict 形式的 `memory_summary`，并投影到 `debug_view.context_bundle.session_summary`。
+- `Context Manager` 读取历史消息时改为优先取最新消息，再按时间恢复正序，避免长历史下 recent messages 拿到旧消息。
+- `SessionService` 顶层返回 `memory_summary`，方便 Debug View / Monitor 查看。
+- 清空 session 时会移除 `memory_summary` 和旧 `session_summary`，避免残留记忆。
+
+### 边界
+
+- 第一版不调用 LLM 做摘要，不新增数据库表，不做跨项目长期记忆。
+- 工具型任务仍然只进入 task 列表和 `tool_context` 摘要，不写入聊天 memory。
+- 主 UI 无需修改，Debug View 可以选择展示 memory 状态。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- 新增长会话压缩集成测试，覆盖 memory 触发、下一轮 Context Bundle 读取摘要、recent messages 保持最新历史。
+
+## 2026-04-25 Agent Decision Trace v1
+
+本轮继续完成阶段 E 的第一版：把分散在 route、context bundle、memory、retrieval trace、skill runtime、fallback warning 里的信息汇总为一条统一 Agent 决策链。
+
+### 主要代码改动
+
+- 新增 `app/agent/decision_trace.py`，生成 `agent_decision_trace_v1`。
+- `DebugView` schema 新增 `agent_decision_trace`。
+- `TaskService.create_task()` 在响应组合前生成决策链，挂入 `debug_view.agent_decision_trace`。
+- 决策链固定包含 `input_summary`、`language_decision`、`intent_decision`、`context_decision`、`retrieval_decision`、`tool_decision`、`memory_decision`、`fallback_decision`、`final_response_plan`。
+- 第一版不额外调用 LLM，只汇总已有后端判断，避免把 Debug 能力做成新的不稳定依赖。
+
+### 前端影响
+
+- 主 UI 不需要修改。
+- Debug View 可选新增 `Agent Decision Trace` 分区，读取 `debug_view.agent_decision_trace.summary` 和 `decisions`。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- Direct Chat 和 Project QA 集成测试已覆盖 `agent_decision_trace_v1`、route summary、retrieval decision 和 context decision。
+
+## 2026-04-25 RAG Readiness v1
+
+本轮完成阶段 C 的轻量版：不新增复杂评测服务，而是把现有本地 eval runner 和 KB 状态变得更可解释。
+
+### 主要代码改动
+
+- `KnowledgeBaseService.status()` 新增 `effective_mode`。
+- `GET /api/v1/knowledge-base/status` 新增 `rag_readiness`。
+- `rag_readiness` 返回 lexical、embedding、vector store 是否 ready，以及是否仍可服务 Project QA。
+- `rag_readiness.degraded_reasons` 说明为什么从 hybrid/vector 降级。
+- `rag_readiness.domain_counts` 展示当前知识库 domain 覆盖情况。
+- `rag_readiness.eval_command` 给出本地 RAG eval 推荐命令。
+- RAG eval summary 测试补充 `no_result_ratio` 断言。
+
+### 边界
+
+- 不引入 reranker 服务。
+- 不做学术级 benchmark。
+- 不自动爬全站官方文档。
+- 当前目标是能在 Debug View 和面试演示中说清楚：是否可检索、是否降级、如何评测。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- `python -m pytest tests/eval/test_rag_eval_metrics.py tests/integration/test_system_and_tasks.py::test_kb_refresh_builds_documents_and_chunks -q` 通过。
+
+## 2026-04-25 Skill Protocol v1
+
+本轮完成阶段 D：把 5 个核心功能统一到固定内置 Skill 协议下，便于后续功能优化时按 collector、rules、retrieval、llm_analyzer、projector 分层扩展。
+
+### 主要代码改动
+
+- `app/skills/registry.py` 新增 `skill_protocol_v1` manifest，给每个核心 Skill 暴露 `input_schema`、`llm_analyzer`、`debug_contract` 和 `protocol`。
+- `GET /api/v1/system/capabilities` 新增 `skill_architecture.protocol_version`、`protocol_components` 和 `runtime_lifecycle_field`。
+- `app/skills/runtime.py` 统一生成 `debug_view.skill.lifecycle`，包括 collector、rules、retrieval、llm、projector 五段执行状态。
+- `TaskService` 在构建 skill runtime 时传入执行数据，使 lifecycle 能解释 LLM 是 completed、skipped 还是 degraded。
+- `debug_view.skill.lifecycle.llm.reason` 优先使用稳定机器码，例如 `missing_openai_api_key`，方便前端 Debug View 和测试读取。
+
+### 边界
+
+- 不做动态 Skill 安装、不做 marketplace、不做复杂沙箱。
+- 后续新增能力优先归入现有 5 个 Skill 的某一层，避免功能边界继续发散。
+- 主 UI 不强制修改；Debug View 可选展示 Skill lifecycle 流水线。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- capabilities、direct chat、code review 关键 Skill Protocol 集成测试通过。
+
+## 2026-04-25 Learning Docs v1
+
+本轮完成阶段 F：把 Agent 架构、RAG / Memory、Skill 扩展方法和请求生命周期整理成面试展示与自学复盘文档。
+
+### 新增文档
+
+- `docs/agent-architecture-study.md`：解释本项目为什么是一个 Agent 后端、整体 loop、模块边界、和 nanobot 的参考关系。
+- `docs/rag-and-memory-study.md`：解释 ingestion pipeline、lexical/vector/hybrid retrieval、embedding、Qdrant、官方文档整理边界和 memory 压缩。
+- `docs/skill-development-guide.md`：解释 fixed built-in Skill 架构，以及 collector、rules、retrieval、llm_analyzer、projector 的扩展方法。
+- `docs/request-lifecycle.md`：按 Agent Chat、Project QA、Code Review、Code Generate、Logs Analyze、Assets Inspect 复盘一次请求从 UE 到后端的完整路径。
+
+### 文档入口
+
+- `README.md` 已补充学习文档链接。
+- `docs/improveplan.md` 标记本轮 Agent 架构优化路线 v1 完成。
+
+### 前端影响
+
+- 无强制前端修改。
+- UE 前端如果要继续增强 Debug View，可参考 `docs/frontend-unified-handoff.md` 中已有 Context Bundle、Memory Summary、Agent Decision Trace、RAG Readiness、Skill Protocol 字段。
+
+## 2026-04-25 Code Review LLM JSON-like 解析增强
+
+实测时发现 Code Review 首次 LLM 分析可能返回“看起来像 JSON、但不是严格 JSON”的内容，导致用户高亮卡片显示“LLM 返回了类似 JSON 的结构化内容，但后端无法可靠解析”。Assets Inspect 正常，是因为它的输出 schema 更简单，模型更容易返回合法 JSON。
+
+### 主要代码改动
+
+- `app/services/llm_service.py` 增强 JSON 提取：支持 Markdown 代码块、尾逗号、未加引号的 key、Python 风格单引号字典、简单注释清理。
+- `CodeReviewSkill` 的 LLM prompt 明确要求合法 compact JSON，不包 Markdown，不复制含引号源码片段。
+- `CodeReviewSkill` 的 fallback 增强：即使 JSON-like 文本仍无法修复，也会从原文提取 `summary/title/reason/suggestion`，避免把解析失败提示当成主要 LLM 回答。
+
+### 前端影响
+
+- 不需要修改接口。
+- 高亮按钮继续读取 `user_view.blocks[block_type="llm_analysis"].text` 或 `data.llm_analysis.text`。
+- `data.llm_review.text` 仍只用于 Debug View，不进入普通用户展示。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- `python -m pytest -p no:cacheprovider tests/unit/test_llm_service.py tests/integration/test_system_and_tasks.py::test_code_review_llm_json_like_text_fallback_is_sanitized_for_highlights tests/integration/test_system_and_tasks.py::test_code_review_malformed_json_like_text_extracts_llm_summary tests/integration/test_system_and_tasks.py::test_assets_inspect_live_llm_uses_compact_timeout_config -q` 通过。

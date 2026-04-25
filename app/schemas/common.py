@@ -115,6 +115,8 @@ class DebugView(BaseModel):
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     trace_links: list[dict[str, Any]] = Field(default_factory=list)
     metrics: dict[str, Any] = Field(default_factory=dict)
+    context_bundle: dict[str, Any] = Field(default_factory=dict)
+    agent_decision_trace: dict[str, Any] = Field(default_factory=dict)
     session_summary: dict[str, Any] = Field(default_factory=dict)
     memory_summary: dict[str, Any] = Field(default_factory=dict)
     output_complete: bool = True

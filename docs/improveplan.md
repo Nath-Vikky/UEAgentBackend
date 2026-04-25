@@ -630,3 +630,423 @@ Project QA 的上下文优先级建议：
 - session 只持久化前端按钮、session 或默认语言；消息内“用英文回答/用中文回答”作为单轮 `message_override`
 - `LocaleDescriptor.language_source` 新增 `message_override` 和 `editor_locale`
 - 前端交接文档已明确语言切换按钮、请求字段和需要阅读的文档
+
+## 2026-04-25 下一阶段 Agent 架构优化路线
+
+目标：让本项目从“功能型 UE 后端工具”进一步升级为“结构清晰、可解释、可扩展、可学习展示的 Agent 项目”。参考 nanobot 这类轻量 Agent 项目的方向，但不复制多渠道部署、完整 MCP 生态或企业级运维。我们的重点是把单人作品最能打动面试官的部分做扎实：Agent 决策链、Skill 调用、上下文记忆、RAG 检索、项目事实工具、可观测性和学习文档。
+
+### 总体判断
+
+当前后端已经具备 Agent 项目的基本架构：
+
+- `Router / Planner`：负责判断自由聊天、Project QA、Project Inventory 和工具型 Skill。
+- `Skill Executors`：Code Review、Code Generate、Logs Analyze、Assets Inspect 已经收缩为固定内置 Skill。
+- `RAG Pipeline`：已有 ingestion、chunk、lexical retrieval、vector retrieval、hybrid retrieval、Qdrant、citation 和 degraded fallback。
+- `Project Inventory`：能把 UE 工程资产、代码文件和部分元数据作为项目事实层供 Agent Chat 查询。
+- `Session / Task Memory`：已有 session history、assistant message 持久化、task history，并已避免工具任务污染 Agent Chat 时间线。
+- `Observability`：已有 `debug_view`、`trace_summary`、`retrieval_trace`、`skill_runtime`、metrics 和 alert 雏形。
+- `Frontend Contract`：UE 前端和后端已经有统一 handoff 文档，主功能边界清晰。
+
+当前短板：
+
+- 记忆仍偏“历史保存”，还没有稳定的上下文压缩和长期摘要机制。
+- RAG 已经能工作，但“为什么检索、检索质量如何、是否可信”还需要更强的评测和解释。
+- Skill 架构已有实现，但缺少统一协议文档和开发模板。
+- Agent 决策链分散在 `debug_view.route`、`retrieval_trace`、`tool_plan` 等位置，面试展示时还不够一眼看懂。
+- 学习文档需要从“使用说明”升级为“完整架构学习路径”。
+
+### 设计原则
+
+- 不再继续横向堆功能，优先纵向打磨 Agent 闭环。
+- 每个新增能力都必须能解释“用户输入如何变成决策、上下文、工具调用、最终回答”。
+- 工具型能力继续通过固定内置 Skill 扩展，不新增普通用户主菜单。
+- RAG 和 Project Inventory 都作为 Agent 的上下文来源，而不是单独的聊天模式开关。
+- Debug View 继续承担透明化职责，普通用户界面保持简洁。
+- 学习文档和代码实现同步推进，避免后期补文档时说不清架构。
+
+### 范围控制原则
+
+本项目定位是个人作品级、面试展示级 UE Agent 后端，不是企业级 Agent 平台。后续所有阶段都按“能使用、稳定、完整、可讲清楚”作为完成标准，不追求通用平台化和无限扩展。
+
+必须坚持的边界：
+
+- 不做多用户、租户、组织、RBAC 权限系统。
+- 不做云端部署、高可用、分布式任务队列和企业监控告警体系。
+- 不做动态插件市场、在线安装 Skill、远程执行第三方不可信代码。
+- 不做完整 MCP marketplace；如后续接 MCP，只作为学习型可选 adapter，不作为主架构依赖。
+- 不做自动修改、重命名、保存或批量迁移 UE 资产；后端只给分析和建议。
+- 不做全站爬虫或训练数据采集；官方文档只允许白名单 URL、本地摘要、合规导入。
+- 不为了抽象而抽象；当功能只有 5 个固定 Skill 时，不引入复杂插件生命周期、权限沙箱或多 agent 调度。
+- 不追求学术级 RAG benchmark；只做能说明检索质量和降级逻辑的项目级评测。
+- 不把 Debug View 做成复杂运维平台；只展示能帮助开发、演示和排查的关键链路。
+
+每个阶段的停止标准：
+
+- `Context Manager`：能统一组装上下文、显示裁剪原因、服务 Agent Chat / Project QA 即可停止，不做复杂 graph。
+- `Memory Summary`：能压缩长会话、恢复摘要、避免上下文爆炸即可停止，不做跨项目长期画像。
+- `Agent Decision Trace`：能解释本轮路由、检索、工具、记忆和 fallback 即可停止，不做完整推理审计平台。
+- `RAG Evaluation`：能跑固定样例并输出命中率、引用覆盖、降级结果即可停止，不做大规模 benchmark。
+- `Skill Protocol`：能统一现有 5 个 Skill 的 manifest、生命周期和开发文档即可停止，不做动态插件系统。
+- `Learning Docs`：能让自己和面试官看懂请求生命周期、RAG、Memory、Skill 即可停止，不写成教材级长篇百科。
+
+判断是否过度开发的检查问题：
+
+- 这个改动是否能在面试展示中 1-2 分钟讲清楚价值？
+- 这个改动是否能直接提升当前 UE Agent 的可用性、稳定性或可解释性？
+- 这个改动是否需要前端大改但用户看不出收益？
+- 这个改动是否只是为了“像企业项目”，而不是为了“作品更完整”？
+- 如果删除这个改动，核心 Agent 闭环是否仍然清晰？如果是，优先不做。
+
+## 阶段 A：Context Manager v1
+
+状态：已完成（2026-04-25）。
+
+目标：建立统一上下文管理层，让每次 Agent 调用都有明确、可控、可解释的上下文来源。
+
+后端改动：
+
+- 新增 `app/agent/context_manager.py`。
+- 定义统一 `ContextBundle`，建议包含：
+  - `recent_messages`：最近 N 轮 Agent Chat / Project QA 对话。
+  - `session_summary`：长会话压缩摘要。
+  - `editor_context`：当前 project、panel、file、module、selected assets、language。
+  - `project_inventory_context`：Project Inventory 命中结果摘要。
+  - `retrieval_context`：RAG chunk 和 citation 摘要。
+  - `tool_context`：最近相关工具任务摘要，不直接塞入聊天历史。
+  - `budget`：本轮上下文 token / 字符预算和裁剪原因。
+- `TaskService` 不再直接拼散落 prompt，上层先构造 `ContextBundle`，再交给 LLM 或 Skill。
+- `debug_view.context_bundle` 展示最终进入模型或工具的上下文摘要。
+
+边界：
+
+- 第一版不做复杂 agent graph，不做多 agent 协作。
+- 不把 Code Review / Assets Inspect 等工具结果自动全文塞入聊天上下文，只存摘要和引用。
+- 不改变前端主 UI，只增加 Debug View 可读字段。
+
+前端影响：
+
+- 暂不需要改主界面。
+- Debug View 可增加 `Context Bundle` 分区，读取 `debug_view.context_bundle`。
+
+验收标准：
+
+- Agent Chat 连续多轮对话时，后端能稳定带上最近对话和 session summary。
+- Project QA 命中 Inventory / RAG 时，Debug View 能看到哪些上下文被采用、哪些被裁剪。
+- 工具任务不会污染 Agent Chat history，但最近工具摘要可以作为可选上下文来源。
+
+本轮完成记录：
+
+- 新增 `app/agent/context_manager.py`，统一生成 `context_bundle_v1`。
+- `debug_view.context_bundle` 和 `debug_view.memory_summary.context_budget` 已进入统一响应 schema。
+- `direct_answer` 与 `project_qa` 会使用同一份 compact context 构造 LLM prompt。
+- `CodeReviewSkill` 与 `CodeGenerateSkill` 已能在 `data.context_bundle` 和 Debug View 中携带上下文摘要。
+- 工具型任务仍不写入 Agent Chat history，但后续自由聊天可通过 `context_bundle.tool_context` 看到最近工具摘要。
+- 第一版只做最近消息、session metadata 摘要占位、editor context、tool summary 和预算估算；真正的自动 memory summary 留到阶段 B。
+
+## 阶段 B：Memory Summary / 上下文压缩
+
+状态：v1 已完成（2026-04-25）。
+
+目标：把 session history 从“原始消息列表”升级为“短期记忆 + 长期摘要”的可控记忆机制。
+
+后端改动：
+
+- 数据层增加 session memory 字段或独立 `session_memory` 表，建议保存：
+  - `summary_text`
+  - `important_facts`
+  - `open_questions`
+  - `user_preferences`
+  - `project_focus`
+  - `updated_at`
+  - `source_message_range`
+- 新增 `SessionMemoryService`：
+  - 当 session 消息超过阈值时触发摘要。
+  - LLM 可用时用 LLM 生成中文/英文摘要。
+  - LLM 不可用时用规则摘要兜底。
+- `Context Manager` 优先读取 `session_summary`，再拼最近 N 轮对话。
+- 清空 session 时同步清空 memory summary。
+
+边界：
+
+- 不做跨项目、跨用户的长期个性化画像。
+- 不把代码文件全文或资产大量元数据写入 session memory。
+- Memory 只服务当前插件项目和当前 session。
+
+前端影响：
+
+- Session Summary 可在 Debug View 展示。
+- 普通用户界面暂不新增“记忆管理”面板。
+
+验收标准：
+
+- 长对话恢复后不会把全部历史塞进 prompt。
+- Debug View 能看到本轮使用了 `recent_messages` 还是 `session_summary`。
+- 用户切换语言后，记忆摘要不破坏最终输出语言策略。
+
+本轮完成记录：
+
+- 新增 `app/agent/memory_manager.py`，使用确定性摘要策略生成 `memory_summary_v1`。
+- 第一版直接写入 `sessions.metadata_json.memory_summary`，不新增表、不增加迁移，符合个人作品级边界。
+- 当 Agent Chat / Project QA 持久化 assistant 回复后，后端会按阈值更新 session memory。
+- `Context Bundle` 已能读取 `memory_summary_v1` 并放入 `debug_view.context_bundle.session_summary`。
+- 修复 Context Bundle 读取历史时超过 limit 可能拿到较早消息的问题，现在 recent messages 优先取最新历史。
+- `POST /api/v1/sessions/{session_id}/clear` 会清掉旧 memory，避免清空会话后残留摘要。
+- `/api/v1/sessions/{session_id}` 顶层返回 `memory_summary`，方便 Debug View 或 Monitor 查看。
+
+## 阶段 C：RAG Evaluation / 检索质量可评测
+
+状态：v1 已完成（2026-04-25）。
+
+目标：让 RAG 不只是“能查”，而是能证明检索质量、引用覆盖和降级行为。
+
+后端改动：
+
+- 新增或完善 `tests/eval` 下的 RAG dataset：
+  - `project_docs` 问答。
+  - `code_reference` 问答。
+  - `asset_rules` 问答。
+  - `engine_notes` 问答。
+  - “应当不检索”的普通聊天样例。
+- 增加评测指标：
+  - route accuracy：是否正确走 direct / RAG / Inventory。
+  - citation coverage：是否返回引用。
+  - retrieval hit rate：top-k 是否命中预期 domain / doc。
+  - no-result handling：无结果是否清楚降级。
+  - language accuracy：最终输出语言是否正确。
+- `KnowledgeBaseService.status()` 增加更直观的 RAG readiness：
+  - lexical ready
+  - embedding ready
+  - vector store ready
+  - degraded reason
+  - indexed docs / chunks / domains
+- Debug View 增加检索解释：
+  - 为什么检索。
+  - 使用了哪些 filters。
+  - top chunks 来源、分数、domain。
+  - 为什么降级为 lexical 或 no result。
+
+边界：
+
+- 不追求学术级 RAG benchmark。
+- 不引入复杂 reranker 服务，第一版只做已有 rerank 逻辑的可解释化。
+- 不自动爬全站官方文档，仍走本地导入和白名单官方 URL 摘要。
+
+前端影响：
+
+- Monitor / Debug View 可显示 RAG readiness。
+- Agent Chat 普通用户界面只显示 citation 和简洁提示，不展示复杂评分。
+
+验收标准：
+
+- 可以一键跑 RAG eval 并输出 summary。
+- 至少覆盖 10-20 条高质量样例。
+- 面试展示时能说清楚“什么时候检索、检索到了什么、没检索到怎么办”。
+
+本轮完成记录：
+
+- 复用已有 `scripts/run_rag_eval.py` 和 `tests/eval/rag_project_qa_dataset.jsonl`，不新增复杂评测服务。
+- `GET /api/v1/knowledge-base/status` 新增 `rag_readiness`。
+- `rag_readiness` 包含 `lexical_ready`、`embedding_ready`、`vector_store_ready`、`usable_for_project_qa`、`degraded_reasons`、`domain_counts`、`indexed_documents`、`indexed_chunks` 和本地 eval 命令。
+- `effective_mode` 会显示当前实际检索模式；当 hybrid/vector 不可用时明确降级到 `lexical_only`。
+- eval summary 已覆盖 `recall_at_k`、`precision_at_k`、`hit_at_k`、`mrr`、`ndcg_at_k`、`route_accuracy`、`language_accuracy`、`citation_coverage`、`low_confidence_ratio`、`no_result_ratio`。
+- 第一版不引入 reranker 服务、不做学术 benchmark、不自动爬全站官方文档。
+
+## 阶段 D：Skill Protocol v1
+
+状态：v1 已完成（2026-04-25）。
+
+目标：把现有固定内置 Skill 从“代码上已经拆分”升级为“协议清晰、可扩展、可教学”的 Skill 架构。
+
+后端改动：
+
+- `app/skills/registry.py` 现在为 5 个固定内置 Skill 输出统一 manifest：`skill_id`、`task_type`、`input_schema`、`collector`、`rules`、`retrieval_domains`、`llm_analyzer`、`projector_outputs`、`debug_contract`。
+- `GET /api/v1/system/capabilities` 的 `capabilities.skill_catalog[]` 暴露 `protocol_version = skill_protocol_v1` 和 `protocol`。
+- `app/skills/runtime.py` 统一生成 `debug_view.skill.lifecycle`，包括 `collector`、`rules`、`retrieval`、`llm`、`projector` 五段状态。
+- `debug_view.skill.lifecycle.llm.reason` 优先使用稳定的机器码，例如 `missing_openai_api_key`、`degraded_fallback`，没有机器码时再退回人类可读文案。
+- 第一版开发说明收敛到 `docs/backend-user-guide.md` 与 `docs/frontend-unified-handoff.md`，不额外新增分散文档，保持交接简洁。
+
+边界：
+
+- 不做用户可动态安装 Skill。
+- 不做 marketplace。
+- 不做复杂权限沙箱。
+- 新功能优先扩展已有 5 个主 Skill，除非确实出现全新使用场景。
+
+前端影响：
+
+- Debug View 的 Skill 分区可更稳定展示生命周期。
+- 普通用户主菜单不增加。
+- 主 UI 不强制修改；如果 UE 前端要增强 Debug View，可展示一条 “collector -> rules -> retrieval -> llm -> projector” 流水线。
+
+验收标准：
+
+- 面试时能用一张图说明 Skill 执行链。（已满足）
+- 新增一个规则或 LLM 分析项时，优先改对应 Skill executor / service，不需要改 TaskService 主流程。（已满足）
+- `GET /api/v1/system/capabilities` 能清楚展示 Skill catalog。（已满足）
+- 集成测试已覆盖 capabilities、direct chat skill lifecycle、code review skill lifecycle。（已满足）
+
+## 阶段 E：Agent Decision Trace
+
+状态：v1 已完成（2026-04-25）。
+
+目标：把分散的 route、tool_plan、retrieval_trace、skill_runtime 整合成一条清晰的 Agent 决策链。
+
+后端改动：
+
+- 新增统一字段 `debug_view.agent_decision_trace`。
+- 建议结构：
+  - `input_summary`
+  - `language_decision`
+  - `intent_decision`
+  - `context_decision`
+  - `retrieval_decision`
+  - `tool_decision`
+  - `memory_decision`
+  - `fallback_decision`
+  - `final_response_plan`
+- 每个 decision 包含：
+  - `decision`
+  - `reason`
+  - `confidence`
+  - `source`
+  - `alternatives`
+  - `warnings`
+- 将现有 `route`、`tool_plan`、`retrieval_trace`、`context_bundle` 的核心信息投影到 decision trace。
+
+边界：
+
+- 不要求所有决策都由 LLM 产生。
+- 规则决策、启发式决策和 LLM 决策都可以进入 trace，但必须标明 source。
+- 不把完整 prompt 和敏感 raw payload 暴露给普通用户。
+
+前端影响：
+
+- Debug View 增加 `Agent Decision Trace` 分区。
+- 普通用户界面不显示完整决策链。
+
+验收标准：
+
+- 任意一次 Agent Chat 都能解释为什么走 direct、RAG、Inventory 或某个 Skill。
+- 任意一次 Code Review / Assets Inspect 都能解释 LLM 为什么 completed 或 skipped。
+- 面试展示时能用一条 trace 展示完整 Agent loop。
+
+本轮完成记录：
+
+- 新增 `app/agent/decision_trace.py`，生成 `agent_decision_trace_v1`。
+- `DebugView` schema 新增 `agent_decision_trace`。
+- 每次任务响应都会在 `debug_view.agent_decision_trace.decisions` 中展示：
+  - `input_summary`
+  - `language_decision`
+  - `intent_decision`
+  - `context_decision`
+  - `retrieval_decision`
+  - `tool_decision`
+  - `memory_decision`
+  - `fallback_decision`
+  - `final_response_plan`
+- 第一版只汇总已有规则、路由、上下文、检索和 Skill 信息，不额外调用 LLM 生成解释。
+- Debug View 可以直接读 `summary.route_type`、`summary.skill_id`、`summary.retrieval_mode`、`summary.memory_status` 和 `summary.finish_reason`。
+
+## 阶段 F：Learning Docs / 面试展示文档
+
+状态：v1 已完成（2026-04-25）。
+
+目标：形成一份既能自己复习、又能给面试官看的完整学习文档。
+
+建议新增文档：
+
+- `docs/agent-architecture-study.md`（已完成）
+- `docs/rag-and-memory-study.md`（已完成）
+- `docs/skill-development-guide.md`（已完成）
+- `docs/request-lifecycle.md`（已完成）
+
+`agent-architecture-study.md` 内容：
+
+- 什么是 Agent。
+- 本项目的 Agent loop：
+  - User Input
+  - Router / Planner
+  - Context Manager
+  - Memory
+  - RAG
+  - Project Inventory Tool
+  - Skill Executor
+  - LLM
+  - User View / Debug View
+- 本项目和 nanobot 的参考关系：
+  - 借鉴轻量、可扩展、可调试的思想。
+  - 不复制多渠道和完整部署生态。
+- 为什么选择固定内置 Skill，而不是无限动态插件。
+- 为什么 UE 项目事实使用 Project Inventory，而不是让 LLM 直接猜。
+
+`rag-and-memory-study.md` 内容：
+
+- 文档导入流程。
+- chunk 和 metadata 的作用。
+- lexical / vector / hybrid retrieval 区别。
+- embedding model 和 vector database 的关系。
+- Qdrant 如何接入。
+- 只接 LLM、不接 embedding 时如何降级。
+- session memory 为什么需要摘要。
+- context window 为什么需要预算和压缩。
+
+`skill-development-guide.md` 内容：
+
+- Skill 的结构。
+- Collector / Rules / Retrieval / LLM Analyzer / Projector 的职责。
+- 如何扩展 Code Review。
+- 如何扩展 Assets Inspect。
+- 如何写测试和 Debug View。
+
+`request-lifecycle.md` 内容：
+
+- 一次 Agent Chat 请求从 UE 到后端的完整流程。
+- 一次 Code Review 请求的完整流程。
+- 一次 Project Inventory 查询的完整流程。
+- 每个阶段对应代码位置。
+- 每个阶段对应 Debug View 字段。
+
+验收标准：
+
+- 读完文档后，能够独立讲清楚本项目的 Agent 架构。
+- 能说清楚 RAG、Memory、Skill、Tool Calling、Observability 各自作用。
+- 能拿一条真实请求做完整流程复盘。
+
+## 推荐开发顺序
+
+1. 阶段 A：Context Manager v1（已完成）
+2. 阶段 B：Memory Summary / 上下文压缩（v1 已完成）
+3. 阶段 E：Agent Decision Trace（v1 已完成）
+4. 阶段 C：RAG Evaluation / 检索质量可评测（v1 已完成）
+5. 阶段 D：Skill Protocol v1（v1 已完成）
+6. 阶段 F：Learning Docs / 面试展示文档（v1 已完成）
+
+原因：
+
+- 先做 Context Manager 和 Memory，能直接提升 Agent Chat 的真实体验。
+- 再做 Decision Trace，能让前面新增的上下文和记忆变得可解释。
+- RAG Eval 接着做，可以验证检索质量，而不是盲目调参。
+- Skill Protocol 最后做结构化收口，避免一开始过度抽象。
+- 学习文档贯穿每阶段补充，最后统一整理成完整版本。
+
+当前本轮 Agent 架构优化路线已经完成 v1。后续如果继续优化，建议从真实测试反馈出发，只在当前 5 个 Skill 边界内补能力，不新增大而泛的平台化阶段。
+
+## 面试展示目标
+
+最终希望能展示以下 5 个亮点：
+
+- `Agent Loop`：用户问题如何经过 intent routing、context assembly、tool/RAG decision、LLM response。
+- `Memory`：长会话如何压缩，如何避免上下文爆炸。
+- `RAG`：知识库如何导入、检索、引用、降级和评测。
+- `Skill`：代码审查、代码生成、日志分析、资产检查如何作为固定 Skill 执行。
+- `Observability`：Debug View 如何展示 route、context、memory、retrieval、tool、trace 和 metrics。
+
+不追求：
+
+- 多用户企业权限。
+- 云端部署和高可用。
+- 多渠道聊天机器人。
+- 完整 MCP marketplace。
+- 自动修改 UE 工程资产或代码文件。
+
+当前项目定位仍然是：个人作品级 UE Agent 后端，重点展示 Agent 架构理解、RAG 工程能力、工具调用闭环、可解释调试和清晰文档。

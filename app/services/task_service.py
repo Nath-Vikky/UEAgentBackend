@@ -8,6 +8,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.agent.context_builder import build_context_summary
+from app.agent.context_manager import build_context_bundle, context_bundle_prompt_excerpt
+from app.agent.decision_trace import build_agent_decision_trace
+from app.agent.memory_manager import update_session_memory
 from app.agent.response_composer import compose_unified_response
 from app.agent.router import classify_request
 from app.core.settings import Settings
@@ -102,12 +105,21 @@ class TaskService:
         *,
         system_prompt: str,
         fallback_user_text: str = "",
+        context_bundle: dict[str, Any] | None = None,
     ) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": system_prompt}]
-        for item in request.session.messages[-10:]:
-            role = item.role if item.role in {"system", "user", "assistant"} else "user"
-            if item.content.strip():
-                messages.append({"role": role, "content": item.content.strip()})
+        if context_bundle:
+            for item in context_bundle.get("recent_messages", [])[-10:]:
+                role = str(item.get("role") or "user")
+                role = role if role in {"system", "user", "assistant"} else "user"
+                content = str(item.get("content") or "").strip()
+                if content:
+                    messages.append({"role": role, "content": content})
+        else:
+            for item in request.session.messages[-10:]:
+                role = item.role if item.role in {"system", "user", "assistant"} else "user"
+                if item.content.strip():
+                    messages.append({"role": role, "content": item.content.strip()})
         if len(messages) == 1 and fallback_user_text.strip():
             messages.append({"role": "user", "content": fallback_user_text.strip()})
         return messages
@@ -117,8 +129,9 @@ class TaskService:
         request: UnifiedTaskRequest,
         *,
         output_language: str,
+        context_bundle: dict[str, Any] | None = None,
     ) -> list[dict[str, str]]:
-        context_summary = build_context_summary(request)
+        context_summary = (context_bundle or {}).get("editor_context") or build_context_summary(request)
         system_prompt = (
             "You are UE Agent, a backend assistant for Unreal Engine development and general software questions. "
             f"Reply in {self._language_label(output_language)} unless the user explicitly requests another language. "
@@ -128,11 +141,14 @@ class TaskService:
         )
         if context_summary:
             system_prompt += f"\n\nEditor context summary:\n{context_summary}"
+        if context_bundle:
+            system_prompt += f"\n\nCompact context bundle:\n{context_bundle_prompt_excerpt(context_bundle)}"
         fallback_user_text = str(request.payload.get("user_query") or "")
         return self._session_messages(
             request,
             system_prompt=system_prompt,
             fallback_user_text=fallback_user_text,
+            context_bundle=context_bundle,
         )
 
     def _project_qa_messages(
@@ -142,6 +158,7 @@ class TaskService:
         query: str,
         qa_result: dict[str, Any],
         output_language: str,
+        context_bundle: dict[str, Any] | None = None,
     ) -> list[dict[str, str]]:
         evidence_lines: list[str] = []
         for index, item in enumerate(qa_result["retrieved_docs"][:4], start=1):
@@ -190,7 +207,7 @@ class TaskService:
         user_prompt = "\n\n".join(
             [
                 f"User question:\n{query.strip()}",
-                f"Context summary:\n{build_context_summary(request)}",
+                f"Context bundle:\n{context_bundle_prompt_excerpt(context_bundle) if context_bundle else build_context_summary(request)}",
                 "Evidence:",
                 "\n\n".join(evidence_lines) if evidence_lines else "No retrieved evidence.",
                 "Project inventory facts:",
@@ -534,6 +551,20 @@ class TaskService:
     def _should_persist_session_history(requested_task_type: str, actual_task_type: str) -> bool:
         return requested_task_type in CHAT_HISTORY_TASK_TYPES and actual_task_type in CHAT_HISTORY_TASK_TYPES
 
+    def _build_context_bundle(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        routing: dict[str, Any],
+        actual_task_type: str | None = None,
+    ) -> dict[str, Any]:
+        return build_context_bundle(
+            db=self.db,
+            request=request,
+            routing=routing,
+            actual_task_type=actual_task_type,
+        )
+
     def create_task(self, request: UnifiedTaskRequest) -> UnifiedTaskResponse:
         session_model = get_or_create_session(
             self.db,
@@ -558,6 +589,11 @@ class TaskService:
             profile_id=request.runtime_options.profile_id,
         )
         actual_task_type = self._actual_task_type(request.task_type, routing)
+        context_bundle = self._build_context_bundle(
+            request=request,
+            routing=routing,
+            actual_task_type=actual_task_type,
+        )
         persist_session_history = self._should_persist_session_history(
             request.task_type,
             actual_task_type,
@@ -582,12 +618,14 @@ class TaskService:
             trace_id=trace_id,
             actual_task_type=actual_task_type,
             chat_config=chat_config,
+            context_bundle=context_bundle,
         )
         skill_runtime = build_skill_runtime_descriptor(
             requested_task_type=request.task_type,
             actual_task_type=actual_task_type,
             routing=routing,
             retrieval_trace=execution["retrieval_trace"],
+            execution_data=execution["data"],
         )
         execution["debug_view"]["skill"] = skill_runtime
         execution["data"] = {**dict(execution.get("data") or {}), "skill": skill_runtime}
@@ -631,10 +669,47 @@ class TaskService:
                 "memory_summary": {
                     "artifact_count": len(artifact_payloads),
                     "step_count": len(execution["step_results"]),
+                    "session_memory": context_bundle.get("session_summary", {}),
+                    "context_budget": context_bundle.get("budget", {}),
                 },
                 "output_complete": output_complete,
                 "finish_reason": finish_reason,
             }
+        )
+        if persist_session_history and execution["assistant_message"].strip():
+            append_messages(
+                self.db,
+                request.session.session_id,
+                [
+                    {
+                        "role": "assistant",
+                        "content": execution["assistant_message"],
+                        "language": routing["locale"]["final_output_language"],
+                        "metadata": {
+                            "task_id": task_id,
+                            "run_id": run_id,
+                            "task_type": actual_task_type,
+                        },
+                    }
+                ],
+            )
+            memory_update = update_session_memory(self.db, request.session.session_id)
+            execution["debug_view"]["memory_summary"] = {
+                **dict(execution["debug_view"].get("memory_summary") or {}),
+                "updated_session_memory": memory_update,
+            }
+        execution["debug_view"]["agent_decision_trace"] = build_agent_decision_trace(
+            request=request,
+            routing=routing,
+            context_bundle=context_bundle,
+            skill_runtime=skill_runtime,
+            retrieval_trace=execution["retrieval_trace"],
+            user_view_payload=execution["user_view"],
+            debug_view=execution["debug_view"],
+            data=execution["data"],
+            task_status=task_status,
+            finish_reason=finish_reason,
+            output_complete=output_complete,
         )
         trace_summary = build_trace_summary(
             trace_id,
@@ -683,23 +758,6 @@ class TaskService:
             event_payloads=event_payloads,
             artifact_payloads=artifact_payloads,
         )
-        if persist_session_history and response.assistant_message.strip():
-            append_messages(
-                self.db,
-                request.session.session_id,
-                [
-                    {
-                        "role": "assistant",
-                        "content": response.assistant_message,
-                        "language": response.locale.final_output_language,
-                        "metadata": {
-                            "task_id": task_id,
-                            "run_id": run_id,
-                            "task_type": actual_task_type,
-                        },
-                    }
-                ],
-            )
         return response
 
     def list_recent(self) -> list[UnifiedTaskResponse]:
@@ -865,12 +923,18 @@ class TaskService:
         request: UnifiedTaskRequest,
         routing: dict[str, Any],
         trace_id: str,
+        context_bundle: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        resolved_context_bundle = context_bundle or self._build_context_bundle(
+            request=request,
+            routing=routing,
+        )
         return {
             "raw_request": redact_payload(request.model_dump(mode="json")),
             "normalized_request": request.model_dump(mode="json"),
             "intent": routing["intent"],
             "route": routing["route"],
+            "context_bundle": resolved_context_bundle,
             "retrieval": {},
             "retrieval_summary": {},
             "tools": [],
@@ -880,7 +944,10 @@ class TaskService:
             "trace_links": [{"type": "local_trace", "trace_id": trace_id}],
             "metrics": {},
             "session_summary": {},
-            "memory_summary": {},
+            "memory_summary": {
+                "session_memory": resolved_context_bundle.get("session_summary", {}),
+                "context_budget": resolved_context_bundle.get("budget", {}),
+            },
             "output_complete": True,
             "finish_reason": "completed",
             "warnings": [],
@@ -896,6 +963,7 @@ class TaskService:
         trace_id: str,
         actual_task_type: str,
         chat_config: ChatRuntimeConfig,
+        context_bundle: dict[str, Any],
     ) -> dict[str, Any]:
         route_type = routing["intent"]["route_type"]
         output_language = routing["locale"]["final_output_language"]
@@ -906,6 +974,7 @@ class TaskService:
                 trace_id=trace_id,
                 output_language=output_language,
                 chat_config=chat_config,
+                context_bundle=context_bundle,
             )
         if route_type == "direct_answer":
             return self._execute_direct_answer_live(
@@ -914,6 +983,7 @@ class TaskService:
                 trace_id=trace_id,
                 output_language=output_language,
                 chat_config=chat_config,
+                context_bundle=context_bundle,
             )
         if actual_task_type == "code_review":
             return self._execute_code_review(
@@ -924,6 +994,7 @@ class TaskService:
                 trace_id=trace_id,
                 output_language=output_language,
                 chat_config=chat_config,
+                context_bundle=context_bundle,
             )
         if actual_task_type == "logs_analyze":
             return self._execute_logs_analyze(
@@ -974,6 +1045,7 @@ class TaskService:
                 trace_id=trace_id,
                 output_language=output_language,
                 chat_config=chat_config,
+                context_bundle=context_bundle,
             )
         return self._execute_task_placeholder(
             request=request,
@@ -990,6 +1062,7 @@ class TaskService:
         trace_id: str,
         output_language: str,
         chat_config: ChatRuntimeConfig,
+        context_bundle: dict[str, Any],
     ) -> dict[str, Any]:
         query = request.payload.get("user_query") or (
             request.session.messages[-1].content if request.session.messages else ""
@@ -1017,7 +1090,12 @@ class TaskService:
         )
         qa_result["inventory_items"] = inventory_result["items"]
         qa_result["inventory_summary"] = inventory_result["summary"]
-        base_debug = self._base_debug(request=request, routing=routing, trace_id=trace_id)
+        base_debug = self._base_debug(
+            request=request,
+            routing=routing,
+            trace_id=trace_id,
+            context_bundle=context_bundle,
+        )
         llm_result = {
             "ok": False,
             "reason": "not_attempted",
@@ -1048,6 +1126,7 @@ class TaskService:
                     query=query_text,
                     qa_result=qa_result,
                     output_language=output_language,
+                    context_bundle=context_bundle,
                 ),
                 config=chat_config,
             )
@@ -1178,6 +1257,7 @@ class TaskService:
             },
             "tool_plan": tool_plan,
             "context_summary": build_context_summary(request),
+            "context_bundle": context_bundle,
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
         base_debug["inventory"] = inventory_result
@@ -1238,10 +1318,20 @@ class TaskService:
         trace_id: str,
         output_language: str,
         chat_config: ChatRuntimeConfig,
+        context_bundle: dict[str, Any],
     ) -> dict[str, Any]:
-        base_debug = self._base_debug(request=request, routing=routing, trace_id=trace_id)
+        base_debug = self._base_debug(
+            request=request,
+            routing=routing,
+            trace_id=trace_id,
+            context_bundle=context_bundle,
+        )
         llm_result = self.llm_service.complete(
-            messages=self._direct_answer_messages(request, output_language=output_language),
+            messages=self._direct_answer_messages(
+                request,
+                output_language=output_language,
+                context_bundle=context_bundle,
+            ),
             config=chat_config,
         )
         used_live_llm = llm_result["ok"]
@@ -1322,6 +1412,7 @@ class TaskService:
                 "profile_id": chat_config.profile_id,
             },
             "context_summary": build_context_summary(request),
+            "context_bundle": context_bundle,
         }
         base_debug["retrieval"] = retrieval_trace
         base_debug["tools"] = [
@@ -1552,6 +1643,7 @@ class TaskService:
         trace_id: str,
         output_language: str,
         chat_config: ChatRuntimeConfig,
+        context_bundle: dict[str, Any],
     ) -> dict[str, Any]:
         executor = CodeReviewSkillExecutor(
             kb_service=self.kb_service,
@@ -1566,6 +1658,7 @@ class TaskService:
             trace_id=trace_id,
             output_language=output_language,
             chat_config=chat_config,
+            context_bundle=context_bundle,
         )
 
     def _execute_logs_analyze(
@@ -1754,6 +1847,7 @@ class TaskService:
         trace_id: str,
         output_language: str,
         chat_config: ChatRuntimeConfig,
+        context_bundle: dict[str, Any],
     ) -> dict[str, Any]:
         executor = CodeGenerateSkillExecutor(
             kb_service=self.kb_service,
@@ -1766,6 +1860,7 @@ class TaskService:
             trace_id=trace_id,
             output_language=output_language,
             chat_config=chat_config,
+            context_bundle=context_bundle,
         )
 
     def _execute_config_validate(

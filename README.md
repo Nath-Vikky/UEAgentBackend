@@ -127,6 +127,10 @@
 - [docs/backend-user-guide.md](./docs/backend-user-guide.md)
 - [docs/frontend-unified-handoff.md](./docs/frontend-unified-handoff.md)
 - [docs/backend-dev-log.md](./docs/backend-dev-log.md)
+- [docs/agent-architecture-study.md](./docs/agent-architecture-study.md)
+- [docs/rag-and-memory-study.md](./docs/rag-and-memory-study.md)
+- [docs/skill-development-guide.md](./docs/skill-development-guide.md)
+- [docs/request-lifecycle.md](./docs/request-lifecycle.md)
 
 ## 当前联调状态
 

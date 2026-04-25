@@ -101,3 +101,60 @@ def test_classify_agent_chat_llm_failure_returns_structured_failure(monkeypatch)
     assert result["route_type"] is None
     assert result["reason"] == "request_failed"
     assert result["error"] == "boom"
+
+
+def test_complete_json_object_accepts_common_llm_json_like_output(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def _fake_complete(self, *, messages, config):  # type: ignore[no-untyped-def]
+        return {
+            "ok": True,
+            "reason": "completed",
+            "error": "",
+            "provider": "openai_compatible",
+            "model": config.model,
+            "profile_id": config.profile_id,
+            "text": (
+                "```json\n"
+                "{summary: \"Review completed.\", "
+                "issues: [{title: \"Load in Tick\", reason: \"Runs every frame.\"}], "
+                "recommendations: [\"Move loading to BeginPlay\",],}\n"
+                "```"
+            ),
+            "usage": _usage(),
+        }
+
+    monkeypatch.setattr("app.services.llm_service.LLMService.complete", _fake_complete)
+
+    result = LLMService(Settings(openai_api_key="test")).complete_json_object(
+        messages=[{"role": "user", "content": "review"}],
+        config=_config(),
+    )
+
+    assert result["ok"] is True
+    assert result["payload"]["summary"] == "Review completed."
+    assert result["payload"]["issues"][0]["title"] == "Load in Tick"
+    assert result["payload"]["recommendations"] == ["Move loading to BeginPlay"]
+
+
+def test_complete_json_object_accepts_python_style_dict_output(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def _fake_complete(self, *, messages, config):  # type: ignore[no-untyped-def]
+        return {
+            "ok": True,
+            "reason": "completed",
+            "error": "",
+            "provider": "openai_compatible",
+            "model": config.model,
+            "profile_id": config.profile_id,
+            "text": "{'summary': 'Looks clean', 'issues': [], 'recommendations': ['Add tests']}",
+            "usage": _usage(),
+        }
+
+    monkeypatch.setattr("app.services.llm_service.LLMService.complete", _fake_complete)
+
+    result = LLMService(Settings(openai_api_key="test")).complete_json_object(
+        messages=[{"role": "user", "content": "review"}],
+        config=_config(),
+    )
+
+    assert result["ok"] is True
+    assert result["payload"]["summary"] == "Looks clean"
+    assert result["payload"]["recommendations"] == ["Add tests"]

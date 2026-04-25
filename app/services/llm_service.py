@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -64,19 +66,162 @@ def _extract_text(content: Any) -> str:
     return ""
 
 
-def _extract_json_object(text: str) -> dict[str, Any]:
+def _strip_json_fence(text: str) -> str:
     stripped = text.strip()
-    if stripped.startswith("```"):
-        stripped = stripped.strip("`")
-        if "\n" in stripped:
-            stripped = stripped.split("\n", 1)[1]
-        if "```" in stripped:
-            stripped = stripped.rsplit("```", 1)[0]
-    start = stripped.find("{")
-    end = stripped.rfind("}")
-    if start < 0 or end <= start:
-        raise ValueError("json_object_not_found")
-    payload = json.loads(stripped[start : end + 1])
+    fence_match = re.search(
+        r"```(?:json|javascript|js|text)?\s*(.*?)```",
+        stripped,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if fence_match:
+        return fence_match.group(1).strip()
+    if not stripped.startswith("```"):
+        return stripped
+    stripped = stripped.strip("`").strip()
+    if "\n" in stripped:
+        first_line, rest = stripped.split("\n", 1)
+        if first_line.strip().lower() in {"json", "javascript", "js", "text"}:
+            stripped = rest
+    return stripped.strip()
+
+
+def _balanced_json_slice(text: str, opener: str, closer: str) -> str | None:
+    start = text.find(opener)
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    quote = ""
+    escaped = False
+    for index, char in enumerate(text[start:], start=start):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                in_string = False
+            continue
+        if char in {"'", '"'}:
+            in_string = True
+            quote = char
+            continue
+        if char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+def _remove_json_comments(text: str) -> str:
+    result: list[str] = []
+    index = 0
+    in_string = False
+    quote = ""
+    escaped = False
+    while index < len(text):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+        if in_string:
+            result.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                in_string = False
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            in_string = True
+            quote = char
+            result.append(char)
+            index += 1
+            continue
+        if char == "/" and next_char == "/":
+            index += 2
+            while index < len(text) and text[index] not in {"\n", "\r"}:
+                index += 1
+            continue
+        if char == "/" and next_char == "*":
+            index += 2
+            while index + 1 < len(text) and not (text[index] == "*" and text[index + 1] == "/"):
+                index += 1
+            index += 2
+            continue
+        result.append(char)
+        index += 1
+    return "".join(result)
+
+
+def _repair_json_candidate(text: str) -> str:
+    repaired = text.strip()
+    repaired = repaired.replace("\ufeff", "").replace("\u200b", "")
+    repaired = repaired.replace("\u201c", '"').replace("\u201d", '"')
+    repaired = repaired.replace("\u2018", "'").replace("\u2019", "'")
+    repaired = _remove_json_comments(repaired)
+    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+    repaired = re.sub(
+        r"([{\[,]\s*)([A-Za-z_][A-Za-z0-9_-]*)(\s*:)",
+        r'\1"\2"\3',
+        repaired,
+    )
+    return repaired
+
+
+def _python_literal_candidate(text: str) -> str:
+    candidate = re.sub(r"\bnull\b", "None", text)
+    candidate = re.sub(r"\btrue\b", "True", candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r"\bfalse\b", "False", candidate, flags=re.IGNORECASE)
+    return candidate
+
+
+def _json_candidates(text: str) -> list[str]:
+    stripped = _strip_json_fence(text)
+    candidates = [stripped]
+    for value in (
+        _balanced_json_slice(stripped, "{", "}"),
+        _balanced_json_slice(stripped, "[", "]"),
+    ):
+        if value and value not in candidates:
+            candidates.append(value)
+    object_start = stripped.find("{")
+    object_end = stripped.rfind("}")
+    if object_start >= 0 and object_end > object_start:
+        value = stripped[object_start : object_end + 1]
+        if value not in candidates:
+            candidates.append(value)
+    array_start = stripped.find("[")
+    array_end = stripped.rfind("]")
+    if array_start >= 0 and array_end > array_start:
+        value = stripped[array_start : array_end + 1]
+        if value not in candidates:
+            candidates.append(value)
+    return [candidate for candidate in candidates if candidate.strip()]
+
+
+def extract_json_value(text: str) -> Any:
+    errors: list[str] = []
+    for candidate in _json_candidates(text):
+        variants = [candidate, _repair_json_candidate(candidate)]
+        for variant in variants:
+            try:
+                return json.loads(variant)
+            except Exception as exc:
+                errors.append(str(exc))
+            try:
+                return ast.literal_eval(_python_literal_candidate(variant))
+            except Exception as exc:
+                errors.append(str(exc))
+    if not errors:
+        raise ValueError("json_value_not_found")
+    raise ValueError(errors[-1])
+
+
+def extract_json_object(text: str) -> dict[str, Any]:
+    payload = extract_json_value(text)
     if not isinstance(payload, dict):
         raise ValueError("json_object_expected")
     return payload
@@ -185,7 +330,7 @@ class LLMService:
                 "usage": llm_result["usage"],
             }
         try:
-            payload = _extract_json_object(llm_result["text"])
+            payload = extract_json_object(llm_result["text"])
             route_type = str(payload.get("route_type") or "").strip()
             if route_type not in {"direct_answer", "project_qa"}:
                 raise ValueError("unsupported_route_type")
@@ -233,7 +378,7 @@ class LLMService:
                 "usage": llm_result["usage"],
             }
         try:
-            payload = _extract_json_object(llm_result["text"])
+            payload = extract_json_object(llm_result["text"])
             return {
                 "ok": True,
                 "payload": payload,

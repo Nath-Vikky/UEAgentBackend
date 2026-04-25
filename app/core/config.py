@@ -4,6 +4,8 @@ from app.skills.registry import (
     CORE_SKILL_IDS,
     CORE_TASK_TYPES,
     SKILL_CATALOG,
+    SKILL_PROTOCOL_COMPONENTS,
+    SKILL_PROTOCOL_VERSION,
     UI_RECOMMENDATIONS as SKILL_UI_RECOMMENDATIONS,
 )
 
@@ -83,6 +85,9 @@ CAPABILITIES = {
     "skill_catalog": SKILL_CATALOG,
     "skill_architecture": {
         "mode": "fixed_built_in_skills",
+        "protocol_version": SKILL_PROTOCOL_VERSION,
+        "protocol_components": SKILL_PROTOCOL_COMPONENTS,
+        "runtime_lifecycle_field": "debug_view.skill.lifecycle",
         "runtime_dynamic_skills": False,
         "extension_policy": "Add collectors, rules, retrieval domains, and projectors inside an existing built-in skill before adding a new user-visible feature.",
         "public_skill_count": len(CORE_SKILL_IDS),

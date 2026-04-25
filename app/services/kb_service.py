@@ -51,10 +51,52 @@ class KnowledgeBaseService:
         qdrant_ok, qdrant_reason = qdrant_available(self.settings)
         embedding_ok = embedding_available(self.settings)
         ingestion = ingestion_capabilities()
+        documents = list_documents(self.db)
+        domain_counts: dict[str, int] = {}
+        for document in documents:
+            domain = document.domain or "unknown"
+            domain_counts[domain] = domain_counts.get(domain, 0) + 1
+        lexical_ready = counts["chunks"] > 0
+        embedding_ready = bool(self.settings.embedding_enabled and embedding_ok)
+        vector_store_ready = bool(qdrant_ok and embedding_ready)
+        degraded_reasons: list[str] = []
+        if not lexical_ready:
+            degraded_reasons.append("no_indexed_chunks")
+        if self.settings.rag_mode != "lexical":
+            if not self.settings.embedding_enabled:
+                degraded_reasons.append("embedding_disabled")
+            elif not embedding_ok:
+                degraded_reasons.append("embedding_unavailable")
+            if not qdrant_ok:
+                degraded_reasons.append(qdrant_reason)
+        effective_mode = self.settings.rag_mode
+        if self.settings.rag_mode != "lexical" and not vector_store_ready:
+            effective_mode = self.settings.rag_fallback_mode
+        readiness_status = (
+            "empty"
+            if not lexical_ready
+            else "ready"
+            if self.settings.rag_mode == "lexical" or vector_store_ready
+            else "degraded"
+        )
         return {
             "enabled": True,
             "mode": self.settings.rag_mode,
             "fallback_mode": self.settings.rag_fallback_mode,
+            "effective_mode": effective_mode,
+            "rag_readiness": {
+                "status": readiness_status,
+                "lexical_ready": lexical_ready,
+                "embedding_configured": self.settings.embedding_enabled,
+                "embedding_ready": embedding_ready,
+                "vector_store_ready": vector_store_ready,
+                "usable_for_project_qa": lexical_ready,
+                "degraded_reasons": degraded_reasons,
+                "indexed_documents": counts["documents"],
+                "indexed_chunks": counts["chunks"],
+                "domain_counts": domain_counts,
+                "eval_command": "python scripts/run_rag_eval.py --dataset tests/eval/rag_project_qa_dataset.jsonl",
+            },
             "ingestion_pipeline": ingestion["pipeline"],
             "format_groups": ingestion["format_groups"],
             "collection": self.settings.qdrant_collection,

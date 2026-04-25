@@ -41,8 +41,14 @@ class CodeGenerateSkillExecutor:
         trace_id: str,
         output_language: str,
         chat_config: ChatRuntimeConfig,
+        context_bundle: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        base_debug = self.base_debug_builder(request=request, routing=routing, trace_id=trace_id)
+        base_debug = self.base_debug_builder(
+            request=request,
+            routing=routing,
+            trace_id=trace_id,
+            context_bundle=context_bundle,
+        )
         execution = CodeGenerationService(
             kb_service=self.kb_service,
             llm_service=self.llm_service,
@@ -91,6 +97,7 @@ class CodeGenerateSkillExecutor:
             "sources": result["reference_lookup"]["sources"],
             "citations": result["retrieved_references"],
             "context_summary": build_context_summary(request),
+            "context_bundle": context_bundle,
             "warnings": execution["warnings"],
         }
         base_debug["retrieval"] = execution["retrieval_trace"]

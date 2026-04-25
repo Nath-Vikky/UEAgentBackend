@@ -679,7 +679,7 @@ POST /api/v1/chat/runs
 
 - `data.review_scope.read_status = "ok"` 且 `content_length > 0`：后端确实读到了选中的代码文件。
 - `data.llm_analysis.reason_code = "missing_selected_code_content"`：没有收到可解析的选中文件内容，通常是前端没有提交 `payload.project_root + payload.file_path`，或文件不在 `source_roots` 允许范围内。
-- `data.llm_review.reason = "completed_text_fallback"`：LLM 已经返回自然语言，但没有按 JSON schema 返回；后端会把原始文本作为 `llm_analysis.text` 展示，`llm_analysis.status = "completed"`，不再显示 skipped。
+- `data.llm_review.reason = "completed_text_fallback"`：LLM 已经返回内容，但没有严格按 JSON schema 返回；后端会尽量修复常见 JSON-like 格式，修复失败时也会从原文提取 summary / issue / suggestion，`llm_analysis.status = "completed"`，不再显示 skipped。
 
 前端暂不需要新增字段渲染。测试 Code Review 时，如果仍看到 skipped，优先检查：
 
@@ -718,7 +718,7 @@ Code Review 面板没有聊天输入框，所以高亮按钮 / Highlights 弹窗
 
 - `user_view.blocks[].text` 是自然语言展示文本。
 - `data.llm_analysis.text` 是自然语言展示文本。
-- 如果 LLM 返回 JSON-like 文本但解析失败，后端会尝试清洗为自然语言；原始文本只留在 `data.llm_review.text` 给 Debug View。
+- 如果 LLM 返回 JSON-like 文本但解析失败，后端会先尝试修复 JSON-like 格式；仍不合法时会提取可展示的 summary / title / reason / suggestion。原始文本只留在 `data.llm_review.text` 给 Debug View。
 
 ### Code Review 编辑器侧必传信息
 
@@ -808,3 +808,186 @@ POST /api/v1/sessions
 - `docs/frontend-unified-handoff.md`：主交接文档，重点看本节和 Code Review 高亮字段章节
 - `docs/backend-user-guide.md`：需要理解后端语言策略、知识库和模型配置时查看
 - `docs/improveplan.md`：只作为阶段计划和边界确认，不需要按它逐条实现 UI
+
+## 18. 2026-04-25 Context Bundle v1 接入说明
+
+本轮后端完成了 Context Manager v1。主 UI 暂不强制修改；Agent Chat、Project QA、Code Review、Code Generate 的现有请求方式保持不变。若 UE 前端想增强 Debug View，建议新增一个可折叠的 `Context Bundle` 区块。
+
+建议读取字段：
+
+- `debug_view.context_bundle.version`
+- `debug_view.context_bundle.input_summary`
+- `debug_view.context_bundle.recent_messages`
+- `debug_view.context_bundle.editor_context`
+- `debug_view.context_bundle.tool_context`
+- `debug_view.context_bundle.session_summary`
+- `debug_view.context_bundle.budget`
+- `debug_view.memory_summary.context_budget`
+
+展示建议：
+
+- 普通用户界面不要展示完整 Context Bundle。
+- Debug View 可以用卡片展示 `route_type`、`latest_user_message`、最近消息数量、最近工具摘要数量、`estimated_chars / char_budget`。
+- `tool_context` 只代表最近工具任务摘要，不代表它们已经写入聊天历史。
+- 如果 `budget.warnings` 非空，Debug View 可以显示轻提示，说明上下文已按摘要/截断策略处理。
+
+前端是否必须修改：
+
+- 主 UI：不需要。
+- Debug View：可选增强。如果本轮不改，也不会影响功能测试。
+
+如果 UE 前端后续接入这个 Debug 区块，回传交接文档时请说明：
+
+- 是否展示了 `Context Bundle` 分区。
+- 是否展示了 `tool_context` 与 `recent_messages` 的区别。
+- 是否展示了 `budget.warnings`。
+- 测试时 Agent Chat、Project QA、Code Review 是否还能正常渲染原有 `user_view`。
+
+## 19. 2026-04-25 Memory Summary v1 接入说明
+
+本轮后端完成轻量会话记忆摘要。主 UI 不需要修改，聊天时间线仍然以 `/api/v1/sessions/{session_id}/history` 返回的真实消息为准。
+
+可选 Debug View 字段：
+
+- `GET /api/v1/sessions/{session_id}` -> `item.memory_summary`
+- `debug_view.memory_summary.updated_session_memory`
+- `debug_view.context_bundle.session_summary`
+
+推荐展示方式：
+
+- 在 Debug View 的 Context / Memory 区显示 `memory_summary.version`、`strategy`、`message_count`、`summarized_message_count`。
+- 普通用户界面不要展示完整 `summary_text`，避免把调试摘要误认为正式聊天回复。
+- 如果 `updated_session_memory.status = "not_triggered"`，说明消息数量还没到摘要阈值，不是错误。
+
+前端是否必须修改：
+
+- 主 UI：不需要。
+- Debug View：可选增强。如果本轮不改，也不会影响测试。
+
+如果 UE 前端后续接入本区块，请在回传交接文档里说明：
+
+- 是否展示了 session 顶层 `memory_summary`。
+- 是否展示了 `updated_session_memory.status`。
+- 是否仍然只用 `/history` 渲染聊天时间线，没有把 `summary_text` 混入普通聊天气泡。
+
+## 20. 2026-04-25 Agent Decision Trace v1 接入说明
+
+本轮后端新增 `debug_view.agent_decision_trace`。主 UI 不需要修改；这是 Debug View / 面试演示用字段，用来解释一次请求为什么走某条 route、用了哪些上下文、是否检索、调用了哪个 Skill、是否发生 fallback。
+
+建议读取字段：
+
+- `debug_view.agent_decision_trace.version`
+- `debug_view.agent_decision_trace.summary.route_type`
+- `debug_view.agent_decision_trace.summary.skill_id`
+- `debug_view.agent_decision_trace.summary.retrieval_mode`
+- `debug_view.agent_decision_trace.summary.memory_status`
+- `debug_view.agent_decision_trace.summary.finish_reason`
+- `debug_view.agent_decision_trace.decisions`
+
+`decisions` 当前固定包含：
+
+- `input_summary`
+- `language_decision`
+- `intent_decision`
+- `context_decision`
+- `retrieval_decision`
+- `tool_decision`
+- `memory_decision`
+- `fallback_decision`
+- `final_response_plan`
+
+展示建议：
+
+- Debug View 可以做成一组折叠卡片或时间线。
+- 每个 decision 读取 `decision`、`reason`、`source`、`confidence`、`details`、`warnings`。
+- 普通用户界面不要展示完整 Decision Trace。
+
+前端是否必须修改：
+
+- 主 UI：不需要。
+- Debug View：可选增强。如果本轮不改，不影响功能测试。
+
+如果 UE 前端后续接入本区块，请在回传交接文档里说明：
+
+- 是否展示了 `Agent Decision Trace` 分区。
+- 是否展示了 `summary` 五个核心字段。
+- 是否能展开查看每个 decision 的 `reason/source/details/warnings`。
+- Agent Chat、Project QA、Code Review 三类任务是否仍能正常渲染原有 `user_view`。
+
+## 21. 2026-04-25 RAG Readiness 接入说明
+
+本轮后端增强了 `GET /api/v1/knowledge-base/status` 的返回，用于 Debug View / Monitor 展示知识库和检索链路是否可用。主 UI 不需要修改。
+
+建议读取字段：
+
+- `summary.effective_mode`
+- `summary.rag_readiness.status`
+- `summary.rag_readiness.lexical_ready`
+- `summary.rag_readiness.embedding_ready`
+- `summary.rag_readiness.vector_store_ready`
+- `summary.rag_readiness.usable_for_project_qa`
+- `summary.rag_readiness.degraded_reasons`
+- `summary.rag_readiness.indexed_documents`
+- `summary.rag_readiness.indexed_chunks`
+- `summary.rag_readiness.domain_counts`
+- `summary.rag_readiness.eval_command`
+
+展示建议：
+
+- Monitor / Debug View 可以显示一个 KB readiness 小卡片。
+- `status=degraded` 不一定是错误；如果 `lexical_ready=true` 且 `usable_for_project_qa=true`，Project QA 仍可用，只是没有走向量检索。
+- 普通用户界面只需要在 RAG 无结果时展示现有 `user_view` 提示，不要直接暴露复杂指标。
+
+前端是否必须修改：
+
+- 主 UI：不需要。
+- Debug View / Monitor：可选增强。
+
+如果 UE 前端后续接入本区块，请在回传交接文档里说明：
+
+- 是否展示 KB readiness 小卡片。
+- 是否能区分 `degraded but usable` 与 `empty/unusable`。
+- 是否仍然保持 Agent Chat / Project QA 主界面只展示 citations 与用户可读回答。
+
+## 22. 2026-04-25 Skill Protocol v1 接入说明
+
+本轮后端把 5 个核心能力统一成 `skill_protocol_v1`。主 UI 不需要修改；现有 Agent Chat、Code Review、Code Generate、Logs Analyze、Assets Inspect 的请求方式保持不变。
+
+可选 Debug View 字段：
+
+- `debug_view.skill.protocol_version`
+- `debug_view.skill.skill_id`
+- `debug_view.skill.title`
+- `debug_view.skill.panel_id`
+- `debug_view.skill.frontend_ui`
+- `debug_view.skill.selected_tool_id`
+- `debug_view.skill.lifecycle.collector.status`
+- `debug_view.skill.lifecycle.rules.status`
+- `debug_view.skill.lifecycle.retrieval.status`
+- `debug_view.skill.lifecycle.llm.status`
+- `debug_view.skill.lifecycle.llm.reason`
+- `debug_view.skill.lifecycle.projector.status`
+
+系统能力接口也会返回静态 manifest：
+
+- `GET /api/v1/system/capabilities`
+- `capabilities.skill_architecture.protocol_version = "skill_protocol_v1"`
+- `capabilities.skill_architecture.runtime_lifecycle_field = "debug_view.skill.lifecycle"`
+- `capabilities.skill_catalog[]`
+
+展示建议：
+
+- Debug View 可以把 Skill 显示成一条轻量流水线：`collector -> rules -> retrieval -> llm -> projector`。
+- `llm.status = skipped` 不一定是错误；请结合 `llm.reason` 展示，例如 `missing_openai_api_key` 表示未配置 LLM，`degraded_fallback` 表示走了降级回答。
+- 普通用户主界面仍然优先渲染 `user_view`，不要把 `debug_view.skill` 当作聊天内容展示。
+
+前端是否必须修改：
+
+- 主 UI：不需要。
+- Debug View：可选增强。
+
+如果 UE 前端后续接入本区块，请在回传交接文档里说明：
+
+- 是否展示 Skill lifecycle 流水线。
+- 是否把 `llm.reason` 作为机器码处理，而不是当作完整自然语言回答。
+- Code Review 高亮按钮是否仍只消费 `user_view.blocks` / `data.llm_analysis`，没有误用 `debug_view.skill` 或 raw JSON。

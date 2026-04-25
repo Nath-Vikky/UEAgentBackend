@@ -93,6 +93,7 @@ class SessionService:
             reverse=True,
         )
         latest_task = tasks[0] if tasks else None
+        metadata = dict(session_model.metadata_json or {})
         return {
             "session_id": session_model.session_id,
             "project_name": session_model.project_name,
@@ -105,5 +106,6 @@ class SessionService:
             "latest_run_id": latest_task.run_id if latest_task else None,
             "created_at": session_model.created_at.isoformat() if session_model.created_at else None,
             "updated_at": session_model.updated_at.isoformat() if session_model.updated_at else None,
-            "metadata": session_model.metadata_json or {},
+            "memory_summary": metadata.get("memory_summary") or {},
+            "metadata": metadata,
         }

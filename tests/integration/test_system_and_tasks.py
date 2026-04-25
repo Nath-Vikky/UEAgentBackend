@@ -67,12 +67,23 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
         "assets_inspect",
     ]
     assert body["capabilities"]["skill_architecture"]["mode"] == "fixed_built_in_skills"
+    assert body["capabilities"]["skill_architecture"]["protocol_version"] == "skill_protocol_v1"
+    assert body["capabilities"]["skill_architecture"]["protocol_components"] == [
+        "collector",
+        "rules",
+        "retrieval",
+        "llm_analyzer",
+        "projector",
+    ]
+    assert body["capabilities"]["skill_architecture"]["runtime_lifecycle_field"] == "debug_view.skill.lifecycle"
     assert body["capabilities"]["skill_architecture"]["runtime_dynamic_skills"] is False
     assert body["capabilities"]["skill_architecture"]["public_skill_count"] == 5
     assert len(body["capabilities"]["skill_catalog"]) == 5
     assert any(
         item["skill_id"] == "CodeReviewSkill"
         and item["architecture"]["collector"] == "ue_project_code_file_scanner_and_reader"
+        and item["architecture"]["llm_analyzer"] == "optional_live_llm_or_deterministic_fallback"
+        and item["protocol"]["runtime_lifecycle_field"] == "debug_view.skill.lifecycle"
         for item in body["capabilities"]["skill_catalog"]
     )
     assert "config_generate" in body["capabilities"]["deferred_task_types"]
@@ -456,9 +467,20 @@ def test_kb_refresh_builds_documents_and_chunks(client: TestClient) -> None:
     assert job.status_code == 200
     assert status.status_code == 200
     assert job.json()["job"]["status"] == "completed"
-    assert status.json()["summary"]["documents"] >= 1
-    assert status.json()["summary"]["chunks"] >= 1
-    assert status.json()["summary"]["ingestion_pipeline"] == [
+    summary = status.json()["summary"]
+    readiness = summary["rag_readiness"]
+    assert summary["documents"] >= 1
+    assert summary["chunks"] >= 1
+    assert summary["effective_mode"] == "lexical_only"
+    assert readiness["status"] == "degraded"
+    assert readiness["lexical_ready"] is True
+    assert readiness["usable_for_project_qa"] is True
+    assert readiness["vector_store_ready"] is False
+    assert readiness["indexed_documents"] >= 1
+    assert readiness["indexed_chunks"] >= 1
+    assert readiness["domain_counts"]["project_docs"] >= 1
+    assert "run_rag_eval.py" in readiness["eval_command"]
+    assert summary["ingestion_pipeline"] == [
         "loader",
         "parser",
         "cleaner",
@@ -468,7 +490,7 @@ def test_kb_refresh_builds_documents_and_chunks(client: TestClient) -> None:
         "vector_store",
         "retrieval",
     ]
-    assert "cpp" in status.json()["summary"]["format_groups"]["code"]
+    assert "cpp" in summary["format_groups"]["code"]
 
 
 def test_kb_import_text_accepts_content_metadata_and_tags(client: TestClient) -> None:
@@ -646,6 +668,59 @@ def test_session_history_restore_keeps_user_assistant_order_across_turns(client:
     assert items[-1]["content"] == second_chat.json()["assistant_message"]
 
 
+def test_session_memory_summary_compacts_long_chat_context(client: TestClient) -> None:
+    session_id = "memory_summary_session"
+
+    def post_chat(message: str):
+        return client.post(
+            "/api/v1/chat/runs",
+            json={
+                "task_type": "agent_chat",
+                "session": {
+                    "session_id": session_id,
+                    "messages": [{"role": "user", "content": message, "language": "auto"}],
+                },
+                "context": {"active_panel": "AgentChat"},
+                "payload": {"user_query": message},
+                "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+
+    for index in range(10):
+        response = post_chat(f"Tell me one short cooking tip number {index}.")
+        assert response.status_code == 200
+
+    session = client.get(f"/api/v1/sessions/{session_id}")
+    memory = session.json()["item"]["memory_summary"]
+
+    assert session.status_code == 200
+    assert memory["status"] == "available"
+    assert memory["version"] == "memory_summary_v1"
+    assert memory["message_count"] >= 20
+    assert memory["summarized_message_count"] >= 14
+
+    follow_up = post_chat("Use our earlier discussion and summarize what we have covered.")
+    body = follow_up.json()
+    context_summary = body["debug_view"]["context_bundle"]["session_summary"]
+    recent_text = "\n".join(item["content"] for item in body["debug_view"]["context_bundle"]["recent_messages"])
+
+    assert follow_up.status_code == 200
+    assert context_summary["status"] == "available"
+    assert context_summary["version"] == "memory_summary_v1"
+    assert context_summary["summarized_message_count"] >= 14
+    assert len(body["debug_view"]["context_bundle"]["recent_messages"]) <= 8
+    assert "cooking tip number 9" in recent_text
+    assert "cooking tip number 0" not in recent_text
+    assert body["debug_view"]["memory_summary"]["updated_session_memory"]["status"] == "available"
+
+
 def test_tool_tasks_do_not_pollute_agent_chat_session_history(client: TestClient) -> None:
     response = client.post(
         "/api/v1/tasks/code-review",
@@ -688,6 +763,40 @@ def test_tool_tasks_do_not_pollute_agent_chat_session_history(client: TestClient
     assert history.json()["items"] == []
     assert tasks.status_code == 200
     assert tasks.json()["items"]
+
+    follow_up = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "tool_task_history_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Summarize what tool task just ran.",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {"active_panel": "AgentChat"},
+            "payload": {"user_query": "Summarize what tool task just ran."},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    follow_up_history = client.get("/api/v1/sessions/tool_task_history_session/history")
+    context_bundle = follow_up.json()["debug_view"]["context_bundle"]
+
+    assert follow_up.status_code == 200
+    assert context_bundle["tool_context"]
+    assert context_bundle["tool_context"][0]["task_type"] == "code_review"
+    assert [item["role"] for item in follow_up_history.json()["items"]] == ["user", "assistant"]
 
 
 def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None:
@@ -737,6 +846,14 @@ def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None
     assert body["data"]["citations"]
     assert body["user_view"]["citations_preview"]
     assert body["retrieval_trace"]["retrieved_docs"]
+    assert body["debug_view"]["context_bundle"]["version"] == "context_bundle_v1"
+    assert body["data"]["context_bundle"]["input_summary"]["route_type"] == "project_qa"
+    decision_trace = body["debug_view"]["agent_decision_trace"]
+    assert decision_trace["version"] == "agent_decision_trace_v1"
+    assert decision_trace["summary"]["route_type"] == "project_qa"
+    assert decision_trace["decisions"]["retrieval_decision"]["details"]["retrieved_count"] == len(
+        body["retrieval_trace"]["retrieved_docs"]
+    )
 
 
 def test_project_qa_explicit_english_preference_keeps_english_locale(client: TestClient) -> None:
@@ -818,10 +935,28 @@ def test_direct_chat_skips_kb_retrieval(client: TestClient) -> None:
     assert response.status_code == 200
     assert body["intent"]["route_type"] == "direct_answer"
     assert body["retrieval_trace"]["mode"] == "not_used"
+    assert body["debug_view"]["skill"]["protocol_version"] == "skill_protocol_v1"
     assert body["debug_view"]["skill"]["skill_id"] == "ProjectQASkill"
     assert body["debug_view"]["skill"]["retrieval_active"] is False
+    assert body["debug_view"]["skill"]["lifecycle"]["collector"]["status"] == "completed"
+    assert body["debug_view"]["skill"]["lifecycle"]["rules"]["status"] == "completed"
+    assert body["debug_view"]["skill"]["lifecycle"]["retrieval"]["status"] == "skipped"
+    assert body["debug_view"]["skill"]["lifecycle"]["llm"]["status"] == "skipped"
+    assert body["debug_view"]["skill"]["lifecycle"]["llm"]["reason"] == "degraded_fallback"
+    assert body["debug_view"]["skill"]["lifecycle"]["projector"]["status"] == "completed"
     assert body["data"]["skill"]["collector"] == "chat_messages_and_editor_context"
     assert body["trace_summary"]["skill_id"] == "ProjectQASkill"
+    assert body["debug_view"]["context_bundle"]["version"] == "context_bundle_v1"
+    assert body["debug_view"]["context_bundle"]["input_summary"]["route_type"] == "direct_answer"
+    assert body["debug_view"]["context_bundle"]["recent_messages"]
+    assert "context_budget" in body["debug_view"]["memory_summary"]
+    assert body["data"]["context_bundle"]["version"] == "context_bundle_v1"
+    decision_trace = body["debug_view"]["agent_decision_trace"]
+    assert decision_trace["version"] == "agent_decision_trace_v1"
+    assert decision_trace["summary"]["route_type"] == "direct_answer"
+    assert decision_trace["decisions"]["intent_decision"]["decision"] == "direct_answer"
+    assert decision_trace["decisions"]["context_decision"]["details"]["context_bundle_version"] == "context_bundle_v1"
+    assert decision_trace["decisions"]["retrieval_decision"]["decision"] == "not_used"
 
 
 def test_direct_chat_with_project_context_still_skips_kb_when_query_is_generic(client: TestClient) -> None:
@@ -1302,8 +1437,12 @@ def test_code_review_file_listing_and_selected_file_review(client: TestClient) -
 
         assert review.status_code == 200
         assert body["task"]["status"] == "completed"
+        assert body["debug_view"]["skill"]["protocol_version"] == "skill_protocol_v1"
         assert body["debug_view"]["skill"]["skill_id"] == "CodeReviewSkill"
         assert body["debug_view"]["skill"]["collector"] == "ue_project_code_file_scanner_and_reader"
+        assert body["debug_view"]["skill"]["lifecycle"]["retrieval"]["status"] == "completed"
+        assert body["debug_view"]["skill"]["lifecycle"]["llm"]["status"] == "skipped"
+        assert body["debug_view"]["skill"]["lifecycle"]["llm"]["reason"] == "missing_openai_api_key"
         assert body["data"]["review_scope"]["source_kind"] == "file_path"
         assert body["data"]["review_scope"]["file_path"] == "Source/MyModule/MyActor.cpp"
         assert body["data"]["review_scope"]["resolved_absolute_path"]
@@ -1627,6 +1766,106 @@ def test_code_review_llm_json_like_text_fallback_is_sanitized_for_highlights(
         assert not llm_block["text"].lstrip().startswith("{")
         assert "overview" not in llm_block["text"]
         assert body["data"]["llm_review"]["payload"]["issues"][0]["title"] == "Synchronous load in Tick"
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
+
+
+def test_code_review_malformed_json_like_text_extracts_llm_summary(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = Path(".test-workspace") / f"code-review-malformed-json-{uuid.uuid4().hex}"
+    code_dir = project_root / "Source" / "MyModule"
+    shutil.rmtree(project_root, ignore_errors=True)
+    code_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        file_path = code_dir / "MyActor.cpp"
+        file_path.write_text(
+            '#include "MyActor.h"\n'
+            "void AMyActor::Tick(float DeltaTime)\n"
+            "{\n"
+            '    auto Asset = LoadObject<UObject>(nullptr, TEXT("/Game/Hero/Hero01"));\n'
+            "}\n",
+            encoding="utf-8",
+        )
+
+        def _fake_complete_json_object(self, *, messages, config):  # type: ignore[no-untyped-def]
+            assert messages
+            return {
+                "ok": False,
+                "payload": None,
+                "reason": "json_parse_failed",
+                "error": "invalid_unescaped_quote",
+                "provider": "openai_compatible",
+                "model": config.model,
+                "profile_id": config.profile_id,
+                "text": (
+                    "{summary: \"The code synchronously loads an asset during Tick.\", "
+                    "issues: [{title: \"LoadObject in Tick\", "
+                    "reason: \"The copied snippet TEXT(\"/Game/Hero/Hero01\") makes the JSON invalid.\", "
+                    "suggestion: \"Move loading to BeginPlay or an async path.\"}]}"
+                ),
+                "usage": {
+                    "input_tokens": 40,
+                    "output_tokens": 24,
+                    "estimated_cost_usd": 0.0,
+                    "latency_ms": 11,
+                },
+            }
+
+        monkeypatch.setattr(
+            "app.services.llm_service.LLMService.complete_json_object",
+            _fake_complete_json_object,
+        )
+
+        review = client.post(
+            "/api/v1/tasks/code-review",
+            json={
+                "task_type": "code_review",
+                "session": {
+                    "session_id": "code_review_malformed_json_fallback_session",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Review the selected file.",
+                            "language": "auto",
+                        }
+                    ],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "active_panel": "CodeReview",
+                    "current_file": "Source/MyModule/MyActor.cpp",
+                    "current_module": "MyModule",
+                },
+                "payload": {
+                    "user_query": "Review the selected file.",
+                    "project_root": str(project_root.resolve()),
+                    "source_roots": ["Source"],
+                    "file_path": "Source/MyModule/MyActor.cpp",
+                    "focus": "General",
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "CodeReview"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = review.json()
+        llm_block = next(
+            block for block in body["user_view"]["blocks"] if block["block_type"] == "llm_analysis"
+        )
+
+        assert review.status_code == 200
+        assert body["data"]["llm_analysis"]["status"] == "completed"
+        assert body["data"]["llm_review"]["reason"] == "completed_text_fallback"
+        assert body["data"]["llm_analysis"]["text"] == "The code synchronously loads an asset during Tick."
+        assert llm_block["text"] == "The code synchronously loads an asset during Tick."
+        assert "无法可靠解析" not in llm_block["text"]
     finally:
         shutil.rmtree(project_root, ignore_errors=True)
 

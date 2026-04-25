@@ -70,6 +70,7 @@ def test_summarize_cases_aggregates_metrics() -> None:
     assert summary["route_accuracy"] == 0.5
     assert summary["citation_coverage"] == 0.5
     assert summary["low_confidence_ratio"] == 0.5
+    assert summary["no_result_ratio"] == 0.5
 
 
 def test_evaluate_case_deduplicates_same_source_hits() -> None:

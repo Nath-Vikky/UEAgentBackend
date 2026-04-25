@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -9,7 +10,7 @@ from app.agent.context_builder import build_context_summary
 from app.schemas.common import CitationPreview, QuickAction, UserViewBlock
 from app.schemas.requests import UnifiedTaskRequest
 from app.services.kb_service import KnowledgeBaseService
-from app.services.llm_service import ChatRuntimeConfig, LLMService
+from app.services.llm_service import ChatRuntimeConfig, LLMService, extract_json_value
 from app.utils.json_tools import dumps_pretty
 from app.workflows.graphs.code_review import run_code_review_workflow
 
@@ -39,22 +40,65 @@ def _looks_json_like(text: str) -> bool:
 
 
 def _try_parse_json_text(text: str) -> Any | None:
+    try:
+        return extract_json_value(text)
+    except Exception:
+        pass
     stripped = _strip_code_fence(text)
-    candidates = [stripped]
-    object_start = stripped.find("{")
-    object_end = stripped.rfind("}")
-    if object_start >= 0 and object_end > object_start:
-        candidates.append(stripped[object_start : object_end + 1])
-    array_start = stripped.find("[")
-    array_end = stripped.rfind("]")
-    if array_start >= 0 and array_end > array_start:
-        candidates.append(stripped[array_start : array_end + 1])
-    for candidate in candidates:
-        try:
-            return json.loads(candidate)
-        except Exception:
-            continue
+    try:
+        return json.loads(stripped)
+    except Exception:
+        pass
     return None
+
+
+def _extract_json_like_string_value(text: str, keys: tuple[str, ...]) -> str:
+    stripped = _strip_code_fence(text)
+    for key in keys:
+        pattern = rf'["\']?{re.escape(key)}["\']?\s*:\s*(["\'])(.*?)(?<!\\)\1'
+        match = re.search(pattern, stripped, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            value = match.group(2).replace("\\n", "\n").replace('\\"', '"').replace("\\'", "'")
+            value = re.sub(r"\s+", " ", value).strip()
+            if value:
+                return value
+    return ""
+
+
+def _salvage_json_like_review_payload(text: str, *, output_language: str) -> dict[str, Any]:
+    summary = _extract_json_like_string_value(
+        text,
+        ("summary", "analysis", "overview", "conclusion", "text", "message"),
+    )
+    title = _extract_json_like_string_value(text, ("title", "rule", "name"))
+    reason = _extract_json_like_string_value(text, ("reason", "description", "impact"))
+    suggestion = _extract_json_like_string_value(text, ("suggestion", "recommendation", "fix"))
+    recommendations = [
+        item
+        for item in {
+            _extract_json_like_string_value(text, ("recommendations", "suggestions", "fixes")),
+            suggestion,
+        }
+        if item
+    ]
+    issues = []
+    if title or reason or suggestion:
+        issues.append(
+            {
+                "severity": "medium",
+                "line": None,
+                "title": title or _localized(output_language, "LLM 提取到的审查问题", "LLM review finding"),
+                "reason": reason,
+                "impact": "",
+                "suggestion": suggestion,
+            }
+        )
+    return {
+        "summary": summary,
+        "issues": issues,
+        "recommendations": recommendations,
+        "next_steps": [],
+    }
 
 
 def _display_text(value: Any, *, max_lines: int = 6) -> str:
@@ -437,8 +481,10 @@ class CodeReviewSkillExecutor:
             f"Return natural language fields in {self._language_label(output_language)}. "
             "Use the provided source excerpt, static rule findings, editor context, and retrieved guidance. "
             "If project KB evidence is insufficient, say that explicitly and still review from the file content and general Unreal/C++/C# rules. "
-            "Return JSON only with keys: summary, issues, recommendations, next_steps. "
-            "Each issue must include severity, line, title, reason, impact, suggestion."
+            "Return valid compact JSON only. Do not wrap it in Markdown. Do not include comments or trailing commas. "
+            "Use only these top-level keys: summary, issues, recommendations, next_steps. "
+            "Each issue must include severity, line, title, reason, impact, suggestion. "
+            "Do not copy raw source code snippets that contain quotes into JSON strings; paraphrase the evidence instead."
         )
         user_prompt = "\n\n".join(
             [
@@ -474,6 +520,15 @@ class CodeReviewSkillExecutor:
                 }
         if parsed_payload is None:
             if _looks_json_like(raw_text):
+                salvaged = _salvage_json_like_review_payload(raw_text, output_language=output_language)
+                if salvaged["summary"] or salvaged["issues"] or salvaged["recommendations"]:
+                    if not salvaged["summary"]:
+                        salvaged["summary"] = _localized(
+                            output_language,
+                            "LLM 返回了非标准 JSON，但后端已从原文中提取到部分审查要点；完整原文保留在 Debug View。",
+                            "The LLM returned non-standard JSON, but the backend extracted partial review points from the raw text. Full raw text is kept in Debug View.",
+                        )
+                    return salvaged
                 summary = _localized(
                     output_language,
                     "LLM 返回了类似 JSON 的结构化内容，但后端无法可靠解析；原始内容已保留在 Debug View，本卡片改用规则审查结果兜底。",
@@ -658,6 +713,7 @@ class CodeReviewSkillExecutor:
         trace_id: str,
         output_language: str,
         chat_config: ChatRuntimeConfig,
+        context_bundle: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         workflow = run_code_review_workflow(
             request=request,
@@ -667,7 +723,12 @@ class CodeReviewSkillExecutor:
             output_language=output_language,
         )
         result = workflow["result"]
-        base_debug = self.base_debug_builder(request=request, routing=routing, trace_id=trace_id)
+        base_debug = self.base_debug_builder(
+            request=request,
+            routing=routing,
+            trace_id=trace_id,
+            context_bundle=context_bundle,
+        )
         severity_summary = result["severity_summary"]
         total_issues = len(result["issue_list"])
         load_error = (result.get("review_scope") or {}).get("load_error")
@@ -819,6 +880,7 @@ class CodeReviewSkillExecutor:
             "sources": [{"title": item["title"], "source": item["source"]} for item in result["retrieved_references"]],
             "citations": result["retrieved_references"],
             "context_summary": build_context_summary(request),
+            "context_bundle": context_bundle,
             "warnings": workflow["warnings"],
         }
         if load_error:

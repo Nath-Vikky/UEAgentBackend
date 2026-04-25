@@ -1089,7 +1089,7 @@ Code Review 判断是否真的读到了 cpp/h/cs 文件，优先看 `data.review
 
 - `read_status = "ok"` 且 `content_length > 0`：后端已经读取到选中文件内容。
 - `source_kind = "query_only"` 或 `llm_analysis.reason_code = "missing_selected_code_content"`：请求缺少可解析的选中文件内容，通常需要前端补齐 `payload.project_root + payload.file_path`。
-- `llm_review.reason = "completed_text_fallback"`：LLM 已返回自然语言但未按 JSON 返回，后端已把文本放入 `llm_analysis.text`，状态仍是 `completed`。
+- `llm_review.reason = "completed_text_fallback"`：LLM 已返回内容但未严格按 JSON schema 返回，后端会尽量修复常见 JSON-like 格式；如果仍不合法，也会尝试从原文提取 summary / issue / suggestion 放入 `llm_analysis.text`，状态仍是 `completed`。
 
 ### 18.7 Code Review 高亮展示与 raw JSON 边界
 
@@ -1105,7 +1105,7 @@ Code Review 是工具面板，不是聊天面板。前端的高亮按钮应展�
 
 不要把 `data.llm_review`、`debug_view.raw_result`、artifact 原始内容或 `analysis_input.source_excerpt` 放进普通用户高亮弹窗。这些属于 Debug View，可能包含原始 JSON、源码片段和模型诊断。
 
-后端现在会尽量保证 `user_view.blocks[].text` 和 `data.llm_analysis.text` 是自然语言。如果 LLM 返回 JSON-like 文本但没有严格符合 schema，后端会清洗成可展示文本，原始内容只保留在 `data.llm_review.text` 供 Debug 使用。
+后端现在会尽量保证 `user_view.blocks[].text` 和 `data.llm_analysis.text` 是自然语言。如果 LLM 返回 JSON-like 文本但没有严格符合 schema，后端会先尝试修复常见格式问题，例如 Markdown 代码块、尾逗号、未加引号的 key、单引号字典；如果修复失败，会继续从原文提取 summary / title / reason / suggestion，原始内容只保留在 `data.llm_review.text` 供 Debug 使用。
 
 ### 18.8 输出语言偏好
 
@@ -1178,3 +1178,216 @@ POST /api/v1/sessions
 - `preferred_output_language`：本轮偏好语言
 - `final_output_language`：最终输出语言
 - `language_source`：`explicit_override`、`message_override`、`session_preference`、`editor_locale` 或 `default`
+
+### 18.9 Context Bundle v1
+
+后端现在有一层统一的 `Context Manager`，每次任务会先生成 `context_bundle_v1`，再交给 Agent Chat、Project QA 或工具型 Skill 使用。它的目标不是把所有历史都塞进 prompt，而是把“本轮为什么带了这些上下文”讲清楚。
+
+主要字段：
+
+- `debug_view.context_bundle.version`：当前为 `context_bundle_v1`。
+- `debug_view.context_bundle.input_summary`：本轮 session、请求类型、实际任务类型、route type、latest user message。
+- `debug_view.context_bundle.recent_messages`：最近的 Agent Chat / Project QA 对话，已经去重和截断。
+- `debug_view.context_bundle.editor_context`：当前 UE project、panel、file、module、selected assets 等摘要。
+- `debug_view.context_bundle.tool_context`：最近工具型任务摘要，例如 Code Review，不会污染聊天历史。
+- `debug_view.context_bundle.session_summary`：阶段 B 之前主要读取 session metadata 中已有摘要；没有则显示 `not_available`。
+- `debug_view.context_bundle.budget`：字符预算、估算字符数、裁剪策略和 warnings。
+- `debug_view.memory_summary.context_budget`：Debug View 中更短的预算摘要，方便快速判断是否接近上下文限制。
+
+当前边界：
+
+- 工具型任务不会写入 `/sessions/{session_id}/history`，只写入 task 列表和 tool context 摘要。
+- 第一版不做自动长期记忆总结，不做复杂 graph，也不做多 agent 上下文共享。
+- 如果需要看某次请求到底带了哪些上下文，优先打开 `debug_view.context_bundle`，不要从 raw prompt 反推。
+
+### 18.10 Memory Summary v1
+
+后端现在会为较长的 Agent Chat / Project QA 会话生成轻量 memory summary。它不是用户画像，也不是跨项目长期记忆，只是当前 session 内的上下文压缩。
+
+触发方式：
+
+- 仅 `agent_chat` / `project_qa` 这类聊天历史任务会触发。
+- 工具型任务仍然不会写入聊天历史，也不会直接进入 memory summary。
+- 当前阈值是聊天历史达到 8 条消息后生成或刷新摘要。
+- 摘要使用确定性压缩策略，不依赖 LLM，因此本地调试时没有额外模型成本。
+
+查看位置：
+
+- `GET /api/v1/sessions/{session_id}` 的 `item.memory_summary`
+- `debug_view.memory_summary.updated_session_memory`
+- 下一轮请求中的 `debug_view.context_bundle.session_summary`
+
+关键字段：
+
+- `version = "memory_summary_v1"`
+- `strategy = "deterministic_recent_compaction_v1"`
+- `summary_text`：压缩后的旧对话摘要。
+- `message_count`：当前 session 消息总数。
+- `summarized_message_count`：被压进摘要的旧消息数量。
+- `recent_message_count`：仍保留为 recent messages 的消息数量。
+
+边界：
+
+- 清空 session 会同时清掉旧 `memory_summary`。
+- 这版不做 LLM 自动总结、不保存跨项目用户偏好、不把代码全文或资产元数据写入 memory。
+- 如果需要更聪明的摘要，后续可以在不改变前端主 UI 的前提下升级策略。
+
+### 18.11 Agent Decision Trace v1
+
+后端现在会在每次任务响应的 Debug View 中返回一条统一决策链：
+
+```json
+{
+  "debug_view": {
+    "agent_decision_trace": {
+      "version": "agent_decision_trace_v1",
+      "summary": {
+        "route_type": "direct_answer",
+        "skill_id": "ProjectQASkill",
+        "retrieval_mode": "not_used",
+        "memory_status": "not_triggered",
+        "finish_reason": "completed"
+      },
+      "decisions": {}
+    }
+  }
+}
+```
+
+`decisions` 固定包含这些分区：
+
+- `input_summary`：本轮请求、最新用户消息和编辑器上下文摘要。
+- `language_decision`：最终输出语言和语言来源。
+- `intent_decision`：为什么走 direct answer、Project QA、Inventory 或某个 Skill。
+- `context_decision`：Context Bundle 使用了多少 recent messages、tool context、session summary，以及是否超预算。
+- `retrieval_decision`：本轮是否检索、检索模式、命中数量、是否降级。
+- `tool_decision`：本轮映射到哪个固定内置 Skill。
+- `memory_decision`：本轮 session memory 是 available、not_triggered 还是 not_available。
+- `fallback_decision`：是否有 warnings/errors 导致降级。
+- `final_response_plan`：最终如何投影到 user view、debug view、trace 和 artifacts。
+
+边界：
+
+- Decision Trace 不额外调用 LLM，只汇总后端已有判断。
+- 普通用户界面不需要展示完整 trace。
+- 面试演示或排查“为什么这次走 RAG / 为什么没走 RAG / 为什么 LLM skipped”时，优先看这里。
+
+### 18.12 RAG Readiness 与本地评测
+
+`GET /api/v1/knowledge-base/status` 现在会返回 `rag_readiness`，用于判断知识库当前到底能不能服务 Project QA。
+
+关键字段：
+
+- `status`：`empty`、`ready` 或 `degraded`。
+- `lexical_ready`：本地词法检索是否可用。
+- `embedding_ready`：embedding 模型是否可用。
+- `vector_store_ready`：向量数据库是否可用。
+- `usable_for_project_qa`：Project QA 是否至少可以用词法检索工作。
+- `degraded_reasons`：为什么降级，例如 embedding 不可用或 Qdrant 不可用。
+- `domain_counts`：当前知识库每个 domain 有多少文档。
+- `indexed_documents` / `indexed_chunks`：当前入库规模。
+- `eval_command`：推荐本地评测命令。
+
+只配置 LLM、没有配置 embedding / Qdrant 时，常见状态是：
+
+```json
+{
+  "status": "degraded",
+  "lexical_ready": true,
+  "embedding_ready": false,
+  "vector_store_ready": false,
+  "usable_for_project_qa": true
+}
+```
+
+这不是错误，表示 RAG 会降级到本地词法检索。
+
+本地 RAG 评测命令：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_rag_eval.py --dataset tests\eval\rag_project_qa_dataset.jsonl
+```
+
+评测 summary 会包含：
+
+- `recall_at_k`
+- `precision_at_k`
+- `hit_at_k`
+- `mrr`
+- `ndcg_at_k`
+- `route_accuracy`
+- `language_accuracy`
+- `citation_coverage`
+- `low_confidence_ratio`
+- `no_result_ratio`
+
+### 18.13 Skill Protocol v1
+
+后端现在把 5 个核心能力收敛成固定内置 Skill，而不是动态插件市场：
+
+- `ProjectQASkill`：Agent Chat / Project QA，自由聊天、项目问答、知识库检索、Project Inventory 查询都从这里进入。
+- `CodeReviewSkill`：代码审查，负责 UE 工程源码扫描、选中文件读取、规则检查、KB 证据和可选 LLM 分析。
+- `CodeGenerateSkill`：代码生成，负责根据需求和 `code_reference/examples/engine_notes` 生成代码草案。
+- `LogsAnalyzeSkill`：日志分析，负责日志文本提取、严重性归类、签名识别和建议生成。
+- `AssetsInspectSkill`：资产检查，负责选中资产的命名、类型、依赖关系、常用设置和可选 LLM 分析。
+
+查看 Skill catalog：
+
+```http
+GET /api/v1/system/capabilities
+```
+
+重点字段：
+
+- `capabilities.skill_architecture.protocol_version = "skill_protocol_v1"`
+- `capabilities.skill_architecture.protocol_components = ["collector", "rules", "retrieval", "llm_analyzer", "projector"]`
+- `capabilities.skill_architecture.runtime_lifecycle_field = "debug_view.skill.lifecycle"`
+- `capabilities.skill_catalog[]`：每个 Skill 的 manifest。
+
+一次任务执行后，可以在 Debug View 里查看运行态：
+
+```json
+{
+  "debug_view": {
+    "skill": {
+      "protocol_version": "skill_protocol_v1",
+      "skill_id": "CodeReviewSkill",
+      "lifecycle": {
+        "collector": {"status": "completed"},
+        "rules": {"status": "completed"},
+        "retrieval": {"status": "completed"},
+        "llm": {"status": "skipped", "reason": "missing_openai_api_key"},
+        "projector": {"status": "completed"}
+      }
+    }
+  }
+}
+```
+
+五段生命周期的含义：
+
+- `collector`：收集输入，例如聊天消息、UE 选中文件、资产 metadata、日志文本。
+- `rules`：确定性规则，例如 C++ 生命周期检查、命名规范、日志严重性分组。
+- `retrieval`：知识库或项目快照检索，例如 KB chunks、Project Inventory、代码参考。
+- `llm`：在线 LLM 综合分析；没有 API Key、缺少选中文件内容或模型不可用时会 `skipped/degraded`。
+- `projector`：把内部结果投影成 `user_view`、`debug_view`、`data`、`artifacts` 等前端可消费结构。
+
+后续优化功能时的推荐边界：
+
+- 优先扩展现有 Skill，不轻易新增一个用户可见功能入口。
+- 新增“扫描 UE 工程 cpp/h/cs 文件并读取内容”这类能力，应归入 `CodeReviewSkill.collector`。
+- 新增“代码审查规则”应归入 `CodeReviewSkill.rules`。
+- 新增“把审查结果交给 LLM 解释成人话”应归入 `CodeReviewSkill.llm_analyzer`。
+- 新增“高亮按钮、摘要卡片、建议列表字段”应归入 `CodeReviewSkill.projector`。
+- 不做动态安装 Skill、不做 marketplace、不做复杂沙箱；这是个人作品级、面试展示级项目，目标是稳定、清晰、可讲。
+
+### 18.14 学习文档入口
+
+如果要系统复习这个后端，可以按下面顺序阅读：
+
+- `docs/agent-architecture-study.md`：先理解整体 Agent loop、模块边界和面试讲法。
+- `docs/request-lifecycle.md`：再用真实请求复盘 Agent Chat、Project QA、Code Review 等路径。
+- `docs/rag-and-memory-study.md`：理解知识库、检索、向量模型、Qdrant 和上下文压缩。
+- `docs/skill-development-guide.md`：最后看后续如何扩展固定内置 Skill。
+
+这些文档不要求 UE 前端实现新 UI，主要用于后端学习、复盘和作品集展示。

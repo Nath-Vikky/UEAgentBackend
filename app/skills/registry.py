@@ -3,6 +3,16 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+SKILL_PROTOCOL_VERSION = "skill_protocol_v1"
+SKILL_PROTOCOL_COMPONENTS = ["collector", "rules", "retrieval", "llm_analyzer", "projector"]
+DEFAULT_DEBUG_CONTRACT = [
+    "debug_view.skill",
+    "debug_view.agent_decision_trace",
+    "debug_view.context_bundle",
+    "debug_view.retrieval",
+    "debug_view.step_results",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class BuiltInSkillSpec:
@@ -20,17 +30,33 @@ class BuiltInSkillSpec:
     collector: str
     rules: list[str] = field(default_factory=list)
     retrieval_domains: list[str] = field(default_factory=list)
+    input_schema: dict[str, Any] = field(default_factory=dict)
+    llm_analyzer: str = "optional_live_llm_or_deterministic_fallback"
     projector_outputs: list[str] = field(default_factory=list)
+    debug_contract: list[str] = field(default_factory=lambda: list(DEFAULT_DEBUG_CONTRACT))
     notes: str = ""
 
     def to_catalog_item(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["status"] = "core"
+        payload["protocol_version"] = SKILL_PROTOCOL_VERSION
+        payload["input_schema"] = self.input_schema or {
+            "request_model": "UnifiedTaskRequest",
+            "required_sections": ["session", "context", "payload", "runtime_options"],
+            "notes": "Each built-in skill narrows payload requirements internally; see user guide for task-specific payload examples.",
+        }
         payload["architecture"] = {
             "collector": self.collector,
             "rules": self.rules,
             "retrieval_domains": self.retrieval_domains,
+            "llm_analyzer": self.llm_analyzer,
             "projector_outputs": self.projector_outputs,
+        }
+        payload["protocol"] = {
+            "version": SKILL_PROTOCOL_VERSION,
+            "components": SKILL_PROTOCOL_COMPONENTS,
+            "runtime_lifecycle_field": "debug_view.skill.lifecycle",
+            "debug_contract": self.debug_contract,
         }
         return payload
 
