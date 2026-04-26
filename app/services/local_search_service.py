@@ -8,7 +8,7 @@ from typing import Any
 from app.core.settings import Settings
 from app.rag.ingestion.capabilities import SUPPORTED_SUFFIXES
 from app.rag.ingestion.loaders import discover_source_paths
-from app.rag.indexing.sparse import tokenize
+from app.rag.indexing.sparse import tokenize_query
 
 
 DOMAIN_DIR_ALIASES = {
@@ -105,7 +105,7 @@ def _title_from_text(path: Path, text: str) -> str:
 def _query_terms(query: str) -> list[str]:
     terms: list[str] = []
     seen: set[str] = set()
-    for token in tokenize(query):
+    for token in tokenize_query(query):
         token = token.strip().lower()
         if not token:
             continue

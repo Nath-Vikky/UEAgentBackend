@@ -6,7 +6,7 @@ from app.core.settings import Settings
 from app.db.models.kb import KBChunkModel
 from app.rag.indexing.embeddings import embed_query, embedding_available
 from app.rag.indexing.qdrant_store import qdrant_available, search_similar_chunks
-from app.rag.indexing.sparse import token_counter, tokenize
+from app.rag.indexing.sparse import query_token_counter, token_counter, tokenize, tokenize_query
 from app.rag.retrieval.citations import build_citations
 from app.rag.retrieval.rerank import rerank_candidates
 from app.rag.schemas import RetrievalCandidate, RetrievalResult
@@ -104,8 +104,8 @@ def retrieve(
         "module": payload.get("module") or context.current_module,
         "doc_type": payload.get("doc_type"),
     }
-    query_tokens_list = tokenize(query)
-    query_tokens = token_counter(query)
+    query_tokens_list = tokenize_query(query)
+    query_tokens = query_token_counter(query)
     qdrant_ok, qdrant_reason = qdrant_available(settings)
     embedding_ok = embedding_available(settings)
     mode, degraded_mode = _resolve_mode(

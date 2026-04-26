@@ -1061,3 +1061,91 @@ Code Generate 展示规则也需要统一理解：
 - Code Generate 请求里当前传的 `payload.target_type` 是什么。
 - 是否只使用 `user_view.blocks[block_type="generated_items"].data.generated_items` 渲染代码结果。
 - 是否把 `write_status=not_written` 作为“未写入工程”的提示，而不是错误状态。
+
+## 25. 2026-04-26 常用 UE 代码知识库补强
+
+后端本轮补充了常用 UE 代码知识和兜底模板。这个改动主要解决 Code Generate 在用户问“角色增强输入代码怎么写”“交互组件怎么写”“射线交互怎么写”“子系统怎么写”时只返回普通 Actor BeginPlay/Tick 空骨架的问题。
+
+后端新增行为：
+
+- local grep 可命中 `knowledge/engine-notes/ue-enhanced-input-character.md`。
+- local grep 可命中 `knowledge/code-reference/enhanced-input-character-example.h/.cpp`。
+- local grep 可命中 `knowledge/examples/enhanced-input-buildcs-note.md`。
+- local grep 可命中 `interaction-component`、`line-trace-interaction`、`game-instance-subsystem`、`dataasset-gameplaytag` 相关知识文件。
+- Code Generate 兜底模板能识别中文“角色增强输入”请求。
+- 即使 LLM 未配置，也会返回 `ACharacter`、`UInputMappingContext`、`UInputAction`、`UEnhancedInputComponent` 相关草稿。
+- 建议路径会采用 `Source/<Module>/Public/<Class>.h` 和 `Source/<Module>/Private/<Class>.cpp`。
+- `patch_plan` 会提示添加 `EnhancedInput` Build.cs 依赖，并在编辑器中分配 Input Action / Mapping Context 资产。
+- 交互组件请求会返回 `UActorComponent` + overlap 绑定草稿。
+- 射线交互请求会返回 `UActorComponent` + `LineTraceSingleByChannel` 草稿。
+- 子系统/全局管理器请求会返回 `UGameInstanceSubsystem` 草稿。
+
+前端是否必须修改：
+
+- 主 UI 不需要新增控件。
+- 继续按第 24 节把 `generated_items` 渲染成代码草稿按钮 / Tab。
+- 如果测试上述常用场景，请确认用户能看到完整 `.h` 和 `.cpp` 内容，而不只是文件名。
+- 如果 Debug View 展示引用来源，可显示 `data.reference_lookup.sources` 和 `debug_view.local_search.items`，帮助确认命中了 Enhanced Input 资料。
+
+如果 UE 前端回传测试结果，请说明：
+
+- 本次 Code Generate 的 `payload.target_type` 和 `context.current_module`。
+- 是否展示了 `Source/<Module>/Public` / `Private` 建议路径。
+- 是否能展开查看包含 `AddMappingContext` / `BindAction` / `LineTraceSingleByChannel` / `UGameInstanceSubsystem` 等关键代码正文。
+
+## 26. 2026-04-26 UE 前端回传状态记录
+
+UE 前端回传的 `frontend-unified-handoff.md` 已确认第 24 节 Code Generate 虚拟草稿展示契约已经落地：
+
+- `generated_items` 已渲染为“代码草稿”按钮 / Tab。
+- 点击草稿按钮会预览 `generated_items[].code`。
+- `file_path` 已标注为“建议路径”，不再暗示磁盘文件已存在。
+- `write_status=not_written` 和 `is_virtual=true` 已作为正常草稿状态处理。
+- 用户实测 Code Generate 当前展示链路可用，后端已记录为阶段通过。
+
+当前判断：
+
+- 后端不需要为 Code Generate 虚拟草稿展示再改接口。
+- 前端主 UI 暂不需要新增控件。
+- 下一次给 UE 前端交接时，重点让前端继续阅读第 25 节，验证常用 UE 场景代码生成是否能完整展示 `.h/.cpp` 正文。
+
+下一次 UE 前端回传建议说明：
+
+- “角色增强输入代码怎么写”是否能看到 `AddMappingContext`、`BindAction`、`Move`、`Look`。
+- “交互组件 overlap 怎么写”是否能看到 `UActorComponent` 和 overlap 绑定。
+- “射线交互组件怎么写”是否能看到 `LineTraceSingleByChannel`。
+- “全局管理器子系统怎么写”是否能看到 `UGameInstanceSubsystem`。
+
+## 27. 2026-04-26 Agent Chat 知识库问答收口
+
+本轮后端修正了 Agent Chat / Project QA 中两个容易误解的知识库行为。
+
+### 知识库目录问题
+
+用户问“知识库有哪些内容”“知识库里有什么”“list knowledge base contents”这类问题时，后端现在不再把它当作普通 RAG 片段检索，也不会把 `.h/.cpp` 源码正文直接塞进回答。
+
+新的返回方式：
+
+- `data.answer_mode = "knowledge_catalog"`
+- `data.catalog.document_count`
+- `data.catalog.domain_counts`
+- `data.catalog.items[]`
+- `data.answer_generation.mode = "knowledge_catalog"`
+- `debug_view.retrieval.mode = "knowledge_catalog"`
+
+普通用户界面仍然只展示 `assistant_message` / `user_view.text` 即可；Debug View 可选展示 `data.catalog`，用于确认当前索引了哪些 knowledge 文件。
+
+### 中文问题检索英文知识文档
+
+后端现在给本地 lexical RAG / local grep 增加了轻量中英查询扩展。例如：
+
+- “actor的生命周期是什么” 会补充 `lifecycle / constructor / BeginPlay / Tick / EndPlay` 等检索词。
+- “增强输入” 会补充 `Enhanced Input / InputMappingContext / InputAction / EnhancedInputComponent` 等检索词。
+- “静态网格体 / 碰撞 / 子系统 / 交互组件”等常见 UE 术语也会做轻量扩展。
+
+这不是翻译整篇知识库，也不是替代 embedding；它只是让未接入向量模型时的本地词法检索更稳。前端不需要新增控件。测试时可在 Debug View 观察：
+
+- `data.retrieved_docs[].source_path`
+- `data.citations`
+- `debug_view.retrieval.retrieved_docs`
+- `debug_view.local_search.items[].matched_terms`

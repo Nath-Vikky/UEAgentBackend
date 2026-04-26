@@ -34,6 +34,50 @@ from app.schemas.requests import ContextInput, KnowledgeBaseImportRequest
 from app.services.local_search_service import LocalSearchService
 
 
+KNOWLEDGE_CATALOG_ZH_TRIGGERS = ("知识库", "kb", "文档")
+KNOWLEDGE_CATALOG_ZH_ACTIONS = ("有哪些", "有什么", "内容", "目录", "列表", "文件", "资料", "范围")
+KNOWLEDGE_CATALOG_EN_STRONG_TRIGGERS = ("knowledge base", "kb")
+KNOWLEDGE_CATALOG_EN_DOC_TRIGGERS = ("documents", "docs")
+KNOWLEDGE_CATALOG_EN_ACTIONS = ("what", "which", "list", "contents", "overview", "catalog", "sources")
+KNOWLEDGE_CATALOG_EN_DOC_ACTIONS = ("list", "contents", "overview", "catalog", "sources")
+
+DOMAIN_DISPLAY_NAMES = {
+    "asset_rules": "Asset rules / 资产规则",
+    "code_reference": "Code reference / 代码参考",
+    "config_schema": "Config schema / 配置结构",
+    "engine_notes": "Engine notes / 引擎笔记",
+    "examples": "Examples / 示例",
+    "incident_history": "Incident history / 事件记录",
+    "perf_notes": "Performance notes / 性能笔记",
+    "project_docs": "Project docs / 项目文档",
+    "team_rules": "Team rules / 团队规范",
+    "unknown": "Unknown / 未分类",
+}
+
+
+def _is_knowledge_catalog_query(query: str) -> bool:
+    lowered = query.lower()
+    if any(trigger in query for trigger in KNOWLEDGE_CATALOG_ZH_TRIGGERS) and any(
+        action in query for action in KNOWLEDGE_CATALOG_ZH_ACTIONS
+    ):
+        return True
+    if any(trigger in lowered for trigger in KNOWLEDGE_CATALOG_EN_STRONG_TRIGGERS) and any(
+        action in lowered for action in KNOWLEDGE_CATALOG_EN_ACTIONS
+    ):
+        return True
+    return any(trigger in lowered for trigger in KNOWLEDGE_CATALOG_EN_DOC_TRIGGERS) and any(
+        action in lowered for action in KNOWLEDGE_CATALOG_EN_DOC_ACTIONS
+    )
+
+
+def _display_source_path(source_path: str) -> str:
+    path = Path(source_path)
+    try:
+        return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except (OSError, ValueError):
+        return source_path.replace("\\", "/")
+
+
 class KnowledgeBaseService:
     def __init__(self, db: Session, settings: Settings):
         self.db = db
@@ -198,6 +242,8 @@ class KnowledgeBaseService:
         output_language: str,
     ) -> dict[str, Any]:
         self.ensure_seeded()
+        if _is_knowledge_catalog_query(query):
+            return self._knowledge_catalog_result(query=query, output_language=output_language)
         chunks = list_chunks(self.db)
         result = retrieve(
             query=query,
@@ -326,6 +372,113 @@ class KnowledgeBaseService:
                 "local_search": local_search,
             },
             "warnings": warnings,
+        }
+
+    def _knowledge_catalog_result(self, *, query: str, output_language: str) -> dict[str, Any]:
+        documents = list_documents(self.db)
+        domain_counts: dict[str, int] = {}
+        catalog_items: list[dict[str, Any]] = []
+        for document in sorted(documents, key=lambda item: ((item.domain or ""), item.source_path)):
+            domain = document.domain or "unknown"
+            domain_counts[domain] = domain_counts.get(domain, 0) + 1
+            catalog_items.append(
+                {
+                    "doc_id": document.doc_id,
+                    "title": document.title,
+                    "source_path": _display_source_path(document.source_path),
+                    "domain": domain,
+                    "doc_type": document.doc_type,
+                    "language": document.language,
+                    "chunk_count": len(document.chunks),
+                }
+            )
+
+        if not catalog_items:
+            answer_text = (
+                "当前知识库还没有索引到文档。请先把资料放入 `knowledge/`，然后调用 `POST /api/v1/knowledge-base/reindex`。"
+                if output_language.startswith("zh")
+                else "The knowledge base has no indexed documents yet. Add files under `knowledge/`, then call `POST /api/v1/knowledge-base/reindex`."
+            )
+        else:
+            grouped_lines: list[str] = []
+            for domain, count in sorted(domain_counts.items()):
+                display_name = DOMAIN_DISPLAY_NAMES.get(domain, domain)
+                examples = [item for item in catalog_items if item["domain"] == domain][:4]
+                example_text = "；".join(
+                    f"{item['title']} ({item['source_path']})" for item in examples
+                )
+                grouped_lines.append(f"- {display_name}: {count} 份。{example_text}")
+            if output_language.startswith("zh"):
+                answer_text = (
+                    f"当前知识库已索引 {len(catalog_items)} 份文档，默认来源是 {', '.join(self.settings.kb_source_paths)}。\n"
+                    "我这里只列目录和用途，不展开源码正文；需要查看具体内容时可以继续问某个主题。\n"
+                    + "\n".join(grouped_lines)
+                )
+            else:
+                answer_text = (
+                    f"The knowledge base currently indexes {len(catalog_items)} document(s) from {', '.join(self.settings.kb_source_paths)}.\n"
+                    "I am listing the catalog and purpose only, not expanding source-code bodies. Ask about a specific topic to retrieve details.\n"
+                    + "\n".join(grouped_lines)
+                )
+
+        citations = [
+            {
+                "title": item["title"],
+                "source": item["source_path"],
+                "section_path": "document_catalog",
+                "snippet": f"{DOMAIN_DISPLAY_NAMES.get(item['domain'], item['domain'])} | {item['doc_type']}",
+                "score": 1.0,
+                "domain": item["domain"],
+                "retrieval_source": "knowledge_catalog",
+            }
+            for item in catalog_items[:5]
+        ]
+        return {
+            "answer": answer_text,
+            "answer_mode": "knowledge_catalog",
+            "confidence": 0.82 if catalog_items else 0.2,
+            "sources": [
+                {"title": item["title"], "source": item["source_path"], "domain": item["domain"]}
+                for item in catalog_items[:12]
+            ],
+            "citations": citations,
+            "retrieved_docs": [],
+            "catalog": {
+                "query": query,
+                "document_count": len(catalog_items),
+                "domain_counts": domain_counts,
+                "items": catalog_items[:50],
+                "source_paths": self.settings.kb_source_paths,
+            },
+            "filters_applied": {},
+            "local_search": {
+                "query": query,
+                "mode": "knowledge_catalog",
+                "status": "skipped",
+                "reason": "catalog_query",
+                "items": [],
+                "summary": {
+                    "result_count": 0,
+                    "candidate_count": len(catalog_items),
+                    "searched_file_count": len(catalog_items),
+                    "skipped_file_count": 0,
+                    "domain_filters": [],
+                    "terms": [],
+                },
+            },
+            "retrieval_trace": {
+                "mode": "knowledge_catalog",
+                "degraded_mode": False,
+                "reason": "catalog_query",
+                "filters_applied": {},
+                "retrieved_docs": [],
+                "catalog": {
+                    "document_count": len(catalog_items),
+                    "domain_counts": domain_counts,
+                    "source_paths": self.settings.kb_source_paths,
+                },
+            },
+            "warnings": [],
         }
 
     def _run_import_job(

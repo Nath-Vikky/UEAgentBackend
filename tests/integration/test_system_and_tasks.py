@@ -857,6 +857,107 @@ def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None
     )
 
 
+def test_agent_chat_knowledge_catalog_lists_sources_without_code_bodies(client: TestClient) -> None:
+    client.post(
+        "/api/v1/knowledge-base/reindex",
+        json={"source_paths": ["./knowledge"]},
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "knowledge_catalog_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "知识库有哪些内容",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+            },
+            "payload": {"user_query": "知识库有哪些内容"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+    answer = body["assistant_message"]
+
+    assert response.status_code == 200
+    assert body["intent"]["route_type"] == "project_qa"
+    assert body["data"]["answer_mode"] == "knowledge_catalog"
+    assert body["data"]["catalog"]["document_count"] > 0
+    assert "当前知识库已索引" in answer
+    assert "knowledge/engine-notes" in answer
+    assert "#include" not in answer
+    assert "UCLASS(" not in answer
+    assert body["data"]["answer_generation"]["mode"] == "knowledge_catalog"
+    assert body["data"]["answer_generation"]["provider"] == "openai_compatible"
+
+
+def test_project_qa_chinese_actor_lifecycle_hits_engine_note(client: TestClient) -> None:
+    client.post(
+        "/api/v1/knowledge-base/reindex",
+        json={"source_paths": ["./knowledge"]},
+    )
+    response = client.post(
+        "/api/v1/tasks/project-qa",
+        json={
+            "task_type": "project_qa",
+            "session": {
+                "session_id": "actor_lifecycle_zh_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "actor的生命周期是什么",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+            },
+            "payload": {"user_query": "actor的生命周期是什么"},
+            "ui_state": {"active_view": "user", "selected_panel": "ProjectQA"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["intent"]["route_type"] == "project_qa"
+    assert body["data"]["retrieved_docs"]
+    assert any(
+        "ue-actor-lifecycle" in item["source_path"]
+        for item in body["data"]["retrieved_docs"]
+    )
+    assert body["data"]["citations"]
+    assert body["debug_view"]["retrieval"]["mode"] in {
+        "lexical_only",
+        "local_hybrid_fallback",
+        "hybrid_vector",
+        "semantic_vector",
+    }
+
+
 def test_project_qa_explicit_english_preference_keeps_english_locale(client: TestClient) -> None:
     client.post(
         "/api/v1/knowledge-base/refresh",
@@ -2158,6 +2259,52 @@ def test_code_generate_can_use_code_reference_documents(client: TestClient) -> N
         assert body["debug_view"]["skill"]["retrieval_active"] is True
     finally:
         shutil.rmtree(project_root, ignore_errors=True)
+
+
+def test_code_generate_returns_enhanced_input_character_for_chinese_request(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/tasks/code-generate",
+        json={
+            "task_type": "code_generate",
+            "session": {
+                "session_id": "code_generate_enhanced_input_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "角色增强输入代码怎么写",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "RushBa",
+                "active_panel": "CodeGenerator",
+                "current_module": "RushBa",
+            },
+            "payload": {
+                "user_query": "角色增强输入代码怎么写",
+                "requirement_description": "角色增强输入代码怎么写",
+                "target_type": "ue_cpp",
+            },
+            "ui_state": {"active_view": "user", "selected_panel": "CodeGenerator"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "zh-CN",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert "Source/RushBa/Public/EnhancedInputCharacter.h" in body["data"]["code_draft"]
+    assert "Source/RushBa/Private/EnhancedInputCharacter.cpp" in body["data"]["code_draft"]
+    assert "UEnhancedInputComponent" in body["data"]["code_draft"]["Source/RushBa/Private/EnhancedInputCharacter.cpp"]
+    assert "EnhancedInput" in "\n".join(body["data"]["patch_plan"])
+    assert body["data"]["reference_lookup"]["local_reference_count"] >= 1
+    assert any("enhanced-input" in item["source"] for item in body["data"]["retrieved_references"])
 
 
 def test_config_validate_returns_report_and_artifact(client: TestClient) -> None:

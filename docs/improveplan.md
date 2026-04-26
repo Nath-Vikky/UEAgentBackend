@@ -1207,3 +1207,88 @@ domain 映射：
 - 原因：后端代码生成是非破坏性草稿，不写磁盘；`draft.txt` 只是兜底虚拟路径，但前端容易展示成真实文件。
 - 决策：后端增强 target_type 兼容，泛化 `general/code/cpp/ue_cpp` 默认按 UE C++ 草案返回；同时新增 `write_policy.written_to_disk=false`、`generated_items[].write_status=not_written`、`generated_items[].is_virtual=true`。
 - 前端边界：Code Generate 面板应把 `generated_items` 当成“代码结果按钮 / Tab / 列表”，点击展示 `code`，不要提示“已生成到磁盘”。
+
+## 2026-04-26 下一步计划：常用 UE 代码知识库补强
+
+状态：v2 已实现（Enhanced Input Character + 常用 UE 代码场景第一批）。
+
+目标：把 Code Generate 从“只有通用 Actor 骨架”推进到“常见 UE 场景有可检索代码参考”。当前问题不是前端接口问题，而是知识库和兜底模板都缺少“角色增强输入”这类常用场景，因此 LLM/模板只能返回 BeginPlay/Tick 空骨架。
+
+### 范围边界
+
+- 只补作品集常见、面试展示价值高的 UE 场景，不做完整模板市场。
+- 每个场景优先补 `engine_notes` + `code_reference` + 必要 `examples`，确保 local grep 能命中。
+- 模板只作为非破坏性草稿返回，不写入工程、不自动修改 Build.cs。
+- 前端仍只渲染 `generated_items`，不需要新增主 UI。
+
+### 第一批优先主题
+
+- `Enhanced Input Character`：角色移动、视角、跳跃、Mapping Context、Input Actions、Build.cs 依赖。（已完成）
+- `Actor Component` 常用交互组件：Overlap、接口调用、事件广播。（已完成基础版）
+- `Subsystem` 基础写法：GameInstanceSubsystem / WorldSubsystem 的生命周期和调用入口。（已完成 GameInstanceSubsystem 基础版）
+- `Gameplay Tag / DataAsset` 配置驱动示例。（已完成知识笔记，模板后续视测试反馈补）
+- `LineTrace Interaction`：角色射线交互、接口检查、DebugDraw。（已完成基础版）
+
+### 本轮已完成
+
+- 新增 `knowledge/engine-notes/ue-enhanced-input-character.md`。
+- 新增 `knowledge/code-reference/enhanced-input-character-example.h`。
+- 新增 `knowledge/code-reference/enhanced-input-character-example.cpp`。
+- 新增 `knowledge/examples/enhanced-input-buildcs-note.md`。
+- Code Generate prompt 明确 Enhanced Input / Character 请求应生成 `ACharacter`、`UInputMappingContext`、`UInputAction`、`UEnhancedInputComponent` 相关代码。
+- Code Generate 兜底模板能识别“角色增强输入代码怎么写”这类中文请求，返回 `Source/<Module>/Public/<Class>.h` 和 `Source/<Module>/Private/<Class>.cpp`。
+- 生成结果会在 `patch_plan` 中提示添加 `EnhancedInput` 模块依赖和在编辑器中分配 Input Action / Mapping Context 资产。
+- 新增 `knowledge/engine-notes/ue-common-code-generation-patterns.md`，用于说明交互组件、射线交互、Subsystem、DataAsset、Gameplay Tags 的生成边界。
+- 新增 `knowledge/code-reference/interaction-component-example.h/.cpp`。
+- 新增 `knowledge/code-reference/line-trace-interaction-component-example.h/.cpp`。
+- 新增 `knowledge/code-reference/game-instance-subsystem-example.h/.cpp`。
+- 新增 `knowledge/examples/dataasset-gameplaytag-note.md`。
+- Code Generate 兜底模板能识别“交互组件 / overlap”、“射线交互”、“GameInstanceSubsystem / 子系统 / 全局管理器”等常见请求。
+
+### 验收标准
+
+- 用户问“角色增强输入代码怎么写”时，Code Generate 不应再返回普通 Actor BeginPlay/Tick 空骨架。
+- 即使未配置 LLM，也应返回可读的 Enhanced Input Character 草稿。
+- local grep 应命中 Enhanced Input 相关 knowledge 文件。
+- 用户问“交互组件怎么写”“射线交互组件怎么写”“全局管理器子系统怎么写”时，应返回对应 UE 基类的草稿，而不是普通 Actor 空骨架。
+- 前端不需要新增主 UI；如要联调，只需要确认 `generated_items[].code` 能正常预览。
+
+### UE 前端回传状态
+
+状态：已记录。
+
+- UE 前端已确认第 24 节 Code Generate 虚拟草稿展示完成：`generated_items` 作为代码草稿按钮 / Tab，点击后展示 `generated_items[].code`。
+- 前端已把 `file_path` 作为建议路径展示，并把 `write_status=not_written`、`is_virtual=true` 视为正常草稿状态。
+- 后端暂不需要为这部分展示契约继续改接口。
+- 下一次联调重点转向本节第一批常用 UE 场景，确认 Enhanced Input Character、Interaction Component、LineTrace Interaction、GameInstanceSubsystem 的完整代码正文是否都能在前端展开查看。
+
+## 2026-04-26 Agent Chat 知识库问答收口
+
+状态：已实现。
+
+触发问题：
+
+- Code Generate 当前实测基本可用，阶段通过。
+- Agent Chat 询问“知识库有哪些内容”时，普通检索会把命中的源码片段展开到回答里，用户体验像是在直接吐文件内容。
+- 用户问“actor的生命周期是什么”时，虽然 LLM 能回答，但用户不容易判断知识库是否真正参与；同时中文问题检索英文知识文档的 lexical 命中需要增强。
+
+### 开发边界
+
+- 不做复杂知识库管理 UI，不新增企业级搜索系统。
+- 不把所有中文 query 都翻译成英文，只做常用 UE 术语的轻量 query 扩展。
+- 不阻止 LLM 使用通用 UE 知识；但需要通过 `citations` / `debug_view.retrieval` 让用户知道知识库是否参与。
+- “知识库有哪些内容”这类元问题返回目录摘要，不返回源码正文。
+
+### 本轮完成
+
+- 新增 `knowledge_catalog` 回答模式。
+- `data.answer_mode=knowledge_catalog`、`data.catalog`、`debug_view.retrieval.mode=knowledge_catalog` 可用于 Debug View。
+- 知识库目录回答按 domain 汇总文档，只列标题、路径、类型，不展开 `.h/.cpp` 内容。
+- local grep 和 lexical RAG query 侧增加中英扩展词，例如“生命周期” -> `lifecycle / constructor / BeginPlay / Tick / EndPlay`。
+- 增加测试覆盖“知识库有哪些内容”不返回源码正文、“actor的生命周期是什么”能命中 `ue-actor-lifecycle.md`。
+
+### 验收标准
+
+- 用户问“知识库有哪些内容”时，回答应是目录概览，不应出现 `#include`、`UCLASS(` 这类源码正文。
+- 用户问“actor的生命周期是什么”时，`data.retrieved_docs` 或 Debug View 中应能看到 `knowledge/engine-notes/ue-actor-lifecycle.md`。
+- 如果 LLM 可用，最终回答可以由 LLM 综合表达，但 Debug View 必须能解释检索证据来源。

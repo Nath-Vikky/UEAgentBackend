@@ -1105,7 +1105,7 @@ class TaskService:
             "profile_id": chat_config.profile_id,
             "usage": {},
         }
-        answer_generation_mode = "retrieval_summary_fallback"
+        answer_generation_mode = qa_result.get("answer_mode") or "retrieval_summary_fallback"
         if tool_plan["use_inventory"]:
             qa_result["answer"] = self._inventory_fallback_answer(
                 inventory_result=inventory_result,
@@ -1119,7 +1119,7 @@ class TaskService:
                     0.25 if inventory_result["summary"].get("has_snapshot") else 0.12,
                 )
             answer_generation_mode = "inventory_summary_fallback"
-        if qa_result["retrieved_docs"] or inventory_result["items"]:
+        if answer_generation_mode != "knowledge_catalog" and (qa_result["retrieved_docs"] or inventory_result["items"]):
             llm_result = self.llm_service.complete(
                 messages=self._project_qa_messages(
                     request=request,
@@ -1248,6 +1248,8 @@ class TaskService:
             "filters_applied": qa_result["filters_applied"],
             "citations": qa_result["citations"],
             "warnings": qa_result["warnings"],
+            "answer_mode": qa_result.get("answer_mode", answer_generation_mode),
+            "catalog": qa_result.get("catalog", {}),
             "local_search": qa_result.get("local_search", {}),
             "inventory": inventory_result,
             "answer_generation": {

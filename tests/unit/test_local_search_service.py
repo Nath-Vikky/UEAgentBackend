@@ -69,3 +69,44 @@ def test_local_search_status_reports_domain_counts() -> None:
         assert status["domain_counts"]["asset_rules"] == 1
     finally:
         shutil.rmtree(runtime_root, ignore_errors=True)
+
+
+def test_local_search_finds_enhanced_input_character_seed() -> None:
+    service = LocalSearchService(Settings(openai_api_key="", kb_source_paths=["./knowledge"]))
+    result = service.search(
+        query="角色增强输入代码怎么写",
+        domain_filters=["code_reference", "engine_notes", "examples"],
+        top_k=5,
+    )
+
+    assert result["items"]
+    matched_sources = {item["source_path"] for item in result["items"]}
+    assert any("enhanced-input" in source for source in matched_sources)
+
+
+def test_local_search_finds_common_ue_code_generation_seeds() -> None:
+    service = LocalSearchService(Settings(openai_api_key="", kb_source_paths=["./knowledge"]))
+    result = service.search(
+        query="射线交互 GameInstanceSubsystem 交互组件 DataAsset GameplayTag",
+        domain_filters=["code_reference", "engine_notes", "examples"],
+        top_k=10,
+    )
+
+    matched_sources = {item["source_path"] for item in result["items"]}
+    assert any("line-trace" in source for source in matched_sources)
+    assert any("subsystem" in source for source in matched_sources)
+    assert any("interaction-component" in source for source in matched_sources)
+    assert any("dataasset" in source.lower() for source in matched_sources)
+
+
+def test_local_search_expands_chinese_engine_terms_to_english_notes() -> None:
+    service = LocalSearchService(Settings(openai_api_key="", kb_source_paths=["./knowledge"]))
+    result = service.search(
+        query="actor的生命周期是什么",
+        domain_filters=["engine_notes"],
+        top_k=5,
+    )
+
+    matched_sources = {item["source_path"] for item in result["items"]}
+    assert any("ue-actor-lifecycle" in source for source in matched_sources)
+    assert any("lifecycle" in item["matched_terms"] for item in result["items"])

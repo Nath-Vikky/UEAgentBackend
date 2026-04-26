@@ -152,6 +152,8 @@
 
 注意：`generated_items[].file_path` 是建议放置路径或虚拟草稿路径，不代表后端已经创建了这个文件。前端应把它渲染为“生成结果按钮 / Tab”，点击后展示 `generated_items[].code`，不要把它显示成“已生成到磁盘的文件路径”。
 
+当前 Code Generate 已补充第一批常用 UE 场景模板：当需求包含“角色增强输入 / Enhanced Input Character / Input Mapping Context / Input Action”等信号时，即使没有配置 LLM，也会返回 `ACharacter` 版本的 Enhanced Input 草稿，建议路径为 `Source/<Module>/Public/<Class>.h` 和 `Source/<Module>/Private/<Class>.cpp`，并在 `patch_plan` 中提示添加 `EnhancedInput` 模块依赖。交互组件、射线交互组件、GameInstanceSubsystem 也有基础兜底草稿。
+
 ### 4.4 Logs Analyze
 
 现在支持：
@@ -317,6 +319,10 @@ POST /api/v1/knowledge-base/import
 3. 命中后可选再交给聊天模型综合回答
 
 也就是说，向量链路不是必须条件。
+
+如果用户问“知识库有哪些内容”这类目录问题，后端会走 `knowledge_catalog` 模式，只返回已索引文档的标题、分类和路径，不展开源码正文。这样可以避免把 `knowledge/code-reference` 里的 `.h/.cpp` 内容直接当成聊天回答。
+
+中文问题也能检索英文知识笔记。当前后端会做轻量 query 扩展，例如“actor的生命周期是什么”会补充 `lifecycle`、`constructor`、`BeginPlay`、`Tick`、`EndPlay` 等英文检索词；这能提升未接入向量模型时的命中率。它不是完整翻译，也不替代向量检索，只是个人作品级的稳定增强。
 
 ## 10. 检索模式说明
 
@@ -731,6 +737,22 @@ RAG_FALLBACK_MODE=lexical_only
 - Code Generate 找不到代码参考时会直接让 LLM 生成
 
 局限是语义召回较弱，例如“生成一个编辑器工具按钮”和“Editor Utility Widget 扩展”可能无法稳定匹配。后续补上 embedding 和 Qdrant 后，这类同义表达会更容易命中。
+
+### 17.6.1 如何判断知识库是否真的参与回答
+
+如果你觉得回答像是 LLM 自己的通用知识，可以先看 Debug View 或响应 JSON：
+
+- `data.retrieved_docs`：非空说明本轮确实检索到了知识库 chunk。
+- `data.citations`：普通 UI 可展示的引用来源。
+- `debug_view.retrieval.retrieved_docs`：调试用检索详情。
+- `data.answer_generation.mode`：`llm_synthesized` 表示 LLM 基于检索证据综合表达，`retrieval_summary_fallback` 表示直接返回检索摘要，`knowledge_catalog` 表示知识库目录回答。
+- `data.answer_mode=knowledge_catalog`：说明用户问的是“知识库有哪些内容”这类目录问题。
+
+常见理解方式：
+
+- LLM 参与回答不等于知识库没用；如果 `retrieved_docs/citations` 有内容，说明 LLM 是在综合证据。
+- 没有 embedding/Qdrant 时，中文问英文资料可能依赖关键词和轻量中英扩展，命中率不如向量检索。
+- 知识库内容不足时，LLM 可以补充通用 UE 知识，但后端应在低证据时通过 citations / Debug View 让用户看清楚依据。
 
 ### 17.7 接入向量模型
 
@@ -1468,7 +1490,38 @@ GET /api/v1/knowledge-base/status
 - `data.local_search`
 - `data.reference_lookup.local_reference_count`
 
-本地 UE 知识种子已经放在 `knowledge/` 目录下，包括 Actor 生命周期、软引用/异步加载、StaticMesh/Nanite/LOD/Collision、模块与 Build.cs、代码审查规则、资产检查规则和一个 Actor/Component 代码参考示例。
+本地 UE 知识种子已经放在 `knowledge/` 目录下，包括 Actor 生命周期、软引用/异步加载、StaticMesh/Nanite/LOD/Collision、模块与 Build.cs、Enhanced Input Character、交互组件、射线交互、GameInstanceSubsystem、DataAsset/GameplayTag 笔记、代码审查规则、资产检查规则、Actor/Component 代码参考示例和 Enhanced Input Character 示例。
+
+### 18.16 常用 UE 代码知识库补充
+
+Code Generate 的质量很依赖 `knowledge/code-reference` 和 `knowledge/examples` 的覆盖度。当前第一批补强主题是常见 UE gameplay / framework 代码：
+
+- `knowledge/engine-notes/ue-enhanced-input-character.md`：说明 Enhanced Input 的常见结构、Mapping Context、Input Action、`SetupPlayerInputComponent` 和 Build.cs 依赖。
+- `knowledge/code-reference/enhanced-input-character-example.h`：角色增强输入头文件参考。
+- `knowledge/code-reference/enhanced-input-character-example.cpp`：角色增强输入绑定和移动/视角逻辑参考。
+- `knowledge/examples/enhanced-input-buildcs-note.md`：`EnhancedInput` 模块依赖示例。
+- `knowledge/engine-notes/ue-common-code-generation-patterns.md`：交互组件、射线交互、Subsystem、DataAsset、Gameplay Tags 的生成边界。
+- `knowledge/code-reference/interaction-component-example.h/.cpp`：Overlap 交互组件参考。
+- `knowledge/code-reference/line-trace-interaction-component-example.h/.cpp`：LineTrace 交互组件参考。
+- `knowledge/code-reference/game-instance-subsystem-example.h/.cpp`：GameInstanceSubsystem 管理器参考。
+- `knowledge/examples/dataasset-gameplaytag-note.md`：DataAsset + GameplayTag 配置驱动说明。
+
+当前 Code Generate 基于内置模板和知识库，已经比较适合这些提问：
+
+- “角色增强输入代码怎么写”
+- “交互组件 overlap 怎么写”
+- “射线交互组件怎么写”
+- “GameInstanceSubsystem / 全局管理器子系统怎么写”
+- “DataAsset 和 GameplayTag 配置驱动怎么组织”（当前主要返回知识参考和通用草稿，专用模板后续按测试反馈补）
+
+使用方式：
+
+1. 保持 `.env` 中 `KB_SOURCE_PATHS=./knowledge`。
+2. 新增或修改 knowledge 文件后，调用 `POST /api/v1/knowledge-base/reindex`。
+3. 在 Code Generate 中输入类似“角色增强输入代码怎么写”。
+4. 前端应展示 `generated_items[].code`，而不是只展示文件名。
+
+后续如果某类代码生成结果太空，优先补同类 `engine_notes` 和 `code_reference`，再考虑是否增强兜底模板。这样范围保持小而稳，不会变成复杂模板市场。
 
 官方文档整理边界：
 

@@ -559,3 +559,73 @@ UE 端反馈 Code Review 高亮按钮原本展示 LLM 回答、建议和概要�
 - 知识库来源路径显示无需改接口；如果仍看到 `backend.md` / `forward.md` / `docs/...`，需要触发 `POST /api/v1/knowledge-base/reindex` 清理旧索引。
 - Code Generate 主 UI 应把 `generated_items` 渲染为代码结果按钮 / Tab / 列表，不要把 `file_path` 文案描述成“已生成到磁盘”。
 - `write_status=not_written` 是正常状态，不是错误。
+
+## 2026-04-26 常用 UE 代码知识库补强
+
+本轮根据测试反馈补强 Code Generate 的常用 UE 场景。用户问“角色增强输入代码怎么写”时，之前因为知识库缺少 Enhanced Input Character 示例，且兜底模板只有普通 Actor 骨架，导致返回 BeginPlay/Tick 空实现。现在进一步补齐交互组件、射线交互、GameInstanceSubsystem 和 DataAsset/GameplayTag 笔记。
+
+### 主要代码改动
+
+- 新增 `knowledge/engine-notes/ue-enhanced-input-character.md`。
+- 新增 `knowledge/engine-notes/ue-common-code-generation-patterns.md`。
+- 新增 `knowledge/code-reference/enhanced-input-character-example.h`。
+- 新增 `knowledge/code-reference/enhanced-input-character-example.cpp`。
+- 新增 `knowledge/code-reference/interaction-component-example.h/.cpp`。
+- 新增 `knowledge/code-reference/line-trace-interaction-component-example.h/.cpp`。
+- 新增 `knowledge/code-reference/game-instance-subsystem-example.h/.cpp`。
+- 新增 `knowledge/examples/enhanced-input-buildcs-note.md`。
+- 新增 `knowledge/examples/dataasset-gameplaytag-note.md`。
+- `generate_code_draft()` 增强中文/英文 Enhanced Input Character 请求识别。
+- `generate_code_draft()` 增强交互组件、射线交互、Subsystem 请求识别。
+- 泛化 `target_type=ue_cpp/general/code/cpp` 时，如果需求包含“角色增强输入 / Enhanced Input / Input Mapping Context”等信号，会返回 `ACharacter` 草稿。
+- UE C++ 草稿路径改为更常见的 `Source/<Module>/Public/<Class>.h` 和 `Source/<Module>/Private/<Class>.cpp`。
+- Code Generate prompt 增加 Enhanced Input / Character 生成约束，提醒 LLM 生成 Mapping Context、Input Action、EnhancedInputComponent 绑定和 Build.cs 依赖说明。
+- Code Generate prompt 增加交互组件、射线交互、Subsystem 场景约束，要求尽量给出具体方法体而不是空骨架。
+
+### 前端影响
+
+- 主 UI 不需要修改。
+- 继续展示 `generated_items[].code`。
+- 测试时建议确认“角色增强输入代码怎么写”能展开看到 `.h/.cpp`，并包含 `AddMappingContext`、`BindAction`、`Move`、`Look`。
+- 也建议测试“交互组件 overlap 怎么写”“射线交互组件怎么写”“全局管理器子系统怎么写”。
+
+## 2026-04-26 UE 前端回传记录：Code Generate 草稿展示
+
+UE 前端回传的 `frontend-unified-handoff.md` 已确认第 24 节的 Code Generate 展示契约落地。前端现在会把 `generated_items` 当成虚拟代码草稿按钮 / Tab 展示，点击后预览 `generated_items[].code`，并把 `file_path` 标注为建议路径。
+
+### 当前结论
+
+- `write_status=not_written`、`is_virtual=true` 已被前端视为正常状态，不再作为错误或真实落盘文件处理。
+- 后端暂不需要为 Code Generate 展示再新增字段。
+- 后续联调重点转到第 25 节常用 UE 场景：Enhanced Input Character、Interaction Component、LineTrace Interaction、GameInstanceSubsystem。
+
+### 下一次前端回传希望确认
+
+- 是否能完整展示 `.h/.cpp` 代码正文，而不是只展示建议路径。
+- 是否能在草稿正文中看到 `AddMappingContext`、`BindAction`、`LineTraceSingleByChannel`、`UGameInstanceSubsystem` 等关键符号。
+- `payload.target_type`、`context.current_module` 的实际提交值，方便后端继续优化模块名和路径推断。
+
+## 2026-04-26 Agent Chat 知识库目录与中英检索收口
+
+用户继续测试后确认 Code Generate 当前展示链路基本可用，新的问题集中在 Agent Chat / Project QA：询问“知识库有哪些内容”时会返回文件甚至代码内容；询问“actor的生命周期是什么”时，看起来像是 LLM 自己回答，用户不容易判断知识库是否奏效。
+
+### 主要代码改动
+
+- 新增知识库目录查询识别：`知识库有哪些内容`、`知识库里有什么`、`list knowledge base contents` 这类问题现在返回目录摘要。
+- 目录摘要使用 `answer_mode=knowledge_catalog`，只列文档标题、domain、路径、chunk 数，不展开源码正文。
+- `data.catalog` 返回 `document_count`、`domain_counts`、`items`、`source_paths`，用于 Debug View 判断当前索引范围。
+- Project QA 的 `data.answer_mode` 和 `data.answer_generation.mode` 会标明本轮是 `knowledge_catalog`、普通 retrieval fallback，还是 LLM synthesis。
+- 本地 lexical RAG / local grep 增加轻量中英查询扩展，例如“生命周期”会扩展到 `lifecycle / constructor / BeginPlay / Tick / EndPlay`。
+- 扩展词只影响 query 侧，不改写知识库原文，也不替代 embedding / Qdrant。
+
+### 当前结论
+
+- “知识库有哪些内容”这类元问题应返回目录，不应返回代码正文。
+- “actor的生命周期是什么”在未接入向量模型时也能更稳定命中 `knowledge/engine-notes/ue-actor-lifecycle.md`。
+- 如果 LLM 已配置，最终回答仍可能由 LLM 综合表达；判断知识库是否参与，优先看 `data.retrieved_docs`、`data.citations`、`debug_view.retrieval`。
+
+### 验证
+
+- `python -m pytest -p no:cacheprovider tests/unit/test_local_search_service.py -q` 通过。
+- `python -m pytest -p no:cacheprovider tests/integration/test_system_and_tasks.py::test_agent_chat_knowledge_catalog_lists_sources_without_code_bodies tests/integration/test_system_and_tasks.py::test_project_qa_chinese_actor_lifecycle_hits_engine_note -q` 通过。
+- `python -m ruff check app tests --no-cache` 通过。

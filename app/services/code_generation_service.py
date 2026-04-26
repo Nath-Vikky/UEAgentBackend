@@ -171,6 +171,10 @@ class CodeGenerationService:
         template_result = generate_code_draft(
             {
                 **request.payload,
+                "target_module": request.payload.get("target_module")
+                or request.payload.get("module_name")
+                or request.context.current_module
+                or request.context.project_name,
                 "reference_items": merged_docs,
             }
         )
@@ -382,7 +386,12 @@ class CodeGenerationService:
             '{"summary":"...","generated_items":[{"label":"...","file_path":"...","language":"...","code":"..."}],"notes":["..."]}. '
             "Do not wrap the JSON in markdown fences. "
             "When project-specific reference snippets are provided, align naming, structure, and style with them. "
-            "For Unreal C++ requests, prefer Source/<ClassName>.h and Source/<ClassName>.cpp instead of draft.txt. "
+            "For Unreal C++ requests, prefer Source/<Module>/Public/<ClassName>.h and "
+            "Source/<Module>/Private/<ClassName>.cpp instead of draft.txt. "
+            "For Character or Enhanced Input requests, generate ACharacter-based code with UInputMappingContext, "
+            "UInputAction references, UEnhancedInputComponent bindings, and a reminder to add the EnhancedInput module. "
+            "For interaction component, line trace, or subsystem requests, prefer the matching UE base class "
+            "(UActorComponent or UGameInstanceSubsystem) and include concrete method bodies instead of empty skeletons. "
             "Do not claim that any file has been written to disk."
         )
         user_prompt = "\n\n".join(
