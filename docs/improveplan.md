@@ -1050,3 +1050,160 @@ Project QA 的上下文优先级建议：
 - 自动修改 UE 工程资产或代码文件。
 
 当前项目定位仍然是：个人作品级 UE Agent 后端，重点展示 Agent 架构理解、RAG 工程能力、工具调用闭环、可解释调试和清晰文档。
+
+## 2026-04-26 下一步计划：双检索策略与本地 UE 知识补充
+
+状态：v1 已实现（2026-04-25 提前完成后端部分）。
+
+目标：在不强制接入向量模型和向量数据库的前提下，让知识检索对 Agent Chat、Project QA、Code Generate、Code Review 更稳定可用。当前 RAG 基础链路已经完成，但如果没有 embedding / Qdrant，语义召回能力有限。因此下一步采用“RAG + 本地 grep 检索”并存的策略。
+
+### 当前判断
+
+- RAG 已完成基础链路：文档导入、chunk、metadata、lexical retrieval、vector / hybrid 接口、Qdrant 接口、citation、readiness、eval。
+- 当前未接入 embedding / Qdrant 时，vector / hybrid 不会真正发挥语义召回优势。
+- `lexical RAG` 可以继续服务文本问答，但需要补充本地 UE 笔记和项目文档。
+- `markdown + grep` 更适合代码生成、代码参考和规则查找，因为代码类问题通常依赖明确关键词、类名、函数名、模块名、宏、UE API 名。
+
+### 检索策略
+
+1. Agent Chat / Project QA 文本问答
+
+- 已接入 embedding + Qdrant：优先走现有 RAG hybrid / vector。
+- 未接入 embedding + Qdrant：优先走 lexical RAG；如果召回不足，再用本地 markdown grep 做补充。
+- 适用内容：项目说明、UE 官方整理笔记、团队规则、引擎概念、资产规范。
+
+2. Code Generate / 代码参考
+
+- 无论是否接入向量，都优先走本地 markdown/code grep。
+- grep 命中 `code_reference`、`examples`、`engine_notes` 后，把相关片段和路径交给 LLM。
+- 适用内容：可复用代码示例、UE API 用法、模块模板、常见 Actor / Component / Subsystem 写法。
+
+3. Code Review
+
+- 规则扫描仍是第一层。
+- grep 用于补充 `team_rules`、`engine_notes`、`code_reference`，给 LLM 更贴近项目的审查依据。
+- 不用 grep 代替读取选中文件；选中文件仍来自 `CodeReviewSkill.collector`。
+
+4. Assets Inspect / Logs Analyze
+
+- 继续以确定性规则和当前 payload 为主。
+- grep 仅用于查 `asset_rules`、`engine_notes`、`incident_history` 这类辅助说明。
+
+### 文档分类规划
+
+建议本地知识目录按 domain 分类，避免全库 grep 结果太乱：
+
+```text
+knowledge/
+  engine-notes/
+    ue-actor-lifecycle.md
+    ue-blueprint-basics.md
+    ue-static-mesh-nanite-lod-collision.md
+    ue-gameplay-framework.md
+  project-docs/
+    rushba-project-overview.md
+    rushba-module-notes.md
+  code-reference/
+    actor-lifecycle-example.cpp
+    component-pattern-example.cpp
+    subsystem-example.cpp
+  examples/
+    async-asset-loading-example.md
+    soft-reference-example.md
+  asset-rules/
+    naming-conventions.md
+    blueprint-asset-checklist.md
+  team-rules/
+    cpp-style.md
+    ue-code-review-rules.md
+```
+
+domain 映射：
+
+- `engine_notes`：UE 官方文档整理笔记、引擎概念、API 用法摘要。
+- `project_docs`：当前项目说明、模块说明、开发流程。
+- `code_reference`：用户手动保存的代码文件和参考实现。
+- `examples`：可复制/改写的代码生成示例。
+- `asset_rules`：资产命名、Blueprint、StaticMesh、材质、LOD、Collision、Nanite 等规则。
+- `team_rules`：代码规范、审查规则、项目约定。
+
+### UE 官方文档补充边界
+
+合法合规原则：
+
+- 不做整站爬取，不把大段官方原文直接存入仓库。
+- 优先手动整理 markdown 学习笔记：标题、链接、访问日期、关键概念、自己的理解、短摘录。
+- 每份笔记保留官方链接，方便引用和后续复核。
+- 如果需要自动化，只做用户给定 URL 的少量页面摘要或本地保存，不做批量镜像。
+- 代码示例优先使用自己整理或自己改写的最小示例。
+
+优先整理主题：
+
+- Actor / Component 生命周期：Constructor、BeginPlay、Tick、EndPlay、GC。
+- UObject / UPROPERTY / TObjectPtr / TWeakObjectPtr 基础。
+- Soft Object Reference 与异步加载。
+- Blueprint 父类、Tick、组件、变量暴露。
+- StaticMesh 常见设置：Nanite、LOD、Collision、Material Slots、Lightmap。
+- Gameplay Framework：GameMode、GameState、PlayerController、Pawn、Character。
+- Module / Build.cs / Plugin 基础结构。
+
+### 后端开发任务
+
+阶段 A：Local Grep Retrieval v1
+
+- 新增本地 grep 检索服务 `app/services/local_search_service.py`。（已完成）
+- 支持 domain 限定、文件扩展名限定、关键词提取、top_k、片段窗口。（已完成）
+- 返回统一结构：`source_path`、`domain`、`title`、`snippet`、`score`、`matched_terms`。（已完成）
+- Windows 下优先用 Python 实现，避免依赖系统 `grep` 或 `rg`。（已完成）
+
+阶段 B：知识库配置与分类
+
+- 在设置中新增或复用 `KB_SOURCE_PATHS`，支持 `knowledge/` 目录。（已完成，默认加入 `./knowledge`）
+- 增加 domain 推断：按目录名映射到 `engine_notes`、`code_reference`、`examples` 等。（已完成）
+- `GET /api/v1/knowledge-base/status` 增加 local search readiness。（已完成）
+
+阶段 C：接入 Skill
+
+- `CodeGenerateSkill`：优先使用 local grep 搜索 `code_reference/examples/engine_notes`。（已完成）
+- `CodeReviewSkill`：通过代码审查 guidance retrieval 链路补充 grep 的 `team_rules/engine_notes/project_docs/examples`，不替代选中文件读取。（已完成）
+- `ProjectQASkill`：lexical RAG 无命中时可 fallback 到 local grep。（已完成）
+- Debug View 中展示 `local_search` 命中来源和 matched terms。（已完成）
+
+阶段 D：UE 文档笔记种子
+
+- 新增少量合法 markdown 笔记，先覆盖上述优先主题。（已完成）
+- 每篇笔记包含：`source_url`、`topic`、`summary`、`key_points`、`use_for`。（已完成）
+- 不追求多，先保证能让 Code Generate 和 Project QA 命中。（已完成）
+
+阶段 E：测试与文档
+
+- 增加 local search 单元测试。（已完成）
+- 增加 Code Generate 命中本地 code reference 的集成测试。（已完成）
+- 增加 Project QA 在无向量时 fallback local grep 的测试。（部分覆盖：Project QA / Code Generate 集成链路已验证，后续可补更窄用例）
+- 更新 `backend-user-guide.md`、`frontend-unified-handoff.md`、`rag-and-memory-study.md`。（已完成）
+
+### 前端影响
+
+- 主 UI 暂不需要修改。
+- Debug View 可选新增 `local_search` 分区，显示命中的 markdown/code 文件、domain、snippet、matched_terms。
+- Code Generate 主 UI 可以继续显示后端已有 generated code 结果，不需要新增输入项。
+
+### 验收标准
+
+- 不配置 embedding / Qdrant 时，Code Generate 能通过本地 markdown/code grep 找到参考片段。
+- Project QA 文本问答至少能命中本地 UE markdown 笔记或明确说明无结果。
+- Debug View 能解释本轮用了 RAG、local grep，还是二者都没命中。
+- 不新增企业级搜索服务，不引入复杂索引系统，不把官方文档做成大规模镜像。
+
+### 2026-04-26 测试反馈收口
+
+状态：已处理。
+
+- 问题：Agent Chat 询问“知识库有什么内容”时引用 `backend.md`、`forward.md`、`docs/improveplan.md` 等后端开发资料。
+- 原因：旧默认 `KB_SOURCE_PATHS` 同时包含后端设计文档和用户知识目录，导致用户可见知识库被开发资料污染。
+- 决策：默认知识库范围收口为 `KB_SOURCE_PATHS=./knowledge`。后端开发文档只作为开发资料，不再默认参与用户问答检索。
+- 操作：如果本地数据库已经导入旧文档，需要重启后端后调用 `POST /api/v1/knowledge-base/reindex` 清理旧索引。
+- 问题：Code Generate 显示 `draft.txt`，用户无法判断文件在哪里。
+- 原因：后端代码生成是非破坏性草稿，不写磁盘；`draft.txt` 只是兜底虚拟路径，但前端容易展示成真实文件。
+- 决策：后端增强 target_type 兼容，泛化 `general/code/cpp/ue_cpp` 默认按 UE C++ 草案返回；同时新增 `write_policy.written_to_disk=false`、`generated_items[].write_status=not_written`、`generated_items[].is_virtual=true`。
+- 前端边界：Code Generate 面板应把 `generated_items` 当成“代码结果按钮 / Tab / 列表”，点击展示 `code`，不要提示“已生成到磁盘”。

@@ -991,3 +991,73 @@ POST /api/v1/sessions
 - 是否展示 Skill lifecycle 流水线。
 - 是否把 `llm.reason` 作为机器码处理，而不是当作完整自然语言回答。
 - Code Review 高亮按钮是否仍只消费 `user_view.blocks` / `data.llm_analysis`，没有误用 `debug_view.skill` 或 raw JSON。
+
+## 23. 2026-04-25 Local Grep Retrieval v1 接入说明
+
+后端新增本地 markdown/code grep 检索，用于在未接入 embedding / Qdrant 时提升 Code Generate、Project QA、Code Review 的可用性。主 UI 不需要修改。
+
+当前后端行为：
+
+- `Code Generate` 会优先检索本地 `knowledge/code-reference`、`knowledge/examples`、`knowledge/engine-notes` 等文件。
+- `Project QA` 在 RAG 无命中时会 fallback 到 local grep。
+- `Code Review` 仍以选中文件和规则扫描为主，知识检索可补充 team rules / engine notes。
+
+可选 Debug View 字段：
+
+- `debug_view.local_search.status`
+- `debug_view.local_search.reason`
+- `debug_view.local_search.summary.result_count`
+- `debug_view.local_search.summary.domain_filters`
+- `debug_view.local_search.summary.terms`
+- `debug_view.local_search.items[].title`
+- `debug_view.local_search.items[].source_path`
+- `debug_view.local_search.items[].domain`
+- `debug_view.local_search.items[].snippet`
+- `debug_view.local_search.items[].matched_terms`
+- `debug_view.local_search.items[].score`
+
+Knowledge Base 状态接口新增：
+
+- `GET /api/v1/knowledge-base/status`
+- `summary.local_search_readiness.status`
+- `summary.local_search_readiness.searchable_files`
+- `summary.local_search_readiness.domain_counts`
+- `summary.local_search_readiness.source_paths`
+
+前端是否必须修改：
+
+- 主 UI：不需要。
+- Debug View / Monitor：可选新增 `Local Search` 折叠区块。
+
+如果 UE 前端后续接入本区块，请在回传交接文档里说明：
+
+- 是否展示 local search 命中文件、domain 和 snippet。
+- 是否在 Code Generate Debug View 中展示 `data.reference_lookup.local_reference_count`。
+- 是否仍然保持普通用户界面只渲染 `user_view`，不直接展示 raw local search JSON。
+
+## 24. 2026-04-26 知识库范围与 Code Generate 展示修正
+
+本轮后端把默认知识库范围收口为 `KB_SOURCE_PATHS=./knowledge`。这可以避免 Agent Chat / Project QA 在用户询问 UE 项目问题时引用后端开发文档，例如 `backend.md`、`forward.md`、`docs/improveplan.md` 或交接文档。
+
+前端影响：
+
+- 主 UI 不需要改接口。
+- 如果 Debug View / Monitor 展示知识库来源路径，正常情况下应看到 `knowledge/...` 或用户手动导入的 UE 项目资料。
+- 如果仍看到 `backend.md` / `forward.md` / `docs/...`，说明后端旧索引还没清理，需要调用 `POST /api/v1/knowledge-base/reindex`。
+
+Code Generate 展示规则也需要统一理解：
+
+- 后端不会创建真实文件，不会写入 UE 工程。
+- `data.write_policy.written_to_disk=false` 是稳定字段。
+- `data.generated_items[].write_status=not_written` 和 `data.generated_items[].is_virtual=true` 表示这是 API 返回的虚拟草稿。
+- `data.generated_items[].file_path` 是建议放置路径或虚拟草稿名，不是磁盘上已经存在的文件。
+- 前端 Code Generate 面板应把 `generated_items` 渲染为“代码结果按钮 / Tab / 列表”，点击后展示 `generated_items[].code`。
+- 不建议在普通用户 UI 文案里写“已生成文件 draft.txt”；应写“生成了一个草稿结果，尚未写入工程”。
+
+本轮后端也增强了兜底模板：如果前端传入 `target_type=general/code/cpp/ue_cpp` 这类泛化值，后端会按 UE C++ 草案处理，尽量返回 `Source/<Class>.h` 和 `Source/<Class>.cpp`，不再轻易返回 `draft.txt`。
+
+如果 UE 前端需要回传测试结果，请说明：
+
+- Code Generate 请求里当前传的 `payload.target_type` 是什么。
+- 是否只使用 `user_view.blocks[block_type="generated_items"].data.generated_items` 渲染代码结果。
+- 是否把 `write_status=not_written` 作为“未写入工程”的提示，而不是错误状态。

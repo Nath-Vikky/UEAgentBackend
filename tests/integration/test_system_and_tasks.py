@@ -51,6 +51,7 @@ def test_system_bootstrap_and_runtime_profiles(client: TestClient) -> None:
 
     assert kb_status.status_code == 200
     assert "summary" in kb_status.json()
+    assert "local_search_readiness" in kb_status.json()["summary"]
 
 
 def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) -> None:
@@ -1443,6 +1444,13 @@ def test_code_review_file_listing_and_selected_file_review(client: TestClient) -
         assert body["debug_view"]["skill"]["lifecycle"]["retrieval"]["status"] == "completed"
         assert body["debug_view"]["skill"]["lifecycle"]["llm"]["status"] == "skipped"
         assert body["debug_view"]["skill"]["lifecycle"]["llm"]["reason"] == "missing_openai_api_key"
+        assert body["debug_view"]["local_search"]["mode"] == "local_grep"
+        assert body["debug_view"]["local_search"]["summary"]["domain_filters"] == [
+            "team_rules",
+            "engine_notes",
+            "project_docs",
+            "examples",
+        ]
         assert body["data"]["review_scope"]["source_kind"] == "file_path"
         assert body["data"]["review_scope"]["file_path"] == "Source/MyModule/MyActor.cpp"
         assert body["data"]["review_scope"]["resolved_absolute_path"]
@@ -2066,6 +2074,10 @@ def test_code_generate_returns_draft_and_artifact(client: TestClient) -> None:
     assert body["data"]["file_structure_suggestions"]
     assert body["data"]["generated_items"]
     assert body["data"]["generation_mode"]
+    assert body["data"]["reference_lookup"]["local_reference_count"] >= 1
+    assert body["data"]["local_search"]["items"]
+    assert body["debug_view"]["local_search"]["summary"]["result_count"] >= 1
+    assert "engine_notes" in body["debug_view"]["local_search"]["summary"]["domain_filters"]
     assert [block["block_type"] for block in body["user_view"]["blocks"]] == [
         "summary",
         "generated_items",
@@ -2139,6 +2151,7 @@ def test_code_generate_can_use_code_reference_documents(client: TestClient) -> N
 
         assert response.status_code == 200
         assert body["data"]["reference_lookup"]["reference_count"] >= 1
+        assert "local_reference_count" in body["data"]["reference_lookup"]
         assert "reference_augmented" in body["data"]["generation_mode"]
         assert body["data"]["generated_items"]
         assert body["data"]["retrieved_references"]

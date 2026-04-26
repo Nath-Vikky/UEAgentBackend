@@ -886,6 +886,7 @@ class CodeReviewSkillExecutor:
         if load_error:
             data["warnings"] = [*workflow["warnings"], load_error]
         base_debug["retrieval"] = workflow["retrieval_trace"]
+        base_debug["local_search"] = workflow["retrieval_trace"].get("local_search", {})
         base_debug["tools"] = [
             *workflow["tools"],
             {

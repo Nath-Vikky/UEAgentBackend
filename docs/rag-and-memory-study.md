@@ -230,3 +230,37 @@ LLM context window 有上限。如果把全部聊天历史、代码片段、资�
 - 只接 LLM 没有向量：确认 `lexical_ready=true` 即可继续调试。
 - RAG 命中不准：检查文档 domain、chunk 大小、metadata 和 query 表达。
 - 聊天历史顺序不对：看 `/sessions/{session_id}/history`，不要用 task list 渲染聊天时间线。
+
+## 12. RAG + Local Grep 双检索策略
+
+本项目现在同时支持 RAG 和本地 grep 检索：
+
+- RAG：适合项目说明、概念问答、自然语言解释和 citation。
+- Local Grep：适合代码生成、代码参考、规则查找、类名/函数名/宏/API 精确命中。
+
+策略：
+
+- 文本问答有 embedding / Qdrant 时优先走 hybrid / vector RAG。
+- 文本问答没有向量命中时，fallback 到 local grep。
+- 代码生成无论是否接入向量，都优先把 local grep 命中的 `code_reference/examples/engine_notes` 片段交给 LLM。
+- Code Review 先读选中文件并跑规则，再用 RAG/local grep 补充 `team_rules/engine_notes`。
+
+本地搜索入口：
+
+- `app/services/local_search_service.py`
+- `debug_view.local_search`
+- `summary.local_search_readiness`
+
+本地知识目录：
+
+```text
+knowledge/
+  engine-notes/
+  project-docs/
+  code-reference/
+  examples/
+  asset-rules/
+  team-rules/
+```
+
+这个设计的目标不是替代向量数据库，而是在个人本地作品环境中保证“没有 embedding 也能稳定命中关键参考资料”。

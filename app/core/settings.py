@@ -81,9 +81,7 @@ class Settings(BaseSettings):
     upload_dir: str = "./storage/uploads"
     artifact_dir: str = "./storage/artifacts"
     kb_dir: str = "./storage/kb"
-    kb_source_paths: StringListSetting = Field(
-        default_factory=lambda: ["../backend.md", "../forward.md", "./docs"]
-    )
+    kb_source_paths: StringListSetting = Field(default_factory=lambda: ["./knowledge"])
     kb_max_file_bytes: int = 5_000_000
     kb_chunk_size: int = 600
     kb_chunk_overlap: int = 100

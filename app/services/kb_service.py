@@ -31,6 +31,7 @@ from app.rag.ingestion.parsers import parse_path
 from app.rag.retrieval.hybrid import retrieve
 from app.rag.schemas import ParsedDocument
 from app.schemas.requests import ContextInput, KnowledgeBaseImportRequest
+from app.services.local_search_service import LocalSearchService
 
 
 class KnowledgeBaseService:
@@ -51,6 +52,7 @@ class KnowledgeBaseService:
         qdrant_ok, qdrant_reason = qdrant_available(self.settings)
         embedding_ok = embedding_available(self.settings)
         ingestion = ingestion_capabilities()
+        local_search_status = LocalSearchService(self.settings).status()
         documents = list_documents(self.db)
         domain_counts: dict[str, int] = {}
         for document in documents:
@@ -97,6 +99,7 @@ class KnowledgeBaseService:
                 "domain_counts": domain_counts,
                 "eval_command": "python scripts/run_rag_eval.py --dataset tests/eval/rag_project_qa_dataset.jsonl",
             },
+            "local_search_readiness": local_search_status,
             "ingestion_pipeline": ingestion["pipeline"],
             "format_groups": ingestion["format_groups"],
             "collection": self.settings.qdrant_collection,
@@ -204,53 +207,125 @@ class KnowledgeBaseService:
             settings=self.settings,
             output_language=output_language,
         )
+        local_search = (
+            LocalSearchService(self.settings).search(
+                query=query,
+                domain_filters=payload.get("domain_filters") or context.kb_domains_hint or [],
+                top_k=min(max(self.settings.rag_top_k, 3), 8),
+            )
+            if (not payload.get("disable_local_search"))
+            and (not result.retrieved_docs or payload.get("use_local_search"))
+            else {
+                "query": query,
+                "mode": "local_grep",
+                "status": "skipped",
+                "reason": "rag_hits_available",
+                "items": [],
+                "summary": {
+                    "result_count": 0,
+                    "candidate_count": 0,
+                    "searched_file_count": 0,
+                    "skipped_file_count": 0,
+                    "domain_filters": payload.get("domain_filters") or context.kb_domains_hint or [],
+                    "terms": [],
+                },
+            }
+        )
+        local_docs = [
+            {
+                "chunk_id": item["item_id"],
+                "doc_id": item["source_path"],
+                "title": item["title"],
+                "source_path": item["source_path"],
+                "domain": item["domain"],
+                "section_path": f"lines:{item['line_start']}-{item['line_end']}",
+                "text": item["snippet"][:800],
+                "lexical_score": item["score"],
+                "semantic_score": 0.0,
+                "final_score": item["score"],
+                "matched_terms": item["matched_terms"],
+                "retrieval_source": "local_grep",
+            }
+            for item in local_search["items"]
+        ]
+        local_citations = [
+            {
+                "title": item["title"],
+                "source": item["source_path"],
+                "section_path": f"lines:{item['line_start']}-{item['line_end']}",
+                "snippet": item["snippet"][:220],
+                "score": item["score"],
+                "domain": item["domain"],
+                "retrieval_source": "local_grep",
+            }
+            for item in local_search["items"][:3]
+        ]
         answer_text = result.answer
+        if not result.retrieved_docs and local_docs:
+            if output_language.startswith("zh"):
+                summaries = [f"{item['title']}：{item['text'][:90]}" for item in local_docs[:3]]
+                answer_text = "本地 markdown/code 检索命中的主要证据是：" + "；".join(summaries) + "。"
+            else:
+                summaries = [f"{item['title']}: {item['text'][:90]}" for item in local_docs[:3]]
+                answer_text = "The strongest local markdown/code matches are: " + "; ".join(summaries) + "."
         if output_language.startswith("zh") and not answer_text.startswith("基于"):
-            answer_text = "当前未命中足够证据，建议补充文档后重试。"
+            if not local_docs:
+                answer_text = "当前未命中足够证据，建议补充文档后重试。"
+        retrieved_docs = [
+            {
+                "chunk_id": item.chunk_id,
+                "doc_id": item.doc_id,
+                "title": item.title,
+                "source_path": item.source_path,
+                "domain": item.domain,
+                "section_path": item.section_path,
+                "text": item.text[:800],
+                "lexical_score": item.lexical_score,
+                "semantic_score": item.semantic_score,
+                "final_score": item.final_score,
+                "retrieval_source": "rag",
+            }
+            for item in result.retrieved_docs
+        ]
+        retrieval_trace_docs = [
+            {
+                "title": item.title,
+                "source_path": item.source_path,
+                "domain": item.domain,
+                "section_path": item.section_path,
+                "text": item.text[:400],
+                "lexical_score": item.lexical_score,
+                "semantic_score": item.semantic_score,
+                "final_score": item.final_score,
+                "retrieval_source": "rag",
+            }
+            for item in result.retrieved_docs
+        ]
+        warnings = list(result.warnings)
+        if local_docs:
+            warnings = [item for item in warnings if item != "no_retrieval_hits"]
+            warnings.append("local_search_fallback_used")
         return {
             "answer": answer_text,
-            "confidence": result.confidence,
+            "confidence": max(result.confidence, 0.38 if local_docs else result.confidence),
             "sources": [
                 {"title": item.title, "source": item.source_path, "domain": item.domain}
                 for item in result.retrieved_docs
-            ],
-            "citations": result.citations,
-            "retrieved_docs": [
-                {
-                    "chunk_id": item.chunk_id,
-                    "doc_id": item.doc_id,
-                    "title": item.title,
-                    "source_path": item.source_path,
-                    "domain": item.domain,
-                    "section_path": item.section_path,
-                    "text": item.text[:800],
-                    "lexical_score": item.lexical_score,
-                    "semantic_score": item.semantic_score,
-                    "final_score": item.final_score,
-                }
-                for item in result.retrieved_docs
-            ],
+            ]
+            + [{"title": item["title"], "source": item["source_path"], "domain": item["domain"]} for item in local_docs],
+            "citations": [*result.citations, *local_citations],
+            "retrieved_docs": [*retrieved_docs, *local_docs],
             "filters_applied": result.filters_applied,
+            "local_search": local_search,
             "retrieval_trace": {
                 "mode": result.mode,
                 "degraded_mode": result.degraded_mode,
                 "reason": result.reason,
                 "filters_applied": result.filters_applied,
-                "retrieved_docs": [
-                    {
-                        "title": item.title,
-                        "source_path": item.source_path,
-                        "domain": item.domain,
-                        "section_path": item.section_path,
-                        "text": item.text[:400],
-                        "lexical_score": item.lexical_score,
-                        "semantic_score": item.semantic_score,
-                        "final_score": item.final_score,
-                    }
-                    for item in result.retrieved_docs
-                ],
+                "retrieved_docs": [*retrieval_trace_docs, *local_docs],
+                "local_search": local_search,
             },
-            "warnings": result.warnings,
+            "warnings": warnings,
         }
 
     def _run_import_job(

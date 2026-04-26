@@ -74,12 +74,16 @@ class CodeGenerateSkillExecutor:
                     data={
                         "generation_mode": result["generation_mode"],
                         "reference_count": result["reference_lookup"]["reference_count"],
+                        "write_policy": result.get("write_policy", {}),
                     },
                 ).model_dump(mode="json"),
                 UserViewBlock(
                     block_type="generated_items",
                     title=_localized(output_language, "生成文件", "Generated Files"),
-                    text="\n".join(item["label"] for item in result["generated_items"]),
+                    text="\n".join(
+                        f"{item['file_path']} ({item.get('write_status', 'not_written')})"
+                        for item in result["generated_items"]
+                    ),
                     data={"generated_items": result["generated_items"]},
                 ).model_dump(mode="json"),
             ],
@@ -101,6 +105,7 @@ class CodeGenerateSkillExecutor:
             "warnings": execution["warnings"],
         }
         base_debug["retrieval"] = execution["retrieval_trace"]
+        base_debug["local_search"] = result.get("local_search", {})
         base_debug["tools"] = execution["tools"]
         base_debug["step_results"] = execution["step_results"]
         base_debug["raw_result"] = data

@@ -141,6 +141,7 @@
 - 返回非破坏性的代码草稿结果
 - 返回 `generated_items` 供前端做按钮 / Tab / 列表展示
 - 返回 `reference_lookup`、`generation_mode`、`retrieved_references`
+- 返回 `write_policy.written_to_disk=false`，并在每个 `generated_items[]` 上标记 `write_status=not_written`、`is_virtual=true`
 
 边界：
 
@@ -148,6 +149,8 @@
 - 不自动 patch 文件
 - 不做 compile / build 验证
 - 代码参考增强已经落地，但结果仍然是“建议草稿”而不是执行器
+
+注意：`generated_items[].file_path` 是建议放置路径或虚拟草稿路径，不代表后端已经创建了这个文件。前端应把它渲染为“生成结果按钮 / Tab”，点击后展示 `generated_items[].code`，不要把它显示成“已生成到磁盘的文件路径”。
 
 ### 4.4 Logs Analyze
 
@@ -615,7 +618,7 @@ knowledge/
 在 `.env` 里配置默认知识库路径：
 
 ```env
-KB_SOURCE_PATHS=../backend.md,../forward.md,./docs,../knowledge
+KB_SOURCE_PATHS=./knowledge
 KB_DIR=./storage/kb
 KB_MAX_FILE_BYTES=5000000
 KB_CHUNK_SIZE=600
@@ -628,13 +631,13 @@ KB_CHUNK_OVERLAP=100
 POST /api/v1/knowledge-base/refresh
 ```
 
-请求体可以为空，此时使用 `KB_SOURCE_PATHS`。如果只想刷新指定路径：
+请求体可以为空，此时使用 `KB_SOURCE_PATHS`。当前默认只扫描 `./knowledge`，这是 UE 用户知识库；后端开发文档和前端交接文档不应作为用户可见知识库来源。如果只想刷新指定路径：
 
 ```json
 {
   "source_paths": [
-    "../knowledge/project_docs",
-    "../knowledge/code_reference"
+    "./knowledge/project-docs",
+    "./knowledge/code-reference"
   ],
   "force_rebuild": false
 }
@@ -645,7 +648,7 @@ POST /api/v1/knowledge-base/refresh
 ```json
 {
   "source_paths": [
-    "../knowledge"
+    "./knowledge"
   ],
   "force_rebuild": true
 }
@@ -1391,3 +1394,85 @@ GET /api/v1/system/capabilities
 - `docs/skill-development-guide.md`：最后看后续如何扩展固定内置 Skill。
 
 这些文档不要求 UE 前端实现新 UI，主要用于后端学习、复盘和作品集展示。
+
+### 18.15 Local Grep Retrieval v1
+
+后端现在支持本地 markdown/code grep 检索，作为向量 RAG 之外的稳定补强。它不依赖 embedding、不依赖 Qdrant，也不依赖系统 `grep` 或 `rg`，而是用 Python 在 `KB_SOURCE_PATHS` 指向的文件中检索。
+
+适用场景：
+
+- `Code Generate`：优先检索 `code_reference`、`examples`、`engine_notes`，把命中的代码/笔记片段交给 LLM 或模板兜底。
+- `Project QA`：当现有 RAG 没有命中文档时，fallback 到本地 markdown/code grep。
+- `Code Review`：通过知识检索补充 `team_rules`、`engine_notes`、`project_docs`、`examples`。
+
+默认知识路径现在包含：
+
+```env
+KB_SOURCE_PATHS=./knowledge
+```
+
+这意味着 `backend.md`、`forward.md`、`docs/improveplan.md`、`docs/frontend-unified-handoff.md` 这类后端开发/交接文档默认不再进入用户可见知识库。它们仍然是开发资料，但不应该被 Agent Chat 当作 UE 项目知识来引用。
+
+如果你之前用旧默认路径启动过后端，数据库里可能已经保存了旧文档索引。修改 `.env` 后需要重启后端并重建知识库：
+
+```http
+POST /api/v1/knowledge-base/reindex
+```
+
+也可以在 Debug View / Monitor 里调用同等的重建入口。完成后再查看：
+
+```http
+GET /api/v1/knowledge-base/documents
+```
+
+确认来源路径只剩 `knowledge/` 或你手动导入的 UE 项目资料。
+
+推荐目录：
+
+```text
+knowledge/
+  engine-notes/
+  project-docs/
+  code-reference/
+  examples/
+  asset-rules/
+  team-rules/
+```
+
+目录会映射为 domain：
+
+- `engine-notes` -> `engine_notes`
+- `project-docs` -> `project_docs`
+- `code-reference` -> `code_reference`
+- `examples` -> `examples`
+- `asset-rules` -> `asset_rules`
+- `team-rules` -> `team_rules`
+
+状态查看：
+
+```http
+GET /api/v1/knowledge-base/status
+```
+
+重点字段：
+
+- `summary.local_search_readiness.status`
+- `summary.local_search_readiness.searchable_files`
+- `summary.local_search_readiness.domain_counts`
+- `summary.local_search_readiness.source_paths`
+
+任务响应里的 Debug 字段：
+
+- `debug_view.local_search`
+- `debug_view.retrieval.local_search`
+- `data.local_search`
+- `data.reference_lookup.local_reference_count`
+
+本地 UE 知识种子已经放在 `knowledge/` 目录下，包括 Actor 生命周期、软引用/异步加载、StaticMesh/Nanite/LOD/Collision、模块与 Build.cs、代码审查规则、资产检查规则和一个 Actor/Component 代码参考示例。
+
+官方文档整理边界：
+
+- 保留 `source_url`，但不整站爬取。
+- markdown 内容以自己的总结和短笔记为主，不大段复制官方原文。
+- 代码示例尽量使用自己改写的最小示例。
+- 后续补充 UE 文档时，优先补到 `knowledge/engine-notes`、`knowledge/examples`、`knowledge/team-rules`。

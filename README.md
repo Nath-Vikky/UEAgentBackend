@@ -112,6 +112,10 @@
 - `KB_SOURCE_PATHS`
 - `KB_DIR`
 
+默认 `KB_SOURCE_PATHS=./knowledge`。这里是用户/UE 项目知识库入口，可直接放 markdown/code 笔记用于本地 grep 检索；后端开发文档、交接文档默认不再进入用户可见知识库，避免 Agent Chat 引用 `backend.md`、`forward.md`、`docs/improveplan.md` 等内部资料。
+
+如果之前已经用旧路径导入过知识库，请重启后端后调用一次 `POST /api/v1/knowledge-base/reindex`，或在插件 Debug View 触发知识库重建，让旧的 backend 文档索引被清掉。
+
 ### 启用 Embedding / Qdrant
 
 再补：

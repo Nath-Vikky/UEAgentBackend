@@ -1248,6 +1248,7 @@ class TaskService:
             "filters_applied": qa_result["filters_applied"],
             "citations": qa_result["citations"],
             "warnings": qa_result["warnings"],
+            "local_search": qa_result.get("local_search", {}),
             "inventory": inventory_result,
             "answer_generation": {
                 "mode": answer_generation_mode,
@@ -1260,6 +1261,7 @@ class TaskService:
             "context_bundle": context_bundle,
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
+        base_debug["local_search"] = qa_result.get("local_search", {})
         base_debug["inventory"] = inventory_result
         base_debug["tools"] = [
             {

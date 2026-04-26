@@ -5,6 +5,7 @@ from typing import Any
 from app.agent.context_builder import build_context_summary
 from app.schemas.requests import UnifiedTaskRequest
 from app.services.kb_service import KnowledgeBaseService
+from app.services.local_search_service import LocalSearchService
 from app.services.llm_service import ChatRuntimeConfig, LLMService
 from app.tools.code_generate import generate_code_draft
 from app.tools.retrieval import retrieve_support_notes
@@ -57,6 +58,8 @@ def _normalize_generated_items(items: list[dict[str, Any]] | Any) -> list[dict[s
                 "file_path": file_path,
                 "language": str(item.get("language") or _language_from_file_path(file_path)).strip(),
                 "code": code,
+                "write_status": "not_written",
+                "is_virtual": True,
             }
         )
     return normalized
@@ -64,6 +67,42 @@ def _normalize_generated_items(items: list[dict[str, Any]] | Any) -> list[dict[s
 
 def _reference_excerpt(item: dict[str, Any], limit: int = 500) -> str:
     return str(item.get("snippet") or item.get("text") or "").strip()[:limit]
+
+
+def _local_search_docs(local_search: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "chunk_id": item["item_id"],
+            "doc_id": item["source_path"],
+            "title": item["title"],
+            "source_path": item["source_path"],
+            "domain": item["domain"],
+            "section_path": f"lines:{item['line_start']}-{item['line_end']}",
+            "text": item["snippet"],
+            "snippet": item["snippet"],
+            "lexical_score": item["score"],
+            "semantic_score": 0.0,
+            "final_score": item["score"],
+            "matched_terms": item["matched_terms"],
+            "retrieval_source": "local_grep",
+        }
+        for item in local_search.get("items", [])
+    ]
+
+
+def _local_search_citations(local_search: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": item["title"],
+            "source": item["source_path"],
+            "section_path": f"lines:{item['line_start']}-{item['line_end']}",
+            "snippet": item["snippet"][:220],
+            "score": item["score"],
+            "domain": item["domain"],
+            "retrieval_source": "local_grep",
+        }
+        for item in local_search.get("items", [])[:3]
+    ]
 
 
 class CodeGenerationService:
@@ -88,30 +127,51 @@ class CodeGenerationService:
             or request.payload.get("user_query")
             or (request.session.messages[-1].content if request.session.messages else "")
         ).strip()
-        domain_filters = list(request.payload.get("domain_filters") or ["code_reference", "examples", "project_docs"])
+        domain_filters = list(
+            request.payload.get("domain_filters") or ["code_reference", "examples", "engine_notes", "project_docs"]
+        )
         support = retrieve_support_notes(
             self.kb_service,
             query=query or "Generate a UE code draft.",
             context=request.context,
             output_language=output_language,
             domain_filters=domain_filters,
+            extra_payload={"disable_local_search": True},
         )
+        local_search = LocalSearchService(self.kb_service.settings).search(
+            query=query or "Generate a UE code draft.",
+            domain_filters=domain_filters,
+            top_k=6,
+        )
+        local_docs = _local_search_docs(local_search)
+        local_citations = _local_search_citations(local_search)
+        merged_docs = [*local_docs, *support["retrieved_docs"]]
+        merged_citations = [*local_citations, *support["citations"]]
         reference_lookup = {
-            "reference_count": len(support["retrieved_docs"]),
-            "domains": sorted({item.get("domain") for item in support["retrieved_docs"] if item.get("domain")}),
-            "sources": [{"title": item["title"], "source": item["source"]} for item in support["citations"]],
+            "reference_count": len(merged_docs),
+            "rag_reference_count": len(support["retrieved_docs"]),
+            "local_reference_count": len(local_docs),
+            "domains": sorted({item.get("domain") for item in merged_docs if item.get("domain")}),
+            "sources": [{"title": item["title"], "source": item["source"]} for item in merged_citations],
+            "local_search": local_search["summary"],
         }
 
+        support_for_generation = {
+            **support,
+            "retrieved_docs": merged_docs,
+            "citations": merged_citations,
+            "local_search": local_search,
+        }
         llm_attempt = self._generate_with_llm(
             request=request,
             query=query,
-            support=support,
+            support=support_for_generation,
             chat_config=chat_config,
         )
         template_result = generate_code_draft(
             {
                 **request.payload,
-                "reference_items": support["retrieved_docs"],
+                "reference_items": merged_docs,
             }
         )
 
@@ -147,9 +207,15 @@ class CodeGenerationService:
             "generation_mode": generation_mode,
             "summary": summary,
             "notes": notes,
+            "write_policy": {
+                "mode": "non_destructive",
+                "written_to_disk": False,
+                "message": "Generated items are virtual drafts returned in the API response; the backend does not create files.",
+            },
             "reference_lookup": reference_lookup,
-            "retrieved_references": support["citations"],
+            "retrieved_references": merged_citations,
             "supporting_notes": support["answer"],
+            "local_search": local_search,
         }
 
         step_results = [
@@ -161,6 +227,7 @@ class CodeGenerationService:
                 "details": {
                     "domains": reference_lookup["domains"],
                     "sources": reference_lookup["sources"],
+                    "local_search": local_search["summary"],
                 },
             },
             {
@@ -180,6 +247,11 @@ class CodeGenerationService:
                 "tool_id": "retrieve_project_knowledge",
                 "status": "completed",
                 "summary": f"Retrieved {reference_lookup['reference_count']} code-support chunk(s).",
+            },
+            {
+                "tool_id": "local_grep_code_reference",
+                "status": "completed" if local_docs else "skipped",
+                "summary": f"Matched {len(local_docs)} local markdown/code reference file(s).",
             },
             {
                 "tool_id": "live_llm_code_generate" if llm_attempt["ok"] else "generate_code_draft",
@@ -206,9 +278,20 @@ class CodeGenerationService:
         return {
             "result": result,
             "step_results": step_results,
-            "retrieval_trace": support["retrieval_trace"],
+            "retrieval_trace": {
+                **support["retrieval_trace"],
+                "local_search": local_search,
+                "retrieved_docs": [
+                    *local_docs,
+                    *support["retrieval_trace"].get("retrieved_docs", []),
+                ],
+            },
             "tools": tools,
-            "warnings": [*support["warnings"], *llm_attempt["warnings"]],
+            "warnings": [
+                *support["warnings"],
+                *(["local_search_no_matches"] if not local_docs else []),
+                *llm_attempt["warnings"],
+            ],
             "artifacts": artifacts,
             "action_proposals": [
                 {
@@ -299,6 +382,7 @@ class CodeGenerationService:
             '{"summary":"...","generated_items":[{"label":"...","file_path":"...","language":"...","code":"..."}],"notes":["..."]}. '
             "Do not wrap the JSON in markdown fences. "
             "When project-specific reference snippets are provided, align naming, structure, and style with them. "
+            "For Unreal C++ requests, prefer Source/<ClassName>.h and Source/<ClassName>.cpp instead of draft.txt. "
             "Do not claim that any file has been written to disk."
         )
         user_prompt = "\n\n".join(

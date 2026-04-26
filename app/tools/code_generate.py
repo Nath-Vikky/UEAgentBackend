@@ -1,14 +1,46 @@
 from __future__ import annotations
 
+import re
 from textwrap import dedent
 from typing import Any
 
 
 def _ue_class_name(requirement_description: str, fallback: str = "GeneratedFeature") -> str:
-    words = [item for item in requirement_description.replace("-", " ").replace("_", " ").split() if item]
+    words = re.findall(r"[A-Za-z][A-Za-z0-9]*", requirement_description.replace("-", " ").replace("_", " "))
     if not words:
         return fallback
-    return "".join(word[:1].upper() + word[1:] for word in words[:4])
+    ignored = {"ue", "unreal", "engine", "cpp", "cxx", "class", "actor", "component", "generate", "create"}
+    useful_words = [word for word in words if word.lower() not in ignored]
+    if not useful_words:
+        return fallback
+    return "".join(word[:1].upper() + word[1:] for word in useful_words[:4])
+
+
+def _normalize_target_type(raw_target_type: str) -> str:
+    normalized = raw_target_type.strip().lower().replace("-", "_").replace(" ", "_")
+    actor_aliases = {
+        "",
+        "actor",
+        "class",
+        "code",
+        "cpp",
+        "cpp_actor",
+        "cpp_class",
+        "default",
+        "general",
+        "ue",
+        "ue_actor",
+        "ue_class",
+        "ue_cpp",
+        "ue_cpp_class",
+        "unreal",
+        "unreal_actor",
+        "unreal_cpp",
+        "unreal_cpp_class",
+    }
+    if normalized in actor_aliases:
+        return "ue_cpp_class"
+    return normalized
 
 
 def _language_from_file_path(file_path: str) -> str:
@@ -30,6 +62,8 @@ def _generated_items(code_draft: dict[str, str]) -> list[dict[str, Any]]:
             "file_path": file_path,
             "language": _language_from_file_path(file_path),
             "code": content,
+            "write_status": "not_written",
+            "is_virtual": True,
         }
         for index, (file_path, content) in enumerate(code_draft.items(), start=1)
     ]
@@ -37,7 +71,7 @@ def _generated_items(code_draft: dict[str, str]) -> list[dict[str, Any]]:
 
 def generate_code_draft(payload: dict[str, Any]) -> dict[str, Any]:
     requirement = str(payload.get("requirement_description") or payload.get("user_query") or "").strip()
-    target_type = str(payload.get("target_type") or "ue_cpp_class").strip().lower()
+    target_type = _normalize_target_type(str(payload.get("target_type") or "ue_cpp_class"))
     class_name = _ue_class_name(requirement or target_type)
     reference_items = list(payload.get("reference_items") or [])
     reference_count = len(reference_items)
@@ -93,7 +127,7 @@ def generate_code_draft(payload: dict[str, Any]) -> dict[str, Any]:
         }
     else:
         code_draft = {
-            "draft.txt": dedent(
+            "GeneratedDraft.md": dedent(
                 f"""
                 Target Type: {target_type}
                 Requirement:
@@ -114,6 +148,11 @@ def generate_code_draft(payload: dict[str, Any]) -> dict[str, Any]:
         "file_structure_suggestions": list(code_draft.keys()),
         "generated_items": generated_items,
         "generation_mode": generation_mode,
+        "write_policy": {
+            "mode": "non_destructive",
+            "written_to_disk": False,
+            "message": "Generated items are virtual drafts returned in the API response; the backend does not create files.",
+        },
         "explanation": (
             "Generated a non-destructive code draft."
             if not reference_count

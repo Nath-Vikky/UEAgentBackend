@@ -508,3 +508,54 @@ UE 端反馈 Code Review 高亮按钮原本展示 LLM 回答、建议和概要�
 
 - `python -m ruff check app tests --no-cache` 通过。
 - `python -m pytest -p no:cacheprovider tests/unit/test_llm_service.py tests/integration/test_system_and_tasks.py::test_code_review_llm_json_like_text_fallback_is_sanitized_for_highlights tests/integration/test_system_and_tasks.py::test_code_review_malformed_json_like_text_extracts_llm_summary tests/integration/test_system_and_tasks.py::test_assets_inspect_live_llm_uses_compact_timeout_config -q` 通过。
+
+## 2026-04-25 Local Grep Retrieval v1
+
+本轮开始执行 2026-04-26 计划中的双检索策略：RAG 继续保留，新增不依赖 embedding / Qdrant 的本地 markdown/code grep 检索。
+
+### 主要代码改动
+
+- 新增 `app/services/local_search_service.py`，支持 domain 过滤、关键词匹配、snippet、score、matched_terms。
+- `KnowledgeBaseService.status()` 新增 `local_search_readiness`。
+- `KnowledgeBaseService.project_qa()` 在 RAG 无命中时 fallback 到 local grep。
+- `CodeGenerateSkill` 优先把 local grep 命中的 `code_reference/examples/engine_notes` 作为参考输入。
+- `CodeReviewSkill` 通过 guidance retrieval 链路使用 local grep 补充 `team_rules/engine_notes/project_docs/examples`，并同步到 `debug_view.local_search`。
+- `DebugView` schema 新增 `local_search`。
+- 默认 `KB_SOURCE_PATHS` 接入 `./knowledge`，后续已在 2026-04-26 收口为仅扫描 `./knowledge`。
+
+### 本地知识种子
+
+- 新增 `knowledge/engine-notes`：Actor 生命周期、软引用与异步加载、StaticMesh/Nanite/LOD/Collision、Modules/Build.cs。
+- 新增 `knowledge/examples`：异步资产加载示例。
+- 新增 `knowledge/team-rules`：UE 代码审查规则。
+- 新增 `knowledge/asset-rules`：Blueprint / StaticMesh 资产检查清单。
+- 新增 `knowledge/code-reference`：Actor/Component 模式示例。
+
+### 前端影响
+
+- 主 UI 不需要修改。
+- Debug View 可选显示 `debug_view.local_search`。
+
+### 验证
+
+- `python -m ruff check app tests --no-cache` 通过。
+- Local Search 单元测试、系统 bootstrap、Code Generate 本地参考命中集成测试通过。
+
+## 2026-04-26 知识库范围与 Code Generate 展示修正
+
+本轮根据实际测试反馈修正两个体验问题：Agent Chat 的用户知识库不应引用后端开发文档；Code Generate 的虚拟草稿不应被前端理解为真实写入磁盘的文件。
+
+### 主要代码改动
+
+- 默认 `KB_SOURCE_PATHS` 从 `../backend.md,../forward.md,./docs,./knowledge` 收口为 `./knowledge`。
+- 当前本地 `.env` 同步改为 `KB_SOURCE_PATHS=./knowledge`。
+- Code Generate 的泛化 `target_type` 兼容增强：`general/code/cpp/ue_cpp` 等会按 UE C++ 草案处理。
+- Code Generate 兜底模板不再轻易返回 `draft.txt`，未知非代码类型使用 `GeneratedDraft.md`。
+- `generated_items[]` 新增 `write_status=not_written` 和 `is_virtual=true`。
+- `data.write_policy.written_to_disk=false` 明确说明后端没有写入工程文件。
+
+### 前端影响
+
+- 知识库来源路径显示无需改接口；如果仍看到 `backend.md` / `forward.md` / `docs/...`，需要触发 `POST /api/v1/knowledge-base/reindex` 清理旧索引。
+- Code Generate 主 UI 应把 `generated_items` 渲染为代码结果按钮 / Tab / 列表，不要把 `file_path` 文案描述成“已生成到磁盘”。
+- `write_status=not_written` 是正常状态，不是错误。
