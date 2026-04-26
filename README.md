@@ -135,6 +135,8 @@
 - [docs/rag-and-memory-study.md](./docs/rag-and-memory-study.md)
 - [docs/skill-development-guide.md](./docs/skill-development-guide.md)
 - [docs/request-lifecycle.md](./docs/request-lifecycle.md)
+- [docs/interview-demo-script.md](./docs/interview-demo-script.md)
+- [docs/agent-project-study-notes.md](./docs/agent-project-study-notes.md)
 
 ## 当前联调状态
 

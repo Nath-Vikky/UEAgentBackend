@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.agent.context_builder import build_context_summary
+from app.agent.validation_advisor import build_log_validation_plan
 from app.schemas.common import CitationPreview, QuickAction, UserViewBlock
 from app.schemas.requests import UnifiedTaskRequest
 from app.services.kb_service import KnowledgeBaseService
@@ -59,6 +60,10 @@ class LogsAnalyzeSkillExecutor:
         resource_paths = parser_diagnostics.get("resource_paths") or []
         suggestions = result["suggestions"][:4]
         issue_count = len(result["issue_families"]) or 1
+        validation_plan = build_log_validation_plan(
+            result=result,
+            output_language=output_language,
+        )
         user_text = _localized(
             output_language,
             f"已完成日志分析，识别到 {issue_count} 组问题特征。",
@@ -140,6 +145,17 @@ class LogsAnalyzeSkillExecutor:
                     },
                 ).model_dump(mode="json")
             )
+        user_view["blocks"].append(
+            UserViewBlock(
+                block_type="validation_plan",
+                title=_localized(output_language, "验证清单", "Validation Plan"),
+                text="\n".join(
+                    f"- {item.get('title')}: {item.get('text')}"
+                    for item in validation_plan["items"][:6]
+                ),
+                data=validation_plan,
+            ).model_dump(mode="json")
+        )
         data = {
             **result,
             "sources": [
@@ -149,10 +165,28 @@ class LogsAnalyzeSkillExecutor:
             "citations": result["retrieved_references"],
             "context_summary": build_context_summary(request),
             "warnings": workflow["warnings"],
+            "validation_plan": validation_plan,
         }
+        step_results = [
+            *workflow["step_results"],
+            {
+                "step_id": "build_validation_plan",
+                "title": "Build Validation Plan",
+                "status": "completed",
+                "summary": f"Generated {len(validation_plan['items'])} log validation item(s).",
+                "details": validation_plan,
+            },
+        ]
         base_debug["retrieval"] = workflow["retrieval_trace"]
-        base_debug["tools"] = workflow["tools"]
-        base_debug["step_results"] = workflow["step_results"]
+        base_debug["tools"] = [
+            *workflow["tools"],
+            {
+                "tool_id": "build_validation_plan",
+                "status": "completed",
+                "summary": f"Generated {len(validation_plan['items'])} log validation item(s).",
+            },
+        ]
+        base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
         base_debug["warnings"] = workflow["warnings"]
         return {
@@ -161,7 +195,7 @@ class LogsAnalyzeSkillExecutor:
             "data": data,
             "retrieval_trace": workflow["retrieval_trace"],
             "planner_diagnostics": routing["route"],
-            "step_results": workflow["step_results"],
+            "step_results": step_results,
             "action_proposals": workflow["action_proposals"],
             "errors": [],
             "assistant_message": user_text,

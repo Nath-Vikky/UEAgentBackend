@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from app.agent.context_builder import build_context_summary
+from app.agent.validation_advisor import build_asset_validation_plan
 from app.schemas.common import CitationPreview, UserViewBlock
 from app.schemas.requests import UnifiedTaskRequest
 from app.services.kb_service import KnowledgeBaseService
@@ -324,6 +325,10 @@ class AssetsInspectSkillExecutor:
             llm_result=llm_result,
             output_language=output_language,
         )
+        validation_plan = build_asset_validation_plan(
+            result=result,
+            output_language=output_language,
+        )
         step_results = [
             {
                 "step_id": "inspect_assets",
@@ -349,6 +354,13 @@ class AssetsInspectSkillExecutor:
                     f"Retrieved {len(support['retrieved_docs'])} supporting asset-rule chunk(s).",
                 ),
                 "details": support["retrieval_trace"],
+            },
+            {
+                "step_id": "build_validation_plan",
+                "title": "Build Validation Plan",
+                "status": "completed",
+                "summary": f"Generated {len(validation_plan['items'])} asset validation item(s).",
+                "details": validation_plan,
             },
         ]
         user_text = _localized(
@@ -445,6 +457,17 @@ class AssetsInspectSkillExecutor:
                     data={"citation_count": len(support["citations"])},
                 ).model_dump(mode="json")
             )
+        user_view["blocks"].append(
+            UserViewBlock(
+                block_type="validation_plan",
+                title=_localized(output_language, "验证清单", "Validation Plan"),
+                text="\n".join(
+                    f"- {item.get('title')}: {item.get('text')}"
+                    for item in validation_plan["items"][:6]
+                ),
+                data=validation_plan,
+            ).model_dump(mode="json")
+        )
         data = {
             **result,
             "retrieved_references": support["citations"],
@@ -455,9 +478,11 @@ class AssetsInspectSkillExecutor:
             "warnings": support["warnings"],
             "llm_analysis": llm_analysis,
             "llm_analysis_raw": llm_result,
+            "validation_plan": validation_plan,
             "localized_asset_view": {
                 "violations": localized_violations,
                 "rename_suggestions": localized_rename_suggestions,
+                "validation_plan": validation_plan,
             },
         }
         base_debug["retrieval"] = support["retrieval_trace"]
@@ -472,6 +497,11 @@ class AssetsInspectSkillExecutor:
                 "tool_id": "llm_asset_inspection_synthesis",
                 "status": "completed" if llm_result.get("ok") else "skipped",
                 "summary": llm_result.get("reason") or "not_attempted",
+            },
+            {
+                "tool_id": "build_validation_plan",
+                "status": "completed",
+                "summary": f"Generated {len(validation_plan['items'])} asset validation item(s).",
             },
         ]
         base_debug["step_results"] = step_results

@@ -101,7 +101,14 @@ BUILT_IN_SKILLS: tuple[BuiltInSkillSpec, ...] = (
         collector="ue_project_code_file_scanner_and_reader",
         rules=["file_access_guard", "ue_cpp_lifecycle_checks", "localized_rule_projection"],
         retrieval_domains=["code_reference", "team_rules", "engine_notes"],
-        projector_outputs=["user_view.blocks", "data.review_scope", "data.localized_review"],
+        projector_outputs=[
+            "user_view.blocks",
+            "data.review_scope",
+            "data.localized_review",
+            "data.agent_workflow",
+            "data.fix_draft",
+            "data.validation_plan",
+        ],
         notes="Use the dedicated file list endpoint and submit a selected file for single-file review.",
     ),
     BuiltInSkillSpec(
@@ -119,7 +126,12 @@ BUILT_IN_SKILLS: tuple[BuiltInSkillSpec, ...] = (
         collector="user_requirement_and_optional_editor_context",
         rules=["code_reference_precheck", "non_writing_output_policy"],
         retrieval_domains=["code_reference", "examples", "engine_notes"],
-        projector_outputs=["user_view.blocks", "data.generated_code", "data.reference_matches"],
+        projector_outputs=[
+            "user_view.blocks",
+            "data.generated_code",
+            "data.reference_matches",
+            "data.validation_plan",
+        ],
         notes=(
             "Show the user prompt in the timeline, but render generated code as result "
             "buttons or tabs instead of one long chat block."
@@ -140,7 +152,7 @@ BUILT_IN_SKILLS: tuple[BuiltInSkillSpec, ...] = (
         collector="ue_log_text_payload",
         rules=["signature_extraction", "severity_grouping"],
         retrieval_domains=["incident_history", "engine_notes", "project_docs"],
-        projector_outputs=["user_view.blocks", "data.signatures", "data.recommendations"],
+        projector_outputs=["user_view.blocks", "data.signatures", "data.recommendations", "data.validation_plan"],
         notes="The plugin should collect or preview logs locally and send log_text to the backend for analysis.",
     ),
     BuiltInSkillSpec(
@@ -158,7 +170,12 @@ BUILT_IN_SKILLS: tuple[BuiltInSkillSpec, ...] = (
         collector="selected_asset_metadata_payload",
         rules=["asset_name_lint", "type_summary", "dependency_relationship_summary"],
         retrieval_domains=["asset_rules", "team_rules"],
-        projector_outputs=["user_view.blocks", "data.violations", "data.relationship_summary"],
+        projector_outputs=[
+            "user_view.blocks",
+            "data.violations",
+            "data.relationship_summary",
+            "data.validation_plan",
+        ],
         notes="The plugin must send selected asset metadata from the editor; the backend does not inspect raw .uasset files directly.",
     ),
 )

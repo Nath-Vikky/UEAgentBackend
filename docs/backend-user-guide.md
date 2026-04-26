@@ -536,6 +536,41 @@ Code Review 的 `user_view.blocks` 当前固定优先输出：
 - `references`：引用的知识库证据；没有命中时说明使用通用规则 fallback
 - `next_steps`：编译、编辑器验证、补充知识库等后续动作
 
+Code Review 现在还会在上述固定块之后追加面试演示用的轻量 Agent 工作流块：
+
+- `agent_workflow`：说明本轮是否按“采集代码 -> 规则扫描 -> 知识库参考 -> LLM 解释 -> 修复草稿 -> 验证清单”执行
+- `fix_draft`：非破坏性修复草稿，只给建议，不写入工程
+- `validation_plan`：编译、PIE、资产引用、日志复查等验证清单
+
+对应数据也会出现在：
+
+- `data.agent_workflow`
+- `data.fix_draft`
+- `data.validation_plan`
+- `data.localized_review.agent_workflow`
+- `data.localized_review.fix_draft`
+- `data.localized_review.validation_plan`
+
+这些字段用于展示“Agent 如何组合工具和推理步骤”，但仍保持个人作品边界：不自动改文件、不自动运行 UE 测试、不替代人工确认。
+
+### Validation Advisor
+
+为了让工具结果更贴近游戏研发流程，后端现在会在多个 Skill 中附加 `validation_plan`：
+
+- `Code Review`：修复建议之后，提示编译、PIE、UObject 生命周期、Tick、线程、资产引用、蓝图编译、日志复查。
+- `Code Generate`：生成草稿之后，提示手动放置文件、编译模块、检查 Build.cs、配置 Enhanced Input 资产、验证 Trace / Overlap / Subsystem 场景。
+- `Logs Analyze`：日志分析之后，提示保留完整日志窗口、复现步骤、首个 Error/Fatal、资产路径、相关模块。
+- `Assets Inspect`：资产检查之后，提示重命名确认、Fix Up Redirectors、蓝图编译、StaticMesh 设置、Reference Viewer。
+
+统一字段：
+
+- `data.validation_plan`
+- `user_view.blocks[block_type="validation_plan"]`
+- `step_results[].step_id = "build_validation_plan"`
+- `debug_view.tools[].tool_id = "build_validation_plan"`
+
+边界：这些都是建议，不代表后端已经修改工程、运行测试或保存资产。
+
 ### LLM 综合审查
 
 当 LLM 已配置且文件读取成功时，Code Review 会尝试额外进行 `llm_code_review_synthesis`：

@@ -1149,3 +1149,134 @@ UE 前端回传的 `frontend-unified-handoff.md` 已确认第 24 节 Code Genera
 - `data.citations`
 - `debug_view.retrieval.retrieved_docs`
 - `debug_view.local_search.items[].matched_terms`
+
+## 28. 2026-04-26 Code Review Agent Workflow v1
+
+后端本轮开始执行面试级 Agent 项目增强计划。没有新增主菜单，也没有改变 Code Review 请求方式；只是让现有 Code Review 在原有展示块之后追加“轻量 Agent 工作流”结果。
+
+### 后端新增字段
+
+Code Review 响应现在会继续保持前 6 个稳定块顺序：
+
+```text
+summary -> llm_analysis -> issues -> recommendations -> references -> next_steps
+```
+
+同时在后面追加：
+
+- `user_view.blocks[block_type="agent_workflow"]`
+- `user_view.blocks[block_type="fix_draft"]`
+- `user_view.blocks[block_type="validation_plan"]`
+
+对应 `data` 字段：
+
+- `data.agent_workflow`
+- `data.fix_draft`
+- `data.validation_plan`
+- `data.localized_review.agent_workflow`
+- `data.localized_review.fix_draft`
+- `data.localized_review.validation_plan`
+
+Debug View 中也会增加两个 step/tool：
+
+- `draft_fix_plan`
+- `build_validation_plan`
+
+### 字段含义
+
+`agent_workflow` 说明本轮按轻量 Agent 流程执行：
+
+```text
+collect code -> rule scan -> knowledge guidance -> LLM explanation -> fix draft -> validation plan
+```
+
+`fix_draft` 是非破坏性修复草稿：
+
+- `write_policy.written_to_disk=false`
+- `items[].is_virtual=true`
+- `items[].write_policy=not_written`
+- 只作为建议展示，不代表后端已经改工程文件
+
+`validation_plan` 是验证清单：
+
+- 编译相关模块
+- 打开编辑器并运行 PIE 烟测
+- 根据规则命中补充 UObject 生命周期、Tick 性能、线程上下文、资产引用、蓝图编译等检查项
+- 复查 Output Log，并可把日志继续送到 Logs Analyze
+
+### 前端是否必须修改
+
+当前不强制修改主 UI。因为后端把新增内容放在原有 6 个 Code Review 块之后，旧 UI 如果有通用 block fallback，应该可以直接看到文本。
+
+建议后续前端优化：
+
+- Code Review Highlights 弹窗新增三个可折叠区：`Agent Workflow`、`Fix Draft`、`Validation Plan`。
+- `fix_draft` 文案必须表达“建议 / 草稿 / 未写入工程”，不要写成“已修复”。
+- `validation_plan` 可以渲染成 checklist，但不要让用户误以为后端已经执行测试。
+
+### 下一次 UE 前端回传建议说明
+
+- 是否能看到新增的三个 block。
+- 是否把 `fix_draft.write_policy.written_to_disk=false` 当成正常状态。
+- 是否能显示 `validation_plan.items[].title/text/category`。
+- Code Review 原有 summary / llm_analysis / issues / recommendations 高亮按钮是否仍正常。
+
+## 29. 2026-04-26 Validation Advisor v1
+
+后端本轮把“验证清单”扩展到更多核心 Skill。它不是新主功能，而是各工具结果里的附加建议层，用来说明用户采纳生成内容或修复建议后，应该怎样在 UE 编辑器里验证。
+
+### 新增响应字段
+
+这些任务现在都会返回：
+
+- `data.validation_plan`
+- `user_view.blocks[block_type="validation_plan"]`
+- `debug_view.tools[].tool_id == "build_validation_plan"`
+- `step_results[].step_id == "build_validation_plan"`
+
+覆盖范围：
+
+- `Code Review`：和第 28 节一致，验证编译、PIE、UObject 生命周期、Tick、线程、资产引用、蓝图编译、日志复查。
+- `Code Generate`：验证手动放置草稿、编译模块、Build.cs、Enhanced Input 资产、Trace/Overlap/SubSystem 场景、PIE 烟测。
+- `Logs Analyze`：验证完整日志窗口、复现步骤、首个 Error/Fatal、资产路径、相关模块、首个编译错误。
+- `Assets Inspect`：验证重命名建议、Fix Up Redirectors、蓝图编译、StaticMesh 设置、Reference Viewer。
+
+### 前端是否必须修改
+
+不强制。后端仍把 `validation_plan` 作为普通 `user_view.blocks` 追加输出；如果旧 UI 有通用 block fallback，可以直接显示。
+
+建议统一优化：
+
+- 在 Code Review / Code Generate / Logs Analyze / Assets Inspect 结果区都把 `validation_plan` 渲染成 checklist。
+- 每一项读取 `items[].title`、`items[].text`、`items[].category`、`items[].automation_level`。
+- 文案要表达“建议 / 待验证”，不要写成“已执行测试”。
+
+### 下一次 UE 前端回传建议说明
+
+- 哪些面板已经展示了 `validation_plan`。
+- 是否把 `automation_level=manual_or_editor` 作为人工/编辑器验证提示。
+- 是否仍保持原有核心结果显示不变。
+
+## 30. 2026-04-26 UE 前端回传状态：Workflow / Validation 已对齐
+
+UE 前端回传的 `frontend-unified-handoff.md` 和 `backend-action-items.md` 已同步后端第 25-29 节，并确认当前处理策略：
+
+- 不新增主菜单，不改变 5 个核心入口。
+- Code Generate 常用 UE 代码生成仍按 `generated_items` 草稿按钮 / Tab 展示。
+- Agent Chat 的 `knowledge_catalog` 暂时通过普通回答和 Debug View Raw Response 查看。
+- Code Review 新增 `agent_workflow`、`fix_draft`、`validation_plan` 先走通用 User View block fallback。
+- Code Generate / Logs Analyze / Assets Inspect 的 `validation_plan` 也先走通用 block fallback。
+- Debug View 可查看 `data.agent_workflow`、`data.fix_draft`、`data.validation_plan`、`step_results`、`debug_view.tools`。
+
+当前后端判断：
+
+- 不需要新增接口字段。
+- 不需要后端为前端再改主流程。
+- 可以进入联调测试阶段。
+
+建议测试时重点观察：
+
+- Code Review 原有 `summary / llm_analysis / issues / recommendations` 是否仍正常。
+- Code Review 是否能看到 `agent_workflow / fix_draft / validation_plan`。
+- Code Generate / Logs Analyze / Assets Inspect 是否都能看到 `validation_plan`。
+- 前端文案是否保持“建议 / 草稿 / 未写入 / 待验证”，没有误写成“已修复 / 已执行测试”。

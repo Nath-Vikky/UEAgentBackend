@@ -629,3 +629,79 @@ UE 前端回传的 `frontend-unified-handoff.md` 已确认第 24 节的 Code Gen
 - `python -m pytest -p no:cacheprovider tests/unit/test_local_search_service.py -q` 通过。
 - `python -m pytest -p no:cacheprovider tests/integration/test_system_and_tasks.py::test_agent_chat_knowledge_catalog_lists_sources_without_code_bodies tests/integration/test_system_and_tasks.py::test_project_qa_chinese_actor_lifecycle_hits_engine_note -q` 通过。
 - `python -m ruff check app tests --no-cache` 通过。
+
+## 2026-04-26 Code Review Agent Workflow v1
+
+本轮开始执行面试级 Agent 项目增强计划，先选 Code Review 做最小闭环：不新增主菜单、不写入工程文件，而是在现有代码审查结果后追加“修复草稿”和“验证清单”，用于展示 Agent 如何组合工具链。
+
+### 主要代码改动
+
+- 新增 `app/agent/review_workflow_advisor.py`。
+- Code Review 输出新增 `data.agent_workflow`、`data.fix_draft`、`data.validation_plan`。
+- `user_view.blocks` 在原有 `summary -> llm_analysis -> issues -> recommendations -> references -> next_steps` 之后追加 `agent_workflow`、`fix_draft`、`validation_plan`。
+- Debug View 的 `tools` 和 `step_results` 增加 `draft_fix_plan`、`build_validation_plan`。
+- `fix_draft` 明确 `written_to_disk=false`、`is_virtual=true`，只作为建议展示。
+- `validation_plan` 会根据规则命中生成编译、PIE、UObject 生命周期、Tick 性能、线程上下文、资产引用、蓝图编译、Output Log 复查等检查项。
+- `skill_catalog` 的 CodeReviewSkill projector outputs 补充 `data.agent_workflow`、`data.fix_draft`、`data.validation_plan`。
+
+### 前端影响
+
+- 主 UI 不强制修改。
+- 旧 Code Review 高亮顺序不变，前 6 个 block 仍保持稳定。
+- 如果前端要增强展示，可在 Code Review 结果区新增三个折叠卡：Agent Workflow、Fix Draft、Validation Plan。
+
+### 验证
+
+- `python -m ruff check app/agent/review_workflow_advisor.py app/skills/executors/code_review.py app/skills/registry.py tests/integration/test_system_and_tasks.py --no-cache` 通过。
+- `python -m pytest -p no:cacheprovider tests/integration/test_system_and_tasks.py::test_code_review_file_listing_and_selected_file_review -q` 通过。
+
+## 2026-04-26 Validation Advisor v1
+
+本轮继续完成面试级 Agent 项目增强阶段 B：把验证建议从 Code Review 扩展到 Code Generate、Logs Analyze、Assets Inspect，形成“分析/生成之后告诉用户如何验证”的研发闭环。
+
+### 主要代码改动
+
+- 新增 `app/agent/validation_advisor.py`。
+- `CodeGenerateSkill` 新增 `data.validation_plan` 和 `validation_plan` 用户视图块。
+- `LogsAnalyzeSkill` 新增 `data.validation_plan` 和 `validation_plan` 用户视图块。
+- `AssetsInspectSkill` 新增 `data.validation_plan` 和 `validation_plan` 用户视图块。
+- 对应 Debug View / Step Results 增加 `build_validation_plan`。
+- `skill_catalog` 的 projector outputs 补充 `data.validation_plan`。
+
+### 当前边界
+
+- 不自动写入工程。
+- 不自动运行 UE 测试。
+- 不保存、重命名、迁移资产。
+- 只提供面向编辑器人工验证和后续日志分析的 checklist。
+
+## 2026-04-26 面试展示文档 v1
+
+本轮补齐面试展示和自学复盘入口，目标是让项目不只“能跑”，还可以在面试中快速讲清楚 Agent 架构和研发管线价值。
+
+### 新增文档
+
+- `docs/interview-demo-script.md`：5-8 分钟演示脚本，覆盖 Agent Chat、Code Generate、Code Review Workflow、Assets Inspect、Logs Analyze。
+- `docs/agent-project-study-notes.md`：复盘 Agent loop、Context / Memory、RAG / Local Grep、Skill、User View / Debug View、Validation Advisor、Project Inventory。
+
+### 文档入口
+
+- `README.md` 已加入两个新文档链接。
+
+## 2026-04-26 UE 前端回传复核：Workflow / Validation
+
+UE 前端回传的 `frontend-unified-handoff.md` 与 `backend-action-items.md` 已同步后端第 25-29 节。前端当前策略与后端一致：不新增主菜单、不改变核心接口，新增 `agent_workflow`、`fix_draft`、`validation_plan` 先通过通用 User View block fallback 和 Debug View Raw Response 承接。
+
+### 复核结论
+
+- Code Generate 常用 UE 场景继续使用 `generated_items` 草稿按钮 / Tab。
+- Agent Chat 的 `knowledge_catalog` 暂不做独立知识库目录 UI，先通过普通回答和 Debug View 查看。
+- Code Review 的 Workflow / Fix Draft / Validation Plan 不影响原有 summary、llm_analysis、issues、recommendations。
+- Code Generate、Logs Analyze、Assets Inspect 的 `validation_plan` 可先作为普通 block 展示。
+- 当前后端无需新增字段或调整接口，可进入联调测试阶段。
+
+### 测试关注
+
+- 前端不能把 `fix_draft` 展示成“已修复”。
+- 前端不能把 `validation_plan` 展示成“已执行测试”。
+- `written_to_disk=false`、`is_virtual=true`、`automation_level=manual_or_editor` 都是正常建议状态。

@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from app.agent.context_builder import build_context_summary
+from app.agent.review_workflow_advisor import build_review_workflow_advice
 from app.schemas.common import CitationPreview, QuickAction, UserViewBlock
 from app.schemas.requests import UnifiedTaskRequest
 from app.services.kb_service import KnowledgeBaseService
@@ -767,6 +768,16 @@ class CodeReviewSkillExecutor:
             llm_payload=llm_payload,
             output_language=output_language,
         )
+        workflow_advice = build_review_workflow_advice(
+            result=result,
+            localized_issues=localized_issues,
+            recommendations=recommendation_items,
+            llm_analysis=llm_analysis,
+            output_language=output_language,
+        )
+        agent_workflow = workflow_advice["agent_workflow"]
+        fix_draft = workflow_advice["fix_draft"]
+        validation_plan = workflow_advice["validation_plan"]
         review_scope = result.get("review_scope") or {}
         kb_reference_count = len(result.get("retrieved_references", []))
         evidence_note = _localized(
@@ -846,6 +857,30 @@ class CodeReviewSkillExecutor:
                     text="\n".join(str(item.get("text") or "") for item in next_step_items),
                     data={"items": next_step_items},
                 ).model_dump(mode="json"),
+                UserViewBlock(
+                    block_type="agent_workflow",
+                    title=_localized(output_language, "Agent 工作流摘要", "Agent Workflow Summary"),
+                    text=str(agent_workflow["summary"]),
+                    data=agent_workflow,
+                ).model_dump(mode="json"),
+                UserViewBlock(
+                    block_type="fix_draft",
+                    title=_localized(output_language, "修复草稿", "Fix Draft"),
+                    text="\n".join(
+                        f"{item.get('priority')}. {item.get('suggested_change')}"
+                        for item in fix_draft["items"][:5]
+                    ),
+                    data=fix_draft,
+                ).model_dump(mode="json"),
+                UserViewBlock(
+                    block_type="validation_plan",
+                    title=_localized(output_language, "验证清单", "Validation Plan"),
+                    text="\n".join(
+                        f"- {item.get('title')}: {item.get('text')}"
+                        for item in validation_plan["items"][:6]
+                    ),
+                    data=validation_plan,
+                ).model_dump(mode="json"),
             ],
             "citations_preview": _citation_previews(result["retrieved_references"]),
             "quick_actions": [
@@ -876,7 +911,13 @@ class CodeReviewSkillExecutor:
                 "recommendations": recommendation_items,
                 "references": reference_items,
                 "next_steps": next_step_items,
+                "agent_workflow": agent_workflow,
+                "fix_draft": fix_draft,
+                "validation_plan": validation_plan,
             },
+            "agent_workflow": agent_workflow,
+            "fix_draft": fix_draft,
+            "validation_plan": validation_plan,
             "sources": [{"title": item["title"], "source": item["source"]} for item in result["retrieved_references"]],
             "citations": result["retrieved_references"],
             "context_summary": build_context_summary(request),
@@ -887,6 +928,23 @@ class CodeReviewSkillExecutor:
             data["warnings"] = [*workflow["warnings"], load_error]
         base_debug["retrieval"] = workflow["retrieval_trace"]
         base_debug["local_search"] = workflow["retrieval_trace"].get("local_search", {})
+        workflow_step_results = [
+            *workflow["step_results"],
+            {
+                "step_id": "draft_fix_plan",
+                "title": "Draft Fix Plan",
+                "status": "completed",
+                "summary": f"Generated {len(fix_draft['items'])} non-destructive fix draft item(s).",
+                "details": fix_draft,
+            },
+            {
+                "step_id": "build_validation_plan",
+                "title": "Build Validation Plan",
+                "status": "completed",
+                "summary": f"Generated {len(validation_plan['items'])} validation item(s).",
+                "details": validation_plan,
+            },
+        ]
         base_debug["tools"] = [
             *workflow["tools"],
             {
@@ -894,8 +952,18 @@ class CodeReviewSkillExecutor:
                 "status": "completed" if llm_review.get("ok") else "skipped",
                 "summary": llm_review.get("reason") or "not_attempted",
             },
+            {
+                "tool_id": "draft_review_fix_plan",
+                "status": "completed",
+                "summary": f"Generated {len(fix_draft['items'])} advisory fix draft item(s).",
+            },
+            {
+                "tool_id": "build_validation_plan",
+                "status": "completed",
+                "summary": f"Generated {len(validation_plan['items'])} validation checklist item(s).",
+            },
         ]
-        base_debug["step_results"] = workflow["step_results"]
+        base_debug["step_results"] = workflow_step_results
         base_debug["raw_result"] = data
         base_debug["warnings"] = workflow["warnings"]
         if load_error:
@@ -906,7 +974,7 @@ class CodeReviewSkillExecutor:
             "data": data,
             "retrieval_trace": workflow["retrieval_trace"],
             "planner_diagnostics": routing["route"],
-            "step_results": workflow["step_results"],
+            "step_results": workflow_step_results,
             "action_proposals": workflow["action_proposals"],
             "errors": (
                 [

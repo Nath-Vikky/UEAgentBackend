@@ -1292,3 +1292,134 @@ domain 映射：
 - 用户问“知识库有哪些内容”时，回答应是目录概览，不应出现 `#include`、`UCLASS(` 这类源码正文。
 - 用户问“actor的生命周期是什么”时，`data.retrieved_docs` 或 Debug View 中应能看到 `knowledge/engine-notes/ue-actor-lifecycle.md`。
 - 如果 LLM 可用，最终回答可以由 LLM 综合表达，但 Debug View 必须能解释检索证据来源。
+
+## 2026-04-26 下一阶段计划：面试级 Agent 项目增强
+
+状态：计划中。
+
+目标：当前后端已经达到“可展示的个人 AI Agent 项目”基础线。下一阶段不再横向堆功能，而是围绕 AI 应用开发岗位更看重的“Agent 工作流、研发管线价值、可解释性、学习复盘”做增强，让项目更贴近游戏研发 AI 工具链。
+
+参考岗位职责映射：
+
+- 前沿 Agent 技术落地：强化 Planning / Tool Use / Context / Memory / RAG / Trace 的可解释演示。
+- 游戏研发工具链：围绕代码审查、代码生成、测试验证建议、资产检查形成闭环。
+- 引擎与工具流协同：继续保持 UE 插件采集上下文，后端负责决策、分析、生成和调试解释。
+
+### 开发边界
+
+- 不做企业级部署、权限、多租户、复杂云监控。
+- 不做动态 Skill marketplace 或复杂多 Agent 调度。
+- 不做真正写入 UE 工程文件、不自动执行危险修改。
+- 不做美术资产生成主链路，避免偏离后端 Agent 作品核心。
+- 不追求大型知识库规模，优先补少量高质量 UE 场景与演示样例。
+- 每个阶段都要能跑、能讲、能测试，避免把某个环节做到企业级深度。
+
+### 阶段 A：Workflow Demo v1
+
+状态：v1 已实现（先接入 Code Review，不新增主菜单）。
+
+目标：补一个面试展示用的轻量多步 Agent 工作流，让项目不只是多个独立工具，而是能体现“Agent 规划并组合工具”。
+
+建议工作流：
+
+- 输入：用户选择一个代码文件或提供代码审查任务。
+- Step 1：读取代码文件并做 Code Review。
+- Step 2：检索项目知识库 / UE 规则。
+- Step 3：生成修复方向和代码草稿。
+- Step 4：生成验证清单，包括编译、PIE、输入映射、日志观察、资产引用确认。
+- 输出：`review_summary`、`fix_draft`、`validation_plan`、`citations`、`decision_trace`。
+
+边界：
+
+- 不直接修改磁盘文件。
+- 不真的启动 UE 自动测试。
+- 先做单一路径：Code Review -> Fix Draft -> Validation Plan。
+- 可以复用现有 `CodeReviewSkill`、`CodeGenerateSkill`、Context Bundle、Decision Trace。
+
+本轮落地：
+
+- Code Review 响应新增 `data.agent_workflow`、`data.fix_draft`、`data.validation_plan`。
+- `user_view.blocks` 在原有 6 个稳定块之后追加 `agent_workflow`、`fix_draft`、`validation_plan`。
+- `fix_draft` 明确是虚拟草稿，`written_to_disk=false`，不写入工程文件。
+- `validation_plan` 根据规则命中生成编译、PIE、UObject 生命周期、Tick 性能、线程上下文、资产引用、蓝图编译和日志复查建议。
+- Debug View 增加 `draft_fix_plan` 和 `build_validation_plan` step/tool，用于面试演示 Agent 工作流。
+
+### 阶段 B：Test / Validation Advisor
+
+状态：v1 已实现（四个工具型核心 Skill 已接入 validation_plan）。
+
+目标：覆盖岗位职责里的“自动化测试和优化”，但保持个人项目可控范围。
+
+能力形态：
+
+- 根据代码审查结果生成验证建议。
+- 根据日志分析结果生成复现步骤和排查清单。
+- 根据资产检查结果生成编辑器侧人工确认步骤。
+- 根据代码生成结果提示 Build.cs、编译、PIE、输入绑定、蓝图资产配置等检查项。
+
+边界：
+
+- 第一版只生成建议和 checklist，不自动执行测试。
+- 不集成复杂 CI。
+- 不依赖 Unreal Automation Tool 真实运行。
+- 前端可以先把它作为结果卡片展示，不新增复杂面板。
+
+本轮落地：
+
+- `Code Review`：输出 `data.validation_plan`，覆盖编译、PIE、UObject 生命周期、Tick、线程上下文、资产引用、蓝图编译、日志复查。
+- `Code Generate`：输出 `data.validation_plan`，覆盖手动放置草稿、编译、Build.cs、Enhanced Input 资产、Trace/Overlap/Subsystem 场景和 PIE 烟测。
+- `Logs Analyze`：输出 `data.validation_plan`，覆盖完整日志窗口、复现步骤、首个 Error/Fatal、资产路径、相关模块和编译错误。
+- `Assets Inspect`：输出 `data.validation_plan`，覆盖重命名确认、Fix Up Redirectors、蓝图编译、StaticMesh 设置、Reference Viewer。
+- Debug View 统一增加 `build_validation_plan` step/tool，便于面试演示“分析 -> 建议 -> 验证”的研发闭环。
+
+### 阶段 C：面试展示与学习文档
+
+状态：v1 已实现（新增演示脚本和学习复盘）。
+
+目标：把项目讲清楚，让面试官能快速看到架构能力，而不是只看到接口列表。
+
+需要补充：
+
+- `docs/interview-demo-script.md`：5 分钟演示脚本。
+- `docs/agent-project-study-notes.md`：学习复盘，解释 Agent、RAG、Memory、Tool Use、Skill、Trace。
+- 架构图或文字架构：UE Plugin -> FastAPI -> Router -> Context Manager -> Skill -> RAG / Inventory / LLM -> User View / Debug View。
+- Demo 场景：代码审查、代码生成、项目问答、知识库目录、资产快照问答。
+- 对比说明：为什么不是普通 ChatBot，为什么是面向游戏研发管线的 Agent 工具。
+
+边界：
+
+- 文档服务于面试讲解和自学，不写成百科。
+- 每个知识点结合本项目代码解释，不空泛罗列概念。
+- 控制篇幅，优先可讲、可演示、可复盘。
+
+本轮落地：
+
+- 新增 `docs/interview-demo-script.md`：5-8 分钟演示脚本，覆盖 Agent Chat、Code Generate、Code Review Workflow、Assets Inspect、Logs Analyze。
+- 新增 `docs/agent-project-study-notes.md`：复盘 Agent loop、Context / Memory、RAG / Local Grep、Skill、User View / Debug View、Validation Advisor、Project Inventory。
+- `README.md` 补充两个文档入口。
+
+### 阶段 D：知识库质量小步增强
+
+目标：继续提升 RAG / local grep 的实际命中质量，但不做大规模爬虫或官方文档镜像。
+
+优先补：
+
+- Character / Pawn / PlayerController / GameMode 常见协作。
+- Enhanced Input 常见坑：Mapping Context 优先级、LocalPlayerSubsystem、资产引用。
+- Actor Component 交互模式：Overlap、LineTrace、Interface、Event Dispatcher。
+- Asset / Blueprint 常见检查项：Tick、Replication、父类、变量暴露、循环依赖。
+- Build.cs / Module 依赖常见错误。
+
+边界：
+
+- 每个主题优先 1 篇 engine note + 1 个最小代码参考。
+- 保留 source_url / topic / use_for，合法合规整理。
+- 不追求覆盖全部 UE 文档。
+
+### 面试完成标准
+
+- 能演示一个完整 Agent 工作流，而不是只演示单接口。
+- 能清楚解释上下文如何进入 LLM、知识库如何参与回答、工具如何被选择。
+- 能展示 Debug View / Decision Trace，说明每一步为什么发生。
+- 能说明项目边界：个人作品级、稳定可用、非企业部署。
+- 能把项目和游戏研发管线关联起来：代码、资产、日志、知识库、验证建议。

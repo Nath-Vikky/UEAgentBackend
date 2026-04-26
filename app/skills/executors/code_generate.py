@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.agent.context_builder import build_context_summary
+from app.agent.validation_advisor import build_code_generation_validation_plan
 from app.schemas.common import CitationPreview, QuickAction, UserViewBlock
 from app.schemas.requests import UnifiedTaskRequest
 from app.services.code_generation_service import CodeGenerationService
@@ -58,6 +59,10 @@ class CodeGenerateSkillExecutor:
             chat_config=chat_config,
         )
         result = execution["result"]
+        validation_plan = build_code_generation_validation_plan(
+            result=result,
+            output_language=output_language,
+        )
         user_text = _localized(
             output_language,
             "已生成代码结果草稿，当前只返回非破坏性的结果，不会直接写入工程。",
@@ -86,6 +91,15 @@ class CodeGenerateSkillExecutor:
                     ),
                     data={"generated_items": result["generated_items"]},
                 ).model_dump(mode="json"),
+                UserViewBlock(
+                    block_type="validation_plan",
+                    title=_localized(output_language, "验证清单", "Validation Plan"),
+                    text="\n".join(
+                        f"- {item.get('title')}: {item.get('text')}"
+                        for item in validation_plan["items"][:6]
+                    ),
+                    data=validation_plan,
+                ).model_dump(mode="json"),
             ],
             "citations_preview": _citation_previews(result["retrieved_references"]),
             "quick_actions": [
@@ -103,11 +117,29 @@ class CodeGenerateSkillExecutor:
             "context_summary": build_context_summary(request),
             "context_bundle": context_bundle,
             "warnings": execution["warnings"],
+            "validation_plan": validation_plan,
         }
+        step_results = [
+            *execution["step_results"],
+            {
+                "step_id": "build_validation_plan",
+                "title": "Build Validation Plan",
+                "status": "completed",
+                "summary": f"Generated {len(validation_plan['items'])} generated-code validation item(s).",
+                "details": validation_plan,
+            },
+        ]
         base_debug["retrieval"] = execution["retrieval_trace"]
         base_debug["local_search"] = result.get("local_search", {})
-        base_debug["tools"] = execution["tools"]
-        base_debug["step_results"] = execution["step_results"]
+        base_debug["tools"] = [
+            *execution["tools"],
+            {
+                "tool_id": "build_validation_plan",
+                "status": "completed",
+                "summary": f"Generated {len(validation_plan['items'])} generated-code validation item(s).",
+            },
+        ]
+        base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
         base_debug["warnings"] = execution["warnings"]
         return {
@@ -116,7 +148,7 @@ class CodeGenerateSkillExecutor:
             "data": data,
             "retrieval_trace": execution["retrieval_trace"],
             "planner_diagnostics": routing["route"],
-            "step_results": execution["step_results"],
+            "step_results": step_results,
             "action_proposals": execution["action_proposals"],
             "errors": [],
             "assistant_message": user_text,

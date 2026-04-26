@@ -1567,11 +1567,21 @@ def test_code_review_file_listing_and_selected_file_review(client: TestClient) -
             "references",
             "next_steps",
         ]
+        block_types = [block["block_type"] for block in body["user_view"]["blocks"]]
+        assert "agent_workflow" in block_types
+        assert "fix_draft" in block_types
+        assert "validation_plan" in block_types
         assert body["data"]["llm_analysis"]["status"] == "skipped"
         assert body["data"]["llm_analysis"]["reason_code"] == "missing_openai_api_key"
         assert "api key" in body["data"]["llm_analysis"]["reason"].lower()
         assert body["data"]["localized_review"]["issues"]
         assert body["data"]["llm_review"]["reason"] == "missing_openai_api_key"
+        assert body["data"]["agent_workflow"]["version"] == "review_fix_validation_workflow_v1"
+        assert body["data"]["fix_draft"]["write_policy"]["written_to_disk"] is False
+        assert any(item["rule_id"] == "hardcoded_asset_path" for item in body["data"]["fix_draft"]["items"])
+        assert any(item["category"] == "asset_reference" for item in body["data"]["validation_plan"]["items"])
+        assert any(step["step_id"] == "draft_fix_plan" for step in body["step_results"])
+        assert any(tool["tool_id"] == "build_validation_plan" for tool in body["debug_view"]["tools"])
     finally:
         shutil.rmtree(project_root, ignore_errors=True)
 
@@ -2068,7 +2078,11 @@ def test_logs_analyze_workflow_returns_structured_events(client: TestClient) -> 
         "Suggested Actions",
         "Captured Log Window",
         "Affected Modules / Resources",
+        "Validation Plan",
     ]
+    assert body["data"]["validation_plan"]["items"]
+    assert any(item["category"] == "asset_validation" for item in body["data"]["validation_plan"]["items"])
+    assert any(step["step_id"] == "build_validation_plan" for step in body["step_results"])
     assert body["debug_view"]["skill"]["skill_id"] == "LogsAnalyzeSkill"
     assert body["debug_view"]["skill"]["collector"] == "ue_log_text_payload"
     assert body["trace_summary"]["skill_id"] == "LogsAnalyzeSkill"
@@ -2182,7 +2196,11 @@ def test_code_generate_returns_draft_and_artifact(client: TestClient) -> None:
     assert [block["block_type"] for block in body["user_view"]["blocks"]] == [
         "summary",
         "generated_items",
+        "validation_plan",
     ]
+    assert body["data"]["validation_plan"]["items"]
+    assert body["data"]["validation_plan"]["write_policy"]["written_to_disk"] is False
+    assert any(item["category"] == "compile" for item in body["data"]["validation_plan"]["items"])
     assert body["debug_view"]["skill"]["skill_id"] == "CodeGenerateSkill"
     assert body["debug_view"]["skill"]["collector"] == "user_requirement_and_optional_editor_context"
     assert body["trace_summary"]["skill_id"] == "CodeGenerateSkill"
@@ -2460,6 +2478,9 @@ def test_assets_inspect_returns_violations(client: TestClient) -> None:
     assert body["data"]["llm_analysis"]["status"] == "skipped"
     assert body["data"]["llm_analysis"]["reason_code"] == "missing_openai_api_key"
     assert "api key" in body["data"]["llm_analysis"]["reason"].lower()
+    assert body["data"]["validation_plan"]["items"]
+    assert any(item["category"] == "asset_management" for item in body["data"]["validation_plan"]["items"])
+    assert any(block["block_type"] == "validation_plan" for block in body["user_view"]["blocks"])
 
 
 def test_assets_inspect_can_summarize_types_and_relationships(client: TestClient) -> None:
