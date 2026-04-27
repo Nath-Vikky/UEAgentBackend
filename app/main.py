@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse
 from app.api.errors import install_exception_handlers
 from app.api.router import api_router
 from app.core.settings import get_settings
+from app.core.startup_checks import collect_startup_checks
 from app.db.base import Base
 from app.db.models import (  # noqa: F401
     AuditLogModel,
@@ -49,6 +50,15 @@ async def lifespan(_: FastAPI):
     session_factory = get_session_factory()
     with session_factory() as db:
         RuntimeProfileService(db, settings).ensure_seeded()
+    startup_checks = collect_startup_checks(settings, database_status="ok")
+    logger = logging.getLogger("ue-agent-backend")
+    for item in startup_checks["checks"]:
+        if item["status"] in {"warning", "error"}:
+            logger.warning(
+                "Startup check %s: %s",
+                item["check_id"],
+                item["message"],
+            )
     logging.getLogger("ue-agent-backend").info(
         "Settings summary: %s",
         redact_payload(

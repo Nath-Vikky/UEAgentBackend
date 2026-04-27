@@ -59,6 +59,182 @@
 - `/api/v1/system/alerts`
 - `/api/v1/chat/runs/{run_id}/events/stream`
 
+### Tool Registry 与 ReAct Lite
+
+- 工具能力统一登记在 `app/tools/registry.py`。
+- 每个工具都有 capability card：`tool_id`、`task_type`、描述、触发词、输入字段、副作用级别、超时、`input_schema` 和 `output_schema`。
+- `/api/v1/system/capabilities` 会返回 `capabilities.tool_registry.tools`，方便前端和面试展示查看当前后端支持哪些工具。
+- `Agent Chat / Project QA` 会在 Debug View 输出 `react_loop`，展示轻量版 `thought -> action -> observation -> final` 轨迹。
+- 当前 ReAct Lite 只用于可解释工具决策，不会让 LLM 自动写入工程或执行危险操作。
+
+当前 `Agent Chat / Project QA` 的受控工具白名单：
+
+- `retrieve_project_knowledge`：检索知识库。
+- `query_project_inventory`：查询 UE 插件提交的项目资产/代码快照。
+- `read_project_file`：只读读取当前 UE 项目内的文本/code 文件。
+
+`read_project_file` 使用条件：
+
+- 前端需要传 `context.project_root`。
+- 前端需要传 `context.current_file`，或 payload 中传 `file_path/read_file_path`。
+- 后端会校验文件必须位于 `project_root` 内。
+- 只允许读取 `.h/.cpp/.cs/.md/.txt/.json/.ini/.uproject/.uplugin/.yaml/.yml` 等文本文件。
+- 默认最多读取约 40KB，最大 120KB。
+- 只读，不写入、不删除、不移动、不执行。
+
+### Tool Contract
+
+后端有轻量工具契约校验：
+
+- `validate_tool_registry()`：启动时检查工具注册表。
+- `validate_tool_call_input()`：检查 ReAct 工具调用输入是否满足 required/type。
+- `validate_tool_result()`：检查工具结果是否满足 required/type。
+
+查看位置：
+
+- `GET /api/v1/system/health` 的 `startup_checks.tool_registry_contracts`
+- `Project QA` 响应的 `data.tool_contracts`
+- `Debug View` 的 `debug_view.tool_contracts`
+
+这层校验不引入重依赖，只用于作品级稳定性和 Debug 透明度，不会替代完整企业级 schema 平台。
+
+### Self-Reflection
+
+后端会在回答生成后做一次轻量自检：
+
+- `data.self_reflection`
+- `debug_view.self_reflection`
+- `agent_decision_trace.decisions.self_reflection_decision`
+
+它检查：
+
+- 回答是否为空。
+- Project QA 是否有知识库、项目快照或当前文件证据。
+- 置信度是否偏低。
+- 是否出现降级 warning。
+- Direct Answer 是否使用了 live LLM。
+
+这不是额外的 LLM 评审，不增加模型调用成本；它主要用于 Debug View 和面试讲解“回答质量自检”。
+
+### 轻量长期记忆
+
+后端现在支持项目级轻量长期记忆：
+
+- 用户说“请记住”“项目约定”“UE 版本是 5.4”“蓝图命名要加 BP_ 前缀”等内容时，后端会做确定性抽取。
+- 记忆保存在当前 session 的 `metadata_json.long_term_memory_items`。
+- 新 session 中，如果 `context.project_name` 相同，Context Bundle 会召回相关记忆。
+- 召回结果在 `data.context_bundle.long_term_memory` 和 `debug_view.memory_summary.long_term_memory` 中可见。
+
+示例：
+
+```text
+请记住：我们的项目 UE 版本是 5.4，所有蓝图命名要加 BP_ 前缀。
+```
+
+之后新会话继续传同一个 `project_name`，询问：
+
+```text
+创建新蓝图应该注意什么？
+```
+
+后端会把 UE 版本和 `BP_` 命名前缀作为长期项目记忆注入上下文。
+
+边界：
+
+- 不调用额外 LLM 抽取记忆。
+- 不使用 Qdrant 做向量记忆。
+- 不做用户画像或推荐系统。
+- 清理 session 会清掉该 session 自己保存的长期记忆，其他 session 的同项目记忆不受影响。
+
+### 配置校验
+
+启动服务和访问 `GET /api/v1/system/health` 时可以查看 `startup_checks`：
+
+- `llm_api_key`：未配置 `OPENAI_API_KEY` 时是 warning，服务仍可启动，LLM 相关能力走降级。
+- `chat_model`：为空会标记 error，需要设置 `CHAT_MODEL`。
+- `database`：检查数据库连接状态。
+- `storage_dirs`：检查 storage、uploads、artifacts、kb 目录。
+- `kb_source_paths`：检查 `KB_SOURCE_PATHS` 指向的知识库源目录是否存在。
+- `qdrant_config`：提示向量检索配置状态；如果只用本地 lexical RAG，可以设置 `EMBEDDING_ENABLED=false`。
+
+### 面试增强验证
+
+本项目现在保留 4 类验证：
+
+- 单元测试：`tests/unit`
+- 集成测试：`tests/integration`
+- 契约测试：`tests/contract`
+- Eval：`tests/eval`
+
+常用命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/unit tests/integration tests/contract tests/eval
+.\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path ..\backend.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output docs\rag-eval-report.md
+```
+
+GitHub Actions 已提供 CI smoke：Ruff、pytest、RAG eval。CI 只用于验证，不做部署。
+
+`docs/rag-eval-report.md` 是给面试和复盘看的 Markdown 报告，展示 `hit_at_k`、`mrr`、`route_accuracy`、`citation_coverage` 等核心指标。当前评估是 smoke 级别，用于证明“可测、可复现、可继续优化”，不是企业级大规模 benchmark。
+
+### Docker 本地演示
+
+本项目提供轻量 Docker / Compose 入口，用于面试演示和项目留档：
+
+```powershell
+docker compose up --build
+```
+
+默认服务：
+
+- `app`: `http://127.0.0.1:8000`
+- `qdrant`: `http://127.0.0.1:6333`
+
+默认边界：
+
+- Compose 默认 `EMBEDDING_ENABLED=false`，先跑 lexical RAG。
+- Qdrant 服务会启动，但向量检索是否启用由 `.env` / compose 环境变量决定。
+- 不做云部署、不做 K8s、不做镜像推送。
+- `storage` 和 `qdrant_data` 使用 Docker volume 保存。
+
+常用命令：
+
+```powershell
+docker compose down
+docker compose logs -f app
+```
+
+如果本机有 `make`，也可以用：
+
+```powershell
+make docker-up
+make docker-down
+```
+
+### 可选 Token SSE 流式入口
+
+后端现在新增了可选聊天流式入口：
+
+- `POST /api/v1/chat/runs/stream`
+
+它只用于 `Agent Chat / Project QA`，不会改变 Code Review、Code Generate、Logs Analyze、Assets Inspect 的同步返回方式。旧接口仍然保留：
+
+- `POST /api/v1/chat/runs`
+- `GET /api/v1/chat/runs/{run_id}/events/stream`
+
+两者区别：
+
+- `POST /chat/runs`：非流式，返回完整 JSON，当前 UE 插件默认继续使用它。
+- `GET /chat/runs/{run_id}/events/stream`：历史事件回放，用于查看已持久化事件。
+- `POST /chat/runs/stream`：可选实时 SSE，事件名包括 `stream_opened`、`run_started`、`tool_call`、`tool_result`、`assistant_delta`、`final`、`error`。
+
+边界：
+
+- 必须保留非流式 fallback。
+- 当前只在最终 LLM 回答阶段推送 `assistant_delta`；检索、Inventory、文件读取以 `tool_call/tool_result` 事件说明进度。
+- LLM 不可用时仍会返回 `final`，但不会强行伪造 token。
+- UE 前端需要支持 `text/event-stream` 持续读取和逐 token 更新同一条 assistant 气泡后，才建议正式接入。
+
 ## 3. 当前后端架构
 
 ### 接口层
@@ -1400,7 +1576,7 @@ POST /api/v1/sessions
 本地 RAG 评测命令：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_rag_eval.py --dataset tests\eval\rag_project_qa_dataset.jsonl
+.\.venv\Scripts\python.exe scripts\run_rag_eval.py --dataset tests\eval\rag_project_qa_dataset.jsonl --markdown-output docs\rag-eval-report.md
 ```
 
 评测 summary 会包含：
@@ -1415,6 +1591,8 @@ POST /api/v1/sessions
 - `citation_coverage`
 - `low_confidence_ratio`
 - `no_result_ratio`
+
+如果加上 `--markdown-output`，脚本会额外生成 `docs/rag-eval-report.md`，方便直接给面试官展示每条 case 的路由、语言、命中来源和核心指标。
 
 ### 18.13 Skill Protocol v1
 

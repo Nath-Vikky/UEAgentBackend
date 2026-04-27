@@ -50,7 +50,9 @@ def build_agent_decision_trace(
     locale = dict(routing.get("locale") or {})
     context_budget = dict(context_bundle.get("budget") or {})
     session_summary = dict(context_bundle.get("session_summary") or {})
+    long_term_memory = dict(context_bundle.get("long_term_memory") or {})
     tool_plan = dict(data.get("tool_plan") or debug_view.get("tool_plan") or {})
+    self_reflection = dict(data.get("self_reflection") or debug_view.get("self_reflection") or {})
     memory_summary = dict(debug_view.get("memory_summary") or {})
     updated_memory = dict(memory_summary.get("updated_session_memory") or {})
     retrieval_mode = str(retrieval_trace.get("mode") or "not_used")
@@ -129,12 +131,15 @@ def build_agent_decision_trace(
             details=skill_runtime,
         ),
         "memory_decision": _decision(
-            decision=str(updated_memory.get("status") or session_summary.get("status") or "not_available"),
-            reason="Session memory is used as compact context when available; tools remain in tool_context.",
+            decision=str(long_term_memory.get("status") or updated_memory.get("status") or session_summary.get("status") or "not_available"),
+            reason="Session summary and project-scoped long-term memory are injected as compact context when available.",
             source="memory_manager",
             confidence=1.0,
             details={
                 "session_summary_status": session_summary.get("status"),
+                "long_term_memory_status": long_term_memory.get("status"),
+                "long_term_memory_count": long_term_memory.get("count", 0),
+                "long_term_memory_items": long_term_memory.get("items", []),
                 "updated_session_memory": updated_memory,
             },
         ),
@@ -149,6 +154,17 @@ def build_agent_decision_trace(
                 "warnings": warnings,
             },
             warnings=warnings,
+        ),
+        "self_reflection_decision": _decision(
+            decision=str(self_reflection.get("status") or "not_available"),
+            reason="Checked answer presence, grounding evidence, confidence, and degraded warnings after execution.",
+            source="self_reflection",
+            confidence=self_reflection.get("confidence"),
+            details={
+                "grounding_level": self_reflection.get("grounding_level"),
+                "evidence_counts": self_reflection.get("evidence_counts", {}),
+                "recommendations": self_reflection.get("recommendations", []),
+            },
         ),
         "final_response_plan": _decision(
             decision=finish_reason,

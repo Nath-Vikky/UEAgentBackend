@@ -1,0 +1,43 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        INSTALL_EXTRAS: ""
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: dev
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8000"
+      APP_CORS_ORIGINS: http://127.0.0.1,http://localhost
+      DATABASE_URL: sqlite:////app/storage/app.db
+      STORAGE_DIR: /app/storage
+      UPLOAD_DIR: /app/storage/uploads
+      ARTIFACT_DIR: /app/storage/artifacts
+      KB_DIR: /app/storage/kb
+      KB_SOURCE_PATHS: /app/knowledge
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      CHAT_MODEL: ${CHAT_MODEL:-gpt-4.1-mini}
+      EMBEDDING_ENABLED: ${EMBEDDING_ENABLED:-false}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-ue_agent_default}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+    volumes:
+      - ue_agent_storage:/app/storage
+      - ./knowledge:/app/knowledge:ro
+    depends_on:
+      qdrant:
+        condition: service_started
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  ue_agent_storage:
+  qdrant_data:

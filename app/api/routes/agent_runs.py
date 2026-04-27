@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Iterator
+from queue import Empty, Queue
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -10,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_app_settings, get_db
 from app.api.errors import APIError
 from app.core.settings import Settings
+from app.db.session import get_session_factory
 from app.schemas.common import DebugView, UserView
 from app.schemas.requests import UnifiedTaskRequest
 from app.schemas.responses import UnifiedTaskResponse
@@ -24,6 +27,76 @@ def _sse_payload(events: list[dict]) -> Iterator[str]:
         yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
 
 
+def _sse_item(item: dict) -> str:
+    event_name = str(item.get("event") or "message")
+    return f"event: {event_name}\ndata: {json.dumps(item, ensure_ascii=False)}\n\n"
+
+
+def _stream_chat_run_payload(
+    request: UnifiedTaskRequest,
+    settings: Settings,
+) -> Iterator[str]:
+    event_queue: Queue[dict | None] = Queue()
+
+    def enqueue(item: dict) -> None:
+        event_queue.put(item)
+
+    def worker() -> None:
+        try:
+            session_factory = get_session_factory()
+            with session_factory() as db:
+                request.task_type = "agent_chat"
+                request.runtime_options.stream = True
+                TaskService(db, settings).create_task(request, stream_sink=enqueue)
+        except Exception as exc:  # pragma: no cover - defensive streaming wrapper
+            enqueue(
+                {
+                    "event": "error",
+                    "seq": -1,
+                    "run_id": None,
+                    "task_id": None,
+                    "payload": {
+                        "reason": "stream_execution_failed",
+                        "error": str(exc),
+                    },
+                }
+            )
+        finally:
+            event_queue.put(None)
+
+    yield _sse_item(
+        {
+            "event": "stream_opened",
+            "seq": 0,
+            "run_id": None,
+            "task_id": None,
+            "payload": {
+                "streaming_mode": "token_sse_optional",
+                "fallback_endpoint": "/api/v1/chat/runs",
+            },
+        }
+    )
+    thread = threading.Thread(target=worker, name="chat-run-sse-worker", daemon=True)
+    thread.start()
+    while True:
+        try:
+            item = event_queue.get(timeout=15.0)
+        except Empty:
+            yield _sse_item(
+                {
+                    "event": "heartbeat",
+                    "seq": -1,
+                    "run_id": None,
+                    "task_id": None,
+                    "payload": {"status": "running"},
+                }
+            )
+            continue
+        if item is None:
+            break
+        yield _sse_item(item)
+
+
 @router.post("", response_model=UnifiedTaskResponse)
 def create_chat_run(
     request: UnifiedTaskRequest,
@@ -32,6 +105,21 @@ def create_chat_run(
 ) -> UnifiedTaskResponse:
     request.task_type = "agent_chat"
     return TaskService(db, settings).create_task(request)
+
+
+@router.post("/stream")
+def create_chat_run_stream(
+    request: UnifiedTaskRequest,
+    settings: Settings = Depends(get_app_settings),
+) -> StreamingResponse:
+    return StreamingResponse(
+        _stream_chat_run_payload(request, settings),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/{run_id}", response_model=UnifiedTaskResponse)

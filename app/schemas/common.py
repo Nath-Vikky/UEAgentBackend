@@ -110,6 +110,8 @@ class DebugView(BaseModel):
     retrieval_summary: dict[str, Any] = Field(default_factory=dict)
     local_search: dict[str, Any] = Field(default_factory=dict)
     inventory: dict[str, Any] = Field(default_factory=dict)
+    project_file: dict[str, Any] = Field(default_factory=dict)
+    tool_contracts: dict[str, Any] = Field(default_factory=dict)
     tools: list[dict[str, Any]] = Field(default_factory=list)
     step_results: list[dict[str, Any]] = Field(default_factory=list)
     raw_result: dict[str, Any] = Field(default_factory=dict)
@@ -118,6 +120,8 @@ class DebugView(BaseModel):
     metrics: dict[str, Any] = Field(default_factory=dict)
     context_bundle: dict[str, Any] = Field(default_factory=dict)
     agent_decision_trace: dict[str, Any] = Field(default_factory=dict)
+    react_loop: dict[str, Any] = Field(default_factory=dict)
+    self_reflection: dict[str, Any] = Field(default_factory=dict)
     session_summary: dict[str, Any] = Field(default_factory=dict)
     memory_summary: dict[str, Any] = Field(default_factory=dict)
     output_complete: bool = True

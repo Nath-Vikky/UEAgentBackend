@@ -5,6 +5,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -63,6 +64,24 @@ def _extract_text(content: Any) -> str:
             if isinstance(text_value, str) and text_value.strip():
                 fragments.append(text_value.strip())
         return "\n".join(fragments).strip()
+    return ""
+
+
+def _extract_delta_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        fragments: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                fragments.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            text_value = item.get("text")
+            if isinstance(text_value, str):
+                fragments.append(text_value)
+        return "".join(fragments)
     return ""
 
 
@@ -243,6 +262,7 @@ class LLMService:
         *,
         messages: list[dict[str, str]],
         config: ChatRuntimeConfig,
+        stream_sink: Callable[[str], None] | None = None,
     ) -> dict[str, Any]:
         available, reason = self.availability(config)
         if not available:
@@ -255,6 +275,12 @@ class LLMService:
                 "profile_id": config.profile_id,
                 "usage": default_usage(),
             }
+        if stream_sink:
+            return self._complete_stream(
+                messages=messages,
+                config=config,
+                stream_sink=stream_sink,
+            )
 
         url = self._chat_completions_url()
         request_payload = {
@@ -295,6 +321,85 @@ class LLMService:
                 "usage": {
                     "input_tokens": int(usage_payload.get("prompt_tokens") or 0),
                     "output_tokens": int(usage_payload.get("completion_tokens") or 0),
+                    "estimated_cost_usd": 0.0,
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                },
+            }
+        except Exception as exc:  # pragma: no cover - depends on live remote endpoint
+            return {
+                "ok": False,
+                "provider": "openai_compatible",
+                "reason": "request_failed",
+                "error": str(exc),
+                "model": config.model,
+                "profile_id": config.profile_id,
+                "usage": default_usage(),
+            }
+
+    def _complete_stream(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        config: ChatRuntimeConfig,
+        stream_sink: Callable[[str], None],
+    ) -> dict[str, Any]:
+        url = self._chat_completions_url()
+        request_payload = {
+            "model": config.model,
+            "messages": messages,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+            "stream": True,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.settings.openai_api_key}",
+            "Content-Type": "application/json",
+        }
+        started = time.perf_counter()
+        fragments: list[str] = []
+        finish_reason = "completed"
+        model_name = config.model
+        try:
+            with httpx.Client(timeout=self._client_timeout(config)) as client:
+                with client.stream("POST", url, headers=headers, json=request_payload) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines():
+                        if not line:
+                            continue
+                        if line.startswith("data:"):
+                            line = line[len("data:") :].strip()
+                        if line == "[DONE]":
+                            break
+                        try:
+                            payload = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if payload.get("model"):
+                            model_name = str(payload["model"])
+                        choice = (payload.get("choices") or [{}])[0]
+                        finish_reason = choice.get("finish_reason") or finish_reason
+                        delta = choice.get("delta") or {}
+                        text_delta = _extract_delta_text(delta.get("content"))
+                        if not text_delta:
+                            continue
+                        fragments.append(text_delta)
+                        stream_sink(text_delta)
+            text = "".join(fragments).strip()
+            if not text:
+                raise ValueError("empty_completion_text")
+            return {
+                "ok": True,
+                "provider": "openai_compatible",
+                "reason": "completed",
+                "error": "",
+                "model": model_name,
+                "profile_id": config.profile_id,
+                "finish_reason": finish_reason,
+                "endpoint": url,
+                "text": text,
+                "usage": {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
                     "estimated_cost_usd": 0.0,
                     "latency_ms": int((time.perf_counter() - started) * 1000),
                 },

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.rag.evaluation.metrics import evaluate_case, summarize_cases
+from app.rag.evaluation.reporting import build_markdown_report
 
 
 def test_evaluate_case_tracks_rank_and_language() -> None:
@@ -98,3 +99,35 @@ def test_evaluate_case_deduplicates_same_source_hits() -> None:
     assert result["retrieved_sources"] == ["backend.md"]
     assert result["metrics"]["recall_at_k"] == 1.0
     assert result["metrics"]["ndcg_at_k"] == 1.0
+
+
+def test_build_markdown_report_includes_summary_and_cases() -> None:
+    report = {
+        "generated_at": "2026-04-27T00:00:00+00:00",
+        "dataset_path": "tests/eval/rag_project_qa_dataset.jsonl",
+        "source_paths": ["./knowledge", "./docs"],
+        "top_k": 4,
+        "summary": {
+            "cases": 1,
+            "hit_at_k": 1.0,
+            "route_accuracy": 1.0,
+            "citation_coverage": 1.0,
+        },
+        "cases": [
+            {
+                "case_id": "ue-enhanced-input",
+                "route_ok": True,
+                "language_ok": True,
+                "confidence": 0.9,
+                "matched_sources": ["enhanced-input-character.md"],
+                "metrics": {"hit_at_k": 1.0, "mrr": 1.0},
+            }
+        ],
+    }
+
+    markdown = build_markdown_report(report)
+
+    assert "# RAG Eval Report" in markdown
+    assert "| `hit_at_k` | 1.0000 |" in markdown
+    assert "`ue-enhanced-input`" in markdown
+    assert "enhanced-input-character.md" in markdown

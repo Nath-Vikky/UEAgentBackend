@@ -27,6 +27,10 @@
 - 知识库导入、检索和可选向量召回
 - session / task / run / artifact / trace 持久化
 - `user_view / debug_view` 双视图
+- 声明式 Tool Registry 和 Agent Chat 的受控 ReAct Lite 工具选择
+- Tool Contract 自检和 Project QA 工具调用契约诊断
+- Self-Reflection 轻量回答质量自检
+- 同项目跨 Session 的轻量长期记忆
 - `/metrics`、`/api/v1/system/alerts`、事件回放、调试快照
 
 ## 关键接口
@@ -44,6 +48,7 @@
 ### 聊天与任务
 
 - `POST /api/v1/chat/runs`
+- `POST /api/v1/chat/runs/stream`
 - `GET /api/v1/chat/runs/{run_id}`
 - `GET /api/v1/chat/runs/{run_id}/events/stream`
 - `POST /api/v1/tasks/project-qa`
@@ -131,12 +136,14 @@
 - [docs/backend-user-guide.md](./docs/backend-user-guide.md)
 - [docs/frontend-unified-handoff.md](./docs/frontend-unified-handoff.md)
 - [docs/backend-dev-log.md](./docs/backend-dev-log.md)
+- [docs/architecture.md](./docs/architecture.md)
 - [docs/agent-architecture-study.md](./docs/agent-architecture-study.md)
 - [docs/rag-and-memory-study.md](./docs/rag-and-memory-study.md)
 - [docs/skill-development-guide.md](./docs/skill-development-guide.md)
 - [docs/request-lifecycle.md](./docs/request-lifecycle.md)
 - [docs/interview-demo-script.md](./docs/interview-demo-script.md)
 - [docs/agent-project-study-notes.md](./docs/agent-project-study-notes.md)
+- [docs/rag-eval-report.md](./docs/rag-eval-report.md)
 
 ## 当前联调状态
 
@@ -146,10 +153,34 @@
 
 ## 当前边界
 
-- `events/stream` 仍然是事件回放，不是 token 级实时流
+- `events/stream` 仍然是历史事件回放；新的 `POST /chat/runs/stream` 是可选 token SSE 入口，UE 前端未接入时继续使用非流式 `POST /chat/runs`
 - `code_generate` 已支持“先查代码知识再生成”，但仍不直接写用户工程，也不做编译验证
 - `LangSmith / OTel` 仍是本地契约与元数据层，不是远端生产观测链路
 - 资产依赖与引用关系仍依赖插件从编辑器侧采集后传给后端
+- `read_project_file` 只读读取 `project_root` 内的文本/code 文件，不做任意路径读取或写入
+
+## 本地验证
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check app tests scripts
+.\.venv\Scripts\python.exe -m pytest tests/unit tests/integration tests/contract tests/eval
+.\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path ..\backend.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output docs\rag-eval-report.md
+```
+
+GitHub Actions 已加入 CI smoke：Ruff、pytest、RAG eval。`docs/rag-eval-report.md` 是本地生成的可读评估报告，可用于面试展示检索命中、路由准确率和引用覆盖情况。
+
+## Docker 本地演示
+
+```powershell
+docker compose up --build
+```
+
+默认启动：
+
+- `app`: http://127.0.0.1:8000
+- `qdrant`: http://127.0.0.1:6333
+
+Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG，避免因为没有向量模型或 qdrant-client 影响启动。后续要测试向量模式时，再设置 `EMBEDDING_ENABLED=true` 并按需安装 rag extras。
 
 ## 2026-04-22 架构补充
 

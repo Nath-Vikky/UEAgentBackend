@@ -182,6 +182,7 @@ def clear_session_state(db: Session, session_id: str) -> SessionModel | None:
     metadata = dict(session_model.metadata_json or {})
     metadata.pop("memory_summary", None)
     metadata.pop("session_summary", None)
+    metadata.pop("long_term_memory_items", None)
     session_model.metadata_json = {
         **metadata,
         "cleared": True,

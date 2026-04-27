@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
+from typing import Any
 
 from app.skills.registry import PRIMARY_TOOL_ID_BY_TASK_TYPE
 
@@ -14,6 +16,29 @@ class ToolSpec:
     side_effect_level: str
     route_preference: str
     requires_retrieval: bool = False
+    trigger_keywords: tuple[str, ...] = ()
+    required_payload_fields: tuple[str, ...] = ()
+    optional_payload_fields: tuple[str, ...] = ()
+    timeout_ms: int = 30_000
+    input_schema: dict[str, Any] = field(default_factory=dict)
+    output_schema: dict[str, Any] = field(default_factory=dict)
+
+    def capability_card(self) -> dict[str, Any]:
+        return {
+            "tool_id": self.tool_id,
+            "task_type": self.task_type,
+            "title": self.title,
+            "description": self.description,
+            "side_effect_level": self.side_effect_level,
+            "route_preference": self.route_preference,
+            "requires_retrieval": self.requires_retrieval,
+            "trigger_keywords": list(self.trigger_keywords),
+            "required_payload_fields": list(self.required_payload_fields),
+            "optional_payload_fields": list(self.optional_payload_fields),
+            "timeout_ms": self.timeout_ms,
+            "input_schema": self.input_schema,
+            "output_schema": self.output_schema,
+        }
 
 
 TOOL_REGISTRY: dict[str, ToolSpec] = {
@@ -25,6 +50,37 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="read_only",
         route_preference="project_qa",
         requires_retrieval=True,
+        trigger_keywords=(
+            "knowledge base",
+            "kb",
+            "docs",
+            "documentation",
+            "project docs",
+            "知识库",
+            "文档",
+            "项目文档",
+        ),
+        required_payload_fields=("user_query",),
+        optional_payload_fields=("domain_filters", "kb_domains_hint"),
+        input_schema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "user_query": {"type": "string"},
+                "domain_filters": {"type": "array", "items": {"type": "string"}},
+                "top_k": {"type": "integer", "minimum": 1, "maximum": 20},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["retrieved_docs", "retrieval_trace"],
+            "properties": {
+                "retrieved_docs": {"type": "array"},
+                "retrieval_trace": {"type": "object"},
+                "confidence": {"type": "number"},
+            },
+        },
     ),
     "query_project_inventory": ToolSpec(
         tool_id="query_project_inventory",
@@ -34,6 +90,89 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="read_only",
         route_preference="project_qa",
         requires_retrieval=False,
+        trigger_keywords=(
+            "current project assets",
+            "project assets",
+            "blueprint assets",
+            "static mesh",
+            "nanite",
+            "asset settings",
+            "code files",
+            "modules",
+            "当前项目",
+            "当前工程",
+            "项目资产",
+            "蓝图资产",
+            "静态网格体",
+            "资产属性",
+            "代码文件",
+            "模块",
+        ),
+        required_payload_fields=("user_query",),
+        optional_payload_fields=("project_id", "asset_type", "limit"),
+        input_schema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "user_query": {"type": "string"},
+                "project_id": {"type": "string"},
+                "asset_type": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["items", "summary"],
+            "properties": {
+                "items": {"type": "array"},
+                "summary": {"type": "object"},
+            },
+        },
+    ),
+    "read_project_file": ToolSpec(
+        tool_id="read_project_file",
+        task_type="project_qa",
+        title="Read Project File",
+        description="Read a small text/code file from the current UE project root for project QA synthesis.",
+        side_effect_level="read_only",
+        route_preference="project_qa",
+        requires_retrieval=False,
+        trigger_keywords=(
+            "this file",
+            "current file",
+            "read file",
+            "open file",
+            "当前文件",
+            "这个文件",
+            "读取文件",
+            "查看文件",
+        ),
+        required_payload_fields=("project_root", "file_path"),
+        optional_payload_fields=("current_file", "max_bytes"),
+        timeout_ms=10_000,
+        input_schema={
+            "type": "object",
+            "required": ["project_root", "file_path"],
+            "properties": {
+                "project_root": {"type": "string"},
+                "file_path": {"type": "string"},
+                "max_bytes": {"type": "integer", "minimum": 1024, "maximum": 120000},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["status", "reason", "file_path"],
+            "properties": {
+                "status": {"type": "string"},
+                "reason": {"type": "string"},
+                "file_path": {"type": "string"},
+                "resolved_path": {"type": "string"},
+                "bytes_read": {"type": "integer"},
+                "truncated": {"type": "boolean"},
+                "text_excerpt": {"type": "string"},
+            },
+        },
     ),
     "review_ue_cpp_files": ToolSpec(
         tool_id="review_ue_cpp_files",
@@ -43,6 +182,25 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="read_only",
         route_preference="workflow",
         requires_retrieval=True,
+        trigger_keywords=("code review", "review", "审查", "代码审查"),
+        required_payload_fields=("user_query",),
+        optional_payload_fields=("files", "file_paths", "diff_text", "code_text", "project_root"),
+        input_schema={
+            "type": "object",
+            "required": ["user_query"],
+            "properties": {
+                "user_query": {"type": "string"},
+                "files": {"type": "array", "items": {"type": "object"}},
+                "file_paths": {"type": "array", "items": {"type": "string"}},
+                "diff_text": {"type": "string"},
+                "code_text": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["issue_list", "summary"],
+            "properties": {"issue_list": {"type": "array"}, "summary": {"type": "object"}},
+        },
     ),
     "generate_code_draft": ToolSpec(
         tool_id="generate_code_draft",
@@ -52,6 +210,23 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="plan_only",
         route_preference="single_tool",
         requires_retrieval=True,
+        trigger_keywords=("code generate", "generate code", "生成代码", "代码生成"),
+        required_payload_fields=("user_query",),
+        optional_payload_fields=("module_name", "class_name", "preferred_paths"),
+        input_schema={
+            "type": "object",
+            "required": ["user_query"],
+            "properties": {
+                "user_query": {"type": "string"},
+                "module_name": {"type": "string"},
+                "class_name": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["generated_items"],
+            "properties": {"generated_items": {"type": "array"}},
+        },
     ),
     "analyze_ue_log": ToolSpec(
         tool_id="analyze_ue_log",
@@ -61,6 +236,32 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="read_only",
         route_preference="workflow",
         requires_retrieval=True,
+        trigger_keywords=("analyze log", "logs", "log", "日志", "日志分析"),
+        optional_payload_fields=(
+            "log_text",
+            "selected_log_text",
+            "log_excerpt",
+            "error_lines",
+            "log_file_path",
+            "attachment_paths",
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "log_text": {"type": "string"},
+                "log_file_path": {"type": "string"},
+                "selected_log_text": {"type": "string"},
+                "attachment_paths": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["findings", "structured_events"],
+            "properties": {
+                "findings": {"type": "array"},
+                "structured_events": {"type": "array"},
+            },
+        },
     ),
     "generate_design_config": ToolSpec(
         tool_id="generate_design_config",
@@ -70,6 +271,8 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="plan_only",
         route_preference="workflow",
         requires_retrieval=True,
+        trigger_keywords=("config generate", "generate config", "生成配置"),
+        required_payload_fields=("user_query",),
     ),
     "validate_design_config": ToolSpec(
         tool_id="validate_design_config",
@@ -79,6 +282,8 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="read_only",
         route_preference="single_tool",
         requires_retrieval=False,
+        trigger_keywords=("validate config", "config validate", "校验配置"),
+        required_payload_fields=("schema", "config_json"),
     ),
     "inspect_asset_metadata": ToolSpec(
         tool_id="inspect_asset_metadata",
@@ -88,6 +293,16 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="read_only",
         route_preference="single_tool",
         requires_retrieval=True,
+        trigger_keywords=(
+            "asset inspect",
+            "inspect asset",
+            "selected asset",
+            "资产检查",
+            "检查资产",
+            "检查当前资产",
+            "检查选中资产",
+        ),
+        optional_payload_fields=("assets", "selected_assets", "asset_metadata"),
     ),
     "plan_asset_operation": ToolSpec(
         tool_id="plan_asset_operation",
@@ -97,6 +312,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="plan_only",
         route_preference="workflow",
         requires_retrieval=True,
+        trigger_keywords=("asset plan", "rename asset", "plan asset", "资产规划", "资产重命名"),
     ),
     "execute_asset_operation": ToolSpec(
         tool_id="execute_asset_operation",
@@ -106,6 +322,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="confirmed_write",
         route_preference="proposal_wait",
         requires_retrieval=False,
+        trigger_keywords=("execute asset", "apply asset", "执行资产"),
     ),
     "analyze_memory_perf_signals": ToolSpec(
         tool_id="analyze_memory_perf_signals",
@@ -115,6 +332,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="read_only",
         route_preference="workflow",
         requires_retrieval=True,
+        trigger_keywords=("perf", "performance", "memory", "性能", "内存"),
     ),
     "load_schema_examples": ToolSpec(
         tool_id="load_schema_examples",
@@ -124,6 +342,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="read_only",
         route_preference="workflow",
         requires_retrieval=True,
+        trigger_keywords=("schema", "examples", "配置示例", "配置模板"),
     ),
     "lookup_incident_history": ToolSpec(
         tool_id="lookup_incident_history",
@@ -133,6 +352,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         side_effect_level="read_only",
         route_preference="workflow",
         requires_retrieval=True,
+        trigger_keywords=("incident", "prior log", "历史故障", "历史日志"),
     ),
 }
 
@@ -158,23 +378,26 @@ def task_route_for_task_type(task_type: str) -> str:
     return spec.route_preference if spec else "single_tool"
 
 
-def candidate_tools_for_text(text_lower: str) -> list[str]:
+def _keyword_matches(text: str, token: str) -> bool:
+    token_lower = token.lower()
+    text_lower = text.lower()
+    if token_lower.isascii() and any(ch.isalnum() for ch in token_lower):
+        return bool(re.search(rf"\b{re.escape(token_lower)}\b", text_lower))
+    return token_lower in text_lower or token in text
+
+
+def candidate_tools_for_text(text: str) -> list[str]:
     candidates: list[str] = []
-    mapping = {
-        "review": "review_ue_cpp_files",
-        "code review": "review_ue_cpp_files",
-        "analyze log": "analyze_ue_log",
-        "log": "analyze_ue_log",
-        "config generate": "generate_design_config",
-        "generate config": "generate_design_config",
-        "validate config": "validate_design_config",
-        "asset inspect": "inspect_asset_metadata",
-        "inspect asset": "inspect_asset_metadata",
-        "perf": "analyze_memory_perf_signals",
-        "performance": "analyze_memory_perf_signals",
-        "memory": "analyze_memory_perf_signals",
-    }
-    for token, tool_id in mapping.items():
-        if token in text_lower and tool_id not in candidates:
+    for tool_id, spec in TOOL_REGISTRY.items():
+        if any(_keyword_matches(text, token) for token in spec.trigger_keywords):
             candidates.append(tool_id)
     return candidates
+
+
+def detect_tool_for_text(text: str) -> str | None:
+    candidates = candidate_tools_for_text(text)
+    return candidates[0] if candidates else None
+
+
+def tool_capability_cards() -> list[dict[str, Any]]:
+    return [spec.capability_card() for spec in TOOL_REGISTRY.values()]

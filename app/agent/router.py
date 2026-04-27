@@ -12,7 +12,12 @@ from app.i18n.language import (
     normalize_output_language,
 )
 from app.schemas.requests import UnifiedTaskRequest
-from app.tools.registry import TASK_TYPE_TO_TOOL_ID, candidate_tools_for_text, get_tool_spec
+from app.tools.registry import (
+    TASK_TYPE_TO_TOOL_ID,
+    candidate_tools_for_text,
+    detect_tool_for_text,
+    get_tool_spec,
+)
 
 PROJECT_HINTS = {
     "project",
@@ -66,31 +71,6 @@ TASK_ACTION_HINTS = {
     "规划",
     "执行",
     "性能",
-}
-TOOL_KEYWORDS = {
-    "code review": "review_ue_cpp_files",
-    "review": "review_ue_cpp_files",
-    "审查": "review_ue_cpp_files",
-    "logs": "analyze_ue_log",
-    "log": "analyze_ue_log",
-    "日志": "analyze_ue_log",
-    "config generate": "generate_design_config",
-    "generate config": "generate_design_config",
-    "生成配置": "generate_design_config",
-    "config validate": "validate_design_config",
-    "validate config": "validate_design_config",
-    "校验配置": "validate_design_config",
-    "asset inspect": "inspect_asset_metadata",
-    "inspect asset": "inspect_asset_metadata",
-    "selected asset": "inspect_asset_metadata",
-    "资产检查": "inspect_asset_metadata",
-    "检查资产": "inspect_asset_metadata",
-    "检查当前资产": "inspect_asset_metadata",
-    "检查选中资产": "inspect_asset_metadata",
-    "perf": "analyze_memory_perf_signals",
-    "performance": "analyze_memory_perf_signals",
-    "memory": "analyze_memory_perf_signals",
-    "性能": "analyze_memory_perf_signals",
 }
 CONTEXT_REFERENCE_HINTS = {
     "this file",
@@ -356,10 +336,7 @@ def _preferred_language(
 
 
 def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
-    for token, tool_id in TOOL_KEYWORDS.items():
-        if _hint_present(latest_text, text_lower, token):
-            return tool_id
-    return None
+    return detect_tool_for_text(latest_text) or detect_tool_for_text(text_lower)
 
 
 def _looks_like_project_inventory_query(latest_text: str, text_lower: str) -> bool:
@@ -588,6 +565,12 @@ def classify_request(
 
     signals = _agent_chat_signals(request, latest_text=latest_text, text_lower=text_lower)
     selected_tool_id = _detect_tool_id(latest_text, text_lower)
+    selected_tool_spec = get_tool_spec(selected_tool_id)
+    selected_engineering_tool_id = (
+        selected_tool_id
+        if selected_tool_spec and selected_tool_spec.task_type != "project_qa"
+        else None
+    )
 
     if signals["project_inventory_query"]:
         reason = _localized(
@@ -609,9 +592,17 @@ def classify_request(
             ),
         }
 
-    if signals["deterministic_panel"] or signals["task_hint_count"] > 0 or selected_tool_id:
-        spec = get_tool_spec(selected_tool_id)
-        candidate_tool_ids = [selected_tool_id] if selected_tool_id else candidate_tools_for_text(text_lower)
+    if signals["deterministic_panel"] or signals["task_hint_count"] > 0 or selected_engineering_tool_id:
+        spec = get_tool_spec(selected_engineering_tool_id)
+        candidate_tool_ids = (
+            [selected_engineering_tool_id]
+            if selected_engineering_tool_id
+            else [
+                tool_id
+                for tool_id in candidate_tools_for_text(latest_text)
+                if (get_tool_spec(tool_id) and get_tool_spec(tool_id).task_type != "project_qa")
+            ]
+        )
         route_type = spec.route_preference if spec else "single_tool"
         reason = _localized(
             language,
@@ -631,7 +622,7 @@ def classify_request(
             "route": {
                 "route_type": route_type,
                 "route_reason": reason,
-                "selected_tool_id": selected_tool_id,
+                "selected_tool_id": selected_engineering_tool_id,
                 "candidate_tool_ids": candidate_tool_ids,
                 "planner_confidence": 0.86,
                 "decision_source": "heuristic_task_signal",

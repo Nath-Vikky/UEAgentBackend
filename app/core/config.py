@@ -8,6 +8,7 @@ from app.skills.registry import (
     SKILL_PROTOCOL_VERSION,
     UI_RECOMMENDATIONS as SKILL_UI_RECOMMENDATIONS,
 )
+from app.tools.registry import tool_capability_cards
 
 SUPPORTED_LANGUAGES = ["zh-CN", "en-US"]
 SUPPORTED_VIEWS = ["user", "debug"]
@@ -92,6 +93,12 @@ CAPABILITIES = {
         "extension_policy": "Add collectors, rules, retrieval domains, and projectors inside an existing built-in skill before adding a new user-visible feature.",
         "public_skill_count": len(CORE_SKILL_IDS),
     },
+    "tool_registry": {
+        "mode": "declarative_static_registry",
+        "runtime_hot_reload": False,
+        "extension_policy": "Add or adjust tool capability cards in app/tools/registry.py; router and capabilities consume the same registry.",
+        "tools": tool_capability_cards(),
+    },
     "feature_catalog": FEATURE_CATALOG,
     "supported_languages": SUPPORTED_LANGUAGES,
     "supported_views": SUPPORTED_VIEWS,
@@ -103,11 +110,12 @@ CAPABILITIES = {
         "task_events",
         "artifacts",
         "sse_event_replay",
+        "sse_token_stream_optional",
         "prometheus_metrics",
         "audit_logs",
         "alerts_snapshot",
     ],
     "approval_policies": ["read_only", "plan_only", "confirmed_write"],
     "proposal_states": ["pending", "confirmed", "rejected"],
-    "run_controls": ["cancel"],
+    "run_controls": ["cancel", "agent_chat_sse_stream_optional"],
 }

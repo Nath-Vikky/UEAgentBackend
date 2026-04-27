@@ -1386,3 +1386,320 @@ Logs Analyze 仍会尝试检索 `incident_history / engine_notes / project_docs`
 - Logs Analyze 结果里是否能看到“LLM 分析结果”卡片。
 - 未配置 LLM 时是否显示 skipped 轻提示，而不是让用户误以为 LLM 已经分析。
 - 弱知识库命中是否只在 Debug View 可见，不进入普通用户引用。
+
+## 33. 2026-04-27 面试增强第一阶段：Tool Registry / ReAct Lite / Startup Checks
+
+状态：后端已实现，前端暂不需要强制修改。
+
+### 新增但兼容的字段
+
+- `GET /api/v1/system/capabilities`
+  - 新增 `capabilities.tool_registry.mode`
+  - 新增 `capabilities.tool_registry.tools[]`
+  - 每个 tool card 包含 `tool_id`、`task_type`、`title`、`description`、`side_effect_level`、`route_preference`、`requires_retrieval`、`trigger_keywords`、`required_payload_fields`、`optional_payload_fields`、`timeout_ms`、`input_schema`
+- `GET /api/v1/system/health`
+  - 新增 `startup_checks`
+  - 包含 `status`、`blocking`、`counts`、`checks[]`
+- `POST /api/v1/chat/runs` 或 `POST /api/v1/tasks/project-qa`
+  - Project QA 响应新增 `data.react_loop`
+  - Debug View 新增 `debug_view.react_loop`
+
+### 前端建议
+
+- 现阶段无需新增主 UI。
+- Debug View 可以直接展示 `react_loop` 原始 JSON，作为面试演示“Agent 如何选择工具”的证据。
+- Health / Settings 面板如已有状态区，可选展示 `startup_checks` warning；没有状态区也可以先不做。
+- `tool_registry.tools` 可作为后续动态说明/帮助面板的数据源，但不要用它替代现有按钮逻辑。
+
+### 需要前端回传的信息
+
+- 如果 Debug View 无法展示新增字段，请回传渲染截图或字段丢失位置。
+- 如果 Health 面板已有状态展示，请说明是否需要后端进一步压缩 `startup_checks` 文案。
+- 如果后续想把工具能力卡做成 UI 帮助面板，请回传期望字段和布局。
+
+### 边界
+
+- ReAct Lite 当前只用于 Agent Chat / Project QA 的可解释轨迹。
+- Code Review / Code Generate / Logs Analyze / Assets Inspect 的接口和主 UI 暂不变。
+- 后端没有新增写工程文件的自动动作。
+
+## 34. 2026-04-27 Project QA 受控 ReAct 与当前文件读取
+
+状态：后端已实现，前端暂不强制改 UI。
+
+### 后端新增能力
+
+`Agent Chat / Project QA` 现在支持受控 ReAct 工具选择：
+
+- LLM 可用时，后端会让 LLM 在白名单里建议只读工具。
+- LLM 不可用、规划失败或返回非法工具时，后端继续走 deterministic fallback。
+- 当前允许工具：
+  - `retrieve_project_knowledge`
+  - `query_project_inventory`
+  - `read_project_file`
+
+### 当前文件读取
+
+如果用户在自由聊天中问：
+
+- “当前文件里做了什么”
+- “解释这个文件”
+- “这个 cpp 里有没有问题”
+
+前端建议继续传：
+
+```json
+{
+  "context": {
+    "project_root": "F:/Epic Games/project/RushBa",
+    "current_file": "Source/RushBa/Private/PlayerCharacter.cpp"
+  }
+}
+```
+
+后端会：
+
+- 校验 `current_file` 解析后必须位于 `project_root` 内。
+- 只读取文本/code/config 文件。
+- 限制读取大小，默认约 40KB，最大 120KB。
+- 只读，不写入、不删除、不移动、不执行。
+
+### 新增响应字段
+
+- `data.project_file`
+  - `status`: `completed / skipped / blocked / error`
+  - `reason`
+  - `file_path`
+  - `resolved_path`
+  - `bytes_read`
+  - `truncated`
+  - `text_excerpt`
+- `data.tool_plan.planner_decision`
+- `data.tool_plan.tool_calls[]`
+- `data.tool_contracts.input_contracts[]`
+- `data.tool_contracts.result_contracts[]`
+- `debug_view.project_file`
+- `debug_view.tool_contracts`
+- `debug_view.react_loop.steps[]`
+
+### 前端展示建议
+
+- 普通聊天 UI 不需要新增卡片，直接显示 `assistant_message` 即可。
+- Debug View 建议展示 `react_loop`、`tool_plan`、`project_file`、`tool_contracts`。
+- 如果 `project_file.status=blocked`，Debug View 显示 reason，普通用户不需要强提示。
+
+### 需要前端回传的信息
+
+- 当前 Agent Chat 请求是否稳定传 `context.project_root`。
+- 用户当前打开文件是否能稳定传 `context.current_file`，且最好是项目相对路径。
+- 如果传的是绝对路径，也可以，但后端仍会检查它是否在 `project_root` 内。
+
+### 边界
+
+- 这不是 Code Review 文件扫描功能，只是 Project QA 的只读上下文补充。
+- 不会自动分析整个工程文件树。
+- 不会替代 Code Review 面板的文件选择和审查流程。
+
+## 35. 2026-04-27 Tool Contract Debug 字段
+
+状态：后端已实现，前端暂不强制修改。
+
+### 新增字段
+
+- `GET /api/v1/system/health`
+  - `startup_checks.checks[]` 中新增 `check_id="tool_registry_contracts"`。
+- `GET /api/v1/system/capabilities`
+  - `capabilities.tool_registry.tools[].output_schema`
+- Project QA 响应：
+  - `data.tool_contracts.input_contracts[]`
+  - `data.tool_contracts.result_contracts[]`
+  - `debug_view.tool_contracts`
+
+### 前端建议
+
+- 普通用户 UI 不展示 Tool Contract。
+- Debug View 原样展示即可。
+- 如果 contract `ok=false`，这代表后端工具契约或工具结果异常，适合放 Debug View，不建议当成普通用户错误弹窗。
+
+### 边界
+
+- 这是后端内部工具契约透明化，不改变现有请求格式。
+- 不要求前端根据 schema 动态生成表单。
+
+## 36. 2026-04-27 Self-Reflection Debug 字段
+
+状态：后端已实现，前端暂不强制修改。
+
+### 新增字段
+
+- `data.self_reflection`
+- `debug_view.self_reflection`
+- `trace_summary.agent_decision_trace.decisions.self_reflection_decision`
+
+### 字段含义
+
+- `status`: `passed / needs_context / degraded`
+- `grounding_level`: `project_grounded / general_llm / fallback / insufficient_evidence / low_confidence`
+- `evidence_counts`: 知识库、项目快照、当前文件证据数量。
+- `checks[]`: 回答是否为空、证据是否足够、置信度是否达标、是否有降级 warning。
+- `recommendations[]`: 给 Debug View 的补上下文建议。
+
+### 前端建议
+
+- 普通用户 UI 暂不展示。
+- Debug View 原样展示即可。
+- 如果后续想做“回答质量徽标”，可以只展示 `status`，但现在不是必须项。
+
+### 边界
+
+- Self-Reflection 不额外调用 LLM。
+- 不代表任务失败，只是回答质量诊断。
+
+## 37. 2026-04-27 轻量长期记忆 Debug 字段
+
+状态：后端已实现，前端暂不强制修改。
+
+### 新增行为
+
+当用户在 Agent Chat 中表达项目约定，例如：
+
+```text
+请记住：我们的项目 UE 版本是 5.4，所有蓝图命名要加 BP_ 前缀。
+```
+
+后端会把这类信息作为项目级长期记忆保存。之后同一 `project_name` 的新 session 可以召回。
+
+### 前端建议继续传
+
+```json
+{
+  "context": {
+    "project_name": "RushBa"
+  }
+}
+```
+
+`project_name` 是跨 session 召回的主要过滤条件。
+
+### 新增 Debug 字段
+
+- `data.context_bundle.long_term_memory`
+- `debug_view.memory_summary.long_term_memory`
+- `agent_decision_trace.decisions.memory_decision.details.long_term_memory_items`
+
+### 前端展示建议
+
+- 普通用户 UI 暂不需要新增记忆管理面板。
+- Debug View 原样展示即可。
+- 如果后续做“记忆面板”，建议只展示 `category/text/source_session_id/created_at`。
+
+### 边界
+
+- 后端不做用户画像。
+- 后端不做向量记忆或图记忆。
+- 清理 session 只清理该 session 自己保存的长期记忆，不影响其他 session。
+
+## 38. 2026-04-27 RAG Eval Markdown Report
+
+状态：后端已实现，前端不需要修改。
+
+### 后端新增内容
+
+- `scripts/run_rag_eval.py` 新增 `--markdown-output`。
+- 新增 `docs/rag-eval-report.md`，用于展示当前 RAG smoke eval 结果。
+- 报告包含：
+  - `hit_at_k`
+  - `mrr`
+  - `route_accuracy`
+  - `citation_coverage`
+  - 每条 case 的 matched sources
+
+### 前端影响
+
+- UE 插件 UI 不需要新增接口或字段。
+- 这份报告仅用于后端自测、面试展示和复盘。
+- 如果后续前端也想在 Debug 面板展示 eval 结果，需要另开“本地评测结果查看”需求；当前阶段不做。
+
+### 当前需要前端回传的信息
+
+- 无。
+
+## 39. 后续可选项：Token 级 SSE 流式输出
+
+状态：后端暂不继续单方面实现，需要 UE 前端先确认消费方式。
+
+### 为什么需要前端配合
+
+当前 `/api/v1/chat/runs/{run_id}/events/stream` 是事件回放，不是 token 实时流。若升级为真正 token 级 SSE，UE 前端需要支持：
+
+- 以 `text/event-stream` 方式读取持续响应。
+- 增量拼接 `assistant_delta` / `token` 事件。
+- 在工具调用事件出现时显示“正在检索 / 正在读取项目文件 / 正在查询 Inventory”等中间状态。
+- 在 `final` 事件到达后，把完整回答落到现有聊天历史。
+- 在连接中断、后端报错或用户取消时做兜底显示。
+
+### 建议的前端回传信息
+
+如果后续决定做流式，请 UE 前端先回传：
+
+- 当前 HTTP 客户端是否支持 SSE 持续读取。
+- 聊天 UI 是否支持逐 token 更新同一条 assistant 气泡。
+- 是否需要保留现在的非流式接口作为 fallback。
+- UE 插件侧期望的事件名，例如 `token`、`tool_call`、`tool_result`、`final`、`error`。
+
+### 后端边界
+
+- 只考虑 `Agent Chat / Project QA` 流式。
+- Code Review / Code Generate / Logs Analyze / Assets Inspect 继续同步返回。
+- 不在本阶段改为全项目 async，也不引入复杂消息队列。
+
+## 40. 2026-04-27 后端已新增可选 SSE 流式入口
+
+状态：后端已实现可选入口，UE 前端暂不强制接入。
+
+### 新增接口
+
+- `POST /api/v1/chat/runs/stream`
+
+请求体沿用 `UnifiedTaskRequest`，建议继续传：
+
+- `task_type="agent_chat"`
+- `runtime_options.stream=true`
+- `context.project_root`
+- `context.project_name`
+- `context.current_file`
+
+### SSE 事件名
+
+当前后端会返回以下事件：
+
+- `stream_opened`：SSE 连接已打开，包含 fallback endpoint。
+- `run_started`：后端已创建 `task_id/run_id/trace_id` 并开始执行。
+- `tool_call`：Project QA 调用只读工具前触发，例如 `retrieve_project_knowledge`、`query_project_inventory`、`read_project_file`。
+- `tool_result`：只读工具执行完成后的摘要。
+- `assistant_delta`：最终 LLM 回答的文本增量。
+- `final`：完整 `UnifiedTaskResponse`，可用于落库聊天气泡、恢复历史和 Debug View。
+- `error`：流式执行失败。
+- `heartbeat`：长时间无事件时的保活事件。
+
+### 前端接入建议
+
+- 当前 UE 插件可以继续使用非流式 `POST /api/v1/chat/runs`，不影响已有功能。
+- 如果开始接入流式，请只在 Agent Chat / Project QA 做，不要改 Code Review / Code Generate / Logs Analyze / Assets Inspect。
+- 前端应把 `assistant_delta.payload.text` 追加到同一个 assistant 气泡。
+- 前端收到 `final.payload.response` 后，用完整响应替换或校准临时气泡，并继续按现有 User View / Debug View 渲染。
+- 如果 SSE 失败，前端应回退到 `POST /api/v1/chat/runs`。
+
+### 后端边界
+
+- `GET /api/v1/chat/runs/{run_id}/events/stream` 仍然是历史事件回放，不改语义。
+- `POST /api/v1/chat/runs/stream` 是新入口，不破坏旧接口。
+- LLM 未配置时不会伪造 token，但仍会发送 `final`。
+- 当前只对最终 LLM 回答阶段推送 token；检索和工具阶段以结构化事件说明进度。
+
+### 需要 UE 前端后续回传
+
+- 是否能稳定消费 `text/event-stream`。
+- 是否能逐 token 更新同一条 assistant 气泡。
+- 断线后是否能自动回退非流式。
+- `tool_call/tool_result` 是否需要专门的“正在检索 / 正在读取文件”状态条。

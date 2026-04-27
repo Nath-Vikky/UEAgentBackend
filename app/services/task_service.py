@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,7 @@ from app.agent.decision_trace import build_agent_decision_trace
 from app.agent.memory_manager import update_session_memory
 from app.agent.response_composer import compose_unified_response
 from app.agent.router import classify_request
+from app.agent.self_reflection import build_self_reflection
 from app.core.settings import Settings
 from app.db.models.audit import AuditLogModel
 from app.db.models.proposal import ProposalModel
@@ -52,7 +55,8 @@ from app.skills.executors import (
 )
 from app.skills.runtime import build_skill_runtime_descriptor
 from app.tools.config_validate import validate_design_config
-from app.tools.registry import TOOL_ID_TO_TASK_TYPE
+from app.tools.contracts import validate_tool_call_input, validate_tool_result
+from app.tools.registry import TOOL_ID_TO_TASK_TYPE, tool_capability_cards
 from app.utils.json_tools import dumps_pretty
 from app.utils.paths import task_artifact_dir
 from app.utils.time import now_utc
@@ -62,6 +66,7 @@ from app.workflows.graphs import (
 )
 
 CHAT_HISTORY_TASK_TYPES = {"agent_chat", "project_qa"}
+StreamEventSink = Callable[[dict[str, Any]], None]
 
 
 def _localized(language: str, zh_text: str, en_text: str) -> str:
@@ -86,6 +91,30 @@ class TaskService:
         self.kb_service = KnowledgeBaseService(db, settings)
         self.llm_service = LLMService(settings)
         self.inventory_service = ProjectInventoryService(settings)
+        self._stream_sequence = 0
+
+    def _emit_stream_event(
+        self,
+        sink: StreamEventSink | None,
+        event: str,
+        payload: dict[str, Any],
+        *,
+        run_id: str | None = None,
+        task_id: str | None = None,
+    ) -> None:
+        if not sink:
+            return
+        self._stream_sequence += 1
+        sink(
+            {
+                "event": event,
+                "seq": self._stream_sequence,
+                "timestamp": now_utc().isoformat(),
+                "run_id": run_id,
+                "task_id": task_id,
+                "payload": payload,
+            }
+        )
 
     def _resolve_chat_config(self, request: UnifiedTaskRequest) -> ChatRuntimeConfig:
         requested_profile_id = (request.runtime_options.profile_id or "").strip()
@@ -157,6 +186,7 @@ class TaskService:
         request: UnifiedTaskRequest,
         query: str,
         qa_result: dict[str, Any],
+        project_file_result: dict[str, Any] | None = None,
         output_language: str,
         context_bundle: dict[str, Any] | None = None,
     ) -> list[dict[str, str]]:
@@ -197,10 +227,21 @@ class TaskService:
                     ]
                 )
             )
+        project_file_lines: list[str] = []
+        if project_file_result and project_file_result.get("status") == "completed":
+            project_file_lines.append(
+                "\n".join(
+                    [
+                        f"[F1] File: {project_file_result.get('file_path')}",
+                        f"Resolved: {project_file_result.get('resolved_path')}",
+                        f"Excerpt:\n{str(project_file_result.get('text_excerpt') or '')[:1200]}",
+                    ]
+                )
+            )
         system_prompt = (
             "You are synthesizing an answer from project knowledge-base evidence. "
             f"Reply in {self._language_label(output_language)}. "
-            "Use only the supplied knowledge-base evidence and project inventory facts. "
+            "Use only the supplied knowledge-base evidence, project inventory facts, and explicitly read project file excerpts. "
             "If the evidence is insufficient, say so clearly instead of guessing. "
             "Prefer a short answer followed by 2-4 concrete evidence-backed points."
         )
@@ -212,6 +253,8 @@ class TaskService:
                 "\n\n".join(evidence_lines) if evidence_lines else "No retrieved evidence.",
                 "Project inventory facts:",
                 "\n\n".join(inventory_lines) if inventory_lines else "No project inventory facts.",
+                "Explicit project file excerpts:",
+                "\n\n".join(project_file_lines) if project_file_lines else "No project file excerpt.",
             ]
         )
         return [
@@ -382,6 +425,405 @@ class TaskService:
                 "tool_skipped": True,
             },
         }
+
+    def _project_file_candidate(self, request: UnifiedTaskRequest) -> dict[str, Any]:
+        project_root = str(
+            request.payload.get("project_root")
+            or request.context.project_root
+            or ""
+        ).strip()
+        file_path = str(
+            request.payload.get("read_file_path")
+            or request.payload.get("file_path")
+            or request.payload.get("current_file")
+            or request.context.current_file
+            or ""
+        ).strip()
+        try:
+            max_bytes = int(request.payload.get("max_file_read_bytes") or 40_000)
+        except (TypeError, ValueError):
+            max_bytes = 40_000
+        return {
+            "project_root": project_root,
+            "file_path": file_path,
+            "max_bytes": max(1024, min(max_bytes, 120_000)),
+        }
+
+    def _should_read_project_file(self, *, request: UnifiedTaskRequest, query: str) -> bool:
+        candidate = self._project_file_candidate(request)
+        if not candidate["project_root"] or not candidate["file_path"]:
+            return False
+        lowered = query.lower()
+        file_reference_tokens = (
+            "this file",
+            "current file",
+            "that file",
+            "read file",
+            "open file",
+            "explain file",
+            "这个文件",
+            "当前文件",
+            "该文件",
+            "读取文件",
+            "查看文件",
+            "解释文件",
+        )
+        return any(token in lowered or token in query for token in file_reference_tokens)
+
+    def _read_project_file_tool(self, request: UnifiedTaskRequest) -> dict[str, Any]:
+        candidate = self._project_file_candidate(request)
+        project_root = candidate["project_root"]
+        file_path = candidate["file_path"]
+        max_bytes = int(candidate["max_bytes"])
+        if not project_root or not file_path:
+            return {
+                "status": "skipped",
+                "reason": "missing_project_root_or_file_path",
+                "file_path": file_path,
+            }
+
+        root = Path(project_root).resolve()
+        requested = Path(file_path)
+        resolved = requested.resolve() if requested.is_absolute() else (root / requested).resolve()
+        try:
+            is_inside_root = os.path.commonpath([str(root), str(resolved)]) == str(root)
+        except ValueError:
+            is_inside_root = False
+        if not is_inside_root:
+            return {
+                "status": "blocked",
+                "reason": "file_outside_project_root",
+                "file_path": file_path,
+                "project_root": str(root),
+                "resolved_path": str(resolved),
+            }
+
+        allowed_suffixes = {
+            ".h",
+            ".hpp",
+            ".hh",
+            ".inl",
+            ".c",
+            ".cc",
+            ".cpp",
+            ".cxx",
+            ".cs",
+            ".md",
+            ".txt",
+            ".json",
+            ".ini",
+            ".yaml",
+            ".yml",
+            ".uproject",
+            ".uplugin",
+        }
+        if resolved.suffix.lower() not in allowed_suffixes:
+            return {
+                "status": "blocked",
+                "reason": "unsupported_file_extension",
+                "file_path": file_path,
+                "resolved_path": str(resolved),
+                "allowed_suffixes": sorted(allowed_suffixes),
+            }
+        if not resolved.exists() or not resolved.is_file():
+            return {
+                "status": "error",
+                "reason": "file_not_found",
+                "file_path": file_path,
+                "resolved_path": str(resolved),
+            }
+
+        with resolved.open("rb") as handle:
+            raw = handle.read(max_bytes + 1)
+        truncated = len(raw) > max_bytes
+        text = raw[:max_bytes].decode("utf-8", errors="replace")
+        return {
+            "status": "completed",
+            "reason": "read_completed",
+            "file_path": file_path,
+            "resolved_path": str(resolved),
+            "bytes_read": min(len(raw), max_bytes),
+            "max_bytes": max_bytes,
+            "truncated": truncated,
+            "text_excerpt": text,
+        }
+
+    def _project_file_fallback_answer(
+        self,
+        *,
+        project_file_result: dict[str, Any],
+        output_language: str,
+    ) -> str:
+        if project_file_result.get("status") == "completed":
+            excerpt = str(project_file_result.get("text_excerpt") or "").strip()
+            preview = excerpt[:500] + ("..." if len(excerpt) > 500 else "")
+            return _localized(
+                output_language,
+                f"我已读取当前项目文件 `{project_file_result.get('file_path')}`。当前没有可用 LLM 综合解释，因此先返回文件片段供你确认：\n\n{preview}",
+                f"I read project file `{project_file_result.get('file_path')}`. No live LLM synthesis is available, so here is the file excerpt for confirmation:\n\n{preview}",
+            )
+        return _localized(
+            output_language,
+            f"我尝试读取当前项目文件，但未成功：{project_file_result.get('reason') or 'unknown_reason'}。",
+            f"I tried to read the current project file, but it did not succeed: {project_file_result.get('reason') or 'unknown_reason'}.",
+        )
+
+    def _react_planner_messages(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        query: str,
+        deterministic_plan: dict[str, Any],
+        output_language: str,
+    ) -> list[dict[str, str]]:
+        allowed_tools = [
+            card
+            for card in tool_capability_cards()
+            if card["tool_id"] in {"retrieve_project_knowledge", "query_project_inventory", "read_project_file"}
+        ]
+        system_prompt = (
+            "You are a safe ReAct planner for UE Agent Project QA. "
+            "Choose up to 3 read-only tools from the provided tool registry. "
+            "Only choose tools that are necessary for the user question. "
+            "Never request file writes, shell commands, destructive actions, or tools outside the registry. "
+            f"Write reasons in {self._language_label(output_language)}. "
+            'Return JSON only with schema: {"tool_calls":[{"tool_id":"retrieve_project_knowledge","reason":"...","input":{}}],"stop_reason":"agent_decided_done","confidence":0.0}.'
+        )
+        user_prompt = "\n\n".join(
+            [
+                f"User question:\n{query}",
+                f"Context summary:\n{build_context_summary(request) or '(none)'}",
+                f"Deterministic fallback plan:\n{dumps_pretty(deterministic_plan)}",
+                f"Available tools:\n{dumps_pretty(allowed_tools)}",
+            ]
+        )
+        return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+
+    def _react_lite_tool_plan(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        query: str,
+        deterministic_plan: dict[str, Any],
+        chat_config: ChatRuntimeConfig,
+        output_language: str,
+    ) -> dict[str, Any]:
+        allowed_tool_ids = {"retrieve_project_knowledge", "query_project_inventory", "read_project_file"}
+        planner_decision = {
+            "status": "skipped",
+            "reason": "llm_unavailable_or_not_attempted",
+            "requested_tool_ids": [],
+            "confidence": 0.0,
+            "error": "",
+            "provider": "openai_compatible",
+            "model": chat_config.model,
+            "profile_id": chat_config.profile_id,
+        }
+        use_inventory = bool(deterministic_plan.get("use_inventory"))
+        use_knowledge = bool(deterministic_plan.get("use_knowledge"))
+        use_project_file = self._should_read_project_file(request=request, query=query)
+
+        llm_available, _ = self.llm_service.availability(chat_config)
+        if llm_available:
+            decision = self.llm_service.complete_json_object(
+                messages=self._react_planner_messages(
+                    request=request,
+                    query=query,
+                    deterministic_plan=deterministic_plan,
+                    output_language=output_language,
+                ),
+                config=chat_config,
+            )
+            planner_decision.update(
+                {
+                    "status": "completed" if decision.get("ok") else "skipped",
+                    "reason": decision.get("reason"),
+                    "error": decision.get("error") or "",
+                    "provider": decision.get("provider"),
+                    "model": decision.get("model"),
+                    "profile_id": decision.get("profile_id"),
+                }
+            )
+            payload = decision.get("payload") if decision.get("ok") else None
+            if isinstance(payload, dict):
+                requested_tool_ids: list[str] = []
+                for raw_call in list(payload.get("tool_calls") or [])[:3]:
+                    if not isinstance(raw_call, dict):
+                        continue
+                    tool_id = str(raw_call.get("tool_id") or "").strip()
+                    if tool_id not in allowed_tool_ids or tool_id in requested_tool_ids:
+                        continue
+                    requested_tool_ids.append(tool_id)
+                planner_decision["requested_tool_ids"] = requested_tool_ids
+                try:
+                    planner_decision["confidence"] = max(
+                        0.0,
+                        min(float(payload.get("confidence") or 0.0), 1.0),
+                    )
+                except (TypeError, ValueError):
+                    planner_decision["confidence"] = 0.0
+                use_inventory = use_inventory or "query_project_inventory" in requested_tool_ids
+                use_knowledge = use_knowledge or "retrieve_project_knowledge" in requested_tool_ids
+                use_project_file = use_project_file or "read_project_file" in requested_tool_ids
+
+        tool_calls: list[dict[str, Any]] = []
+        if use_inventory:
+            tool_calls.append({"tool_id": "query_project_inventory", "input": {"query": query, "limit": 8}})
+        if use_knowledge:
+            tool_calls.append({"tool_id": "retrieve_project_knowledge", "input": {"query": query, "top_k": self.settings.rag_top_k}})
+        if use_project_file:
+            candidate = self._project_file_candidate(request)
+            tool_calls.append(
+                {
+                    "tool_id": "read_project_file",
+                    "input": {
+                        "project_root": candidate["project_root"],
+                        "file_path": candidate["file_path"],
+                        "max_bytes": candidate["max_bytes"],
+                    },
+                }
+            )
+        tool_calls = tool_calls[:3]
+        input_contracts = [
+            validate_tool_call_input(str(call.get("tool_id") or ""), dict(call.get("input") or {}))
+            for call in tool_calls
+        ]
+        return {
+            **deterministic_plan,
+            "use_inventory": use_inventory,
+            "use_knowledge": use_knowledge,
+            "use_project_file": use_project_file,
+            "tool_calls": tool_calls,
+            "input_contracts": input_contracts,
+            "planner_decision": planner_decision,
+            "reason": (
+                "react_lite_llm_augmented"
+                if planner_decision["status"] == "completed"
+                else deterministic_plan.get("reason", "deterministic_fallback")
+            ),
+        }
+
+    def _build_react_lite_trace(
+        self,
+        *,
+        query: str,
+        tool_plan: dict[str, Any],
+        qa_result: dict[str, Any],
+        inventory_result: dict[str, Any],
+        project_file_result: dict[str, Any],
+        answer_generation_mode: str,
+    ) -> dict[str, Any]:
+        steps: list[dict[str, Any]] = [
+            {
+                "phase": "thought",
+                "text": "Decide whether the user needs current project facts, knowledge evidence, an explicit file read, or a direct answer.",
+                "details": {
+                    "query": query,
+                    "selected_tool_id": tool_plan.get("selected_tool_id"),
+                    "use_inventory": tool_plan.get("use_inventory"),
+                    "use_knowledge": tool_plan.get("use_knowledge"),
+                    "use_project_file": tool_plan.get("use_project_file"),
+                    "planner_decision": tool_plan.get("planner_decision", {}),
+                },
+            }
+        ]
+        if tool_plan.get("use_inventory"):
+            steps.extend(
+                [
+                    {
+                        "phase": "action",
+                        "tool_id": "query_project_inventory",
+                        "input": {"query": query, "limit": 8},
+                    },
+                    {
+                        "phase": "observation",
+                        "tool_id": "query_project_inventory",
+                        "summary": f"Matched {len(inventory_result.get('items') or [])} project inventory item(s).",
+                        "details": inventory_result.get("summary", {}),
+                    },
+                ]
+            )
+        if tool_plan.get("use_knowledge"):
+            steps.extend(
+                [
+                    {
+                        "phase": "action",
+                        "tool_id": "retrieve_project_knowledge",
+                        "input": {"query": query, "top_k": self.settings.rag_top_k},
+                    },
+                    {
+                        "phase": "observation",
+                        "tool_id": "retrieve_project_knowledge",
+                        "summary": f"Retrieved {len(qa_result.get('retrieved_docs') or [])} knowledge chunk(s).",
+                        "details": {
+                            "confidence": qa_result.get("confidence"),
+                            "sources": qa_result.get("sources", []),
+                        },
+                    },
+                ]
+            )
+        if tool_plan.get("use_project_file"):
+            steps.extend(
+                [
+                    {
+                        "phase": "action",
+                        "tool_id": "read_project_file",
+                        "input": self._project_file_candidate_from_result(project_file_result),
+                    },
+                    {
+                        "phase": "observation",
+                        "tool_id": "read_project_file",
+                        "summary": f"Read project file status: {project_file_result.get('status')}.",
+                        "details": {
+                            "status": project_file_result.get("status"),
+                            "reason": project_file_result.get("reason"),
+                            "file_path": project_file_result.get("file_path"),
+                            "resolved_path": project_file_result.get("resolved_path"),
+                            "bytes_read": project_file_result.get("bytes_read"),
+                            "truncated": project_file_result.get("truncated"),
+                        },
+                    },
+                ]
+            )
+        steps.append(
+            {
+                "phase": "final",
+                "text": "Compose the final answer from the collected observations.",
+                "details": {"answer_generation_mode": answer_generation_mode},
+            }
+        )
+        return {
+            "mode": "react_lite",
+            "max_iterations": 3,
+            "iterations_used": sum(1 for item in steps if item.get("phase") == "action"),
+            "stop_reason": "agent_decided_done",
+            "planner_status": tool_plan.get("planner_decision", {}).get("status", "skipped"),
+            "steps": steps,
+        }
+
+    @staticmethod
+    def _project_file_candidate_from_result(project_file_result: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "file_path": project_file_result.get("file_path"),
+            "max_bytes": project_file_result.get("max_bytes"),
+        }
+
+    def _project_qa_result_contracts(
+        self,
+        *,
+        tool_plan: dict[str, Any],
+        qa_result: dict[str, Any],
+        inventory_result: dict[str, Any],
+        project_file_result: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        contracts: list[dict[str, Any]] = []
+        if tool_plan.get("use_knowledge"):
+            contracts.append(validate_tool_result("retrieve_project_knowledge", qa_result))
+        if tool_plan.get("use_inventory"):
+            contracts.append(validate_tool_result("query_project_inventory", inventory_result))
+        if tool_plan.get("use_project_file"):
+            contracts.append(validate_tool_result("read_project_file", project_file_result))
+        return contracts
 
     def _agent_chat_route_messages(
         self,
@@ -565,7 +1007,11 @@ class TaskService:
             actual_task_type=actual_task_type,
         )
 
-    def create_task(self, request: UnifiedTaskRequest) -> UnifiedTaskResponse:
+    def create_task(
+        self,
+        request: UnifiedTaskRequest,
+        stream_sink: StreamEventSink | None = None,
+    ) -> UnifiedTaskResponse:
         session_model = get_or_create_session(
             self.db,
             request.session.session_id,
@@ -608,6 +1054,18 @@ class TaskService:
         task_id = f"task_{uuid.uuid4().hex}"
         run_id = f"run_{uuid.uuid4().hex}"
         trace_id = f"trace_{uuid.uuid4().hex}"
+        self._emit_stream_event(
+            stream_sink,
+            "run_started",
+            {
+                "task_type": actual_task_type,
+                "route_type": routing["intent"]["route_type"],
+                "trace_id": trace_id,
+                "streaming_mode": "sse",
+            },
+            run_id=run_id,
+            task_id=task_id,
+        )
 
         started = time.perf_counter()
         execution = self._execute_route(
@@ -619,6 +1077,7 @@ class TaskService:
             actual_task_type=actual_task_type,
             chat_config=chat_config,
             context_bundle=context_bundle,
+            stream_sink=stream_sink,
         )
         skill_runtime = build_skill_runtime_descriptor(
             requested_task_type=request.task_type,
@@ -670,6 +1129,7 @@ class TaskService:
                     "artifact_count": len(artifact_payloads),
                     "step_count": len(execution["step_results"]),
                     "session_memory": context_bundle.get("session_summary", {}),
+                    "long_term_memory": context_bundle.get("long_term_memory", {}),
                     "context_budget": context_bundle.get("budget", {}),
                 },
                 "output_complete": output_complete,
@@ -757,6 +1217,18 @@ class TaskService:
             snapshot_path=snapshot_path,
             event_payloads=event_payloads,
             artifact_payloads=artifact_payloads,
+        )
+        self._emit_stream_event(
+            stream_sink,
+            "final",
+            {
+                "status": response.task.status,
+                "finish_reason": response.task.finish_reason,
+                "assistant_message": response.assistant_message,
+                "response": response.model_dump(mode="json"),
+            },
+            run_id=run_id,
+            task_id=task_id,
         )
         return response
 
@@ -946,6 +1418,7 @@ class TaskService:
             "session_summary": {},
             "memory_summary": {
                 "session_memory": resolved_context_bundle.get("session_summary", {}),
+                "long_term_memory": resolved_context_bundle.get("long_term_memory", {}),
                 "context_budget": resolved_context_bundle.get("budget", {}),
             },
             "output_complete": True,
@@ -964,6 +1437,7 @@ class TaskService:
         actual_task_type: str,
         chat_config: ChatRuntimeConfig,
         context_bundle: dict[str, Any],
+        stream_sink: StreamEventSink | None = None,
     ) -> dict[str, Any]:
         route_type = routing["intent"]["route_type"]
         output_language = routing["locale"]["final_output_language"]
@@ -975,6 +1449,9 @@ class TaskService:
                 output_language=output_language,
                 chat_config=chat_config,
                 context_bundle=context_bundle,
+                stream_sink=stream_sink,
+                run_id=run_id,
+                task_id=task_id,
             )
         if route_type == "direct_answer":
             return self._execute_direct_answer_live(
@@ -984,6 +1461,9 @@ class TaskService:
                 output_language=output_language,
                 chat_config=chat_config,
                 context_bundle=context_bundle,
+                stream_sink=stream_sink,
+                run_id=run_id,
+                task_id=task_id,
             )
         if actual_task_type == "code_review":
             return self._execute_code_review(
@@ -1064,12 +1544,30 @@ class TaskService:
         output_language: str,
         chat_config: ChatRuntimeConfig,
         context_bundle: dict[str, Any],
+        stream_sink: StreamEventSink | None = None,
+        run_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         query = request.payload.get("user_query") or (
             request.session.messages[-1].content if request.session.messages else ""
         )
         query_text = str(query)
-        tool_plan = self._project_qa_tool_plan(query=query_text, routing=routing)
+        deterministic_tool_plan = self._project_qa_tool_plan(query=query_text, routing=routing)
+        tool_plan = self._react_lite_tool_plan(
+            request=request,
+            query=query_text,
+            deterministic_plan=deterministic_tool_plan,
+            chat_config=chat_config,
+            output_language=output_language,
+        )
+        if tool_plan["use_knowledge"]:
+            self._emit_stream_event(
+                stream_sink,
+                "tool_call",
+                {"tool_id": "retrieve_project_knowledge", "query": query_text},
+                run_id=run_id,
+                task_id=task_id,
+            )
         qa_result = (
             self.kb_service.project_qa(
                 query=query_text,
@@ -1080,6 +1578,26 @@ class TaskService:
             if tool_plan["use_knowledge"]
             else self._empty_project_qa_result(query=query_text)
         )
+        if tool_plan["use_knowledge"]:
+            self._emit_stream_event(
+                stream_sink,
+                "tool_result",
+                {
+                    "tool_id": "retrieve_project_knowledge",
+                    "status": "completed",
+                    "matched_count": len(qa_result.get("retrieved_docs", [])),
+                },
+                run_id=run_id,
+                task_id=task_id,
+            )
+        if tool_plan["use_inventory"]:
+            self._emit_stream_event(
+                stream_sink,
+                "tool_call",
+                {"tool_id": "query_project_inventory", "query": query_text},
+                run_id=run_id,
+                task_id=task_id,
+            )
         inventory_result = (
             self.inventory_service.query(
                 query=query_text,
@@ -1089,8 +1607,54 @@ class TaskService:
             if tool_plan["use_inventory"]
             else self._empty_inventory_result(query=query_text)
         )
+        if tool_plan["use_inventory"]:
+            self._emit_stream_event(
+                stream_sink,
+                "tool_result",
+                {
+                    "tool_id": "query_project_inventory",
+                    "status": "completed",
+                    "matched_count": len(inventory_result.get("items", [])),
+                },
+                run_id=run_id,
+                task_id=task_id,
+            )
+        if tool_plan["use_project_file"]:
+            self._emit_stream_event(
+                stream_sink,
+                "tool_call",
+                {
+                    "tool_id": "read_project_file",
+                    "file_path": self._project_file_candidate(request)["file_path"],
+                },
+                run_id=run_id,
+                task_id=task_id,
+            )
+        project_file_result = (
+            self._read_project_file_tool(request)
+            if tool_plan["use_project_file"]
+            else {
+                "status": "skipped",
+                "reason": "tool_plan_skipped_project_file_read",
+                "file_path": self._project_file_candidate(request)["file_path"],
+            }
+        )
+        if tool_plan["use_project_file"]:
+            self._emit_stream_event(
+                stream_sink,
+                "tool_result",
+                {
+                    "tool_id": "read_project_file",
+                    "status": project_file_result.get("status", "skipped"),
+                    "file_path": project_file_result.get("file_path"),
+                    "bytes_read": project_file_result.get("bytes_read"),
+                },
+                run_id=run_id,
+                task_id=task_id,
+            )
         qa_result["inventory_items"] = inventory_result["items"]
         qa_result["inventory_summary"] = inventory_result["summary"]
+        qa_result["project_file"] = project_file_result
         base_debug = self._base_debug(
             request=request,
             routing=routing,
@@ -1118,22 +1682,78 @@ class TaskService:
                 qa_result["confidence"] = max(
                     float(qa_result["confidence"]),
                     0.25 if inventory_result["summary"].get("has_snapshot") else 0.12,
-                )
+            )
             answer_generation_mode = "inventory_summary_fallback"
-        if answer_generation_mode != "knowledge_catalog" and (qa_result["retrieved_docs"] or inventory_result["items"]):
-            llm_result = self.llm_service.complete(
-                messages=self._project_qa_messages(
+        if (
+            answer_generation_mode == "retrieval_summary_fallback"
+            and not qa_result.get("answer")
+            and project_file_result.get("status") != "skipped"
+        ):
+            qa_result["answer"] = self._project_file_fallback_answer(
+                project_file_result=project_file_result,
+                output_language=output_language,
+            )
+            answer_generation_mode = "project_file_fallback"
+            qa_result["confidence"] = max(
+                float(qa_result["confidence"]),
+                0.55 if project_file_result.get("status") == "completed" else 0.25,
+            )
+        has_project_file_context = project_file_result.get("status") == "completed"
+        if answer_generation_mode != "knowledge_catalog" and (
+            qa_result["retrieved_docs"] or inventory_result["items"] or has_project_file_context
+        ):
+            complete_kwargs: dict[str, Any] = {
+                "messages": self._project_qa_messages(
                     request=request,
                     query=query_text,
                     qa_result=qa_result,
+                    project_file_result=project_file_result,
                     output_language=output_language,
                     context_bundle=context_bundle,
                 ),
-                config=chat_config,
-            )
+                "config": chat_config,
+            }
+            if stream_sink:
+                complete_kwargs["stream_sink"] = (
+                    lambda text_delta: self._emit_stream_event(
+                        stream_sink,
+                        "assistant_delta",
+                        {"text": text_delta},
+                        run_id=run_id,
+                        task_id=task_id,
+                    )
+                )
+            llm_result = self.llm_service.complete(**complete_kwargs)
             if llm_result["ok"]:
                 qa_result["answer"] = llm_result["text"]
                 answer_generation_mode = "llm_synthesized"
+
+        react_loop = self._build_react_lite_trace(
+            query=query_text,
+            tool_plan=tool_plan,
+            qa_result=qa_result,
+            inventory_result=inventory_result,
+            project_file_result=project_file_result,
+            answer_generation_mode=answer_generation_mode,
+        )
+        result_contracts = self._project_qa_result_contracts(
+            tool_plan=tool_plan,
+            qa_result=qa_result,
+            inventory_result=inventory_result,
+            project_file_result=project_file_result,
+        )
+        self_reflection = build_self_reflection(
+            route_type="project_qa",
+            output_language=output_language,
+            answer_text=str(qa_result.get("answer") or ""),
+            confidence=float(qa_result.get("confidence") or 0.0),
+            answer_generation_mode=answer_generation_mode,
+            retrieved_docs=qa_result.get("retrieved_docs", []),
+            inventory_items=inventory_result.get("items", []),
+            project_file_result=project_file_result,
+            live_llm_used=bool(llm_result.get("ok")),
+            warnings=qa_result.get("warnings", []),
+        )
 
         confidence = qa_result["confidence"]
         step_results = [
@@ -1183,6 +1803,31 @@ class TaskService:
                 "details": inventory_result["summary"],
             },
             {
+                "step_id": "read_project_file",
+                "title": "Read Project File",
+                "status": project_file_result.get("status", "skipped")
+                if tool_plan["use_project_file"]
+                else "skipped",
+                "summary": _localized(
+                    output_language,
+                    (
+                        f"读取项目文件：{project_file_result.get('file_path')}。"
+                        if project_file_result.get("status") == "completed"
+                        else f"未读取项目文件：{project_file_result.get('reason') or 'not_selected'}。"
+                    ),
+                    (
+                        f"Read project file: {project_file_result.get('file_path')}."
+                        if project_file_result.get("status") == "completed"
+                        else f"Did not read a project file: {project_file_result.get('reason') or 'not_selected'}."
+                    ),
+                ),
+                "details": {
+                    key: value
+                    for key, value in project_file_result.items()
+                    if key != "text_excerpt"
+                },
+            },
+            {
                 "step_id": "compose_answer",
                 "title": "Answer Composition",
                 "status": "completed",
@@ -1227,13 +1872,14 @@ class TaskService:
                     title=_localized(output_language, "检索摘要", "Retrieval Summary"),
                     text=_localized(
                         output_language,
-                        f"命中 {len(qa_result['retrieved_docs'])} 个知识库片段、{len(inventory_result['items'])} 条项目快照记录，当前置信度 {confidence:.2f}。",
-                        f"Retrieved {len(qa_result['retrieved_docs'])} KB chunk(s) and {len(inventory_result['items'])} inventory item(s) with confidence {confidence:.2f}.",
+                        f"命中 {len(qa_result['retrieved_docs'])} 个知识库片段、{len(inventory_result['items'])} 条项目快照记录、项目文件读取状态 {project_file_result.get('status')}，当前置信度 {confidence:.2f}。",
+                        f"Retrieved {len(qa_result['retrieved_docs'])} KB chunk(s), {len(inventory_result['items'])} inventory item(s), project file status {project_file_result.get('status')}, with confidence {confidence:.2f}.",
                     ),
                     data={
                         "confidence": confidence,
                         "kb_chunk_count": len(qa_result["retrieved_docs"]),
                         "inventory_item_count": len(inventory_result["items"]),
+                        "project_file_status": project_file_result.get("status"),
                     },
                 ).model_dump(mode="json")
             ],
@@ -1253,19 +1899,29 @@ class TaskService:
             "catalog": qa_result.get("catalog", {}),
             "local_search": qa_result.get("local_search", {}),
             "inventory": inventory_result,
+            "project_file": project_file_result,
             "answer_generation": {
                 "mode": answer_generation_mode,
                 "provider": llm_result["provider"],
                 "model": llm_result["model"],
                 "profile_id": chat_config.profile_id,
             },
+            "react_loop": react_loop,
             "tool_plan": tool_plan,
+            "tool_contracts": {
+                "input_contracts": tool_plan.get("input_contracts", []),
+                "result_contracts": result_contracts,
+            },
+            "self_reflection": self_reflection,
             "context_summary": build_context_summary(request),
             "context_bundle": context_bundle,
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
         base_debug["local_search"] = qa_result.get("local_search", {})
         base_debug["inventory"] = inventory_result
+        base_debug["project_file"] = {
+            key: value for key, value in project_file_result.items() if key != "text_excerpt"
+        }
         base_debug["tools"] = [
             {
                 "tool_id": "retrieve_project_knowledge",
@@ -1286,6 +1942,19 @@ class TaskService:
                 ),
             },
             {
+                "tool_id": "read_project_file",
+                "status": (
+                    project_file_result.get("status", "skipped")
+                    if tool_plan["use_project_file"]
+                    else "skipped"
+                ),
+                "summary": (
+                    f"Read project file {project_file_result.get('file_path')}."
+                    if project_file_result.get("status") == "completed"
+                    else f"Skipped or blocked project file read ({project_file_result.get('reason')})."
+                ),
+            },
+            {
                 "tool_id": "llm_answer_synthesis",
                 "status": "completed" if llm_result["ok"] else "skipped",
                 "summary": (
@@ -1298,6 +1967,12 @@ class TaskService:
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
         base_debug["tool_plan"] = tool_plan
+        base_debug["tool_contracts"] = {
+            "input_contracts": tool_plan.get("input_contracts", []),
+            "result_contracts": result_contracts,
+        }
+        base_debug["react_loop"] = react_loop
+        base_debug["self_reflection"] = self_reflection
         base_debug["warnings"] = qa_result["warnings"] + (
             [] if llm_result["ok"] or llm_result["reason"] == "not_attempted" else [llm_result["reason"]]
         )
@@ -1324,6 +1999,9 @@ class TaskService:
         output_language: str,
         chat_config: ChatRuntimeConfig,
         context_bundle: dict[str, Any],
+        stream_sink: StreamEventSink | None = None,
+        run_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         base_debug = self._base_debug(
             request=request,
@@ -1331,20 +2009,41 @@ class TaskService:
             trace_id=trace_id,
             context_bundle=context_bundle,
         )
-        llm_result = self.llm_service.complete(
-            messages=self._direct_answer_messages(
+        complete_kwargs = {
+            "messages": self._direct_answer_messages(
                 request,
                 output_language=output_language,
                 context_bundle=context_bundle,
             ),
-            config=chat_config,
-        )
+            "config": chat_config,
+        }
+        if stream_sink:
+            complete_kwargs["stream_sink"] = (
+                lambda text_delta: self._emit_stream_event(
+                    stream_sink,
+                    "assistant_delta",
+                    {"text": text_delta},
+                    run_id=run_id,
+                    task_id=task_id,
+                )
+            )
+        llm_result = self.llm_service.complete(**complete_kwargs)
         used_live_llm = llm_result["ok"]
         answer_text = (
             llm_result["text"]
             if used_live_llm
             else self._direct_answer_fallback_text(output_language, llm_result["reason"])
         )
+        if not used_live_llm and (context_bundle.get("long_term_memory") or {}).get("items"):
+            memory_lines = [
+                f"- {item.get('text')}"
+                for item in (context_bundle.get("long_term_memory") or {}).get("items", [])[:3]
+            ]
+            answer_text += _localized(
+                output_language,
+                "\n\n我还能参考到这些项目长期记忆：\n" + "\n".join(memory_lines),
+                "\n\nI can also reference these long-term project memories:\n" + "\n".join(memory_lines),
+            )
         step_results = [
             {
                 "step_id": "classify_intent",
@@ -1419,6 +2118,16 @@ class TaskService:
             "context_summary": build_context_summary(request),
             "context_bundle": context_bundle,
         }
+        self_reflection = build_self_reflection(
+            route_type="direct_answer",
+            output_language=output_language,
+            answer_text=answer_text,
+            confidence=float(data["confidence"]),
+            answer_generation_mode=data["answer_generation"]["mode"],
+            live_llm_used=used_live_llm,
+            warnings=data["warnings"],
+        )
+        data["self_reflection"] = self_reflection
         base_debug["retrieval"] = retrieval_trace
         base_debug["tools"] = [
             {
@@ -1433,6 +2142,7 @@ class TaskService:
         ]
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
+        base_debug["self_reflection"] = self_reflection
         base_debug["warnings"] = data["warnings"]
         return {
             "user_view": user_view,

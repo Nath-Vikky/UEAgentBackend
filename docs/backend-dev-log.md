@@ -757,3 +757,217 @@ UE 前端回传的 `frontend-unified-handoff.md` 与 `backend-action-items.md` �
 - Logs Analyze 主结果区建议显示“LLM 分析结果”卡片。
 - `llm_analysis.status=skipped` 显示为轻提示，不作为任务失败。
 - `retrieval_quality_gate` 只放 Debug View。
+
+## 2026-04-27 面试增强第一阶段
+
+本轮开始执行“9/10 Agent 项目边界版”优化，但保持个人作品和 UE 联调稳定性优先。
+
+### 主要代码改动
+
+- `app/tools/registry.py` 升级为声明式 Tool Registry，工具能力卡包含触发词、输入字段、schema、副作用级别、超时和检索需求。
+- `app/agent/router.py` 不再维护独立 `TOOL_KEYWORDS`，工具候选来自 Tool Registry。
+- `/api/v1/system/capabilities` 新增 `tool_registry`，前端和面试展示可以直接读取能力卡。
+- 新增 `app/core/startup_checks.py`，`/api/v1/system/health` 返回 `startup_checks`。
+- `app/main.py` 启动时输出 warning/error 级配置校验结果。
+- `Agent Chat / Project QA` 新增 `data.react_loop` 和 `debug_view.react_loop`，用于展示 ReAct Lite 轨迹。
+- 新增 `.github/workflows/ci.yml`：Ruff、pytest、RAG eval smoke。
+- `scripts/run_rag_eval.py` 新增 `--min-hit-at-k`、`--min-route-accuracy` 阈值。
+
+### 文档补充
+
+- `docs/improveplan.md`：记录必做增强、可选加分和开发边界。
+- `docs/backend-user-guide.md`：补充 Tool Registry、ReAct Lite、配置校验、测试/eval/CI 用法。
+- `docs/architecture.md`：新增架构图和分层说明。
+
+### 边界
+
+- ReAct Lite 当前是受控可解释轨迹，不让 LLM 自动执行写操作。
+- CI 不做部署、不做 Docker 镜像推送、不做跨平台矩阵。
+- 配置校验对本地开发友好：缺 Key、缺 Qdrant 先 warning，不阻塞服务启动。
+
+## 2026-04-27 ReAct 受控工具选择 v1
+
+本轮把 `Agent Chat / Project QA` 的 `react_loop` 从事后解释升级为受控工具规划：LLM 可用时可以建议只读工具，后端负责白名单校验和 deterministic fallback。
+
+### 主要代码改动
+
+- `Project QA` 新增 `_react_lite_tool_plan()`。
+- LLM planner 只能选择：
+  - `retrieve_project_knowledge`
+  - `query_project_inventory`
+  - `read_project_file`
+- 新增 `read_project_file` ToolSpec 能力卡。
+- 新增只读文件读取逻辑：
+  - 必须限制在 `context.project_root` 内。
+  - 只允许文本/code/config 类型后缀。
+  - 限制读取字节数，避免超长文件进入上下文。
+- Project QA 响应新增 `data.project_file`、`debug_view.project_file`、`tool_plan.planner_decision`、`tool_plan.tool_calls`。
+- `debug_view.react_loop.steps[]` 会记录 `read_project_file` 的 action / observation。
+
+### 测试
+
+- 新增集成覆盖：自由聊天询问当前文件时，后端读取 `project_root + current_file` 并写入 Debug View。
+
+### 边界
+
+- 受控 ReAct 只用于 Project QA。
+- 不做自动写文件或自动执行命令。
+- LLM 规划失败不影响原 deterministic 路径。
+
+## 2026-04-27 Tool Contract v1
+
+本轮补齐 Tool Registry 的契约校验能力，目标是让后续新增工具更稳定、更容易调试。
+
+### 主要代码改动
+
+- `ToolSpec` 新增 `output_schema`。
+- Tool capability card 暴露 `input_schema` 和 `output_schema`。
+- 新增 `app/tools/contracts.py`：
+  - `validate_tool_registry`
+  - `validate_tool_call_input`
+  - `validate_tool_result`
+- `startup_checks` 新增 `tool_registry_contracts`。
+- `Project QA` 响应新增 `data.tool_contracts` 和 `debug_view.tool_contracts`。
+
+### 测试
+
+- 单元测试覆盖 Registry 自检、缺少必填输入、合法结果校验。
+- 集成测试覆盖 Health 中的 Tool Registry check，以及当前文件读取工具的 input/result contract。
+
+### 边界
+
+- 只做轻量 required/type 校验。
+- 不引入 jsonschema 依赖。
+- 不做动态工具热加载。
+
+## 2026-04-27 Self-Reflection 轻量版
+
+本轮新增回答后的质量自检，用确定性规则判断回答是否有证据、是否降级、是否需要补上下文。
+
+### 主要代码改动
+
+- 新增 `app/agent/self_reflection.py`。
+- `Project QA` 和 `Direct Answer` 响应新增 `data.self_reflection`。
+- Debug View 新增 `debug_view.self_reflection`。
+- Agent Decision Trace 新增 `self_reflection_decision`。
+
+### 自检项
+
+- `answer_present`
+- `evidence_available`
+- `confidence_floor`
+- `degraded_warnings`
+
+### 边界
+
+- 不额外调用 LLM。
+- 不进入普通用户主 UI。
+- 不做多轮反思或多 Agent 辩论。
+
+## 2026-04-27 Docker 本地演示入口
+
+本轮补充容器化演示骨架，用于项目留档和面试展示环境一致性。
+
+### 新增文件
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `.dockerignore`
+- `Makefile`
+
+### 默认行为
+
+- `docker compose up --build` 启动 `app + qdrant`。
+- App 暴露 `8000`。
+- Qdrant 暴露 `6333`。
+- 默认 `EMBEDDING_ENABLED=false`，优先保证 lexical RAG 和后端主体能力可启动。
+
+### 边界
+
+- 不做 K8s / Helm。
+- 不做镜像推送。
+- 不做生产部署参数优化。
+- Docker 只作为本地演示和可复现运行环境。
+
+## 2026-04-27 轻量长期记忆 v1
+
+本轮补齐 Agent Memory 能力，但保持个人作品边界：不用 LLM 抽取、不依赖 Qdrant、不做用户画像。
+
+### 主要代码改动
+
+- `app/agent/memory_manager.py`
+  - 新增长期记忆抽取。
+  - 新增 `recall_long_term_memory()`。
+  - `update_session_memory()` 即使未达到 session summary 阈值，也会抽取长期记忆。
+- `app/agent/context_manager.py`
+  - Context Bundle 新增 `long_term_memory`。
+  - Prompt excerpt 注入 `Long-term project memory`。
+- `app/agent/decision_trace.py`
+  - `memory_decision` 增加长期记忆召回状态和条目。
+- `app/db/repositories/sessions.py`
+  - clear session 时清理当前 session 的长期记忆条目。
+
+### 测试
+
+- 新增集成覆盖：Session A 写入项目约定，Session B 使用同一 `project_name` 能在 Context Bundle 召回。
+
+### 边界
+
+- SQLite + keyword recall。
+- 不做向量记忆、不做图记忆。
+- 不新增前端接口。
+
+## 2026-04-27 RAG Eval Markdown Report
+
+本轮把 RAG eval 从“命令行 JSON 输出”补成“可读报告”。
+
+### 主要代码改动
+
+- 新增 `app/rag/evaluation/reporting.py`，负责把 eval JSON report 渲染成 Markdown。
+- `scripts/run_rag_eval.py` 新增 `--markdown-output` 参数。
+- 新增单测覆盖 Markdown report 的 summary 和 cases 输出。
+- 生成 `docs/rag-eval-report.md`，用于面试展示当前检索质量、路由准确率和引用覆盖。
+- CI 会额外上传 `ci-rag-eval.json` 和 `ci-rag-eval.md` artifact。
+
+### 当前 smoke 结果
+
+- `cases=4`
+- `hit_at_k=0.5`
+- `mrr=0.5`
+- `route_accuracy=1.0`
+- `citation_coverage=1.0`
+- `no_result_ratio=0.5`
+
+### 边界
+
+- 这是本地 smoke eval，不是大规模 benchmark。
+- 目前只验证固定样例集，后续扩充知识库或任务类型时再扩充 dataset。
+- Markdown 报告只用于复盘和面试展示，不是线上监控系统。
+
+## 2026-04-27 可选 Token SSE 流式入口
+
+前端回传确认：当前 UE HTTP 客户端仍以完整 JSON 响应为主，暂不支持 `text/event-stream` 持续读取和逐 token 更新同一条 assistant 气泡。因此后端采用兼容方式新增可选入口，不改变旧接口。
+
+### 主要代码改动
+
+- 新增 `POST /api/v1/chat/runs/stream`。
+- `GET /api/v1/chat/runs/{run_id}/events/stream` 保持历史事件回放语义不变。
+- `TaskService.create_task()` 支持可选 `stream_sink`。
+- `LLMService.complete()` 支持可选流式模式，OpenAI-compatible `stream=true` 时逐 delta 回调。
+- Project QA 流式事件包含：
+  - `tool_call`
+  - `tool_result`
+  - `assistant_delta`
+  - `final`
+- Direct Answer 流式事件包含：
+  - `assistant_delta`
+  - `final`
+- 新增集成测试覆盖未配置 LLM 时的 SSE fallback：仍返回 `stream_opened/run_started/final`。
+
+### 边界
+
+- 只对 `Agent Chat / Project QA` 提供可选流式入口。
+- Code Review / Code Generate / Logs Analyze / Assets Inspect 继续同步返回。
+- 必须保留非流式 `POST /api/v1/chat/runs` fallback。
+- LLM 未配置或流式请求失败时，不伪造 token，依靠 `final` 返回完整响应或 `error` 报告失败。
+- 暂不做全项目 async，不引入消息队列。

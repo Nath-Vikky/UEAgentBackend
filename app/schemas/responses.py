@@ -45,6 +45,7 @@ class HealthResponse(BaseModel):
     environment: str
     database: dict[str, Any] = Field(default_factory=dict)
     storage: dict[str, Any] = Field(default_factory=dict)
+    startup_checks: dict[str, Any] = Field(default_factory=dict)
     observability: dict[str, Any] = Field(default_factory=dict)
     errors: list[ErrorDetail] = Field(default_factory=list)
 

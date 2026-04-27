@@ -6,6 +6,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.agent.context_builder import build_context_summary
+from app.agent.memory_manager import recall_long_term_memory
 from app.db.models.session import MessageModel, SessionModel
 from app.db.repositories.sessions import list_session_tasks
 from app.schemas.requests import UnifiedTaskRequest
@@ -148,6 +149,8 @@ def _estimate_chars(bundle: dict[str, Any]) -> int:
         for item in bundle.get(section, []):
             total += len(str(item.get("content") or item.get("summary") or ""))
     total += len(str(bundle.get("session_summary", {}).get("summary_text") or ""))
+    for item in bundle.get("long_term_memory", {}).get("items", []):
+        total += len(str(item.get("text") or ""))
     total += len(str(bundle.get("editor_context") or ""))
     return total
 
@@ -171,6 +174,13 @@ def build_context_bundle(
         limit=recent_message_limit,
         per_message_chars=700,
     )
+    latest_user_message = _latest_user_message(request)
+    long_term_memory = recall_long_term_memory(
+        db,
+        project_name=request.context.project_name,
+        query=latest_user_message,
+        limit=5,
+    )
     bundle = {
         "version": "context_bundle_v1",
         "input_summary": {
@@ -179,12 +189,13 @@ def build_context_bundle(
             "actual_task_type": actual_task_type,
             "route_type": routing.get("intent", {}).get("route_type"),
             "selected_tool_id": routing.get("route", {}).get("selected_tool_id"),
-            "latest_user_message": _clip(_latest_user_message(request), 700),
+            "latest_user_message": _clip(latest_user_message, 700),
         },
         "editor_context": build_context_summary(request),
         "language_context": dict(routing.get("locale") or {}),
         "recent_messages": recent_messages,
         "session_summary": _session_summary(db, session_id),
+        "long_term_memory": long_term_memory,
         "project_inventory_context": {
             "status": "pending_execution",
             "note": "Project Inventory query results are attached after tool execution when selected.",
@@ -207,7 +218,7 @@ def build_context_bundle(
         "within_budget": estimated_chars <= char_budget,
         "recent_message_limit": recent_message_limit,
         "tool_task_limit": tool_task_limit,
-        "truncation_policy": "Keep latest messages and compact excerpts; long-term summary is planned for Memory Summary phase.",
+            "truncation_policy": "Keep latest messages, long-term memory snippets, and compact excerpts.",
     }
     if estimated_chars > char_budget:
         bundle["budget"]["warnings"] = ["context_bundle_over_budget_compact_excerpts_used"]
@@ -234,4 +245,11 @@ def context_bundle_prompt_excerpt(context_bundle: dict[str, Any]) -> str:
         lines.append("- Recent tool task summaries:")
         for item in tool_context:
             lines.append(f"  - {item.get('task_type')}[{item.get('status')}]: {item.get('summary')}")
+    long_term_memory = context_bundle.get("long_term_memory") or {}
+    if long_term_memory.get("items"):
+        lines.append("- Long-term project memory:")
+        for item in long_term_memory.get("items", [])[:5]:
+            lines.append(
+                f"  - {item.get('category')}[{item.get('score', 0)}]: {item.get('text')}"
+            )
     return "\n".join(lines)

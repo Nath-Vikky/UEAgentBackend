@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import CAPABILITIES, SUPPORTED_LANGUAGES, UI_RECOMMENDATIONS
 from app.core.settings import Settings
+from app.core.startup_checks import collect_startup_checks
 from app.observability.redaction import redact_payload
 from app.observability.telemetry import service_health_snapshot
 from app.services.kb_service import KnowledgeBaseService
@@ -43,6 +44,11 @@ class SystemService:
                 "upload_dir": str(Path(self.settings.upload_dir).resolve()),
                 "artifact_dir": str(Path(self.settings.artifact_dir).resolve()),
             },
+            "startup_checks": collect_startup_checks(
+                self.settings,
+                database_status=database_status,
+                database_error=database_error,
+            ),
             "observability": service_health_snapshot(),
         }
 

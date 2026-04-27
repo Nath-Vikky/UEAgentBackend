@@ -54,6 +54,21 @@ def test_system_bootstrap_and_runtime_profiles(client: TestClient) -> None:
     assert "local_search_readiness" in kb_status.json()["summary"]
 
 
+def test_system_health_exposes_startup_checks(client: TestClient) -> None:
+    response = client.get("/api/v1/system/health")
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["startup_checks"]["checks"]
+    assert body["startup_checks"]["counts"]["warning"] >= 1
+    assert any(item["check_id"] == "llm_api_key" for item in body["startup_checks"]["checks"])
+    assert any(
+        item["check_id"] == "tool_registry_contracts" and item["status"] == "ok"
+        for item in body["startup_checks"]["checks"]
+    )
+    assert body["startup_checks"]["blocking"] is False
+
+
 def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) -> None:
     response = client.get("/api/v1/system/capabilities")
     body = response.json()
@@ -80,6 +95,13 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
     assert body["capabilities"]["skill_architecture"]["runtime_dynamic_skills"] is False
     assert body["capabilities"]["skill_architecture"]["public_skill_count"] == 5
     assert len(body["capabilities"]["skill_catalog"]) == 5
+    assert body["capabilities"]["tool_registry"]["mode"] == "declarative_static_registry"
+    assert any(
+        item["tool_id"] == "query_project_inventory"
+        and "当前项目" in item["trigger_keywords"]
+        and item["side_effect_level"] == "read_only"
+        for item in body["capabilities"]["tool_registry"]["tools"]
+    )
     assert any(
         item["skill_id"] == "CodeReviewSkill"
         and item["architecture"]["collector"] == "ue_project_code_file_scanner_and_reader"
@@ -303,6 +325,12 @@ def test_agent_chat_project_asset_listing_selects_inventory_tool(client: TestCli
     assert body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
     assert "inspect_asset_metadata" not in body["debug_view"]["route"]["candidate_tool_ids"]
     assert body["data"]["tool_plan"]["selected_tool_id"] == "query_project_inventory"
+    assert body["data"]["react_loop"]["mode"] == "react_lite"
+    assert body["data"]["react_loop"]["stop_reason"] == "agent_decided_done"
+    assert any(
+        item.get("tool_id") == "query_project_inventory"
+        for item in body["debug_view"]["react_loop"]["steps"]
+    )
     assert body["data"]["inventory"]["summary"]["inferred_asset_type"] == "Blueprint"
     assert len(body["data"]["inventory"]["items"]) == 2
     assert body["debug_view"]["tools"][0]["tool_id"] == "retrieve_project_knowledge"
@@ -399,6 +427,125 @@ def test_agent_chat_project_asset_listing_supports_compact_chinese_query(client:
     assert len(body["data"]["inventory"]["items"]) == 2
     assert "BP_PlayerCharacter" in body["assistant_message"]
     assert "BP_EnemySpawner" in body["assistant_message"]
+
+
+def test_agent_chat_project_qa_can_read_current_project_file(client: TestClient) -> None:
+    project_root = Path(".test-runtime") / f"react-file-read-{uuid.uuid4().hex}"
+    source_file = project_root / "Source" / "Demo" / "PlayerCharacter.cpp"
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    source_file.write_text(
+        "void APlayerCharacter::BeginPlay()\n{\n    Super::BeginPlay();\n    SetupEnhancedInput();\n}\n",
+        encoding="utf-8",
+    )
+    try:
+        query = "请解释当前文件里做了什么"
+        response = client.post(
+            "/api/v1/chat/runs",
+            json={
+                "task_type": "agent_chat",
+                "session": {
+                    "session_id": "react_file_read_chat_session",
+                    "messages": [{"role": "user", "content": query, "language": "auto"}],
+                },
+                "context": {
+                    "project_name": "ReadFileProject",
+                    "project_root": str(project_root.resolve()),
+                    "active_panel": "AgentChat",
+                    "current_file": "Source/Demo/PlayerCharacter.cpp",
+                },
+                "payload": {"user_query": query},
+                "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = response.json()
+
+        assert response.status_code == 200
+        assert body["intent"]["route_type"] == "project_qa"
+        assert body["data"]["project_file"]["status"] == "completed"
+        assert "SetupEnhancedInput" in body["data"]["project_file"]["text_excerpt"]
+        assert body["data"]["tool_contracts"]["input_contracts"]
+        assert all(item["ok"] for item in body["data"]["tool_contracts"]["input_contracts"])
+        assert all(item["ok"] for item in body["debug_view"]["tool_contracts"]["result_contracts"])
+        assert body["data"]["self_reflection"]["status"] in {"passed", "degraded"}
+        assert body["debug_view"]["self_reflection"]["grounding_level"] == "project_grounded"
+        assert any(item["tool_id"] == "read_project_file" for item in body["debug_view"]["tools"])
+        assert any(
+            item.get("tool_id") == "read_project_file"
+            for item in body["debug_view"]["react_loop"]["steps"]
+        )
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
+
+
+def test_agent_chat_recalls_project_long_term_memory_across_sessions(client: TestClient) -> None:
+    project_name = f"MemoryProject_{uuid.uuid4().hex[:8]}"
+    first = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": f"memory_source_{uuid.uuid4().hex}",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "请记住：我们的项目 UE 版本是 5.4，所有蓝图命名要加 BP_ 前缀。",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {"project_name": project_name, "active_panel": "AgentChat"},
+            "payload": {"user_query": "请记住：我们的项目 UE 版本是 5.4，所有蓝图命名要加 BP_ 前缀。"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    second = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": f"memory_reader_{uuid.uuid4().hex}",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "创建新蓝图应该注意什么？",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {"project_name": project_name, "active_panel": "AgentChat"},
+            "payload": {"user_query": "创建新蓝图应该注意什么？"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = second.json()
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    memory = body["data"]["context_bundle"]["long_term_memory"]
+    assert memory["status"] == "available"
+    assert any("BP_" in item["text"] and "5.4" in item["text"] for item in memory["items"])
+    assert body["debug_view"]["memory_summary"]["long_term_memory"]["count"] >= 1
 
 
 def test_create_task_and_fetch_dual_views(client: TestClient) -> None:
@@ -1440,6 +1587,105 @@ def test_code_review_workflow_persists_artifacts_and_events(client: TestClient) 
     assert stream.status_code == 200
     assert "event: run_started" in stream.text
     assert "event: step_completed" in stream.text
+
+
+def test_chat_run_stream_endpoint_keeps_non_streaming_fallback(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs/stream",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": f"stream_session_{uuid.uuid4().hex}",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "你好，简单介绍一下这个助手。",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+            },
+            "payload": {"user_query": "你好，简单介绍一下这个助手。"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": True,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: stream_opened" in response.text
+    assert "event: run_started" in response.text
+    assert "event: final" in response.text
+    assert '"fallback_endpoint": "/api/v1/chat/runs"' in response.text
+
+
+def test_chat_run_stream_endpoint_emits_assistant_delta(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fake_complete(self, *, messages, config, stream_sink=None):  # type: ignore[no-untyped-def]
+        if stream_sink:
+            stream_sink("Hello")
+            stream_sink(" world")
+        return {
+            "ok": True,
+            "reason": "completed",
+            "error": "",
+            "provider": "openai_compatible",
+            "model": config.model,
+            "profile_id": config.profile_id,
+            "text": "Hello world",
+            "usage": {
+                "input_tokens": 1,
+                "output_tokens": 2,
+                "estimated_cost_usd": 0.0,
+                "latency_ms": 1,
+            },
+        }
+
+    monkeypatch.setattr("app.services.llm_service.LLMService.complete", _fake_complete)
+
+    response = client.post(
+        "/api/v1/chat/runs/stream",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": f"stream_delta_session_{uuid.uuid4().hex}",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Say hello.",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {"active_panel": "AgentChat"},
+            "payload": {"user_query": "Say hello."},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": True,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert "event: assistant_delta" in response.text
+    assert '"text": "Hello"' in response.text
+    assert '"text": " world"' in response.text
+    assert '"assistant_message": "Hello world"' in response.text
 
 
 def test_code_review_file_listing_and_selected_file_review(client: TestClient) -> None:

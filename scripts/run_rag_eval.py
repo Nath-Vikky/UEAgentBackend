@@ -17,6 +17,7 @@ from app.core.settings import get_settings
 from app.db.session import get_engine, get_session_factory
 from app.main import create_app
 from app.rag.evaluation.metrics import evaluate_case, summarize_cases
+from app.rag.evaluation.reporting import build_markdown_report
 
 
 def _parse_args() -> argparse.Namespace:
@@ -41,6 +42,22 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         help="Optional path for the JSON report. Defaults to storage/artifacts/evals/.",
+    )
+    parser.add_argument(
+        "--markdown-output",
+        help="Optional path for a Markdown report.",
+    )
+    parser.add_argument(
+        "--min-hit-at-k",
+        type=float,
+        default=0.0,
+        help="Fail the eval if average hit@k is below this threshold.",
+    )
+    parser.add_argument(
+        "--min-route-accuracy",
+        type=float,
+        default=0.0,
+        help="Fail the eval if route accuracy is below this threshold.",
     )
     return parser.parse_args()
 
@@ -166,9 +183,23 @@ def main() -> int:
     output_path = Path(args.output).resolve() if args.output else _default_output_path().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    markdown_output_path = Path(args.markdown_output).resolve() if args.markdown_output else None
+    if markdown_output_path:
+        markdown_output_path.parent.mkdir(parents=True, exist_ok=True)
+        markdown_output_path.write_text(build_markdown_report(report), encoding="utf-8")
 
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
     print(f"Saved report to: {output_path}")
+    if markdown_output_path:
+        print(f"Saved Markdown report to: {markdown_output_path}")
+    if report["summary"]["hit_at_k"] < args.min_hit_at_k:
+        raise SystemExit(
+            f"RAG eval hit@k {report['summary']['hit_at_k']} is below threshold {args.min_hit_at_k}."
+        )
+    if report["summary"]["route_accuracy"] < args.min_route_accuracy:
+        raise SystemExit(
+            f"RAG eval route accuracy {report['summary']['route_accuracy']} is below threshold {args.min_route_accuracy}."
+        )
     return 0
 
 
