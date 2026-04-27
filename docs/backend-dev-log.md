@@ -705,3 +705,55 @@ UE 前端回传的 `frontend-unified-handoff.md` 与 `backend-action-items.md` �
 - 前端不能把 `fix_draft` 展示成“已修复”。
 - 前端不能把 `validation_plan` 展示成“已执行测试”。
 - `written_to_disk=false`、`is_virtual=true`、`automation_level=manual_or_editor` 都是正常建议状态。
+
+## 2026-04-26 Logs Analyze 输入优化
+
+本轮优化日志分析体验，解决前端必须粘贴完整日志文本才能分析的问题。后端保持原接口 `POST /api/v1/tasks/logs-analyze` 不变，但 payload 输入方式更灵活。
+
+### 主要代码改动
+
+- `analyze_ue_log()` 支持从 `log_file_path` / `log_path` / `file_path` / 路径型 `log_source` 读取日志文件。
+- 支持 `selected_log_text`、`log_excerpt`、`error_excerpt`、`error_lines` 这类短错误片段。
+- 支持 `notes` / `user_notes` 和 `attachment_paths` / `attachments`。
+- 没有 `line_window` 时默认读取文件尾部窗口，避免把超长 UE 日志整体塞入分析链路。
+- 有 `line_window` 时读取指定行号范围。
+- `data.input_context` 和 `data.parser_diagnostics.input_collection` 增加 `input_mode`、`read_diagnostics`、`attachment_diagnostics`，便于 Debug View 排查。
+- `LogsAnalyzeSkill` 的 collector 从 `ue_log_text_payload` 更新为 `ue_log_input_payload`。
+
+### 前端影响
+
+- 不新增主菜单，不改接口路径。
+- Logs Analyze 面板应取消“必须粘贴文本”的限制。
+- `Analyze Log` 启用条件改为：存在粘贴片段或存在日志文件路径。
+- 普通用户仍看结构化 `user_view.blocks`；文件读取诊断放 Debug View。
+
+### 边界
+
+- 后端只读取前端显式传入的路径，不主动扫描项目日志目录。
+- 后端只读日志，不删除、不移动、不修改文件。
+- 附件只作为辅助文本上下文，不做崩溃 dump 二进制解析。
+
+## 2026-04-27 Logs Analyze LLM 分析与检索质量门槛
+
+本轮继续优化日志分析的可解释性，明确区分“规则解析结果”“LLM 综合解释”和“知识库参考”。
+
+### 主要代码改动
+
+- `LogsAnalyzeSkill` 新增 `data.llm_analysis`、`data.llm_analysis_raw`。
+- `user_view.blocks` 在 `Log Summary` 后追加 `llm_analysis`，再展示 `Issue Families` 和建议动作。
+- LLM 未配置时稳定返回 `llm_analysis.status=skipped` 和 `reason_code=missing_openai_api_key`，不影响规则解析结果。
+- Debug View 增加 `llm_log_analysis_synthesis` tool/step。
+- 日志知识库检索新增 `retrieval_quality_gate`，低于阈值的 `incident_history / engine_notes / project_docs` 命中不会进入用户 citations，也不会作为 LLM 事实上下文。
+
+### 当前策略
+
+- 先用确定性解析提取 Error/Fatal、Warning、callstack、模块和 `/Game/` 资源路径。
+- 再用 LLM 对解析事实做自然语言综合解释。
+- 知识库只在 `confidence` 或 `top_score` 达标时作为辅助参考。
+- 如果知识库不达标，Logs Analyze 仍正常用规则结果和 LLM 自身能力解释日志。
+
+### 前端影响
+
+- Logs Analyze 主结果区建议显示“LLM 分析结果”卡片。
+- `llm_analysis.status=skipped` 显示为轻提示，不作为任务失败。
+- `retrieval_quality_gate` 只放 Debug View。

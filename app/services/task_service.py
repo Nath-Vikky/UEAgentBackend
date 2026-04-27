@@ -1004,6 +1004,7 @@ class TaskService:
                 run_id=run_id,
                 trace_id=trace_id,
                 output_language=output_language,
+                chat_config=chat_config,
             )
         if actual_task_type == "config_generate":
             return self._execute_config_generate(
@@ -1674,9 +1675,11 @@ class TaskService:
         run_id: str,
         trace_id: str,
         output_language: str,
+        chat_config: ChatRuntimeConfig,
     ) -> dict[str, Any]:
         executor = LogsAnalyzeSkillExecutor(
             kb_service=self.kb_service,
+            llm_service=self.llm_service,
             base_debug_builder=self._base_debug,
         )
         return executor.execute(
@@ -1686,6 +1689,7 @@ class TaskService:
             run_id=run_id,
             trace_id=trace_id,
             output_language=output_language,
+            chat_config=chat_config,
         )
 
     def _execute_config_generate(

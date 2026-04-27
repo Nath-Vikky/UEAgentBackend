@@ -305,31 +305,59 @@
 
 推荐 UI：
 
-- 日志预览区
+- 日志来源输入 / 文件选择区
+- 日志片段粘贴区，可为空
+- 日志预览区，优先展示实际将提交的片段或文件窗口
 - `Analyze Log` 按钮
 - 结构化结果区
 - 可选“发送到聊天”继续追问
+
+日志分析现在不再强制 `log_text`。前端可以三选一提交：
+
+- `log_text` / `selected_log_text` / `log_excerpt` / `error_excerpt` / `error_lines`：用户只粘贴几行 Error/Fatal 时使用。
+- `log_file_path` / `log_path` / `file_path`：用户从文件选择器选择日志文件时使用。
+- `log_source`：既可以作为来源标签，也可以在看起来像路径时作为兼容路径读取。
 
 建议 payload：
 
 ```json
 {
-  "log_text": "...",
   "log_source": "Saved/Logs/MyProject.log",
+  "log_file_path": "F:/Epic Games/project/RushBa/Saved/Logs/RushBa.log",
+  "selected_log_text": "LogTemp: Error: Access violation...",
+  "notes": "用户点击 Play 后崩溃",
+  "attachment_paths": ["F:/Epic Games/project/RushBa/Saved/Crashes/CrashContext.runtime-xml"],
   "time_range": {"start": "...", "end": "..."},
   "line_window": {"start": 120, "end": 220}
 }
 ```
 
+读取规则：
+
+- 如果提交了 `log_text` / `selected_log_text` 这类文本片段，后端优先分析片段，不会强制读取整个文件。
+- 如果没有提交文本片段，但提交了 `log_file_path`，后端会读取该文件的尾部窗口；如果带 `line_window`，则读取指定行号范围。
+- 如果同时提交文本片段和文件路径，默认只把文件路径作为来源记录；只有 `include_file_context=true` 时才额外读取文件上下文。
+- `attachment_paths` / `attachments` 只作为辅助文本附件读取，后端仍保持只读，不写入、不删除、不移动任何日志文件。
+
 前端应重点消费 `user_view.blocks` 中的这些结构：
 
 - `Log Summary`
+- `LLM Analysis`
 - `Issue Families`
 - `Suggested Actions`
 - `Captured Log Window`
 - `Affected Modules / Resources`
 
-日志采集仍属于插件职责，后端只分析文本。
+Debug View 可查看：
+
+- `data.input_context.input_mode`
+- `data.input_context.read_diagnostics`
+- `data.input_context.attachment_diagnostics`
+- `data.parser_diagnostics.input_collection`
+- `data.llm_analysis.status/reason_code/text`
+- `data.retrieval_quality_gate.status/reason/top_score/confidence`
+
+日志发现、文件选择和编辑器日志窗口采集仍属于插件职责；后端只读取前端显式传入的文本或路径。
 
 ### Assets Inspect
 
@@ -1280,3 +1308,81 @@ UE 前端回传的 `frontend-unified-handoff.md` 和 `backend-action-items.md` �
 - Code Review 是否能看到 `agent_workflow / fix_draft / validation_plan`。
 - Code Generate / Logs Analyze / Assets Inspect 是否都能看到 `validation_plan`。
 - 前端文案是否保持“建议 / 草稿 / 未写入 / 待验证”，没有误写成“已修复 / 已执行测试”。
+
+## 31. 2026-04-26 Logs Analyze 输入优化契约
+
+本轮后端优化了 Logs Analyze 的输入边界，解决“必须粘贴完整日志文本才能分析”的体验问题。接口仍然是：
+
+```http
+POST /api/v1/tasks/logs-analyze
+```
+
+前端需要调整：
+
+- 日志分析面板不要再把“粘贴文本”设为唯一必填项。
+- 用户可以选择日志文件路径、粘贴几行 Error/Fatal、或两者都提供。
+- 推荐 UI 改成三块：`Log Source / File`、`Error Snippet / Pasted Text`、`Notes / Attachments`。
+- `Analyze Log` 启用条件改为：至少存在 `log_text/selected_log_text/log_excerpt/error_excerpt/error_lines` 之一，或存在 `log_file_path/log_path/file_path/log_source` 之一。
+
+后端新增兼容字段：
+
+- `payload.log_file_path`：推荐的日志文件绝对路径或项目相对路径。
+- `payload.log_path` / `payload.file_path`：兼容字段。
+- `payload.selected_log_text` / `payload.log_excerpt` / `payload.error_excerpt` / `payload.error_lines`：短片段输入。
+- `payload.notes` / `payload.user_notes`：用户备注。
+- `payload.attachment_paths` / `payload.attachments[]`：可选辅助文本附件路径。
+- `payload.include_file_context=true`：当已经有粘贴片段但仍希望后端读取文件上下文时使用。
+
+后端读取规则：
+
+- 只分析前端显式传入的文本或路径，不主动扫描 UE 工程日志目录。
+- 文件读取保持只读，支持 `.log/.txt/.crashcontext/.xml/.json/.ini`。
+- 没有 `line_window` 时默认读取文件尾部窗口，避免一次性塞入超长日志。
+- 有 `line_window` 时读取指定行号范围。
+- 文本片段优先级高于文件读取，适合用户只想分析几条 Error。
+
+前端可在 Debug View 展示：
+
+- `data.input_context.input_mode`：`pasted_text`、`file_tail`、`file_line_window`、`attachment_text` 或 `empty`。
+- `data.input_context.read_diagnostics[]`：文件读取状态、截断状态、读取字节数。
+- `data.input_context.attachment_diagnostics[]`：附件读取状态。
+- `data.parser_diagnostics.input_collection`：完整输入采集诊断。
+
+回传建议说明：
+
+- 是否支持“只选文件不粘贴文本”后点击 Analyze。
+- 是否支持“只粘贴几行 Error/Fatal”后点击 Analyze。
+- 是否把 `input_mode/read_diagnostics` 放入 Debug View，而不是普通用户主结果。
+
+## 32. 2026-04-27 Logs Analyze LLM 分析与知识库质量门槛
+
+本轮后端继续优化 Logs Analyze 的解释层，解决“日志分析结果看起来像 LLM、又不像 LLM”的不清晰问题。
+
+### 后端新增行为
+
+- Logs Analyze 现在固定返回 `data.llm_analysis` 和 `user_view.blocks[block_type="llm_analysis"]`。
+- LLM 可用时，`llm_analysis.status = "completed"`，`text` 是面向普通用户的综合解释。
+- LLM 未配置或请求失败时，`llm_analysis.status = "skipped"`，`reason_code` 会说明原因，例如 `missing_openai_api_key`。
+- 规则解析、问题类型和验证清单不会因为 LLM skipped 失败，仍然正常返回。
+- Debug View 新增 tool/step：`llm_log_analysis_synthesis`。
+
+### 知识库使用策略
+
+Logs Analyze 仍会尝试检索 `incident_history / engine_notes / project_docs`，但新增质量门槛：
+
+- `data.retrieval_quality_gate.status = "passed"`：知识库命中质量足够，可作为引用和 LLM 辅助上下文。
+- `data.retrieval_quality_gate.status = "skipped"`：命中质量低于阈值，后端不会把这些弱命中放进普通用户引用，也不会强行交给 LLM 作为事实。
+- 阈值诊断字段：`confidence`、`top_score`、`min_confidence`、`min_top_score`、`candidate_count`。
+
+前端展示建议：
+
+- Logs Analyze 主结果区把 `llm_analysis` 放在 `Log Summary` 后、`Issue Families` 前。
+- `llm_analysis.status=skipped` 时显示轻提示，不当作任务失败。
+- 普通用户主 UI 只显示通过质量门槛的 citations / references。
+- `retrieval_quality_gate` 放 Debug View，不建议作为普通用户强提示。
+
+回传建议说明：
+
+- Logs Analyze 结果里是否能看到“LLM 分析结果”卡片。
+- 未配置 LLM 时是否显示 skipped 轻提示，而不是让用户误以为 LLM 已经分析。
+- 弱知识库命中是否只在 Debug View 可见，不进入普通用户引用。

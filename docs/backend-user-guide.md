@@ -158,20 +158,55 @@
 
 现在支持：
 
-- 传入 `log_text`
-- 可选传入 `log_source`、`time_range`、`line_window`
+- 传入 `log_text` / `selected_log_text` / `log_excerpt` / `error_excerpt` / `error_lines`，用于只分析几行 Error/Fatal
+- 传入 `log_file_path` / `log_path` / `file_path`，用于从用户选择的日志文件读取
+- 可选传入 `log_source`、`notes`、`attachment_paths`、`time_range`、`line_window`
 - 返回结构化事件、问题类型、建议动作
 - `user_view` 已按日志面板形态输出：
   - 摘要
+  - LLM 综合分析
   - 问题类型
   - 建议动作
   - 日志窗口信息
   - 模块 / 资源线索
 
+最小请求示例：
+
+```json
+{
+  "payload": {
+    "log_file_path": "F:/Epic Games/project/RushBa/Saved/Logs/RushBa.log",
+    "line_window": {"start": 120, "end": 220},
+    "notes": "点击 Play 后崩溃"
+  }
+}
+```
+
+如果用户只想分析几行错误，也可以只传：
+
+```json
+{
+  "payload": {
+    "selected_log_text": "LogTemp: Error: Access violation reading address\nCallstack: 0x0001 Demo!UMySubsystem",
+    "log_source": "Output Log selected lines"
+  }
+}
+```
+
 边界：
 
 - 日志采集应由插件或本地脚本负责
-- 后端只分析文本，不直接接管 Unreal Editor 日志面板
+- 后端只读取前端显式传入的文本或路径，不主动扫描 UE 日志目录
+- 后端默认读取日志文件尾部窗口，超长日志会截断；如果传入 `line_window`，则读取指定行范围
+- 后端不会修改、删除或移动日志文件
+
+LLM 与知识库策略：
+
+- `data.llm_analysis` 会明确说明本次是否执行 LLM 综合解释。
+- `llm_analysis.status=completed` 表示 LLM 已基于日志解析事实做综合判断。
+- `llm_analysis.status=skipped` 表示未执行 LLM，常见原因是 `missing_openai_api_key`，规则解析结果仍然可用。
+- 日志知识库检索会经过 `data.retrieval_quality_gate`，只有质量达标的 `incident_history / engine_notes / project_docs` 才会进入用户引用和 LLM 上下文。
+- 低质量命中会保留在 Debug View 诊断中，不会强行作为普通用户答案依据。
 
 ### 4.5 Assets Inspect
 
@@ -876,7 +911,7 @@ QDRANT_COLLECTION=rushba_local
 
 `LogsAnalyzeSkill`：
 - 日志采集由 UE 端或脚本完成
-- 后端接收日志文本后做模式识别和 LLM 分析
+- 后端接收日志文本、错误片段或显式日志文件路径后做模式识别和 LLM 分析
 - 如果知识库里有历史错误记录，可检索 `incident_history`
 
 `AssetsInspectSkill`：
@@ -1388,7 +1423,7 @@ POST /api/v1/sessions
 - `ProjectQASkill`：Agent Chat / Project QA，自由聊天、项目问答、知识库检索、Project Inventory 查询都从这里进入。
 - `CodeReviewSkill`：代码审查，负责 UE 工程源码扫描、选中文件读取、规则检查、KB 证据和可选 LLM 分析。
 - `CodeGenerateSkill`：代码生成，负责根据需求和 `code_reference/examples/engine_notes` 生成代码草案。
-- `LogsAnalyzeSkill`：日志分析，负责日志文本提取、严重性归类、签名识别和建议生成。
+- `LogsAnalyzeSkill`：日志分析，负责日志文本 / 文件窗口提取、严重性归类、签名识别和建议生成。
 - `AssetsInspectSkill`：资产检查，负责选中资产的命名、类型、依赖关系、常用设置和可选 LLM 分析。
 
 查看 Skill catalog：

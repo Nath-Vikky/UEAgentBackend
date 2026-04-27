@@ -149,11 +149,20 @@ BUILT_IN_SKILLS: tuple[BuiltInSkillSpec, ...] = (
         route_preference="workflow",
         side_effect_level="read_only",
         requires_retrieval=True,
-        collector="ue_log_text_payload",
+        collector="ue_log_input_payload",
         rules=["signature_extraction", "severity_grouping"],
         retrieval_domains=["incident_history", "engine_notes", "project_docs"],
-        projector_outputs=["user_view.blocks", "data.signatures", "data.recommendations", "data.validation_plan"],
-        notes="The plugin should collect or preview logs locally and send log_text to the backend for analysis.",
+        projector_outputs=[
+            "user_view.blocks",
+            "data.signatures",
+            "data.recommendations",
+            "data.llm_analysis",
+            "data.validation_plan",
+        ],
+        notes=(
+            "The plugin may send pasted log_text, selected error excerpts, or an explicit log_file_path. "
+            "The backend reads only the user-provided path/window and remains read-only."
+        ),
     ),
     BuiltInSkillSpec(
         skill_id="AssetsInspectSkill",

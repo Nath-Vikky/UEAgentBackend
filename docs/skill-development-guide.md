@@ -69,9 +69,10 @@ collector -> rules -> retrieval -> llm_analyzer -> projector
 
 职责：
 
-- 接收 UE 日志文本。
+- 接收 UE 日志文本、选中错误片段或显式日志文件路径。
 - 提取错误签名、严重等级和模块。
-- 检索历史问题或引擎笔记。
+- 检索历史问题或引擎笔记，并通过质量门槛过滤弱命中。
+- 可选调用 LLM 输出 `llm_analysis` 综合解释。
 - 输出摘要、原因和建议。
 
 ### AssetsInspectSkill

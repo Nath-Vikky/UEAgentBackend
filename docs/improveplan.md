@@ -68,11 +68,11 @@
 
 后端边界：
 
-- 接收 `log_text`
-- 可接收 `log_source`、`time_range`、`line_window`
+- 接收 `log_text` / `selected_log_text` 等短片段，也可接收 `log_file_path`
+- 可接收 `log_source`、`notes`、`attachment_paths`、`time_range`、`line_window`
 - 返回日志摘要、问题类型、建议动作、关键模块和资源线索
 - 不直接监听 Unreal Editor 日志流
-- 不负责日志文件发现与选择
+- 不主动扫描日志目录，日志文件发现与选择由 UE 前端负责
 
 推荐 UI：
 
@@ -1423,3 +1423,82 @@ domain 映射：
 - 能展示 Debug View / Decision Trace，说明每一步为什么发生。
 - 能说明项目边界：个人作品级、稳定可用、非企业部署。
 - 能把项目和游戏研发管线关联起来：代码、资产、日志、知识库、验证建议。
+
+## 2026-04-26 Logs Analyze 输入体验优化
+
+状态：后端 v1 已实现，等待 UE 前端调整面板。
+
+问题：
+
+- 前端当前要求必须粘贴日志文本才能分析。
+- UE 日志文件通常很长，用户更常见的操作是选择日志文件、截取几行 Error/Fatal、或补充附件路径。
+
+优化目标：
+
+- Logs Analyze 不再要求 `log_text` 必填。
+- 支持“选择日志文件后直接分析”。
+- 支持“只粘贴几行 Error/Fatal 片段后分析”。
+- 支持备注和附件路径作为辅助上下文。
+
+后端落地：
+
+- `payload.log_file_path` / `log_path` / `file_path`：读取用户显式传入的日志文件。
+- `payload.selected_log_text` / `log_excerpt` / `error_excerpt` / `error_lines`：读取用户粘贴的短片段。
+- `payload.attachment_paths` / `attachments`：读取少量文本附件上下文。
+- `payload.line_window`：指定文件行号范围。
+- 默认读取文件尾部窗口，避免超长日志直接进入上下文。
+- `data.input_context.input_mode` 标记输入模式：`pasted_text`、`file_tail`、`file_line_window`、`attachment_text`、`empty`。
+- `data.input_context.read_diagnostics` 暴露文件读取诊断。
+
+前端待调整：
+
+- Logs Analyze 面板改为“来源/文件 + 错误片段 + 备注/附件”三块。
+- `Analyze Log` 启用条件改为存在日志文本片段或日志文件路径。
+- 普通用户结果仍显示摘要、问题类型、建议动作、日志范围、关键模块和验证清单。
+- Debug View 展示 `input_mode`、`read_diagnostics`、`attachment_diagnostics`。
+
+边界：
+
+- 后端不主动扫描 UE 日志目录。
+- 后端不监听 Output Log 实时流。
+- 后端不解析二进制 crash dump。
+- 后端不修改、移动或删除日志文件。
+
+## 2026-04-27 Logs Analyze 解释层优化
+
+状态：后端 v1 已实现，等待 UE 前端显示 `llm_analysis` 卡片。
+
+问题：
+
+- Logs Analyze 之前主要输出规则解析、问题类型、建议动作和验证清单。
+- 用户容易误以为这些内容来自 LLM，但响应里没有明确的 LLM 分析卡片。
+- 日志分析偶尔会命中知识库，但弱匹配也可能让回答看起来被不相关资料影响。
+
+优化目标：
+
+- Logs Analyze 像 Code Review / Assets Inspect 一样明确输出 `llm_analysis`。
+- LLM 可用时，用 LLM 基于日志解析事实做综合解释。
+- LLM 不可用时，明确显示 skipped 原因，但不影响规则结果。
+- 知识库只在命中质量达标时参与用户引用和 LLM 上下文。
+
+后端落地：
+
+- 新增 `data.llm_analysis`、`data.llm_analysis_raw`。
+- 新增 `user_view.blocks[block_type="llm_analysis"]`，位置在日志摘要之后。
+- 新增 Debug step/tool：`llm_log_analysis_synthesis`。
+- 新增 `data.retrieval_quality_gate`：
+  - `status=passed`：知识库参考可用于用户引用和 LLM 上下文。
+  - `status=skipped`：命中低于阈值，只保留在 Debug View。
+- 当前默认阈值：`min_confidence=0.5` 或 `min_top_score=0.45`。
+
+前端待调整：
+
+- Logs Analyze 结果区显示“LLM 分析结果”卡片。
+- `status=skipped` 显示为轻提示，不当作失败。
+- `retrieval_quality_gate` 放 Debug View，不作为普通用户主提示。
+
+边界：
+
+- 不把弱知识库命中强行塞给 LLM。
+- 不因为 LLM 不可用而阻塞日志解析。
+- 不做企业级 incident ranking，只做作品级稳定 gate。

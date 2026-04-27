@@ -2074,18 +2074,90 @@ def test_logs_analyze_workflow_returns_structured_events(client: TestClient) -> 
     assert body["data"]["parser_diagnostics"]["callstack_lines"]
     assert [block["title"] for block in body["user_view"]["blocks"]] == [
         "Log Summary",
+        "LLM Analysis",
         "Issue Families",
         "Suggested Actions",
         "Captured Log Window",
         "Affected Modules / Resources",
         "Validation Plan",
     ]
+    assert body["data"]["llm_analysis"]["status"] == "skipped"
+    assert body["data"]["llm_analysis"]["reason_code"] == "missing_openai_api_key"
+    assert body["data"]["retrieval_quality_gate"]["status"] in {"passed", "skipped"}
     assert body["data"]["validation_plan"]["items"]
     assert any(item["category"] == "asset_validation" for item in body["data"]["validation_plan"]["items"])
+    assert any(step["step_id"] == "llm_log_analysis_synthesis" for step in body["step_results"])
     assert any(step["step_id"] == "build_validation_plan" for step in body["step_results"])
     assert body["debug_view"]["skill"]["skill_id"] == "LogsAnalyzeSkill"
-    assert body["debug_view"]["skill"]["collector"] == "ue_log_text_payload"
+    assert body["debug_view"]["skill"]["collector"] == "ue_log_input_payload"
     assert body["trace_summary"]["skill_id"] == "LogsAnalyzeSkill"
+
+
+def test_logs_analyze_can_read_selected_log_file(client: TestClient) -> None:
+    test_root = Path(".test-runtime") / f"logs-fixture-{uuid.uuid4().hex}"
+    log_file = test_root / "Saved" / "Logs" / "Demo.log"
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.write_text(
+            "\n".join(
+                [
+                    "[2026.04.17-10.00.00] LogTemp: Display: Starting PIE",
+                    "[2026.04.17-10.00.01] LogTemp: Error: Access violation reading address",
+                    "Callstack: 0x0001 Demo!UMySubsystem::Tick",
+                    "LogStreaming: Warning: Failed to load /Game/Props/MissingMesh",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        response = client.post(
+            "/api/v1/tasks/logs-analyze",
+            json={
+                "task_type": "logs_analyze",
+                "session": {
+                    "session_id": "logs_file_session",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Analyze this selected log file.",
+                            "language": "auto",
+                        }
+                    ],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "active_panel": "LogAnalyzer",
+                    "current_file": str(log_file),
+                },
+                "payload": {
+                    "user_query": "Analyze this selected log file.",
+                    "log_file_path": str(log_file),
+                    "notes": "User selected the file from the Logs Analyze panel.",
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "LogAnalyzer"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "en-US",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = response.json()
+
+        assert response.status_code == 200
+        assert body["data"]["log_summary"]["line_count"] == 4
+        assert body["data"]["input_context"]["input_mode"] == "file_tail"
+        assert body["data"]["input_context"]["read_diagnostics"][0]["read_status"] == "completed"
+        assert "access_violation" in body["data"]["issue_families"]
+        assert "asset_load_failure" in body["data"]["issue_families"]
+        assert body["data"]["llm_analysis"]["status"] == "skipped"
+        assert body["data"]["llm_analysis"]["reason_code"] == "missing_openai_api_key"
+        assert body["data"]["validation_plan"]["items"]
+        assert body["debug_view"]["skill"]["collector"] == "ue_log_input_payload"
+    finally:
+        shutil.rmtree(test_root, ignore_errors=True)
 
 
 def test_config_generate_workflow_returns_draft_and_proposal(client: TestClient) -> None:
