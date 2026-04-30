@@ -128,7 +128,8 @@ class CodeGenerationService:
             or (request.session.messages[-1].content if request.session.messages else "")
         ).strip()
         domain_filters = list(
-            request.payload.get("domain_filters") or ["code_reference", "examples", "engine_notes", "project_docs"]
+            request.payload.get("domain_filters")
+            or ["code_reference", "examples", "engine_notes", "prompt_packs", "project_docs"]
         )
         support = retrieve_support_notes(
             self.kb_service,
@@ -392,6 +393,8 @@ class CodeGenerationService:
             "UInputAction references, UEnhancedInputComponent bindings, and a reminder to add the EnhancedInput module. "
             "For interaction component, line trace, or subsystem requests, prefer the matching UE base class "
             "(UActorComponent or UGameInstanceSubsystem) and include concrete method bodies instead of empty skeletons. "
+            "For HTTP, WebSocket, DeveloperSettings, Gameplay Tags, threading, replication, or GAS requests, "
+            "identify the correct UE module dependencies and lifecycle cleanup points. "
             "Do not claim that any file has been written to disk."
         )
         user_prompt = "\n\n".join(

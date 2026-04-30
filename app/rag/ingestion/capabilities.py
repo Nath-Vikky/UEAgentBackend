@@ -48,6 +48,7 @@ KNOWLEDGE_DOMAINS = [
     "incident_history",
     "perf_notes",
     "config_schema",
+    "prompt_packs",
 ]
 
 INGESTION_PIPELINE = [

@@ -26,11 +26,41 @@ PROJECT_DOC_STEMS = {
     "handoff",
 }
 
+DOMAIN_DIR_ALIASES = {
+    "asset-rules": "asset_rules",
+    "asset_rules": "asset_rules",
+    "code-reference": "code_reference",
+    "code_reference": "code_reference",
+    "config-schema": "config_schema",
+    "config_schema": "config_schema",
+    "engine-notes": "engine_notes",
+    "engine_notes": "engine_notes",
+    "examples": "examples",
+    "incident-history": "incident_history",
+    "incident_history": "incident_history",
+    "perf-notes": "perf_notes",
+    "perf_notes": "perf_notes",
+    "project-docs": "project_docs",
+    "project_docs": "project_docs",
+    "prompt-packs": "prompt_packs",
+    "prompt_packs": "prompt_packs",
+    "team-rules": "team_rules",
+    "team_rules": "team_rules",
+}
+
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b")
 
 
 def _contains_any(value: str, tokens: tuple[str, ...]) -> bool:
     return any(token in value for token in tokens)
+
+
+def _classify_path_domain(path: Path) -> str | None:
+    parts = [part.lower().replace("_", "-") for part in path.parts]
+    for part in reversed(parts):
+        if part in DOMAIN_DIR_ALIASES:
+            return DOMAIN_DIR_ALIASES[part]
+    return None
 
 
 def _classify_domain(path: Path, text: str) -> str:
@@ -43,6 +73,10 @@ def _classify_domain(path: Path, text: str) -> str:
 
     if suffix_lower in CODE_SOURCE_SUFFIXES or ("/source/" in path_lower and suffix_lower in TEXT_SOURCE_SUFFIXES):
         return "code_reference"
+
+    path_domain = _classify_path_domain(path)
+    if path_domain:
+        return path_domain
 
     if _contains_any(combined, ("schema", "config", ".ini", ".json", ".yaml", ".yml", ".toml")):
         return "config_schema"

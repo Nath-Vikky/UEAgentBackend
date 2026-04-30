@@ -1777,3 +1777,84 @@ Code Generate 的质量很依赖 `knowledge/code-reference` 和 `knowledge/examp
 - markdown 内容以自己的总结和短笔记为主，不大段复制官方原文。
 - 代码示例尽量使用自己改写的最小示例。
 - 后续补充 UE 文档时，优先补到 `knowledge/engine-notes`、`knowledge/examples`、`knowledge/team-rules`。
+
+### 18.17 UE C++ 蒸馏知识包 v1
+
+后端现在新增了一批 UE C++ 蒸馏知识，来源是本地参考项目 `XG-UE-Cpp-Course-Skill-main` 的主题结构，但内容已经改写为本项目自己的知识笔记和最小代码参考，不直接复制课程原文。
+
+新增内容覆盖：
+
+- 反射宏、UObject、CDO、GC、UPROPERTY/UFUNCTION 选择。
+- TArray / TMap / TSet 容器选择。
+- 委托、字符串、定时器、GameplayTag。
+- 多线程、AsyncTask、FRunnable、TaskGraph。
+- HTTP、WebSocket、TCP 选型和模块依赖。
+- Replication、RPC、GAS 基础架构。
+- DeveloperSettings + Subsystem 配置模式。
+- Code Review 可用的线程、网络、GAS、配置、委托规则。
+
+这些文件统一放在：
+
+```text
+knowledge/
+  engine-notes/
+  examples/
+  code-reference/
+  team-rules/
+  prompt-packs/
+```
+
+它们同时服务两种检索：
+
+- 没有 embedding / Qdrant 时：本地 grep 和 lexical RAG 会读取 `KB_SOURCE_PATHS=./knowledge`。
+- 配置 embedding / Qdrant 后：执行 reindex 后同一批文档会进入向量库。
+
+常用命令：
+
+```http
+POST /api/v1/knowledge-base/reindex
+GET /api/v1/knowledge-base/status
+GET /api/v1/knowledge-base/documents
+```
+
+如果只是重启后端，且数据库还是空的，后端会自动 seed 一次默认知识库；如果数据库里已有旧索引，建议手动 reindex，确保新增 UE C++ 文档进入 chunks 和向量索引。
+
+代码生成新增兜底场景：
+
+- “HTTP 请求怎么写”：返回 `UBlueprintAsyncActionBase` 风格 HTTP 请求草稿，并提示 `HTTP/Json/JsonUtilities` 依赖。
+- “WebSocket 长连接怎么写”：返回 `UGameInstanceSubsystem + IWebSocket` 草稿，并提示 `WebSockets` 依赖。
+- “项目设置配置怎么写”：返回 `UDeveloperSettings` 草稿。
+- “GAS 技能系统属性集怎么写”：返回 `UAttributeSet` 草稿，并提示 `GameplayAbilities/GameplayTags/GameplayTasks` 依赖。
+
+边界：
+
+- 这些仍然是非破坏性代码草稿，不会写入 UE 工程。
+- 代码是否能直接编译仍需用户根据项目模块名、API 宏、include 路径和 Build.cs 依赖做确认。
+- `prompt-packs/ue-cpp-practices.md` 是给 LLM 的领域行为指导，不是前端新菜单，也不是 ReAct Tool。
+
+### 18.18 Agent Chat 的 UE 技术知识路由
+
+当前内置知识库是蒸馏版，不是 `XG-UE-Cpp-Course-Skill-main` 的完整复刻。当前 `knowledge/` 约 29 个文件，外部参考仓库 `knowledge/` 约 283 个文件，所以覆盖量明显更少；这是为了保持作品集项目的合规边界和可维护性。
+
+后端已经补充 Agent Chat 的 UE 技术知识识别。用户在自由聊天中问以下类型问题时，会优先进入 `project_qa` 并选择 `retrieve_project_knowledge`：
+
+- “GAS 技能系统是什么”
+- “UE 多线程怎么做”
+- “HTTP 请求怎么写”
+- “反射宏怎么选”
+- “TArray / TMap / TSet 怎么选”
+- “网络同步 / RPC / 属性同步怎么做”
+
+不配置 embedding / Qdrant 时，检索行为如下：
+
+- `Agent Chat / Project QA`：先走数据库里的 lexical RAG；如果没有命中或显式要求本地搜索，再 fallback 到本地 markdown/code grep。
+- `Code Generate`：优先使用本地 markdown/code grep 搜索 `code_reference / examples / engine_notes / prompt_packs`，再把证据交给模板或 LLM。
+- `Code Review`：读取前端选中的真实代码文件，同时检索 `team_rules / engine_notes / project_docs / examples` 作为审查依据。
+
+因此，如果 Debug View 中看到 `route.decision_source=heuristic_ue_knowledge_signal` 且 `route.selected_tool_id=retrieve_project_knowledge`，说明 Agent Chat 已经把 UE 技术问题路由到知识库，而不是纯 LLM 自由回答。
+
+仍然需要注意：
+
+- 知识库没覆盖的 UE 主题，LLM 可能会用自身通用知识补充回答。
+- 如果 `retrieved_docs` / `citations` 为空，说明本轮没有找到可靠本地证据。
+- 后续扩充知识库时，优先补 `engine_notes`、`examples`、`code_reference`，并给 RAG eval 增加对应 case。

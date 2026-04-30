@@ -50,6 +50,58 @@ QUERY_EXPANSIONS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ("交互组件", "射线交互", "interaction component", "line trace"),
         ("interaction", "component", "overlap", "line", "trace", "interface"),
     ),
+    (
+        ("反射", "宏", "uobject", "reflection"),
+        ("reflection", "uclass", "ustruct", "uenum", "uproperty", "ufunction", "cdo", "gc"),
+    ),
+    (
+        ("容器", "数组", "字典", "集合", "tarray", "tmap", "tset"),
+        ("container", "tarray", "tmap", "tset", "array", "map", "set"),
+    ),
+    (
+        ("委托", "事件", "delegate"),
+        ("delegate", "multicast", "dynamic", "broadcast", "bind", "unbind"),
+    ),
+    (
+        ("字符串", "文本", "本地化", "fstring", "fname", "ftext"),
+        ("fstring", "fname", "ftext", "localization", "tchar", "utf8"),
+    ),
+    (
+        ("定时器", "timer"),
+        ("timer", "ftimerhandle", "ftimermanager", "settimer", "cleartimer"),
+    ),
+    (
+        ("玩法标签", "游戏标签", "标签", "gameplaytag"),
+        ("gameplaytag", "fgameplaytag", "gameplaytagcontainer", "tags"),
+    ),
+    (
+        ("配置", "设置", "ini", "developersettings"),
+        ("developersettings", "udevelopersettings", "config", "ini", "gconfig", "getdefault"),
+    ),
+    (
+        ("http", "接口请求", "网络请求"),
+        ("http", "fhttpmodule", "httprequest", "json", "jsonutilities", "asyncaction"),
+    ),
+    (
+        ("websocket", "web socket", "长连接"),
+        ("websocket", "websockets", "iwebsocket", "connect", "onmessage", "onclosed"),
+    ),
+    (
+        ("tcp", "socket"),
+        ("tcp", "socket", "fsocket", "ftcpsocketbuilder", "networking", "frunnable"),
+    ),
+    (
+        ("多线程", "线程", "异步任务", "async"),
+        ("async", "asynctask", "tfuture", "frunnable", "taskgraph", "parallelfor", "gamethread"),
+    ),
+    (
+        ("网络同步", "属性同步", "rpc", "replication"),
+        ("replication", "rpc", "doreplifetime", "onrep", "authority", "netmulticast"),
+    ),
+    (
+        ("技能系统", "gas", "ability system"),
+        ("gas", "gameplayability", "abilitysystemcomponent", "attributeset", "gameplayeffect", "gameplaytag"),
+    ),
 )
 
 

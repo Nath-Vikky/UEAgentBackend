@@ -40,12 +40,23 @@ def replace_document(
     document: KBDocumentModel,
     chunks: list[KBChunkModel],
 ) -> None:
-    existing = db.scalars(
+    existing_by_source = db.scalars(
         select(KBDocumentModel).where(KBDocumentModel.source_path == document.source_path)
     ).first()
-    if existing:
+    existing_by_doc_id = db.get(KBDocumentModel, document.doc_id)
+    existing_documents = [
+        item
+        for item in (existing_by_source, existing_by_doc_id)
+        if item is not None
+    ]
+    seen_doc_ids: set[str] = set()
+    for existing in existing_documents:
+        if existing.doc_id in seen_doc_ids:
+            continue
+        seen_doc_ids.add(existing.doc_id)
         db.execute(delete(KBChunkModel).where(KBChunkModel.doc_id == existing.doc_id))
         db.delete(existing)
+    if seen_doc_ids:
         db.commit()
 
     db.add(document)

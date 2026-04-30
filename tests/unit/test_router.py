@@ -81,6 +81,56 @@ def test_explicit_project_qa_task_type_forces_retrieval_route() -> None:
     assert routing["route"]["decision_source"] == "explicit_task_type"
 
 
+def test_agent_chat_with_ue_knowledge_question_routes_to_knowledge_retrieval() -> None:
+    request = _request(
+        content="GAS技能系统是什么",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "retrieve_project_knowledge"
+    assert routing["route"]["decision_source"] == "heuristic_ue_knowledge_signal"
+    assert routing["route"]["ue_knowledge_query"] is True
+
+
+def test_agent_chat_with_ue_threading_keyword_routes_to_knowledge_retrieval() -> None:
+    request = _request(
+        content="UE多线程怎么做",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "retrieve_project_knowledge"
+    assert routing["route"]["decision_source"] == "heuristic_ue_knowledge_signal"
+
+
+def test_agent_chat_with_current_project_asset_list_routes_to_inventory() -> None:
+    request = _request(
+        content="当前项目有哪些蓝图资产，你列一下",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["decision_source"] == "heuristic_project_inventory_signal"
+    assert routing["route"]["project_inventory_query"] is True
+
+
 def test_auto_language_defaults_to_chinese_even_for_english_question() -> None:
     request = _request(content="Explain dependency injection in simple terms.")
 

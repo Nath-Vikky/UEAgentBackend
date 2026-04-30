@@ -23,6 +23,8 @@ DOMAIN_DIR_ALIASES = {
     "incident_history": "incident_history",
     "perf-notes": "perf_notes",
     "perf_notes": "perf_notes",
+    "prompt-packs": "prompt_packs",
+    "prompt_packs": "prompt_packs",
     "project-docs": "project_docs",
     "project_docs": "project_docs",
     "team-rules": "team_rules",
@@ -79,6 +81,8 @@ def _infer_domain(path: Path) -> str:
         return "code_reference"
     if "example" in path_lower or "sample" in path_lower or "template" in path_lower:
         return "examples"
+    if "prompt-pack" in path_lower or "prompt_pack" in path_lower or "skill-pack" in path_lower:
+        return "prompt_packs"
     if "asset" in path_lower or "nanite" in path_lower or "blueprint" in path_lower:
         return "asset_rules"
     if "engine" in path_lower or "unreal" in path_lower or "ue-" in path_lower:

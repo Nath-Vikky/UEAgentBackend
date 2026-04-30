@@ -2,9 +2,9 @@
 
 ## Summary
 
-- Generated at: `2026-04-27T14:33:02.001022+00:00`
+- Generated at: `2026-04-30T05:08:01.442176+00:00`
 - Dataset: `tests\eval\rag_project_qa_dataset.jsonl`
-- Source paths: `..\backend.md, .\docs, .\knowledge`
+- Source paths: `../backend.md, ./docs`
 - Top K: `4`
 
 | Metric | Value |

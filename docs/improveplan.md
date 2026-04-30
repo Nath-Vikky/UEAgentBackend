@@ -1808,3 +1808,214 @@ domain 映射：
 - 是否能逐 token 更新同一条回答气泡。
 - 希望的事件名和 payload 结构。
 - 连接中断、取消、错误时的 UI 兜底策略。
+
+## 2026-04-30 Skill / Tool 边界重定义与 UE C++ 知识包蒸馏
+
+状态：进入下一轮规划，暂不直接大规模拷贝外部资料。
+
+背景：
+
+- 当前项目中 `Skill` 和 `Tool` 的语义容易混在一起。
+- 后端已有 `CodeReviewSkill`、`CodeGenerateSkill`、`LogsAnalyzeSkill`、`AssetsInspectSkill` 等固定内置 Skill，但它们更像“任务能力 / 工作流执行器”。
+- `app/tools/registry.py` 中的 Tool 更像 ReAct 可调用的原子动作，例如检索知识库、查询 Project Inventory、读取当前项目文件。
+- `xg-uecpp-course/SKILL.md` 这类资料更接近 LLM 的“行为手册 / 知识模式 / 领域提示词”，不应直接等同于后端 Tool，也不建议直接变成第 6 个用户可见 Skill。
+
+### 概念边界
+
+后续统一采用三层命名：
+
+1. `Skill Executor`
+
+- 定义：面向用户任务的固定能力封装。
+- 位置：`app/skills/executors/` 与 `app/skills/registry.py`。
+- 例子：`CodeReviewSkill`、`CodeGenerateSkill`、`LogsAnalyzeSkill`、`AssetsInspectSkill`、`ProjectQASkill`。
+- 职责：组织 collector、rules、retrieval、llm_analyzer、projector，形成完整任务闭环。
+- 边界：不动态安装，不作为 marketplace，不让用户随意新增主菜单。
+
+2. `Tool`
+
+- 定义：Agent / ReAct 可调用的原子动作。
+- 位置：`app/tools/registry.py`。
+- 例子：`retrieve_project_knowledge`、`query_project_inventory`、`read_project_file`。
+- 职责：只做一个清晰、可校验、最好只读或 plan-only 的动作。
+- 边界：Tool 不负责完整 UI 任务，不直接替代 Skill Executor。
+
+3. `LLM Skill Pack / Prompt Skill`
+
+- 定义：给 LLM 的领域行为说明、术语表、知识索引、回答风格和工作流提示。
+- 例子：`xg-uecpp-course/SKILL.md`。
+- 职责：提升 LLM 对 UE C++ 领域的回答质量，帮助它知道“怎么解释、怎么选型、怎么组织答案”。
+- 边界：不直接注册成后端 Tool；不直接新增用户可见功能；优先蒸馏成知识库和 prompt guidance。
+
+### 对 `xg-uecpp-course` 的融入策略
+
+原则：
+
+- 不直接整包复制进仓库，除非确认许可证允许。
+- 先作为本地参考资料和蒸馏源。
+- 蒸馏时保留主题覆盖面，但用我们自己的结构、表述和边界。
+- 所有沉淀内容服务现有 5 个 Skill，不新增第 6 个主功能。
+
+第一阶段：建立知识映射清单
+
+- 读取 `xg-uecpp-course/SKILL.md` 和 `references/*.md`。
+- 按主题映射到现有 domain：
+  - `engine_notes`：反射、容器、委托、字符串、GameplayTag、Subsystem、DeveloperSettings、GAS、网络同步。
+  - `examples`：Enhanced Input、HTTP、WebSocket、TCP、AsyncAction、FRunnable、第三方库封装、Slate 独立程序。
+  - `team_rules`：GC / UPROPERTY、智能指针循环引用、多线程 GameThread 访问、委托解绑、TaskGraph 阻塞、网络复制/RPC 风险。
+  - `code_reference`：只放我们自己整理或改写后的最小可复用代码草稿，不直接搬课程工程源码。
+
+第二阶段：蒸馏为本项目知识库
+
+- 在 `knowledge/engine-notes/` 下补充 UE C++ 高频主题笔记。
+- 在 `knowledge/examples/` 下补充可用于代码生成的“模式级示例”，例如：
+  - `UGameInstanceSubsystem` / `UWorldSubsystem`
+  - `UDeveloperSettings`
+  - `FHttpModule` 请求
+  - `IWebSocket` 客户端
+  - `FRunnable` 后台线程
+  - `UBlueprintAsyncActionBase`
+  - `GameplayTag` / `Timer`
+  - `GAS` 最小 ASC / AttributeSet / Ability 结构说明
+- 在 `knowledge/team-rules/` 下补充 Code Review 可用规则。
+- 每篇文档顶部注明：
+  - `source_note`: distilled from local UE C++ course notes
+  - `scope`: portfolio knowledge base
+  - `license_check`: pending / user-provided source
+
+第三阶段：接入现有 Skill
+
+- `CodeGenerateSkill`
+  - 优先检索 `code_reference/examples/engine_notes`。
+  - 对 Subsystem、HTTP、WebSocket、AsyncAction、FRunnable、GameplayTag、GAS 等请求返回更贴近 UE C++ 的草稿。
+  - 不写入工程，不自动修改 Build.cs，只在 `patch_plan` 中提示依赖。
+
+- `CodeReviewSkill`
+  - 将多线程、GC、智能指针、委托、网络复制、同步加载、阻塞等待等沉淀成规则或 guidance。
+  - 重点提升“为什么有风险”和“怎么验证”的解释。
+
+- `ProjectQASkill`
+  - 用户自由聊天问 UE C++ 概念时，可检索这些 engine notes。
+  - 不强制所有 UE C++ 问题都走 RAG；仍由路由判断是否需要知识库。
+
+- `LogsAnalyzeSkill`
+  - 日志、断言、网络、线程相关错误可参考 `team_rules/engine_notes`。
+  - 仍保留检索质量门槛，低质量命中只进 Debug View。
+
+### 是否做成新的 Skill
+
+决策：不新增 `XGUeCppCourseSkill`。
+
+原因：
+
+- 它不是一个独立用户任务，而是领域知识和回答模式。
+- 新增第 6 个 Skill 会破坏当前 5 个核心功能收口。
+- 更好的落点是 `LLM Skill Pack + Knowledge Pack`：作为 Project QA / Code Generate / Code Review 的知识和提示增强。
+
+后续可以新增内部概念 `Prompt Pack`，但不暴露为主菜单：
+
+- `prompt_pack_id`: `ue_cpp_practices`
+- `applies_to`: `ProjectQASkill`、`CodeGenerateSkill`、`CodeReviewSkill`
+- `source`: `knowledge/engine-notes`、`knowledge/examples`、`knowledge/team-rules`
+- `debug_view`: 只显示本轮是否启用了该 prompt pack，不要求前端新增 UI。
+
+### 验收标准
+
+- 用户问“UE 反射宏怎么选”时，Project QA 能命中反射笔记，并用用户语言解释。
+- 用户问“Subsystem 怎么写”时，Code Generate 不再只返回普通 Actor 骨架。
+- 用户问“HTTP 请求怎么写”时，Code Generate 能提示 `HTTP` 模块依赖、异步回调和 JSON 处理边界。
+- 用户问“WebSocket 客户端怎么写”时，Code Generate 能提示 `WebSockets` 模块依赖、生命周期和断线处理。
+- Code Review 遇到 `AsyncTask` 访问 UObject、后台线程触碰 GameThread 对象、`TSharedPtr` 循环引用、动态委托未解绑等模式时，能给出更明确风险说明。
+- Debug View 能看到命中的 `engine_notes/examples/team_rules` 来源，普通用户界面不直接吐长文档正文。
+
+### 开发边界
+
+- 不把外部课程原始大段内容直接提交到 GitHub。
+- 不引入动态 Skill marketplace。
+- 不把 Prompt Pack 做成复杂权限系统。
+- 不追求覆盖 UE 全部 API；优先覆盖面试和项目演示高频主题。
+- 不新增 UE 前端主菜单；最多后续在 Debug View 展示命中的 prompt pack / knowledge pack 名称。
+
+## 2026-04-30 UE C++ 蒸馏知识包落地 v1
+
+状态：后端已完成第一批可用落地，暂不要求 UE 前端改 UI。
+
+本轮目标：
+- 把 `XG-UE-Cpp-Course-Skill-main` 作为本地参考源，而不是直接整包复制。
+- 采用“知识蒸馏 + 自有表达 + 小型代码参考”的方式补充本项目知识库。
+- 同一批 `backend/knowledge/` 文档同时服务本地 grep / lexical RAG 和后续 embedding + Qdrant 向量 RAG。
+- 明确 `LLM Skill Pack / Prompt Skill` 不等于后端 Tool，也不新增第 6 个用户可见 Skill。
+
+新增知识位置：
+- `knowledge/engine-notes/uecpp-reflection-containers-delegates.md`
+- `knowledge/engine-notes/uecpp-async-networking-gas.md`
+- `knowledge/examples/uecpp-http-websocket-asyncaction-note.md`
+- `knowledge/examples/developer-settings-subsystem-note.md`
+- `knowledge/team-rules/uecpp-review-threading-networking-rules.md`
+- `knowledge/prompt-packs/ue-cpp-practices.md`
+- `knowledge/code-reference/http-json-request-example.cpp`
+- `knowledge/code-reference/developer-settings-example.h`
+- `knowledge/code-reference/gas-minimal-attribute-set-example.h`
+
+双检索策略：
+- 默认 `KB_SOURCE_PATHS=./knowledge`，所以新增文档会被本地 grep 自动发现。
+- 执行 `POST /api/v1/knowledge-base/reindex` 后，新增文档也会进入数据库 chunks。
+- 如果配置了 embedding 和 Qdrant，同一批 chunks 会同步写入向量库。
+- 未配置向量模型时，Project QA / Code Generate 仍可依靠 lexical RAG + local grep 工作。
+
+代码生成增强：
+- `generate_code_draft` 新增 HTTP AsyncAction、WebSocket Subsystem、DeveloperSettings、GAS AttributeSet 兜底模板。
+- LLM 可用时，`CodeGenerateSkill` 会把命中的 `code_reference/examples/engine_notes/prompt_packs` 作为参考交给模型。
+- LLM 不可用时，常见 UE C++ 问题不再全部退回普通 Actor 骨架。
+
+检索增强：
+- `prompt-packs` 新增为知识 domain：`prompt_packs`。
+- 中文查询扩展词补充了反射、容器、委托、字符串、定时器、GameplayTag、配置、HTTP、WebSocket、TCP、多线程、网络同步、GAS 等高频主题。
+- 这让用户用中文问“HTTP 请求怎么写 / GAS 技能系统怎么做 / 反射宏怎么选”时，也能命中英文 UE C++ 笔记和代码参考。
+
+合规边界：
+- 不提交外部课程原文和大段原始 Skill 文档。
+- 每篇新增蒸馏文档都标注 `source_note`、`scope`、`license_check`。
+- 新增代码参考是项目自写的最小模式草稿，不是课程源码搬运。
+
+验收：
+- `python -m compileall app` 通过。
+- `pytest tests/unit/test_code_generate_tool.py` 通过。
+- `pytest tests/unit/test_local_search_service.py` 通过。
+
+下一步可选：
+- 如果用户测试发现某类 UE 代码生成仍然空泛，优先继续补 `knowledge/examples` 和 `knowledge/code-reference`。
+- 后续可以补 Slate、第三方库封装、Replication/RPC、Timer/Delegate 的更具体代码片段，但不扩大成完整课程复刻。
+
+## 2026-04-30 Agent Chat UE 技术知识路由修正
+
+状态：后端已完成，暂不要求 UE 前端改 UI。
+
+### 问题判断
+
+- 当前 `knowledge/` 是蒸馏版，约 29 个文件；本地参考仓库 `XG-UE-Cpp-Course-Skill-main/knowledge` 约 283 个文件。
+- 因此用户感觉“我们的文档比外部仓库少很多”是正确的，当前不是全量覆盖，而是高频 UE C++ 场景优先。
+- Code Generate / Code Review 已经能通过本地 markdown/code grep 和知识库参考工作。
+- Agent Chat 在询问 “GAS / 多线程 / HTTP / 反射”等 UE 通用技术问题时，之前容易被判断成 `direct_answer`，导致看起来像 LLM 纯自由回答，没有调用知识库。
+
+### 本轮修正
+
+- 新增 UE 技术知识信号：GAS、Gameplay Ability、HTTP、WebSocket、TCP、多线程、AsyncTask、FRunnable、TaskGraph、反射、容器、委托、字符串、定时器、GameplayTag、DeveloperSettings、DataAsset、Replication、RPC 等。
+- Agent Chat 命中这些 UE 技术信号时，会进入 `project_qa` 并选择 `retrieve_project_knowledge`。
+- 保持项目事实问题优先级更高：“当前项目有哪些蓝图资产”仍优先选择 `query_project_inventory`。
+- 保持当前文件/当前项目引用优先级更高：“this file initializes the subsystem”仍按项目上下文问答处理。
+- 普通闲聊和通用非 UE 问题仍保持 `direct_answer`，避免知识库过度干预。
+
+### 验收样例
+
+- “GAS技能系统是什么” -> `project_qa / retrieve_project_knowledge / heuristic_ue_knowledge_signal`
+- “UE多线程怎么做” -> `project_qa / retrieve_project_knowledge / heuristic_ue_knowledge_signal`
+- “HTTP请求怎么写” -> `project_qa / retrieve_project_knowledge / heuristic_ue_knowledge_signal`
+- “当前项目有哪些蓝图资产，你列一下” -> `project_qa / query_project_inventory / heuristic_project_inventory_signal`
+- “你好，今天怎么样” -> `direct_answer`
+
+### 下一步边界
+
+- 不把外部 283 个文件直接复制进项目。
+- 后续若要补齐覆盖，按 eval / 用户测试缺口逐步蒸馏，而不是全量搬运。
+- 优先扩充 `knowledge/engine-notes`、`knowledge/examples`、`knowledge/code-reference` 和 `tests/eval`。

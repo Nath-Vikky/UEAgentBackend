@@ -110,3 +110,25 @@ def test_local_search_expands_chinese_engine_terms_to_english_notes() -> None:
     matched_sources = {item["source_path"] for item in result["items"]}
     assert any("ue-actor-lifecycle" in source for source in matched_sources)
     assert any("lifecycle" in item["matched_terms"] for item in result["items"])
+
+
+def test_local_search_finds_distilled_uecpp_course_pack() -> None:
+    service = LocalSearchService(Settings(openai_api_key="", kb_source_paths=["./knowledge"]))
+    result = service.search(
+        query="HTTP请求 WebSocket长连接 GAS技能系统 属性同步 反射宏",
+        domain_filters=["engine_notes", "examples", "code_reference", "prompt_packs"],
+        top_k=10,
+    )
+
+    matched_sources = {item["source_path"] for item in result["items"]}
+    assert any("uecpp-async-networking-gas" in source for source in matched_sources)
+    assert any("uecpp-http-websocket" in source for source in matched_sources)
+    assert any("gas-minimal-attribute-set" in source for source in matched_sources)
+    assert any("ue-cpp-practices" in source for source in matched_sources)
+
+
+def test_local_search_status_reports_prompt_pack_domain() -> None:
+    service = LocalSearchService(Settings(openai_api_key="", kb_source_paths=["./knowledge"]))
+    status = service.status()
+
+    assert status["domain_counts"]["prompt_packs"] >= 1

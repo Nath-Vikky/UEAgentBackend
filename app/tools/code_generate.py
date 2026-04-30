@@ -34,6 +34,17 @@ def _ue_class_name(requirement_description: str, fallback: str = "GeneratedFeatu
         "game",
         "instance",
         "global",
+        "http",
+        "request",
+        "websocket",
+        "socket",
+        "developer",
+        "settings",
+        "config",
+        "gas",
+        "gameplay",
+        "ability",
+        "system",
     }
     useful_words = [word for word in words if word.lower() not in ignored]
     if not useful_words:
@@ -176,6 +187,74 @@ def _is_line_trace_request(requirement: str, target_type: str) -> bool:
     )
 
 
+def _is_http_request(requirement: str, target_type: str) -> bool:
+    text = f"{requirement} {target_type}"
+    return _contains_any(
+        text,
+        (
+            "http",
+            "rest",
+            "api request",
+            "json request",
+            "fhttpmodule",
+            "httprequest",
+            "网络请求",
+            "接口请求",
+            "http请求",
+        ),
+    )
+
+
+def _is_websocket_request(requirement: str, target_type: str) -> bool:
+    text = f"{requirement} {target_type}"
+    return _contains_any(
+        text,
+        (
+            "websocket",
+            "web socket",
+            "iwebsocket",
+            "long connection",
+            "长连接",
+            "实时通信",
+        ),
+    )
+
+
+def _is_developer_settings_request(requirement: str, target_type: str) -> bool:
+    text = f"{requirement} {target_type}"
+    return _contains_any(
+        text,
+        (
+            "developer settings",
+            "udevelopersettings",
+            "project settings",
+            "ini config",
+            "gconfig",
+            "配置",
+            "项目设置",
+            "开发者设置",
+        ),
+    )
+
+
+def _is_gas_request(requirement: str, target_type: str) -> bool:
+    text = f"{requirement} {target_type}"
+    return _contains_any(
+        text,
+        (
+            "gas",
+            "gameplay ability system",
+            "abilitysystemcomponent",
+            "gameplay ability",
+            "gameplayeffect",
+            "attributeset",
+            "技能系统",
+            "属性集",
+            "能力系统",
+        ),
+    )
+
+
 def _template_fallback_name(
     *,
     is_enhanced_input_character: bool,
@@ -229,21 +308,372 @@ def generate_code_draft(payload: dict[str, Any]) -> dict[str, Any]:
     is_interaction_component = _is_interaction_component_request(requirement, target_type)
     is_subsystem = _is_subsystem_request(requirement, target_type)
     is_line_trace = _is_line_trace_request(requirement, target_type)
+    is_http = _is_http_request(requirement, target_type)
+    is_websocket = _is_websocket_request(requirement, target_type)
+    is_developer_settings = _is_developer_settings_request(requirement, target_type)
+    is_gas = _is_gas_request(requirement, target_type)
+    template_fallback_name = _template_fallback_name(
+        is_enhanced_input_character=is_enhanced_input_character,
+        is_interaction_component=is_interaction_component,
+        is_subsystem=is_subsystem,
+        is_line_trace=is_line_trace,
+    )
+    if is_http:
+        template_fallback_name = "HttpJsonRequestAsyncAction"
+    elif is_websocket:
+        template_fallback_name = "WebSocketClientSubsystem"
+    elif is_developer_settings:
+        template_fallback_name = "ProjectDeveloperSettings"
+    elif is_gas:
+        template_fallback_name = "CombatAttributeSet"
     class_name = _ue_class_name(
         requirement or target_type,
-        fallback=_template_fallback_name(
-            is_enhanced_input_character=is_enhanced_input_character,
-            is_interaction_component=is_interaction_component,
-            is_subsystem=is_subsystem,
-            is_line_trace=is_line_trace,
-        ),
+        fallback=template_fallback_name,
     )
     reference_items = list(payload.get("reference_items") or [])
     reference_count = len(reference_items)
     extra_assumptions: list[str] = []
     extra_patch_steps: list[str] = []
 
-    if is_enhanced_input_character:
+    if is_http:
+        header = dedent(
+            f"""
+            #pragma once
+
+            #include "CoreMinimal.h"
+            #include "Kismet/BlueprintAsyncActionBase.h"
+            #include "{class_name}.generated.h"
+
+            DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(F{class_name}Result, int32, StatusCode, const FString&, Body);
+
+            UCLASS()
+            class {api_macro} U{class_name} : public UBlueprintAsyncActionBase
+            {{
+                GENERATED_BODY()
+
+            public:
+                UPROPERTY(BlueprintAssignable)
+                F{class_name}Result OnSuccess;
+
+                UPROPERTY(BlueprintAssignable)
+                F{class_name}Result OnFailure;
+
+                UFUNCTION(BlueprintCallable, meta=(BlueprintInternalUseOnly="true", WorldContext="WorldContextObject"), Category="HTTP")
+                static U{class_name}* SendJsonRequest(UObject* WorldContextObject, const FString& Url);
+
+                virtual void Activate() override;
+
+            private:
+                UPROPERTY()
+                TObjectPtr<UObject> WorldContext;
+
+                FString RequestUrl;
+            }};
+            """
+        ).strip()
+        source = dedent(
+            f"""
+            #include "{class_name}.h"
+
+            #include "HttpModule.h"
+            #include "Interfaces/IHttpRequest.h"
+            #include "Interfaces/IHttpResponse.h"
+
+            U{class_name}* U{class_name}::SendJsonRequest(UObject* WorldContextObject, const FString& Url)
+            {{
+                U{class_name}* Action = NewObject<U{class_name}>();
+                Action->WorldContext = WorldContextObject;
+                Action->RequestUrl = Url;
+                Action->RegisterWithGameInstance(WorldContextObject);
+                return Action;
+            }}
+
+            void U{class_name}::Activate()
+            {{
+                if (RequestUrl.IsEmpty())
+                {{
+                    OnFailure.Broadcast(0, TEXT("Empty URL"));
+                    SetReadyToDestroy();
+                    return;
+                }}
+
+                FHttpRequestRef Request = FHttpModule::Get().CreateRequest();
+                Request->SetURL(RequestUrl);
+                Request->SetVerb(TEXT("GET"));
+                Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+                Request->OnProcessRequestComplete().BindLambda(
+                    [this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+                    {{
+                        if (!bWasSuccessful || !Response.IsValid())
+                        {{
+                            OnFailure.Broadcast(0, TEXT("HTTP request failed"));
+                            SetReadyToDestroy();
+                            return;
+                        }}
+
+                        const int32 StatusCode = Response->GetResponseCode();
+                        const FString Body = Response->GetContentAsString();
+                        if (StatusCode >= 200 && StatusCode < 300)
+                        {{
+                            OnSuccess.Broadcast(StatusCode, Body);
+                        }}
+                        else
+                        {{
+                            OnFailure.Broadcast(StatusCode, Body);
+                        }}
+                        SetReadyToDestroy();
+                    }}
+                );
+                Request->ProcessRequest();
+            }}
+            """
+        ).strip()
+        code_draft = {
+            f"Source/{module_name}/Public/{class_name}.h": header,
+            f"Source/{module_name}/Private/{class_name}.cpp": source,
+        }
+        extra_assumptions.extend(
+            [
+                f"Add `HTTP`, `Json`, and `JsonUtilities` to Source/{module_name}/{module_name}.Build.cs if JSON parsing is needed.",
+                "Move API keys or secrets into local settings or config; do not hard-code them in generated source.",
+                "This draft uses GET. For POST, add a request body and Content-Type header.",
+            ]
+        )
+        extra_patch_steps.extend(
+            [
+                f"Add HTTP-related module dependencies in Source/{module_name}/{module_name}.Build.cs.",
+                "Replace the sample URL and parse the JSON response into a project-specific struct.",
+                "Test success, non-2xx response, network failure, and empty URL paths.",
+            ]
+        )
+    elif is_websocket:
+        header = dedent(
+            f"""
+            #pragma once
+
+            #include "CoreMinimal.h"
+            #include "Subsystems/GameInstanceSubsystem.h"
+            #include "{class_name}.generated.h"
+
+            class IWebSocket;
+
+            UCLASS()
+            class {api_macro} U{class_name} : public UGameInstanceSubsystem
+            {{
+                GENERATED_BODY()
+
+            public:
+                virtual void Deinitialize() override;
+
+                UFUNCTION(BlueprintCallable, Category="WebSocket")
+                void Connect(const FString& Url);
+
+                UFUNCTION(BlueprintCallable, Category="WebSocket")
+                void SendTextMessage(const FString& Message);
+
+                UFUNCTION(BlueprintCallable, Category="WebSocket")
+                void Disconnect();
+
+            private:
+                TSharedPtr<IWebSocket> Socket;
+            }};
+            """
+        ).strip()
+        source = dedent(
+            f"""
+            #include "{class_name}.h"
+
+            #include "IWebSocket.h"
+            #include "WebSocketsModule.h"
+
+            void U{class_name}::Deinitialize()
+            {{
+                Disconnect();
+                Super::Deinitialize();
+            }}
+
+            void U{class_name}::Connect(const FString& Url)
+            {{
+                Disconnect();
+
+                Socket = FWebSocketsModule::Get().CreateWebSocket(Url);
+                Socket->OnConnected().AddLambda([]()
+                {{
+                    UE_LOG(LogTemp, Log, TEXT("WebSocket connected."));
+                }});
+                Socket->OnConnectionError().AddLambda([](const FString& Error)
+                {{
+                    UE_LOG(LogTemp, Warning, TEXT("WebSocket connection error: %s"), *Error);
+                }});
+                Socket->OnMessage().AddLambda([](const FString& Message)
+                {{
+                    UE_LOG(LogTemp, Verbose, TEXT("WebSocket message: %s"), *Message);
+                }});
+                Socket->OnClosed().AddLambda([](int32 StatusCode, const FString& Reason, bool bWasClean)
+                {{
+                    UE_LOG(LogTemp, Log, TEXT("WebSocket closed: %d %s"), StatusCode, *Reason);
+                }});
+                Socket->Connect();
+            }}
+
+            void U{class_name}::SendTextMessage(const FString& Message)
+            {{
+                if (Socket.IsValid() && Socket->IsConnected())
+                {{
+                    Socket->Send(Message);
+                }}
+            }}
+
+            void U{class_name}::Disconnect()
+            {{
+                if (Socket.IsValid())
+                {{
+                    Socket->Close();
+                    Socket.Reset();
+                }}
+            }}
+            """
+        ).strip()
+        code_draft = {
+            f"Source/{module_name}/Public/{class_name}.h": header,
+            f"Source/{module_name}/Private/{class_name}.cpp": source,
+        }
+        extra_assumptions.extend(
+            [
+                f"Add `WebSockets` to Source/{module_name}/{module_name}.Build.cs.",
+                "This draft logs incoming messages; production code should parse and route them to project events.",
+                "Add heartbeat/reconnect only if the feature needs persistent reliability.",
+            ]
+        )
+        extra_patch_steps.extend(
+            [
+                f"Enable or add the WebSockets module dependency in Source/{module_name}/{module_name}.Build.cs.",
+                "Replace LogTemp callbacks with project delegates or message handlers.",
+                "Test connect, message, close, connection error, and PIE shutdown.",
+            ]
+        )
+    elif is_developer_settings:
+        header = dedent(
+            f"""
+            #pragma once
+
+            #include "CoreMinimal.h"
+            #include "Engine/DeveloperSettings.h"
+            #include "{class_name}.generated.h"
+
+            UCLASS(Config=Game, DefaultConfig, meta=(DisplayName="{class_name}"))
+            class {api_macro} U{class_name} : public UDeveloperSettings
+            {{
+                GENERATED_BODY()
+
+            public:
+                UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Network")
+                FString ApiBaseUrl = TEXT("https://api.example.com");
+
+                UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category="Feature")
+                bool bEnableFeature = true;
+            }};
+            """
+        ).strip()
+        usage_note = dedent(
+            f"""
+            // Read settings from C++:
+            const U{class_name}* Settings = GetDefault<U{class_name}>();
+            if (Settings && Settings->bEnableFeature)
+            {{
+                UE_LOG(LogTemp, Log, TEXT("API Base URL: %s"), *Settings->ApiBaseUrl);
+            }}
+            """
+        ).strip()
+        code_draft = {
+            f"Source/{module_name}/Public/{class_name}.h": header,
+            f"Source/{module_name}/Private/{class_name}Usage.cpp": usage_note,
+        }
+        extra_assumptions.extend(
+            [
+                "DeveloperSettings values are editable under Project Settings and stored in config.",
+                "Do not commit secrets or private API keys into DefaultGame.ini.",
+            ]
+        )
+        extra_patch_steps.extend(
+            [
+                "Add the settings class to a runtime or editor module depending on who needs to read it.",
+                "Expose only values that designers or local developers should be allowed to change.",
+                "Test reading defaults in editor, PIE, and packaged builds.",
+            ]
+        )
+    elif is_gas:
+        header = dedent(
+            f"""
+            #pragma once
+
+            #include "CoreMinimal.h"
+            #include "AbilitySystemComponent.h"
+            #include "AttributeSet.h"
+            #include "{class_name}.generated.h"
+
+            #define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \\
+                GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \\
+                GAMEPLAYATTRIBUTE_VALUE_GETTER(PropertyName) \\
+                GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \\
+                GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
+
+            UCLASS()
+            class {api_macro} U{class_name} : public UAttributeSet
+            {{
+                GENERATED_BODY()
+
+            public:
+                UPROPERTY(BlueprintReadOnly, ReplicatedUsing=OnRep_Health, Category="Attributes")
+                FGameplayAttributeData Health;
+                ATTRIBUTE_ACCESSORS(U{class_name}, Health)
+
+                UFUNCTION()
+                void OnRep_Health(const FGameplayAttributeData& OldHealth);
+
+                virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+            }};
+            """
+        ).strip()
+        source = dedent(
+            f"""
+            #include "{class_name}.h"
+
+            #include "GameplayEffectExtension.h"
+            #include "Net/UnrealNetwork.h"
+
+            void U{class_name}::OnRep_Health(const FGameplayAttributeData& OldHealth)
+            {{
+                GAMEPLAYATTRIBUTE_REPNOTIFY(U{class_name}, Health, OldHealth);
+            }}
+
+            void U{class_name}::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+            {{
+                Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+                DOREPLIFETIME_CONDITION_NOTIFY(U{class_name}, Health, COND_None, REPNOTIFY_Always);
+            }}
+            """
+        ).strip()
+        code_draft = {
+            f"Source/{module_name}/Public/{class_name}.h": header,
+            f"Source/{module_name}/Private/{class_name}.cpp": source,
+        }
+        extra_assumptions.extend(
+            [
+                f"Add `GameplayAbilities`, `GameplayTags`, and `GameplayTasks` to Source/{module_name}/{module_name}.Build.cs.",
+                "This is only an AttributeSet starting point; ASC ownership and ability activation belong on the Character/Pawn/PlayerState design.",
+                "For multiplayer, initialize ASC on the authoritative owner and verify attribute replication before binding UI.",
+            ]
+        )
+        extra_patch_steps.extend(
+            [
+                "Add GAS module dependencies in Build.cs.",
+                "Attach an AbilitySystemComponent to the appropriate owner class.",
+                "Grant abilities and Gameplay Effects through project-specific startup logic.",
+            ]
+        )
+    elif is_enhanced_input_character:
         header = dedent(
             f"""
             #pragma once

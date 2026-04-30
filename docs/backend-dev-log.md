@@ -971,3 +971,58 @@ UE 前端回传的 `frontend-unified-handoff.md` 与 `backend-action-items.md` �
 - 必须保留非流式 `POST /api/v1/chat/runs` fallback。
 - LLM 未配置或流式请求失败时，不伪造 token，依靠 `final` 返回完整响应或 `error` 报告失败。
 - 暂不做全项目 async，不引入消息队列。
+
+## 2026-04-30 UE C++ 蒸馏知识包 v1
+
+本轮把本地 `XG-UE-Cpp-Course-Skill-main` 作为参考源，蒸馏出适合本项目的 UE C++ 知识包。重点是覆盖面试和实际使用高频主题，而不是复制完整课程。
+
+### 主要代码改动
+
+- 新增 `knowledge/engine-notes/uecpp-reflection-containers-delegates.md`。
+- 新增 `knowledge/engine-notes/uecpp-async-networking-gas.md`。
+- 新增 `knowledge/examples/uecpp-http-websocket-asyncaction-note.md`。
+- 新增 `knowledge/examples/developer-settings-subsystem-note.md`。
+- 新增 `knowledge/team-rules/uecpp-review-threading-networking-rules.md`。
+- 新增 `knowledge/prompt-packs/ue-cpp-practices.md`。
+- 新增 HTTP、DeveloperSettings、GAS 的最小 code reference。
+- `LocalSearchService` / ingestion capabilities / parser 新增 `prompt_packs` domain。
+- `sparse.py` 补充中文查询到英文 UE 术语的扩展词。
+- `generate_code_draft()` 新增 HTTP AsyncAction、WebSocket Subsystem、DeveloperSettings、GAS AttributeSet 兜底模板。
+- `CodeGenerationService` 的检索 domain 默认加入 `prompt_packs`。
+
+### 验证
+
+- `python -m compileall app`
+- `pytest tests/unit/test_code_generate_tool.py`
+- `pytest tests/unit/test_local_search_service.py`
+
+### 边界
+
+- 不直接提交外部课程原文或大段 Skill 文档。
+- 新增知识是自写总结和最小模式示例。
+- 不新增 UE 前端菜单；现有 Code Generate / Project QA / Code Review 自动受益。
+- 如果需要向量 RAG 覆盖，仍需执行 `POST /api/v1/knowledge-base/reindex` 并配置 embedding / Qdrant。
+
+## 2026-04-30 Agent Chat UE 技术知识路由修正
+
+本轮复核用户反馈：Code Generate / Code Review 能命中本地知识库，但 Agent Chat 询问 GAS、多线程等 UE 技术概念时像是 LLM 直接回答。
+
+### 主要代码改动
+
+- `app/agent/router.py`
+  - 新增 UE 技术知识 domain hints 和 question hints。
+  - 新增 `heuristic_ue_knowledge_signal` 路由分支。
+  - 保持 `query_project_inventory` 和明确当前文件/项目问答的优先级高于 UE 通用知识路由。
+- `tests/unit/test_router.py`
+  - 覆盖 “GAS技能系统是什么” 和 “UE多线程怎么做” 路由到 `retrieve_project_knowledge`。
+  - 覆盖 “当前项目有哪些蓝图资产，你列一下” 仍路由到 `query_project_inventory`。
+
+### 验证
+
+- `pytest tests/unit/test_router.py tests/unit/test_local_search_service.py tests/unit/test_code_generate_tool.py -q`
+
+### 边界
+
+- 不把外部参考仓库 283 个 knowledge 文件全量复制进项目。
+- 当前知识库仍是蒸馏版，后续按测试缺口补充高频 UE 场景。
+- UE 前端不需要改接口，只需在 Debug View 兼容新的 `decision_source` 字符串。

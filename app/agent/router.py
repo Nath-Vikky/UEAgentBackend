@@ -230,13 +230,164 @@ PROJECT_INVENTORY_QUESTION_HINTS = {
     "有没有",
     "多少",
 }
+UE_KNOWLEDGE_DOMAIN_HINTS = {
+    "unreal",
+    "unreal engine",
+    "ue4",
+    "ue5",
+    "ue c++",
+    "uecpp",
+    "uobject",
+    "uclass",
+    "ustruct",
+    "uenum",
+    "uproperty",
+    "ufunction",
+    "actor",
+    "character",
+    "component",
+    "subsystem",
+    "game instance subsystem",
+    "world subsystem",
+    "enhanced input",
+    "input action",
+    "input mapping context",
+    "gas",
+    "gameplay ability",
+    "ability system",
+    "abilitysystemcomponent",
+    "attributeset",
+    "gameplayeffect",
+    "gameplay tag",
+    "replication",
+    "rpc",
+    "doreplifetime",
+    "onrep",
+    "http",
+    "websocket",
+    "tcp",
+    "socket",
+    "async",
+    "asynctask",
+    "frunnable",
+    "parallelfor",
+    "taskgraph",
+    "tarray",
+    "tmap",
+    "tset",
+    "delegate",
+    "multicast",
+    "fstring",
+    "fname",
+    "ftext",
+    "timer",
+    "developersettings",
+    "dataasset",
+    "虚幻",
+    "虚幻引擎",
+    "生命周期",
+    "增强输入",
+    "输入映射",
+    "角色",
+    "组件",
+    "子系统",
+    "技能系统",
+    "能力系统",
+    "属性集",
+    "技能效果",
+    "玩法标签",
+    "游戏标签",
+    "网络同步",
+    "属性同步",
+    "远程调用",
+    "接口请求",
+    "网络请求",
+    "长连接",
+    "多线程",
+    "线程",
+    "异步",
+    "异步任务",
+    "反射",
+    "反射宏",
+    "容器",
+    "数组",
+    "字典",
+    "集合",
+    "委托",
+    "事件",
+    "字符串",
+    "文本",
+    "定时器",
+    "配置",
+    "项目设置",
+    "数据资产",
+}
+UE_KNOWLEDGE_QUESTION_HINTS = {
+    "what",
+    "why",
+    "how",
+    "when",
+    "which",
+    "explain",
+    "implement",
+    "example",
+    "sample",
+    "code",
+    "best practice",
+    "difference",
+    "compare",
+    "怎么",
+    "如何",
+    "是什么",
+    "为什么",
+    "什么时候",
+    "哪些",
+    "哪个",
+    "区别",
+    "用法",
+    "写",
+    "实现",
+    "示例",
+    "例子",
+    "代码",
+    "最佳实践",
+    "怎么选",
+    "该用",
+    "应该",
+    "讲一下",
+    "解释",
+}
+UE_KNOWLEDGE_ACRONYM_HINTS = {
+    "ue4",
+    "ue5",
+    "uecpp",
+    "gas",
+    "http",
+    "rpc",
+    "tcp",
+    "json",
+    "c++",
+    "uobject",
+    "uclass",
+    "ustruct",
+    "uenum",
+    "uproperty",
+    "ufunction",
+}
 
 
 def _hint_present(latest_text: str, text_lower: str, hint: str) -> bool:
     if any("\u4e00" <= ch <= "\u9fff" for ch in hint):
-        return hint in latest_text
+        return hint in latest_text or hint.lower() in text_lower
     pattern = re.compile(rf"\b{re.escape(hint.lower())}\b")
     return bool(pattern.search(text_lower))
+
+
+def _ue_knowledge_hint_present(latest_text: str, text_lower: str, hint: str) -> bool:
+    normalized = hint.lower()
+    if normalized in UE_KNOWLEDGE_ACRONYM_HINTS:
+        return normalized in text_lower
+    return _hint_present(latest_text, text_lower, hint)
 
 
 def _language_payload(
@@ -352,6 +503,23 @@ def _looks_like_project_inventory_query(latest_text: str, text_lower: str) -> bo
     return has_scope and has_fact and has_question
 
 
+def _ue_knowledge_signal(latest_text: str, text_lower: str) -> dict[str, Any]:
+    domain_hint_count = sum(
+        1
+        for hint in UE_KNOWLEDGE_DOMAIN_HINTS
+        if _ue_knowledge_hint_present(latest_text, text_lower, hint)
+    )
+    has_question = any(
+        _hint_present(latest_text, text_lower, hint) for hint in UE_KNOWLEDGE_QUESTION_HINTS
+    ) or "?" in latest_text or "？" in latest_text
+    compact_lookup = domain_hint_count > 0 and len(latest_text.strip()) <= 24
+    return {
+        "ue_knowledge_query": domain_hint_count > 0 and (has_question or compact_lookup),
+        "ue_knowledge_hint_count": domain_hint_count,
+        "ue_knowledge_question_present": has_question,
+    }
+
+
 def _explicit_task_routing(task_type: str, language: str) -> dict[str, Any]:
     tool_id = TASK_TYPE_TO_TOOL_ID.get(task_type)
     spec = get_tool_spec(tool_id)
@@ -404,6 +572,7 @@ def _agent_chat_signals(
     context_reference_present = any(
         _hint_present(latest_text, text_lower, hint) for hint in CONTEXT_REFERENCE_HINTS
     )
+    ue_knowledge = _ue_knowledge_signal(latest_text, text_lower)
     explicit_kb_scope = bool(request.context.kb_domains_hint or domain_filters)
     explicit_project_panel = active_panel in PROJECT_QA_PANELS
     strong_project_signal = bool(
@@ -426,6 +595,7 @@ def _agent_chat_signals(
         "strong_project_signal": strong_project_signal,
         "weak_project_signal": weak_project_signal,
         "project_inventory_query": _looks_like_project_inventory_query(latest_text, text_lower),
+        **ue_knowledge,
     }
 
 
@@ -464,6 +634,8 @@ def _project_qa_response(
             "context_reference_present": signals["context_reference_present"],
             "explicit_kb_scope": signals["explicit_kb_scope"],
             "project_inventory_query": signals.get("project_inventory_query", False),
+            "ue_knowledge_query": signals.get("ue_knowledge_query", False),
+            "ue_knowledge_hint_count": signals.get("ue_knowledge_hint_count", 0),
         },
     }
 
@@ -501,6 +673,8 @@ def _direct_answer_response(
             "context_reference_present": signals["context_reference_present"],
             "explicit_kb_scope": signals["explicit_kb_scope"],
             "project_inventory_query": signals.get("project_inventory_query", False),
+            "ue_knowledge_query": signals.get("ue_knowledge_query", False),
+            "ue_knowledge_hint_count": signals.get("ue_knowledge_hint_count", 0),
         },
     }
 
@@ -650,6 +824,26 @@ def classify_request(
                 decision_source="heuristic_strong_project_signal",
                 signal_strength="strong",
                 signals=signals,
+            ),
+        }
+
+    if signals["ue_knowledge_query"]:
+        reason = _localized(
+            language,
+            "用户在自由聊天中询问 UE/C++ 技术知识，后端将先检索本地知识库，再由 LLM 综合回答。",
+            "The user asked a UE/C++ technical knowledge question in chat, so the backend will retrieve local knowledge first and let the LLM synthesize the answer.",
+        )
+        return {
+            "locale": locale,
+            **_project_qa_response(
+                language=language,
+                reason=reason,
+                planner_confidence=0.87,
+                decision_source="heuristic_ue_knowledge_signal",
+                signal_strength="strong",
+                signals=signals,
+                selected_tool_id="retrieve_project_knowledge",
+                candidate_tool_ids=["retrieve_project_knowledge"],
             ),
         }
 

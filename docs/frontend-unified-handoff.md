@@ -1703,3 +1703,67 @@ Logs Analyze 仍会尝试检索 `incident_history / engine_notes / project_docs`
 - 是否能逐 token 更新同一条 assistant 气泡。
 - 断线后是否能自动回退非流式。
 - `tool_call/tool_result` 是否需要专门的“正在检索 / 正在读取文件”状态条。
+
+## 41. 2026-04-30 UE C++ 蒸馏知识包与 Code Generate 增强
+
+状态：后端已完成，UE 前端暂不需要强制修改。
+
+### 后端新增内容
+
+- 新增 UE C++ 蒸馏知识包，位置在 `knowledge/engine-notes`、`knowledge/examples`、`knowledge/code-reference`、`knowledge/team-rules`、`knowledge/prompt-packs`。
+- 新增 `prompt_packs` 知识 domain，用于标记 LLM 行为指导类文档。
+- 新增中文查询扩展词，让中文问题也能命中英文 UE 术语，例如 HTTP、WebSocket、GAS、反射、容器、委托、网络同步。
+- `Code Generate` 新增 HTTP AsyncAction、WebSocket Subsystem、DeveloperSettings、GAS AttributeSet 兜底模板。
+
+### 前端影响
+
+- 现有接口不变。
+- 现有 `Code Generate` 面板继续读取 `data.generated_items`、`data.reference_lookup`、`data.retrieved_references` 即可。
+- 如果用户问“HTTP 请求怎么写 / WebSocket 长连接怎么写 / 项目设置配置怎么写 / GAS 技能系统属性集怎么写”，后端现在会返回更具体的 UE C++ 草稿，而不是普通 Actor 骨架。
+- 新增 `prompt_packs` domain 只可能出现在知识库状态、citations、Debug View 或 reference lookup 中；前端不需要新增菜单或面板。
+
+### 建议前端显示
+
+- Code Generate 结果仍然以按钮 / Tab / 文件列表展示 `generated_items[]`。
+- 对 `write_policy.written_to_disk=false` 继续显示“草稿 / 未写入工程”语义。
+- 如果引用来源包含 `prompt_packs`，可以在 Debug View 中按普通 source 显示；普通用户 UI 可以不用突出展示。
+
+### 需要前端回传的信息
+
+- 暂无强制回传。
+- 如果测试中发现某类新增生成结果没有展示出来，请回传该次响应里的 `data.generated_items`、`data.generation_mode`、`data.reference_lookup` 和 Debug View。
+
+## 42. 2026-04-30 Agent Chat UE 技术知识路由修正
+
+状态：后端已完成，UE 前端不需要改 UI 或接口。
+
+### 背景
+
+用户在 Agent Chat 中问 “GAS / 多线程 / HTTP / 反射”等 UE 技术问题时，之前容易走 `direct_answer`，表现得像 LLM 自己回答，没有使用本地知识库。
+
+### 后端调整
+
+- 新增 UE 技术知识路由信号。
+- Agent Chat 命中 UE 技术问题时会进入 `project_qa`。
+- `debug_view.route.selected_tool_id` 会显示 `retrieve_project_knowledge`。
+- `debug_view.route.decision_source` 会显示 `heuristic_ue_knowledge_signal`。
+- 项目事实问题不受影响，例如“当前项目有哪些蓝图资产”仍走 `query_project_inventory`。
+
+### 前端影响
+
+- 继续使用现有 `POST /api/v1/chat/runs`。
+- 聊天气泡和 citations 渲染逻辑不变。
+- Debug View 如果展示 route/source/tool，可能会看到新的 `decision_source=heuristic_ue_knowledge_signal`。
+
+### 建议测试问题
+
+- “GAS技能系统是什么”
+- “UE多线程怎么做”
+- “HTTP请求怎么写”
+- “反射宏怎么选”
+- “当前项目有哪些蓝图资产，你列一下”
+
+### 需要前端回传的信息
+
+- 如果上述 UE 技术问题仍显示成纯 `direct_answer`，请回传完整响应的 `debug_view.route`、`data.retrieved_docs`、`data.citations`。
+- 如果 citations 有内容但用户界面没有显示参考来源，请回传前端渲染截图和对应 JSON。
