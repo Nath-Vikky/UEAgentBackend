@@ -196,7 +196,7 @@ make benchmark
 .\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
 ```
 
-GitHub Actions 已加入 CI smoke：Ruff、pytest、RAG eval。Markdown 评估报告默认生成到 `storage/artifacts/evals/`，可用于面试展示检索命中、路由准确率和引用覆盖情况。
+GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行。日常以本地 Ruff、pytest 和 RAG eval 为准；Markdown 评估报告默认生成到 `storage/artifacts/evals/`，可用于面试展示检索命中、路由准确率和引用覆盖情况。
 
 ## Docker 本地演示
 
