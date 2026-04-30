@@ -1767,3 +1767,46 @@ Logs Analyze 仍会尝试检索 `incident_history / engine_notes / project_docs`
 
 - 如果上述 UE 技术问题仍显示成纯 `direct_answer`，请回传完整响应的 `debug_view.route`、`data.retrieved_docs`、`data.citations`。
 - 如果 citations 有内容但用户界面没有显示参考来源，请回传前端渲染截图和对应 JSON。
+
+## 43. 2026-04-30 本地私有全量知识源接入
+
+状态：后端已完成，UE 前端不需要改 UI 或接口。
+
+### 后端能力
+
+后端现在明确支持双轨知识库：
+
+- 公开仓库内置：`./knowledge`，只放本项目原创蒸馏知识。
+- 本地私有扩展：用户可在 `.env` 的 `KB_SOURCE_PATHS` 中追加合法拥有的外部资料路径。
+
+示例：
+
+```env
+KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../XG-UE-Cpp-Course-Skill-main/.trae/skills/xg-uecpp-course/references
+```
+
+新增扫描脚本：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\scan_knowledge_sources.py --markdown-output storage\artifacts\private-kb-scan.md
+```
+
+该脚本只统计文件数、domain、后缀、缺失路径，不复制私有知识正文。
+
+### 前端影响
+
+- 无需新增字段。
+- 继续使用现有知识库刷新、Agent Chat、Code Generate、Code Review 响应。
+- 如果用户本地接入了私有全量库，前端只会看到更多 citations / references / retrieved docs。
+
+### 建议前端测试
+
+- 接入私有路径后，调用知识库刷新。
+- 在 Agent Chat 问 “GAS 体系怎么组织”“FRunnable 多线程怎么写”“Slate 独立程序是什么”。
+- 在 Code Generate 问 “HTTP POST JSON 请求怎么写”“WebSocket 长连接怎么写”。
+- 查看 citations 是否出现私有路径来源。
+
+### 需要前端回传的信息
+
+- 如果刷新后仍看不到私有资料，请回传 `GET /api/v1/knowledge-base/status` 的 `source_paths`、`rag_readiness`、`local_search_readiness`。
+- 如果前端不希望显示私有绝对路径，需要另开“citation 路径脱敏/相对化”需求；当前后端仍按现有 source path 返回。

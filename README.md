@@ -121,6 +121,26 @@
 
 如果之前已经用旧路径导入过知识库，请重启后端后调用一次 `POST /api/v1/knowledge-base/reindex`，或在插件 Debug View 触发知识库重建，让旧的 backend 文档索引被清掉。
 
+### 本地私有全量知识源
+
+开源仓库只提交 `./knowledge` 中的原创蒸馏知识；如果你本机有合法的课程资料、团队规范或个人笔记，可以在本地 `.env` 中把它们追加到 `KB_SOURCE_PATHS`，不要提交 `.env` 或私有资料本体：
+
+```env
+KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../XG-UE-Cpp-Course-Skill-main/.trae/skills/xg-uecpp-course/references
+```
+
+刷新索引：
+
+```http
+POST /api/v1/knowledge-base/reindex
+```
+
+可选扫描私有知识源覆盖情况。这个脚本只统计路径、后缀、domain 和大小，不复制正文：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\scan_knowledge_sources.py --markdown-output storage\artifacts\private-kb-scan.md
+```
+
 ### 启用 Embedding / Qdrant
 
 再补：

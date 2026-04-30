@@ -2019,3 +2019,67 @@ domain 映射：
 - 不把外部 283 个文件直接复制进项目。
 - 后续若要补齐覆盖，按 eval / 用户测试缺口逐步蒸馏，而不是全量搬运。
 - 优先扩充 `knowledge/engine-notes`、`knowledge/examples`、`knowledge/code-reference` 和 `tests/eval`。
+
+## 2026-04-30 本地私有全量知识源 + 公开蒸馏库双轨方案
+
+状态：后端机制已完成，文档已补充，暂不要求 UE 前端改动。
+
+### 最终决策
+
+不把外部课程仓库全量原文提交进本项目。采用双轨：
+
+- `公开原创蒸馏库`：仓库内 `./knowledge`，只放本项目自写总结、规则、最小代码模式和 prompt guidance。
+- `本地私有全量参考库`：使用者在自己的 `.env` 中追加合法拥有的外部资料路径，例如课程 knowledge、Skill references、团队规范、个人笔记。
+
+### 为什么这样做
+
+- 技术上，`KB_SOURCE_PATHS` 已支持多个目录，local grep / lexical RAG / 后续向量 RAG 都能读取。
+- 合规上，外部课程 README 明确课程知识内容仅供已购课学员学习参考，不适合直接公开再分发。
+- 面试表达上，这比“复制知识库”更好讲：项目提供知识接入 pipeline、领域蒸馏、路由、工具调用和 eval 闭环。
+
+### 已完成改动
+
+- `.env.example` 增加私有知识源配置示例。
+- `.gitignore` 增加 `private-knowledge/`、`external-knowledge/`、`local-knowledge/` 等本地目录忽略项。
+- 新增 `scripts/scan_knowledge_sources.py`。
+  - 只统计路径、后缀、domain、大小、缺失路径。
+  - 不读取正文，不复制私有知识内容。
+  - 可输出 JSON / Markdown 到 `storage/artifacts/`。
+- 新增单元测试覆盖扫描摘要和 Markdown 输出。
+- README / User Guide / Handoff / Dev Log 记录使用方式。
+
+### 使用者本地接入方式
+
+```env
+KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../XG-UE-Cpp-Course-Skill-main/.trae/skills/xg-uecpp-course/references
+```
+
+```powershell
+.\.venv\Scripts\python.exe scripts\scan_knowledge_sources.py --markdown-output storage\artifacts\private-kb-scan.md
+```
+
+然后重启后端并执行：
+
+```http
+POST /api/v1/knowledge-base/reindex
+```
+
+### 后续公开蒸馏库补齐顺序
+
+优先补“主题覆盖”，不追求原文覆盖：
+
+- 反射 / UObject / GC / CDO / 序列化。
+- TArray / TMap / TSet / 容器选型。
+- 委托 / 事件 / 字符串 / 定时器 / GameplayTag。
+- Subsystem / DeveloperSettings / 配置 / 依赖注入。
+- 智能指针 / 异步 / 多线程 / TaskGraph / ControlFlows。
+- HTTP / WebSocket / TCP / 网络同步 / RPC。
+- 第三方库封装 / 插件结构 / Slate 独立程序。
+- GAS / AttributeSet / GameplayAbility / GameplayEffect。
+
+每补一个主题，需要同步：
+
+- `knowledge/engine-notes` 或 `knowledge/examples`。
+- 必要时补 `knowledge/code-reference`。
+- 对 Code Review 风险补 `knowledge/team-rules`。
+- 对检索效果补 `tests/eval` case。

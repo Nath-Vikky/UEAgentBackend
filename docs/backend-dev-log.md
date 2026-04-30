@@ -1026,3 +1026,33 @@ UE 前端回传的 `frontend-unified-handoff.md` 与 `backend-action-items.md` �
 - 不把外部参考仓库 283 个 knowledge 文件全量复制进项目。
 - 当前知识库仍是蒸馏版，后续按测试缺口补充高频 UE 场景。
 - UE 前端不需要改接口，只需在 Debug View 兼容新的 `decision_source` 字符串。
+
+## 2026-04-30 本地私有全量知识源接入
+
+本轮把“外部仓库作为参考”的边界落地成双轨机制：公开仓库保持原创蒸馏知识，本地使用者可以通过 `.env` 接入自己合法拥有的全量资料。
+
+### 主要代码改动
+
+- `.env.example`
+  - 增加本地私有知识源示例。
+- `.gitignore`
+  - 忽略 `private-knowledge/`、`external-knowledge/`、`local-knowledge/` 等本地资料目录。
+- `scripts/scan_knowledge_sources.py`
+  - 新增知识源扫描工具。
+  - 只统计路径、后缀、domain、大小和缺失路径。
+  - 支持 JSON / Markdown 输出。
+- `tests/unit/test_scan_knowledge_sources.py`
+  - 覆盖 domain 统计、缺失路径和 Markdown 报告输出。
+
+### 文档
+
+- README 记录 `KB_SOURCE_PATHS` 私有扩展示例。
+- User Guide 补充“本地私有全量知识源接入”。
+- Frontend Handoff 说明前端无须改 UI，只会看到更多 citations / references。
+- Improve Plan 记录公开蒸馏库和本地私有全量库双轨方案。
+
+### 边界
+
+- 不提交外部课程原文。
+- 不生成私有知识正文摘要。
+- 扫描报告建议输出到 `storage/artifacts/`，该目录默认不提交。

@@ -19,6 +19,7 @@ coverage.xml
 .verification/
 .eval-runtime/
 pytest_tmp/
+tests/unit/.tmp/
 *.egg-info/
 storage/app.db
 storage/*.db
@@ -28,6 +29,12 @@ storage/artifacts/*
 storage/kb/raw/*
 storage/kb/normalized/*
 storage/kb/failed/*
+private-knowledge/
+private_knowledge/
+external-knowledge/
+external_knowledge/
+local-knowledge/
+local_knowledge/
 !storage/uploads/.gitkeep
 !storage/artifacts/.gitkeep
 !storage/kb/.gitkeep

@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ""
-      DATABASE_URL: sqlite+pysqlite:///:memory:
+      DATABASE_URL: "sqlite+pysqlite:///:memory:"
       EMBEDDING_ENABLED: "false"
       KB_SOURCE_PATHS: ./knowledge,./docs
     steps:

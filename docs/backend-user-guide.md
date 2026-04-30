@@ -1858,3 +1858,54 @@ GET /api/v1/knowledge-base/documents
 - 知识库没覆盖的 UE 主题，LLM 可能会用自身通用知识补充回答。
 - 如果 `retrieved_docs` / `citations` 为空，说明本轮没有找到可靠本地证据。
 - 后续扩充知识库时，优先补 `engine_notes`、`examples`、`code_reference`，并给 RAG eval 增加对应 case。
+
+### 18.19 本地私有全量知识源接入
+
+本项目支持“公开原创蒸馏库 + 本地私有全量参考库”双轨模式：
+
+- 公开仓库：只提交 `./knowledge` 下本项目自己整理的 UE 知识、规则和最小代码参考。
+- 本地私有：使用者可在自己的 `.env` 中追加合法拥有的课程资料、团队文档或个人笔记路径。
+- 后端机制：`KB_SOURCE_PATHS` 支持多个目录或文件，local grep、lexical RAG、后续 embedding + Qdrant 都会读取这些路径。
+- 合规边界：不要把外部课程原文、私有团队资料或 `.env` 提交到 GitHub。
+
+示例 `.env`：
+
+```env
+KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../XG-UE-Cpp-Course-Skill-main/.trae/skills/xg-uecpp-course/references
+```
+
+也可以使用 JSON 数组，适合路径里包含逗号的极端情况：
+
+```env
+KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/PrivateKnowledge/uecpp/references"]
+```
+
+接入步骤：
+
+1. 把外部资料放在本机任意目录，不要放进本仓库并提交。
+2. 在本地 `.env` 中追加路径到 `KB_SOURCE_PATHS`。
+3. 重启后端。
+4. 调用 `POST /api/v1/knowledge-base/reindex`。
+5. 调用 `GET /api/v1/knowledge-base/status` 查看 `rag_readiness.domain_counts` 和 `local_search_readiness.searchable_files`。
+
+可选扫描命令：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\scan_knowledge_sources.py --markdown-output storage\artifacts\private-kb-scan.md
+```
+
+如果想临时扫描指定路径，不依赖 `.env`：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\scan_knowledge_sources.py --source-path .\knowledge --source-path ..\XG-UE-Cpp-Course-Skill-main\knowledge --source-path ..\XG-UE-Cpp-Course-Skill-main\.trae\skills\xg-uecpp-course\references --markdown-output storage\artifacts\private-kb-scan.md
+```
+
+脚本输出说明：
+
+- `file_count`：符合大小限制并可参与索引的文件数。
+- `discovered_supported_files`：发现的受支持格式文件数。
+- `domain_counts`：按 `engine_notes / examples / code_reference / team_rules / prompt_packs` 等 domain 统计。
+- `suffix_counts`：按 `.md / .cpp / .h / .json` 等格式统计。
+- `missing_sources`：路径不存在或不受支持时会列出。
+
+这个扫描脚本不读取正文、不生成摘要、不复制私有资料，只帮助确认本地全量资料是否被后端看到。生成的报告建议放在 `storage/artifacts/`，该目录默认不提交。
