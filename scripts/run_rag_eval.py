@@ -73,7 +73,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 @contextmanager
-def _isolated_runtime() -> Iterator[None]:
+def _isolated_runtime(source_paths: list[str]) -> Iterator[None]:
     runtime_path = Path(".eval-runtime") / f"rag-eval-{uuid.uuid4().hex}"
     storage_dir = runtime_path / "storage"
     shutil.rmtree(runtime_path, ignore_errors=True)
@@ -84,6 +84,7 @@ def _isolated_runtime() -> Iterator[None]:
         "UPLOAD_DIR": str((storage_dir / "uploads").resolve()),
         "ARTIFACT_DIR": str((storage_dir / "artifacts").resolve()),
         "KB_DIR": str((storage_dir / "kb").resolve()),
+        "KB_SOURCE_PATHS": ",".join(source_paths),
     }
     previous = {key: os.environ.get(key) for key in overrides}
     for key, value in overrides.items():
@@ -147,9 +148,9 @@ def main() -> int:
         raise SystemExit(f"Dataset not found: {dataset_path}")
 
     cases = _load_jsonl(dataset_path)
-    source_paths = args.source_paths or ["../backend.md", "./docs"]
+    source_paths = args.source_paths or ["./README.md", "./docs"]
 
-    with _isolated_runtime():
+    with _isolated_runtime(source_paths):
         with TestClient(create_app()) as client:
             refresh = client.post(
                 "/api/v1/knowledge-base/refresh",

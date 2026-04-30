@@ -176,7 +176,7 @@ make benchmark
 
 ## 当前联调状态
 
-截至 2026-04-21，UE 端反馈的 Agent Chat 路由 500、Code Review 文件扫描字段、选中文件读取调试信息、Assets Inspect 默认命名检查已经补齐。前端对接请优先阅读 [docs/frontend-unified-handoff.md](./docs/frontend-unified-handoff.md)，其中第 11 节记录了本轮新增字段和 UI 渲染注意事项。
+截至 2026-04-21，UE 端反馈的 Agent Chat 路由 500、Code Review 文件扫描字段、选中文件读取调试信息、Assets Inspect 默认命名检查已经补齐。公开仓库不再提交前端交接过程文档，接口和展示约定统一沉淀到 [docs/backend-user-guide.md](./docs/backend-user-guide.md)。
 
 二次联调后，Code Review 已固定输出 `summary/issues/recommendations/references/next_steps`，并在 LLM 可用时尝试综合审查；LLM 或 KB 不足时会降级到当前文件内容和通用 Unreal/C++/C# 规则。Assets Inspect 的用户可见 `reason/suggestion` 已按最终输出语言本地化。
 
@@ -193,10 +193,10 @@ make benchmark
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check app tests scripts
 .\.venv\Scripts\python.exe -m pytest tests/unit tests/integration tests/contract tests/eval
-.\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path ..\backend.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output docs\rag-eval-report.md
+.\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
 ```
 
-GitHub Actions 已加入 CI smoke：Ruff、pytest、RAG eval。`docs/rag-eval-report.md` 是本地生成的可读评估报告，可用于面试展示检索命中、路由准确率和引用覆盖情况。
+GitHub Actions 已加入 CI smoke：Ruff、pytest、RAG eval。Markdown 评估报告默认生成到 `storage/artifacts/evals/`，可用于面试展示检索命中、路由准确率和引用覆盖情况。
 
 ## Docker 本地演示
 
@@ -219,7 +219,7 @@ Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG，避�
 - `CodeReviewSkill`、`CodeGenerateSkill`、`LogsAnalyzeSkill`、`AssetsInspectSkill` 已抽离为独立 executor，前端调用方式不变。
 - `GET /api/v1/knowledge-base/status` 现在包含 `ingestion_pipeline`、`format_groups`、`parser_dependencies`、`knowledge_domains`。
 - `POST /api/v1/knowledge-base/import` 的文本导入同时兼容 `text` 和 `content`，并保存 `metadata`、`tags`、`doc_type`。
-- 后续收缩计划已同步到 `docs/improveplan.md`，方便 GitHub 仓库内统一查看。
+- 后续收缩计划保留在本地 `docs/improveplan.md`，公开仓库只保留用户指南和量化结果，避免过程文档干扰用户阅读。
 
 ## 2026-04-23 前端联调补充
 

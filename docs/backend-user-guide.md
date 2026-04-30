@@ -180,12 +180,12 @@
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/unit tests/integration tests/contract tests/eval
-.\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path ..\backend.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output docs\rag-eval-report.md
+.\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
 ```
 
 GitHub Actions 已提供 CI smoke：Ruff、pytest、RAG eval。CI 只用于验证，不做部署。
 
-`docs/rag-eval-report.md` 是给面试和复盘看的 Markdown 报告，展示 `hit_at_k`、`mrr`、`route_accuracy`、`citation_coverage` 等核心指标。当前评估是 smoke 级别，用于证明“可测、可复现、可继续优化”，不是企业级大规模 benchmark。
+`storage/artifacts/evals/*.md` 是本地生成的 Markdown 评估报告，展示 `hit_at_k`、`mrr`、`route_accuracy`、`citation_coverage` 等核心指标。当前评估是 smoke 级别，用于证明“可测、可复现、可继续优化”，不是企业级大规模 benchmark。
 
 ### Docker 本地演示
 
@@ -1586,7 +1586,7 @@ POST /api/v1/sessions
 本地 RAG 评测命令：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_rag_eval.py --dataset tests\eval\rag_project_qa_dataset.jsonl --markdown-output docs\rag-eval-report.md
+.\.venv\Scripts\python.exe scripts\run_rag_eval.py --dataset tests\eval\rag_project_qa_dataset.jsonl --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
 ```
 
 评测 summary 会包含：
@@ -1602,7 +1602,7 @@ POST /api/v1/sessions
 - `low_confidence_ratio`
 - `no_result_ratio`
 
-如果加上 `--markdown-output`，脚本会额外生成 `docs/rag-eval-report.md`，方便直接给面试官展示每条 case 的路由、语言、命中来源和核心指标。
+如果加上 `--markdown-output`，脚本会额外生成本地 Markdown 报告，方便直接给面试官展示每条 case 的路由、语言、命中来源和核心指标。
 
 ### 18.13 Skill Protocol v1
 
@@ -1664,9 +1664,9 @@ GET /api/v1/system/capabilities
 - 新增“高亮按钮、摘要卡片、建议列表字段”应归入 `CodeReviewSkill.projector`。
 - 不做动态安装 Skill、不做 marketplace、不做复杂沙箱；这是个人作品级、面试展示级项目，目标是稳定、清晰、可讲。
 
-### 18.14 学习文档入口
+### 18.14 本地学习文档入口
 
-如果要系统复习这个后端，可以按下面顺序阅读：
+如果要系统复习这个后端，可以在本地保留并阅读下面这些开发文档。它们默认已加入 `.gitignore`，不随公开仓库发布：
 
 - `docs/agent-architecture-study.md`：先理解整体 Agent loop、模块边界和面试讲法。
 - `docs/request-lifecycle.md`：再用真实请求复盘 Agent Chat、Project QA、Code Review 等路径。
@@ -1934,7 +1934,7 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 
 - `offline_fallback`：不调用 live LLM，适合可复现本地评估。
 - `RAG_MODE=lexical`：benchmark 中关闭向量依赖，确保没有 embedding / Qdrant 也能跑。
-- `source_paths=../backend.md, ./docs, ./knowledge`：同时评估项目文档问答和 UE 知识库问答。
+- `source_paths=./README.md, ./docs, ./knowledge`：同时评估公开项目文档问答和 UE 知识库问答。
 
 如果要评估真实 LLM 链路：
 

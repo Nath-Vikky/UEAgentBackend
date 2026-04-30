@@ -13,7 +13,7 @@ jobs:
       OPENAI_API_KEY: ""
       DATABASE_URL: "sqlite+pysqlite:///:memory:"
       EMBEDDING_ENABLED: "false"
-      KB_SOURCE_PATHS: "./knowledge,./docs"
+      KB_SOURCE_PATHS: "./README.md,./knowledge,./docs"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,7 +37,7 @@ jobs:
       - name: RAG eval smoke
         run: >
           python scripts/run_rag_eval.py
-          --source-path ../backend.md
+          --source-path ./README.md
           --source-path ./docs
           --source-path ./knowledge
           --top-k 4
