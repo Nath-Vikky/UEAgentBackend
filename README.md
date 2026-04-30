@@ -164,6 +164,23 @@ POST /api/v1/knowledge-base/reindex
 - [docs/interview-demo-script.md](./docs/interview-demo-script.md)
 - [docs/agent-project-study-notes.md](./docs/agent-project-study-notes.md)
 - [docs/rag-eval-report.md](./docs/rag-eval-report.md)
+- [docs/benchmark-report.md](./docs/benchmark-report.md)
+
+## 量化评估
+
+生成面试展示用的项目级 benchmark：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output docs\benchmark-report.md
+```
+
+如果本机有 `make`：
+
+```powershell
+make benchmark
+```
+
+报告包含 RAG `recall_at_k`、`precision_at_k`、`hit_at_k`、`MRR`、路由准确率、任务成功率、字段覆盖率、语义准确率，以及接口 `p50/p95` 延迟。默认使用 `offline_fallback`，不会调用 live LLM；如果想测试真实模型链路，可追加 `--use-live-llm`。
 
 ## 当前联调状态
 

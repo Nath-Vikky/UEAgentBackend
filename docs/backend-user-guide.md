@@ -1909,3 +1909,72 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 - `missing_sources`：路径不存在或不受支持时会列出。
 
 这个扫描脚本不读取正文、不生成摘要、不复制私有资料，只帮助确认本地全量资料是否被后端看到。生成的报告建议放在 `storage/artifacts/`，该目录默认不提交。
+
+## 19. 项目级 Benchmark 与量化结果
+
+后端现在提供项目级 benchmark，用于面试展示和后续性能优化对比。它把 RAG、Agent 路由、工具型任务和接口耗时放到同一份报告中。
+
+运行命令：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output docs\benchmark-report.md
+```
+
+默认模式：
+
+- `offline_fallback`：不调用 live LLM，适合可复现本地评估。
+- `RAG_MODE=lexical`：benchmark 中关闭向量依赖，确保没有 embedding / Qdrant 也能跑。
+- `source_paths=../backend.md, ./docs, ./knowledge`：同时评估项目文档问答和 UE 知识库问答。
+
+如果要评估真实 LLM 链路：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --use-live-llm --markdown-output docs\benchmark-report.md
+```
+
+当前报告位置：
+
+- `docs/benchmark-report.md`
+- `storage/artifacts/evals/project-benchmark-latest.json`
+
+核心指标：
+
+- `recall_at_k`：召回率，期望来源中有多少被 top-k 检索找回。
+- `precision_at_k`：精确率，top-k 检索结果里有多少是期望来源。
+- `hit_at_k`：每条 case 是否至少命中一个期望来源。
+- `mrr`：第一个正确来源出现得越靠前越高。
+- `ndcg_at_k`：考虑排序位置的检索质量。
+- `route_accuracy`：Agent 是否选对 direct / project_qa / workflow / single_tool。
+- `citation_coverage`：回答是否带引用。
+- `field_coverage`：任务响应是否包含前端需要的结构化字段。
+- `semantic_accuracy`：规则命中、issue family、expected value 等语义检查是否通过。
+- `p50_ms / p95_ms`：接口耗时中位数和 95 分位。
+
+当前基线结果：
+
+- RAG cases：8
+- `recall_at_k=0.6875`
+- `precision_at_k=0.1875`
+- `hit_at_k=0.7500`
+- `mrr=0.6667`
+- `route_accuracy=1.0000`
+- `citation_coverage=1.0000`
+- Task cases：12
+- `success_rate=1.0000`
+- `field_coverage=1.0000`
+- `semantic_accuracy=1.0000`
+- Performance：20 requests，`p50_ms≈2500`，`p95_ms≈2900`
+
+如何解读：
+
+- `route_accuracy / field_coverage / semantic_accuracy` 已经适合作品集展示，说明后端功能链路稳定。
+- `recall_at_k / precision_at_k` 是后续 RAG 优化重点，尤其是旧项目文档问答集还有漏召回。
+- `p95_ms` 是后续性能优化重点，当前离线 fallback 仍约 2.9s，说明部分链路有固定开销，适合做缓存、跳过无效外部探测和本地检索预热。
+
+后续性能优化建议：
+
+- 给 `LocalSearchService` 增加文件列表和文本内容缓存，避免每次请求重复遍历 `KB_SOURCE_PATHS`。
+- benchmark 离线模式完全跳过 Qdrant 可用性探测，避免无向量库时的连接等待。
+- 为 Project QA 的 lexical chunks 做进程内预热索引。
+- 按任务类型裁剪不必要的 Debug View 深层字段，降低序列化成本。
+- 对 Code Generate / Code Review 的知识参考检索做 domain 预过滤和 top-k 限制。

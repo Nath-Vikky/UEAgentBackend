@@ -1056,3 +1056,30 @@ UE 前端回传的 `frontend-unified-handoff.md` 与 `backend-action-items.md` �
 - 不提交外部课程原文。
 - 不生成私有知识正文摘要。
 - 扫描报告建议输出到 `storage/artifacts/`，该目录默认不提交。
+
+## 2026-04-30 项目级 Benchmark 与量化报告
+
+本轮新增面试展示用的项目级 benchmark，把 RAG 检索质量、Agent 路由、工具型任务结构和接口耗时统一量化。
+
+### 主要代码改动
+
+- 新增 `app/evaluation/benchmark_report.py`。
+- 新增 `scripts/run_project_benchmark.py`。
+- 新增 `tests/eval/rag_ue_knowledge_dataset.jsonl`，覆盖 GAS、多线程、HTTP、反射等 UE 知识问答。
+- 新增 `tests/eval/code_generate_dataset.jsonl`，覆盖 Enhanced Input、HTTP、GAS AttributeSet 代码生成。
+- 新增 `tests/unit/test_benchmark_report.py`。
+- `scripts/run_rag_eval.py`、`scripts/run_task_eval.py`、`scripts/run_project_benchmark.py` 的 JSONL loader 支持 `utf-8-sig`，避免 Windows 工具写入 BOM 后读取失败。
+- `Makefile` 新增 `benchmark`。
+- 新增 `docs/benchmark-report.md`。
+
+### 当前基线
+
+- RAG：`recall_at_k=0.6875`，`precision_at_k=0.1875`，`hit_at_k=0.7500`，`mrr=0.6667`，`route_accuracy=1.0000`，`citation_coverage=1.0000`。
+- Task：`success_rate=1.0000`，`field_coverage=1.0000`，`semantic_accuracy=1.0000`。
+- Performance：20 requests，`p50_ms≈2500`，`p95_ms≈2900`，`kb_refresh_ms≈3300`。
+
+### 边界
+
+- 默认 benchmark 使用 `offline_fallback`，不调用 live LLM。
+- 如需评估真实模型链路，可手动加 `--use-live-llm`。
+- 当前是本地作品级 benchmark，不是生产级压测或 SLA。

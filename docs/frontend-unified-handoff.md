@@ -1810,3 +1810,31 @@ KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../XG-UE-Cp
 
 - 如果刷新后仍看不到私有资料，请回传 `GET /api/v1/knowledge-base/status` 的 `source_paths`、`rag_readiness`、`local_search_readiness`。
 - 如果前端不希望显示私有绝对路径，需要另开“citation 路径脱敏/相对化”需求；当前后端仍按现有 source path 返回。
+
+## 44. 2026-04-30 项目级 Benchmark 报告
+
+状态：后端已完成，UE 前端不需要改动。
+
+### 新增内容
+
+- 新增 `scripts/run_project_benchmark.py`。
+- 新增 `docs/benchmark-report.md`。
+- Benchmark 覆盖 RAG、Agent Chat 路由、Code Generate、Code Review、Logs Analyze、Config 任务和接口耗时。
+
+### 核心指标
+
+- RAG：`recall_at_k`、`precision_at_k`、`hit_at_k`、`mrr`、`ndcg_at_k`、`citation_coverage`。
+- Agent / Task：`route_accuracy`、`success_rate`、`field_coverage`、`semantic_accuracy`。
+- Performance：`p50_ms`、`p95_ms`、`max_ms`、`kb_refresh_ms`。
+
+### 当前结果
+
+- RAG：`recall_at_k=0.6875`，`precision_at_k=0.1875`，`hit_at_k=0.7500`，`route_accuracy=1.0000`。
+- Task：`success_rate=1.0000`，`field_coverage=1.0000`，`semantic_accuracy=1.0000`。
+- Performance：20 requests，`p50_ms≈2500`，`p95_ms≈2900`。
+
+### 前端影响
+
+- 无需新增 UI。
+- 这份报告用于后端自测、面试展示和后续性能优化。
+- 如果后续前端也想展示 benchmark，可以另开“本地评测结果查看”面板；当前阶段不做。

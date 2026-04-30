@@ -2083,3 +2083,61 @@ POST /api/v1/knowledge-base/reindex
 - 必要时补 `knowledge/code-reference`。
 - 对 Code Review 风险补 `knowledge/team-rules`。
 - 对检索效果补 `tests/eval` case。
+
+## 2026-04-30 项目级 Benchmark 与性能优化路线
+
+状态：第一版量化基线已完成，后续可以围绕报告做性能优化。
+
+### 为什么做
+
+面试项目不能只展示“功能很多”，还要展示可测量、可复盘、可优化。本阶段新增项目级 benchmark，把 RAG、路由、任务响应结构、语义检查和耗时合到一份报告里。
+
+### 已完成
+
+- 新增 `scripts/run_project_benchmark.py`。
+- 新增 `app/evaluation/benchmark_report.py`。
+- 新增 `tests/eval/rag_ue_knowledge_dataset.jsonl`。
+- 新增 `tests/eval/code_generate_dataset.jsonl`。
+- 新增 `tests/unit/test_benchmark_report.py`。
+- 新增 `docs/benchmark-report.md`。
+- `Makefile` 新增 `benchmark` target。
+
+### 当前指标
+
+- RAG cases：8。
+- `recall_at_k=0.6875`。
+- `precision_at_k=0.1875`。
+- `hit_at_k=0.7500`。
+- `mrr=0.6667`。
+- `route_accuracy=1.0000`。
+- `citation_coverage=1.0000`。
+- Task cases：12。
+- `success_rate=1.0000`。
+- `field_coverage=1.0000`。
+- `semantic_accuracy=1.0000`。
+- Performance：20 requests，`p50_ms≈2500`，`p95_ms≈2900`。
+
+### 指标解读
+
+- 路由和任务结构已经稳定，能证明 Agent 架构不是纯 prompt demo。
+- RAG 召回率和精确率还有提升空间，尤其是项目文档问答集。
+- UE 知识问答集表现更好，说明新增 UE C++ 知识包对 GAS、多线程、HTTP、反射等问题有效。
+- 性能存在明显优化空间，离线 fallback 仍有约 2.5-2.9s 的固定开销。
+
+### 下一步性能优化边界
+
+目标：做作品级、可解释的性能优化，不做企业级压测平台。
+
+- `LocalSearchService` 缓存文件清单和文本内容。
+- benchmark 离线模式跳过不必要的 Qdrant 探测。
+- Project QA 的 lexical chunk 列表做进程内预热，减少重复查询和对象转换。
+- 对 Code Generate / Code Review 检索做 domain 预过滤。
+- 精简 Debug View 中超长字段，避免影响普通响应性能。
+- 每做一项优化都重新运行 `scripts/run_project_benchmark.py`，用 p50/p95 和 RAG 指标对比。
+
+暂不做：
+
+- 不做分布式压测。
+- 不做 Prometheus 长期压测看板。
+- 不做复杂缓存失效系统。
+- 不为了指标牺牲 Debug View 的可解释性。

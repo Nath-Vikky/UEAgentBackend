@@ -43,7 +43,7 @@ def _parse_args() -> argparse.Namespace:
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -87,6 +87,7 @@ def _isolated_runtime() -> Iterator[None]:
 def _default_datasets() -> list[Path]:
     return [
         Path("tests/eval/intent_language_dataset.jsonl"),
+        Path("tests/eval/code_generate_dataset.jsonl"),
         Path("tests/eval/logs_analyze_dataset.jsonl"),
         Path("tests/eval/code_review_dataset.jsonl"),
         Path("tests/eval/config_task_dataset.jsonl"),

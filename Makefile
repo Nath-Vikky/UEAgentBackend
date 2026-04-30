@@ -1,4 +1,4 @@
-.PHONY: dev test lint rag-eval docker-up docker-down docker-logs
+.PHONY: dev test lint rag-eval benchmark docker-up docker-down docker-logs
 
 dev:
 	python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
@@ -11,6 +11,9 @@ lint:
 
 rag-eval:
 	python scripts/run_rag_eval.py --source-path ../backend.md --source-path ./docs --source-path ./knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75
+
+benchmark:
+	python scripts/run_project_benchmark.py --output storage/artifacts/evals/project-benchmark-latest.json --markdown-output docs/benchmark-report.md
 
 docker-up:
 	docker compose up --build
