@@ -13,7 +13,7 @@ jobs:
       OPENAI_API_KEY: ""
       DATABASE_URL: "sqlite+pysqlite:///:memory:"
       EMBEDDING_ENABLED: "false"
-      KB_SOURCE_PATHS: ./knowledge,./docs
+      KB_SOURCE_PATHS: "./knowledge,./docs"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

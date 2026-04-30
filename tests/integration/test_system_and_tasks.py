@@ -23,6 +23,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("UPLOAD_DIR", str((storage_dir / "uploads").resolve()))
     monkeypatch.setenv("ARTIFACT_DIR", str((storage_dir / "artifacts").resolve()))
     monkeypatch.setenv("KB_DIR", str((storage_dir / "kb").resolve()))
+    monkeypatch.setenv("KB_SOURCE_PATHS", "./knowledge")
     monkeypatch.setenv("OPENAI_API_KEY", "")
     get_settings.cache_clear()
     get_engine.cache_clear()

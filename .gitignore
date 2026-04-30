@@ -35,6 +35,19 @@ external-knowledge/
 external_knowledge/
 local-knowledge/
 local_knowledge/
+
+# Local-only development notes. Keep these on your machine, but do not publish them.
+docs/agent-architecture-study.md
+docs/agent-project-study-notes.md
+docs/architecture.md
+docs/backend-dev-log.md
+docs/frontend-unified-handoff.md
+docs/improveplan.md
+docs/interview-demo-script.md
+docs/rag-and-memory-study.md
+docs/rag-eval-report.md
+docs/request-lifecycle.md
+docs/skill-development-guide.md
 !storage/uploads/.gitkeep
 !storage/artifacts/.gitkeep
 !storage/kb/.gitkeep

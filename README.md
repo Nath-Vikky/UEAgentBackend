@@ -154,17 +154,9 @@ POST /api/v1/knowledge-base/reindex
 ## 当前保留的文档入口
 
 - [docs/backend-user-guide.md](./docs/backend-user-guide.md)
-- [docs/frontend-unified-handoff.md](./docs/frontend-unified-handoff.md)
-- [docs/backend-dev-log.md](./docs/backend-dev-log.md)
-- [docs/architecture.md](./docs/architecture.md)
-- [docs/agent-architecture-study.md](./docs/agent-architecture-study.md)
-- [docs/rag-and-memory-study.md](./docs/rag-and-memory-study.md)
-- [docs/skill-development-guide.md](./docs/skill-development-guide.md)
-- [docs/request-lifecycle.md](./docs/request-lifecycle.md)
-- [docs/interview-demo-script.md](./docs/interview-demo-script.md)
-- [docs/agent-project-study-notes.md](./docs/agent-project-study-notes.md)
-- [docs/rag-eval-report.md](./docs/rag-eval-report.md)
 - [docs/benchmark-report.md](./docs/benchmark-report.md)
+
+公开仓库只保留用户使用指南和量化结果。开发日志、改进计划、前端交接、学习笔记等文件保留在本地，并已加入 `.gitignore`，避免把过程文档发布给普通使用者。
 
 ## 量化评估
 

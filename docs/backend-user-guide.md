@@ -1,5 +1,15 @@
 # UE Agent Backend User Guide
 
+## 0. 文档边界
+
+公开仓库默认只保留：
+
+- `README.md`：快速启动和最小配置。
+- `docs/backend-user-guide.md`：完整使用手册。
+- `docs/benchmark-report.md`：当前量化评估结果。
+
+开发过程文档，例如 `docs/improveplan.md`、`docs/backend-dev-log.md`、`docs/frontend-unified-handoff.md`、架构学习笔记和请求生命周期复盘，建议只保留在本地，不发布给普通使用者。这样 GitHub 页面会更清爽，也更接近一个可交付项目。
+
 ## 1. 项目定位
 
 这个后端服务配合 Unreal Editor 插件使用，定位是本地单机作品集项目。它不追求企业级部署和过宽的功能面，而是收口到 5 个核心能力：
