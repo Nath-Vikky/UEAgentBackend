@@ -1,41 +1,163 @@
 # UE Agent Backend
 
-这是配合 Unreal Editor 插件使用的本地 Agent 后端。项目定位是个人作品集，不做服务器部署、多人权限体系或企业级运维包装，目标是把能力收口到少而清晰、可联调、可展示的一版。
+面向 Unreal Editor 插件的本地 AI Agent 后端。项目定位是个人作品集和校招面试级工程，不做企业级云部署、多租户权限或复杂运维平台，重点展示一个可运行、可调试、可评测、能接入 UE 研发场景的 Agent 工具链。
 
-## 当前保留的 5 个核心功能
+## 项目亮点
 
-- `Agent Chat / Project QA`
-- `Code Review`
-- `Code Generate`
-- `Logs Analyze`
-- `Assets Inspect`
+- **UE 研发场景闭环**：覆盖 `Agent Chat / Project QA`、`Code Review`、`Code Generate`、`Logs Analyze`、`Assets Inspect` 五个核心功能。
+- **不是简单 LLM 转发**：后端负责意图路由、上下文压缩、知识检索、工具调用、结构化输出、调试轨迹和评测指标。
+- **固定 Skill 架构**：每个显式功能由内置 Skill 执行，避免所有能力都交给 LLM 自由发挥。
+- **声明式 Tool Registry**：工具有分类、输入输出契约、副作用等级、确认要求和 free-chat 白名单。
+- **RAG + 本地 grep 并存**：没有向量模型时使用本地 lexical/grep 检索；配置 Embedding + Qdrant 后可扩展为混合检索。
+- **安全写入闭环**：代码生成默认只返回草稿；只有显式请求并经 Proposal 确认后，才允许有限写入 `Source/` 或 `Plugins/`。
+- **可观测和可评测**：提供 `user_view / debug_view`、trace、artifact、Prometheus metrics、alerts、RAG eval 和项目级 benchmark。
+- **可选 MCP 工具层**：HTTP 仍是 UE 前端和后端主协议，MCP 只作为未来工具 transport，默认关闭。
 
-以下能力仍保留兼容代码，但已经退出主菜单范围：
+## 架构概览
 
-- `config_generate`
-- `config_validate`
-- `assets_plan`
-- `assets_execute`
-- `perf_analyze`
+```text
+Unreal Editor Plugin
+  -> FastAPI HTTP API
+  -> Router / Context Manager / Skill Executors
+  -> Tool Registry / ReAct Lite / Proposal Service
+  -> Knowledge Base / Local Search / Optional Vector RAG
+  -> SQLite Storage / Artifacts / Metrics / Eval Reports
+```
 
-## 为什么它可以算一个 Agent 后端
+核心设计边界：
 
-它不只是把请求转发给 LLM，而是具备完整的 Agent 闭环：
+- UE 插件负责采集编辑器上下文和展示结果。
+- 后端负责 Agent 决策、检索、LLM 调用、工具协议、安全确认和评测。
+- 自研 Agent pipeline 是主链路，`LangChain / LangGraph` 仅保留为可选依赖，不作为当前主工作流叙事。
+- 写入类能力必须经过 `Proposal -> 用户确认 -> 后端安全校验 -> 执行记录`。
 
-- 统一入口与任务路由
-- 自由聊天与项目问答分流
-- 知识库导入、检索和可选向量召回
-- session / task / run / artifact / trace 持久化
-- `user_view / debug_view` 双视图
-- 声明式 Tool Registry 和 Agent Chat 的受控 ReAct Lite 工具选择
-- Tool Contract 自检和 Project QA 工具调用契约诊断
-- Self-Reflection 轻量回答质量自检
-- 同项目跨 Session 的轻量长期记忆
-- `/metrics`、`/api/v1/system/alerts`、事件回放、调试快照
+## 核心功能
 
-## 关键接口
+| 功能 | 面向场景 | 当前边界 |
+| --- | --- | --- |
+| Agent Chat / Project QA | 自由聊天、项目事实问答、知识库问答、项目资产/代码清单查询 | 只允许自动调用只读工具 |
+| Code Review | 扫描并审查 UE C++ / C# 文件 | 生成审查结果，不自动改源码 |
+| Code Generate | 根据需求和知识库生成 UE 代码草稿 | 默认不落盘，可选确认式写入 |
+| Logs Analyze | 分析 UE 日志文本、错误片段或日志文件路径 | RAG 只作辅助，不覆盖日志本身判断 |
+| Assets Inspect | 分析选中资产、命名、类型、依赖、常见设置 | 批量修改或重命名后续必须走 Proposal |
 
-### 系统
+保留兼容但不作为主菜单功能：`config_generate`、`config_validate`、`assets_plan`、`assets_execute`、`perf_analyze`。
+
+## 快速启动
+
+在 `backend/` 目录执行：
+
+```powershell
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+如果只是本地临时验证，不跑迁移通常也能启动，因为应用启动时会尝试 `create_all`。
+
+首次准备环境可参考：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+```
+
+## 最小配置
+
+复制 `.env.example` 为 `.env` 后，最小 LLM 配置如下：
+
+```env
+OPENAI_API_KEY=your_key
+OPENAI_BASE_URL=
+CHAT_MODEL=gpt-4.1-mini
+```
+
+知识库默认使用：
+
+```env
+KB_SOURCE_PATHS=./knowledge
+KB_DIR=./storage/kb
+RAG_MODE=hybrid
+RAG_FALLBACK_MODE=lexical_only
+```
+
+可选向量检索：
+
+```env
+EMBEDDING_ENABLED=true
+EMBEDDING_MODEL=text-embedding-3-large
+QDRANT_URL=http://127.0.0.1:6333
+QDRANT_COLLECTION=ue_agent_default
+```
+
+可选 MCP 工具层，默认关闭：
+
+```env
+MCP_TOOL_ADAPTER_ENABLED=false
+MCP_STDIO_COMMAND=
+MCP_STDIO_ARGS=
+MCP_ALLOWED_TOOLS=
+```
+
+## 知识库使用
+
+公开仓库只提交 `./knowledge` 中的原创蒸馏知识，例如 UE C++ 常用模式、资产检查规则、代码生成参考和团队规则。后端开发文档、交接文档、改进计划默认不进入用户知识库，避免 Agent Chat 引用内部过程资料。
+
+刷新或重建索引：
+
+```http
+POST /api/v1/knowledge-base/reindex
+```
+
+本地私有全量资料可以只在 `.env` 中追加，不要提交资料本体：
+
+```env
+KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../TeamNotes/UE
+```
+
+扫描私有知识源覆盖情况：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\scan_knowledge_sources.py --markdown-output storage\artifacts\private-kb-scan.md
+```
+
+这个脚本只统计路径、后缀、domain 和大小，不复制正文。
+
+## 量化评估
+
+生成面试展示用 benchmark：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output docs\benchmark-report.md
+```
+
+如果本机有 `make`：
+
+```powershell
+make benchmark
+```
+
+报告包含：
+
+- RAG：`recall_at_k`、`precision_at_k`、`hit_at_k`、`mrr`、`citation_coverage`
+- 路由：`route_accuracy`
+- 任务：`success_rate`、`field_coverage`、`semantic_accuracy`
+- 性能：`p50_ms`、`p95_ms`
+
+读取本地评测报告：
+
+```http
+GET /api/v1/knowledge-base/eval/reports
+GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
+```
+
+这两个接口只读，不会重新运行评测，适合 Debug View 或面试演示页展示。
+
+当前量化报告见 [docs/benchmark-report.md](./docs/benchmark-report.md)。
+
+## 关键 API
+
+系统能力：
 
 - `GET /api/v1/system/health`
 - `GET /api/v1/system/bootstrap`
@@ -45,7 +167,7 @@
 - `GET /api/v1/system/alerts`
 - `GET /metrics`
 
-### 聊天与任务
+聊天与任务：
 
 - `POST /api/v1/chat/runs`
 - `POST /api/v1/chat/runs/stream`
@@ -61,15 +183,7 @@
 - `GET /api/v1/tasks/{task_id}`
 - `GET /api/v1/tasks/{task_id}/artifacts`
 
-### Session
-
-- `POST /api/v1/sessions`
-- `GET /api/v1/sessions/{session_id}`
-- `GET /api/v1/sessions/{session_id}/history`
-- `GET /api/v1/sessions/{session_id}/tasks`
-- `POST /api/v1/sessions/{session_id}/clear`
-
-### Knowledge Base
+知识库：
 
 - `GET /api/v1/knowledge-base/status`
 - `POST /api/v1/knowledge-base/refresh`
@@ -79,8 +193,9 @@
 - `GET /api/v1/knowledge-base/jobs/{job_id}`
 - `POST /api/v1/knowledge-base/jobs/{job_id}/retry`
 - `DELETE /api/v1/knowledge-base/documents/{doc_id}`
+- `GET /api/v1/knowledge-base/eval/reports`
 
-### Project Inventory
+项目清单：
 
 - `POST /api/v1/project-inventory/snapshot`
 - `GET /api/v1/project-inventory/summary`
@@ -89,123 +204,30 @@
 - `GET /api/v1/project-inventory/code-files`
 - `POST /api/v1/project-inventory/query`
 
-## 快速启动
+会话：
 
-在 `backend/` 目录下执行：
-
-```powershell
-.\.venv\Scripts\python.exe -m alembic upgrade head
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-如果只是临时本地验证，不跑迁移通常也能先启动，因为应用启动时会尝试 `create_all`。
-
-## 最小配置
-
-### 只接入 LLM
-
-至少配置：
-
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `CHAT_MODEL`
-
-### 启用知识库
-
-再补：
-
-- `KB_SOURCE_PATHS`
-- `KB_DIR`
-
-默认 `KB_SOURCE_PATHS=./knowledge`。这里是用户/UE 项目知识库入口，可直接放 markdown/code 笔记用于本地 grep 检索；后端开发文档、交接文档默认不再进入用户可见知识库，避免 Agent Chat 引用 `backend.md`、`forward.md`、`docs/improveplan.md` 等内部资料。
-
-如果之前已经用旧路径导入过知识库，请重启后端后调用一次 `POST /api/v1/knowledge-base/reindex`，或在插件 Debug View 触发知识库重建，让旧的 backend 文档索引被清掉。
-
-### 本地私有全量知识源
-
-开源仓库只提交 `./knowledge` 中的原创蒸馏知识；如果你本机有合法的课程资料、团队规范或个人笔记，可以在本地 `.env` 中把它们追加到 `KB_SOURCE_PATHS`，不要提交 `.env` 或私有资料本体：
-
-```env
-KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../XG-UE-Cpp-Course-Skill-main/.trae/skills/xg-uecpp-course/references
-```
-
-刷新索引：
-
-```http
-POST /api/v1/knowledge-base/reindex
-```
-
-可选扫描私有知识源覆盖情况。这个脚本只统计路径、后缀、domain 和大小，不复制正文：
-
-```powershell
-.\.venv\Scripts\python.exe scripts\scan_knowledge_sources.py --markdown-output storage\artifacts\private-kb-scan.md
-```
-
-### 启用 Embedding / Qdrant
-
-再补：
-
-- `EMBEDDING_ENABLED=true`
-- `EMBEDDING_MODEL`
-- `QDRANT_URL`
-- `QDRANT_API_KEY`
-- `QDRANT_COLLECTION`
-
-## 当前保留的文档入口
-
-- [docs/backend-user-guide.md](./docs/backend-user-guide.md)
-- [docs/benchmark-report.md](./docs/benchmark-report.md)
-
-公开仓库只保留用户使用指南和量化结果。开发日志、改进计划、前端交接、学习笔记等文件保留在本地，并已加入 `.gitignore`，避免把过程文档发布给普通使用者。
-
-## 量化评估
-
-生成面试展示用的项目级 benchmark：
-
-```powershell
-.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output docs\benchmark-report.md
-```
-
-如果本机有 `make`：
-
-```powershell
-make benchmark
-```
-
-报告包含 RAG `recall_at_k`、`precision_at_k`、`hit_at_k`、`MRR`、路由准确率、任务成功率、字段覆盖率、语义准确率，以及接口 `p50/p95` 延迟。默认使用 `offline_fallback`，不会调用 live LLM；如果想测试真实模型链路，可追加 `--use-live-llm`。
-
-生成到 `storage/artifacts/evals/` 后，也可以通过后端 API 查看：
-
-```http
-GET /api/v1/knowledge-base/eval/reports
-GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
-```
-
-这两个接口只读，不会重新运行评测，适合面试演示或 Debug View 轻量展示。
-
-## 当前联调状态
-
-截至 2026-04-21，UE 端反馈的 Agent Chat 路由 500、Code Review 文件扫描字段、选中文件读取调试信息、Assets Inspect 默认命名检查已经补齐。公开仓库不再提交前端交接过程文档，接口和展示约定统一沉淀到 [docs/backend-user-guide.md](./docs/backend-user-guide.md)。
-
-二次联调后，Code Review 已固定输出 `summary/issues/recommendations/references/next_steps`，并在 LLM 可用时尝试综合审查；LLM 或 KB 不足时会降级到当前文件内容和通用 Unreal/C++/C# 规则。Assets Inspect 的用户可见 `reason/suggestion` 已按最终输出语言本地化。
-
-## 当前边界
-
-- `events/stream` 仍然是历史事件回放；新的 `POST /chat/runs/stream` 是可选 token SSE 入口，UE 前端未接入时继续使用非流式 `POST /chat/runs`
-- `code_generate` 已支持“先查代码知识再生成”，但仍不直接写用户工程，也不做编译验证
-- `LangSmith / OTel` 仍是本地契约与元数据层，不是远端生产观测链路
-- 资产依赖与引用关系仍依赖插件从编辑器侧采集后传给后端
-- `read_project_file` 只读读取 `project_root` 内的文本/code 文件，不做任意路径读取或写入
+- `POST /api/v1/sessions`
+- `GET /api/v1/sessions/{session_id}`
+- `GET /api/v1/sessions/{session_id}/history`
+- `GET /api/v1/sessions/{session_id}/tasks`
+- `POST /api/v1/sessions/{session_id}/clear`
 
 ## 本地验证
 
+推荐先跑轻量验证：
+
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check app tests scripts
-.\.venv\Scripts\python.exe -m pytest tests/unit tests/integration tests/contract tests/eval
+.\.venv\Scripts\python.exe -m pytest tests\unit tests\integration tests\contract tests\eval
+```
+
+RAG smoke eval：
+
+```powershell
 .\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
 ```
 
-GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行。日常以本地 Ruff、pytest 和 RAG eval 为准；Markdown 评估报告默认生成到 `storage/artifacts/evals/`，可用于面试展示检索命中、路由准确率和引用覆盖情况。
+GitHub Actions 当前只保留手动触发入口，不随 push 自动运行。日常验证以本地 Ruff、pytest 和 eval 为准。
 
 ## Docker 本地演示
 
@@ -215,23 +237,24 @@ docker compose up --build
 
 默认启动：
 
-- `app`: http://127.0.0.1:8000
-- `qdrant`: http://127.0.0.1:6333
+- `app`：http://127.0.0.1:8000
+- `qdrant`：http://127.0.0.1:6333
 
-Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG，避免因为没有向量模型或 qdrant-client 影响启动。后续要测试向量模式时，再设置 `EMBEDDING_ENABLED=true` 并按需安装 rag extras。
+Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG。要测试向量模式时，再设置 `EMBEDDING_ENABLED=true` 并安装 rag extras。
 
-## 2026-04-22 架构补充
+## 文档入口
 
-- `GET /api/v1/system/capabilities` 现在包含 `skill_catalog` 和 `skill_architecture`，用于说明 5 个固定内置 Skill 的边界。
-- 每次任务响应现在包含 `debug_view.skill`、`data.skill`、`trace_summary.skill_id`，用于确认本次执行对应哪个固定 Skill。
-- Code Review 的 UE 源码扫描/读取属于 `CodeReviewSkill` 内部 collector，不是单独主功能。
-- `CodeReviewSkill`、`CodeGenerateSkill`、`LogsAnalyzeSkill`、`AssetsInspectSkill` 已抽离为独立 executor，前端调用方式不变。
-- `GET /api/v1/knowledge-base/status` 现在包含 `ingestion_pipeline`、`format_groups`、`parser_dependencies`、`knowledge_domains`。
-- `POST /api/v1/knowledge-base/import` 的文本导入同时兼容 `text` 和 `content`，并保存 `metadata`、`tags`、`doc_type`。
-- 后续收缩计划保留在本地 `docs/improveplan.md`，公开仓库只保留用户指南和量化结果，避免过程文档干扰用户阅读。
+- [docs/backend-user-guide.md](./docs/backend-user-guide.md)：完整使用手册。
+- [docs/benchmark-report.md](./docs/benchmark-report.md)：当前量化评估结果。
 
-## 2026-04-23 前端联调补充
+开发日志、改进计划、前端交接、学习笔记等过程文档默认保留在本地，并已加入 `.gitignore`，避免公开仓库首页被过程资料稀释。
 
-- Project Inventory 快照响应已稳定包含 `snapshot.status`、`snapshot.summary`、`snapshot.scan_diagnostics`。
-- `code_files[].last_modified` 已与 `modified_at` 兼容，前端扫描结果可直接提交。
-- Code Review / Assets Inspect 的 `llm_analysis` 已包含用户可见 `reason` 和调试用 `reason_code`。
+## 项目边界
+
+- 不做服务器部署、多租户、鉴权计费、企业监控平台。
+- 不让 LLM 自动执行破坏性写入。
+- 不把 UE 前端改成 MCP client，HTTP 仍是主链路。
+- 不承诺覆盖所有 UE API，知识库按高频研发场景持续蒸馏。
+- 不把外部课程或私有资料全文提交到公开仓库。
+
+面试时可以这样概括：这是一个面向 UE 研发管线的本地 Agent 后端，展示了上下文、知识库、工具调用、安全确认、观测和评测的完整闭环，而不是单纯把聊天模型接进编辑器。
