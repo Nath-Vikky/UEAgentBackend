@@ -2532,6 +2532,77 @@ def test_code_generate_returns_draft_and_artifact(client: TestClient) -> None:
     assert artifacts.json()["items"]
 
 
+def test_code_generate_write_proposal_writes_files_after_confirmation(client: TestClient) -> None:
+    project_root = Path(".test-workspace") / f"code-write-{uuid.uuid4().hex}"
+    shutil.rmtree(project_root, ignore_errors=True)
+    project_root.mkdir(parents=True, exist_ok=True)
+    try:
+        response = client.post(
+            "/api/v1/tasks/code-generate",
+            json={
+                "task_type": "code_generate",
+                "session": {
+                    "session_id": "code_generate_write_session",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Generate a simple UE actor and prepare a write proposal.",
+                            "language": "auto",
+                        }
+                    ],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "project_root": str(project_root.resolve()),
+                    "active_panel": "CodeGenerator",
+                    "current_module": "Gameplay",
+                },
+                "payload": {
+                    "user_query": "Generate a simple UE actor and prepare a write proposal.",
+                    "requirement_description": "spawn helper actor",
+                    "target_type": "ue_cpp_class",
+                    "create_write_proposal": True,
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "CodeGenerator"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = response.json()
+        write_proposal = next(
+            item for item in body["action_proposals"] if item["proposal_type"] == "write_code_files"
+        )
+        decision = client.post(
+            f"/api/v1/proposals/{write_proposal['proposal_id']}/decision",
+            json={"decision": "confirmed", "actor": "tester", "comment": "Write generated files."},
+        )
+        task_after = client.get(f"/api/v1/tasks/{body['task']['task_id']}")
+        artifacts_after = client.get(f"/api/v1/tasks/{body['task']['task_id']}/artifacts")
+        after_body = task_after.json()
+
+        assert response.status_code == 200
+        assert body["task"]["status"] == "waiting_confirmation"
+        assert write_proposal["confirmation"]["state"] == "pending"
+        assert write_proposal["dry_run_preview"]["write_plan"]["status"] == "ready"
+        assert decision.status_code == 200
+        assert task_after.status_code == 200
+        assert after_body["data"]["approval_result"]["execution_state"] == "files_written"
+        assert after_body["data"]["code_write_result"]["written_to_disk"] is True
+        assert after_body["debug_view"]["side_effects"][0]["side_effect_level"] == "confirmed_write"
+        assert artifacts_after.status_code == 200
+        assert any(item["artifact_type"] == "code_write_report" for item in artifacts_after.json()["items"])
+        for item in after_body["data"]["code_write_result"]["written_files"]:
+            assert Path(item["target_path"]).exists()
+            assert Path(item["target_path"]).read_text(encoding="utf-8")
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
+
+
 def test_code_generate_can_use_code_reference_documents(client: TestClient) -> None:
     project_root = Path(".test-workspace") / f"code-kb-{uuid.uuid4().hex}"
     source_dir = project_root / "Source" / "Combat"

@@ -4,6 +4,7 @@ from typing import Any
 
 from app.agent.context_builder import build_context_summary
 from app.schemas.requests import UnifiedTaskRequest
+from app.services.code_write_service import build_code_write_plan
 from app.services.kb_service import KnowledgeBaseService
 from app.services.local_search_service import LocalSearchService
 from app.services.llm_service import ChatRuntimeConfig, LLMService
@@ -105,6 +106,12 @@ def _local_search_citations(local_search: dict[str, Any]) -> list[dict[str, Any]
     ]
 
 
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 class CodeGenerationService:
     def __init__(
         self,
@@ -204,6 +211,20 @@ class CodeGenerationService:
             tool_summary = template_result["explanation"]
 
         code_draft = {item["file_path"]: item["code"] for item in generated_items}
+        create_write_proposal = _truthy(request.payload.get("create_write_proposal")) or str(
+            request.payload.get("write_mode") or ""
+        ).strip().lower() in {"proposal", "write_proposal", "confirmed_write"}
+        write_plan = build_code_write_plan(
+            project_root=str(request.payload.get("project_root") or request.context.project_root or ""),
+            generated_items=generated_items,
+            allow_overwrite_existing=_truthy(request.payload.get("allow_overwrite_existing")),
+        ) if create_write_proposal else {
+            "status": "disabled",
+            "reason": "write_proposal_not_requested",
+            "written_to_disk": False,
+            "files": [],
+            "summary": {"ready_count": 0, "blocked_count": 0, "file_count": 0},
+        }
         result = {
             **template_result,
             "code_draft": code_draft,
@@ -215,8 +236,15 @@ class CodeGenerationService:
             "write_policy": {
                 "mode": "non_destructive",
                 "written_to_disk": False,
-                "message": "Generated items are virtual drafts returned in the API response; the backend does not create files.",
+                "proposal_requested": create_write_proposal,
+                "proposal_status": write_plan["status"],
+                "message": (
+                    "Generated items are virtual drafts. A write proposal is available for confirmation."
+                    if write_plan["status"] == "ready"
+                    else "Generated items are virtual drafts returned in the API response; the backend does not create files."
+                ),
             },
+            "write_plan": write_plan,
             "reference_lookup": reference_lookup,
             "retrieved_references": merged_citations,
             "supporting_notes": support["answer"],
@@ -279,6 +307,53 @@ class CodeGenerationService:
                 "content": result,
             },
         ]
+        action_proposals = [
+            {
+                "title": "Review Generated Draft",
+                "proposal_type": "code_patch",
+                "before_summary": "No files have been written to the workspace.",
+                "after_summary": "Selected generated files could be adopted manually after review.",
+                "rationale": "The backend generates non-destructive code results and does not write directly into the project.",
+                "risk_flags": "LOW",
+                "dry_run_preview": {"files": result["file_structure_suggestions"]},
+                "display_hints": {"panel": "CodeGenerator"},
+                "requires_confirmation": False,
+                "confirmation": {"state": "not_required"},
+            }
+        ]
+        if create_write_proposal and write_plan["status"] == "ready":
+            action_proposals.append(
+                {
+                    "title": "Write Generated Code Files",
+                    "proposal_type": "write_code_files",
+                    "before_summary": "No generated code files have been written to the UE project.",
+                    "after_summary": (
+                        f"Write {write_plan['summary']['ready_count']} generated file(s) "
+                        "under the configured project root."
+                    ),
+                    "rationale": (
+                        "The user explicitly requested a write proposal; the backend will only write "
+                        "safe relative Source/ or Plugins/ files after confirmation."
+                    ),
+                    "risk_flags": "MEDIUM",
+                    "dry_run_preview": {
+                        "write_plan": write_plan,
+                        "write_policy": result["write_policy"],
+                        "generated_item_count": len(generated_items),
+                    },
+                    "display_hints": {
+                        "panel": "CodeGenerator",
+                        "requires_diff_preview": True,
+                        "confirm_label": "Write files",
+                    },
+                    "requires_confirmation": True,
+                    "confirmation": {"state": "pending"},
+                }
+            )
+        elif create_write_proposal and write_plan["status"] != "ready":
+            result["write_policy"]["message"] = (
+                f"Write proposal was requested but blocked: {write_plan.get('reason')}"
+            )
 
         return {
             "result": result,
@@ -295,23 +370,11 @@ class CodeGenerationService:
             "warnings": [
                 *support["warnings"],
                 *(["local_search_no_matches"] if not local_docs else []),
+                *(["write_proposal_blocked"] if create_write_proposal and write_plan["status"] != "ready" else []),
                 *llm_attempt["warnings"],
             ],
             "artifacts": artifacts,
-            "action_proposals": [
-                {
-                    "title": "Review Generated Draft",
-                    "proposal_type": "code_patch",
-                    "before_summary": "No files have been written to the workspace.",
-                    "after_summary": "Selected generated files could be adopted manually after review.",
-                    "rationale": "The backend generates non-destructive code results and does not write directly into the project.",
-                    "risk_flags": "LOW",
-                    "dry_run_preview": {"files": result["file_structure_suggestions"]},
-                    "display_hints": {"panel": "CodeGenerator"},
-                    "requires_confirmation": False,
-                    "confirmation": {"state": "not_required"},
-                }
-            ],
+            "action_proposals": action_proposals,
             "usage": usage,
         }
 

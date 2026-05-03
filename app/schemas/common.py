@@ -113,6 +113,7 @@ class DebugView(BaseModel):
     project_file: dict[str, Any] = Field(default_factory=dict)
     tool_contracts: dict[str, Any] = Field(default_factory=dict)
     tools: list[dict[str, Any]] = Field(default_factory=list)
+    side_effects: list[dict[str, Any]] = Field(default_factory=list)
     step_results: list[dict[str, Any]] = Field(default_factory=list)
     raw_result: dict[str, Any] = Field(default_factory=dict)
     artifacts: list[dict[str, Any]] = Field(default_factory=list)

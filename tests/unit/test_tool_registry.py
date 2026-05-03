@@ -42,6 +42,18 @@ def test_confirmed_write_tool_requires_permission_gate() -> None:
     assert card["permission_gate"] == "proposal_confirmed"
 
 
+def test_code_write_tool_is_confirmed_write() -> None:
+    spec = get_tool_spec("write_code_files")
+
+    assert spec is not None
+    card = spec.capability_card()
+    assert card["owned_by_skill"] == "CodeGenerateSkill"
+    assert card["side_effect_level"] == "confirmed_write"
+    assert card["category"] == "write"
+    assert card["requires_confirmation"] is True
+    assert card["allowed_in_free_chat"] is False
+
+
 def test_tool_registry_contracts_are_valid() -> None:
     report = validate_tool_registry()
 

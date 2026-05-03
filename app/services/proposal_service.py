@@ -22,6 +22,7 @@ from app.db.repositories.tasks import add_task_artifact, add_task_event, get_tas
 from app.i18n.language import DEFAULT_OUTPUT_LANGUAGE
 from app.observability.audit import build_audit_entry
 from app.schemas.requests import ProposalDecisionRequest
+from app.services.code_write_service import execute_code_write_plan
 from app.utils.json_tools import dumps_pretty
 from app.utils.paths import task_artifact_dir
 from app.utils.time import now_utc
@@ -96,6 +97,86 @@ class ProposalService:
         )
         return descriptor
 
+    def _materialize_code_write_report(
+        self,
+        *,
+        task: TaskModel,
+        proposal: ProposalModel,
+        code_write_result: dict,
+    ) -> dict | None:
+        if not self.settings:
+            return None
+        artifact_id = f"artifact_{uuid.uuid4().hex}"
+        path = task_artifact_dir(self.settings, task.task_id) / "code_write_report.json"
+        path.write_text(dumps_pretty(code_write_result), encoding="utf-8")
+        descriptor = {
+            "artifact_id": artifact_id,
+            "artifact_type": "code_write_report",
+            "label": "Code Write Report",
+            "path": str(path),
+            "metadata": {
+                "proposal_id": proposal.proposal_id,
+                "proposal_type": proposal.proposal_type,
+                "execution_state": code_write_result.get("execution_state"),
+                "written_to_disk": code_write_result.get("written_to_disk", False),
+            },
+        }
+        add_task_artifact(
+            self.db,
+            TaskArtifactModel(
+                artifact_id=artifact_id,
+                task_id=task.task_id,
+                artifact_type=descriptor["artifact_type"],
+                label=descriptor["label"],
+                path=descriptor["path"],
+                metadata_json=descriptor["metadata"],
+            ),
+        )
+        return descriptor
+
+    @staticmethod
+    def _mark_written_generated_items(data: dict, code_write_result: dict) -> None:
+        written_by_relative_path = {
+            str(item.get("relative_path") or ""): item
+            for item in code_write_result.get("written_files") or []
+        }
+        updated_items: list[dict] = []
+        for item in data.get("generated_items") or []:
+            current = dict(item)
+            written = written_by_relative_path.get(str(current.get("file_path") or ""))
+            if written:
+                current["write_status"] = "written"
+                current["is_virtual"] = False
+                current["written_path"] = written.get("target_path")
+            updated_items.append(current)
+        if updated_items:
+            data["generated_items"] = updated_items
+            data["write_policy"] = {
+                **dict(data.get("write_policy") or {}),
+                "written_to_disk": bool(code_write_result.get("written_to_disk")),
+                "execution_state": code_write_result.get("execution_state"),
+            }
+
+    @staticmethod
+    def _refresh_generated_items_blocks(user_view: dict, data: dict) -> None:
+        generated_items = list(data.get("generated_items") or [])
+        if not generated_items:
+            return
+        refreshed_blocks: list[dict] = []
+        for block in user_view.get("blocks") or []:
+            current = dict(block)
+            if current.get("block_type") == "generated_items":
+                current["text"] = "\n".join(
+                    f"{item.get('file_path')} ({item.get('write_status', 'not_written')})"
+                    for item in generated_items
+                )
+                current["data"] = {
+                    **dict(current.get("data") or {}),
+                    "generated_items": generated_items,
+                }
+            refreshed_blocks.append(current)
+        user_view["blocks"] = refreshed_blocks
+
     def _apply_follow_up(
         self,
         *,
@@ -122,6 +203,24 @@ class ProposalService:
                         dict(proposal.dry_run_preview_json or {}).get("draft_config")
                         or dict(task.data_json or {}).get("draft_config")
                     )
+            elif proposal.proposal_type == "write_code_files":
+                write_plan = (
+                    dict(proposal.dry_run_preview_json or {}).get("write_plan")
+                    or dict(task.data_json or {}).get("write_plan")
+                    or {}
+                )
+                code_write_result = execute_code_write_plan(dict(write_plan))
+                execution_state = str(code_write_result.get("execution_state") or "blocked")
+                data["code_write_result"] = code_write_result
+                self._mark_written_generated_items(data, code_write_result)
+                self._refresh_generated_items_blocks(user_view, data)
+                artifact_descriptor = self._materialize_code_write_report(
+                    task=task,
+                    proposal=proposal,
+                    code_write_result=code_write_result,
+                )
+                if artifact_descriptor:
+                    artifacts.append(artifact_descriptor)
 
             data["approval_result"] = {
                 "decision": "confirmed",
@@ -130,12 +229,27 @@ class ProposalService:
                 "execution_state": execution_state,
                 "artifact": artifact_descriptor,
             }
-            user_view["text"] = self._localized(
-                task,
-                "Proposal 已确认，后续产物已经生成，可继续在 Artifact 面板查看。",
-                "The proposal was confirmed and the downstream artifact has been materialized. Check the Artifacts panel for the generated output.",
-            )
-            user_view["status_hint"] = "approved"
+            if proposal.proposal_type == "write_code_files" and execution_state != "files_written":
+                user_view["text"] = self._localized(
+                    task,
+                    "Proposal 已确认，但写入被安全校验阻止，未修改工程文件。请查看审批结果和 Code Write Report。",
+                    "The proposal was confirmed, but the write was blocked by safety validation and no project files were changed. Check the approval result and Code Write Report.",
+                )
+                user_view["status_hint"] = "blocked"
+            elif proposal.proposal_type == "write_code_files":
+                user_view["text"] = self._localized(
+                    task,
+                    "Proposal 已确认，生成的代码文件已写入项目目录。请在 UE 中重新生成/编译并按验证清单检查。",
+                    "The proposal was confirmed and generated code files were written into the project directory. Regenerate/compile in UE and follow the validation checklist.",
+                )
+                user_view["status_hint"] = "approved"
+            else:
+                user_view["text"] = self._localized(
+                    task,
+                    "Proposal 已确认，后续产物已经生成，可继续在 Artifact 面板查看。",
+                    "The proposal was confirmed and the downstream artifact has been materialized. Check the Artifacts panel for the generated output.",
+                )
+                user_view["status_hint"] = "approved"
             user_view["quick_actions"] = list(user_view.get("quick_actions") or []) + [
                 {
                     "action_id": "open_artifacts",
@@ -149,8 +263,8 @@ class ProposalService:
                     "title": self._localized(task, "审批结果", "Approval Result"),
                     "text": self._localized(
                         task,
-                        "当前变更已确认，后端已生成确认后的可交付产物。",
-                        "The change has been confirmed and the backend generated the approved deliverable artifact.",
+                        "当前变更已确认，后端已完成确认后的安全后续处理。",
+                        "The change has been confirmed and the backend completed the approved safe follow-up.",
                     ),
                     "data": data["approval_result"],
                 }
@@ -211,6 +325,18 @@ class ProposalService:
         debug_view["raw_result"] = data
         debug_view["step_results"] = step_results
         debug_view["artifacts"] = artifacts
+        if data.get("code_write_result"):
+            debug_view["side_effects"] = list(debug_view.get("side_effects") or []) + [
+                {
+                    "proposal_id": proposal.proposal_id,
+                    "proposal_type": proposal.proposal_type,
+                    "side_effect_level": "confirmed_write",
+                    "execution_state": data["code_write_result"].get("execution_state"),
+                    "written_to_disk": data["code_write_result"].get("written_to_disk", False),
+                    "written_files": data["code_write_result"].get("written_files", []),
+                    "blocked_files": data["code_write_result"].get("blocked_files", []),
+                }
+            ]
         response_payload["data"] = data
         response_payload["user_view"] = user_view
         response_payload["debug_view"] = debug_view

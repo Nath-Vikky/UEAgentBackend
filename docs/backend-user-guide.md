@@ -2040,3 +2040,107 @@ Debug View 新增：
 面试解释口径：
 
 这个项目不是“把 LLM 聊天窗口塞进 UE 编辑器”，而是一个可观测的 Agent 后端。UE 插件负责采集编辑器上下文和展示结果，后端负责意图判断、上下文压缩、知识检索、工具调用、权限分级、LLM 综合和评估指标。LLM 自己可能知道 UE 通用知识，但它不知道当前项目资产、源码、日志、团队规则和用户本地私有知识库，所以知识库和工具调用提供的是可追溯、可更新、可验证的项目事实。
+
+## 21. Code Generate 确认写入闭环
+
+默认情况下，代码生成功能仍然只返回虚拟代码草稿，不会写入 UE 工程。只有请求明确开启写入提案，并且提供 `project_root` 时，后端才会生成 `write_code_files` proposal。
+
+请求示例：
+
+```json
+{
+  "task_type": "code_generate",
+  "session": {
+    "session_id": "demo-code-write",
+    "messages": [
+      {
+        "role": "user",
+        "content": "生成一个简单 UE Actor 并准备写入提案",
+        "language": "auto"
+      }
+    ]
+  },
+  "context": {
+    "project_name": "RushBa",
+    "project_root": "F:/Epic Games/project/RushBa",
+    "active_panel": "CodeGenerator",
+    "current_module": "RushBa"
+  },
+  "payload": {
+    "user_query": "生成一个简单 UE Actor 并准备写入提案",
+    "requirement_description": "spawn helper actor",
+    "target_type": "ue_cpp_class",
+    "create_write_proposal": true
+  },
+  "ui_state": {
+    "active_view": "user",
+    "selected_panel": "CodeGenerator"
+  }
+}
+```
+
+也可以使用：
+
+```json
+{
+  "write_mode": "proposal"
+}
+```
+
+响应变化：
+
+- `task.status = "waiting_confirmation"`：说明存在待确认写入提案。
+- `action_proposals[].proposal_type = "write_code_files"`：代码写入提案。
+- `action_proposals[].dry_run_preview.write_plan.status = "ready"`：写入计划已通过安全预校验。
+- `data.write_policy.proposal_requested = true`
+- `data.write_policy.proposal_status = "ready"`
+- `data.write_plan.files[]`：每个待写文件的相对路径、目标路径、hash、字节数和状态。
+
+确认写入：
+
+```http
+POST /api/v1/proposals/{proposal_id}/decision
+```
+
+```json
+{
+  "decision": "confirmed",
+  "actor": "user",
+  "comment": "确认写入这些生成代码文件"
+}
+```
+
+拒绝写入：
+
+```json
+{
+  "decision": "rejected",
+  "actor": "user",
+  "comment": "暂不写入"
+}
+```
+
+安全边界：
+
+- 必须提供 `project_root`。
+- 只允许相对路径，禁止绝对路径和 `..`。
+- 默认只允许写入 `Source/` 或 `Plugins/`。
+- 默认只允许 `.h / .hpp / .hh / .inl / .c / .cc / .cpp / .cxx / .cs / .txt / .md`。
+- 默认不覆盖已有文件；如果文件已存在，写入计划会被阻止。
+- 确认后仍会二次校验路径；如果校验失败，不会写入任何文件。
+
+确认成功后：
+
+- `data.approval_result.execution_state = "files_written"`
+- `data.code_write_result.written_to_disk = true`
+- `data.code_write_result.written_files[]`：实际写入文件。
+- `debug_view.side_effects[]`：记录 confirmed_write 副作用。
+- 任务 artifacts 会新增 `code_write_report`。
+
+如果写入被阻止：
+
+- `data.approval_result.execution_state = "blocked"`
+- `data.code_write_result.written_to_disk = false`
+- `debug_view.side_effects[].blocked_files[]` 会说明原因。
+
+这个能力仍然不是“LLM 自动改工程”。LLM 只生成草稿，后端只生成写入计划，真正写入必须由用户通过 Proposal 明确确认。
