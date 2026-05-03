@@ -46,6 +46,7 @@ from app.schemas.requests import UnifiedTaskRequest
 from app.schemas.responses import UnifiedTaskResponse
 from app.services.kb_service import KnowledgeBaseService
 from app.services.llm_service import ChatRuntimeConfig, LLMService, chat_runtime_config
+from app.services.mcp_tool_adapter import build_mcp_adapter_status
 from app.services.project_inventory_service import ProjectInventoryService
 from app.skills.executors import (
     AssetsInspectSkillExecutor,
@@ -1008,12 +1009,16 @@ class TaskService:
         routing: dict[str, Any],
         actual_task_type: str | None = None,
     ) -> dict[str, Any]:
-        return build_context_bundle(
+        bundle = build_context_bundle(
             db=self.db,
             request=request,
             routing=routing,
             actual_task_type=actual_task_type,
         )
+        active_context = dict(bundle.get("active_context") or {})
+        active_context["mcp"] = build_mcp_adapter_status(self.settings)
+        bundle["active_context"] = active_context
+        return bundle
 
     def create_task(
         self,

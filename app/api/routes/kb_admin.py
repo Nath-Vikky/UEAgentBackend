@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from sqlalchemy.orm import Session
 
@@ -9,11 +9,14 @@ from app.api.errors import APIError
 from app.core.settings import Settings
 from app.schemas.requests import KnowledgeBaseImportRequest, KnowledgeBaseRefreshRequest
 from app.schemas.responses import (
+    EvalReportDetailResponse,
+    EvalReportListResponse,
     KnowledgeBaseDocumentResponse,
     KnowledgeBaseDocumentsResponse,
     KnowledgeBaseJobResponse,
     KnowledgeBaseStatusResponse,
 )
+from app.services.eval_report_service import EvalReportService
 from app.services.kb_service import KnowledgeBaseService
 
 router = APIRouter(prefix="/knowledge-base", tags=["knowledge-base"])
@@ -82,6 +85,31 @@ def kb_reindex(
 ) -> KnowledgeBaseJobResponse:
     result = KnowledgeBaseService(db, settings).reindex(source_paths=request.source_paths or None)
     return KnowledgeBaseJobResponse(success=True, job=result["job"])
+
+
+@router.get("/eval/reports", response_model=EvalReportListResponse)
+def kb_eval_reports(
+    limit: int = Query(20, ge=1, le=100),
+    settings: Settings = Depends(get_app_settings),
+) -> EvalReportListResponse:
+    result = EvalReportService(settings).list_reports(limit=limit)
+    return EvalReportListResponse(success=True, summary=result["summary"], items=result["items"])
+
+
+@router.get("/eval/reports/{report_id}", response_model=EvalReportDetailResponse)
+def kb_eval_report_detail(
+    report_id: str,
+    settings: Settings = Depends(get_app_settings),
+) -> EvalReportDetailResponse:
+    result = EvalReportService(settings).get_report(report_id)
+    if not result:
+        raise APIError(404, "eval_report_not_found", f"Eval report `{report_id}` was not found.")
+    return EvalReportDetailResponse(
+        success=True,
+        item=result["item"],
+        report=result["report"],
+        markdown_preview=result["markdown_preview"],
+    )
 
 
 @router.post("/import-jobs/{job_id}/retry", response_model=KnowledgeBaseJobResponse)

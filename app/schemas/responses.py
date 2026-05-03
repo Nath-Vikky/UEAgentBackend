@@ -47,6 +47,7 @@ class HealthResponse(BaseModel):
     storage: dict[str, Any] = Field(default_factory=dict)
     startup_checks: dict[str, Any] = Field(default_factory=dict)
     observability: dict[str, Any] = Field(default_factory=dict)
+    mcp_adapter: dict[str, Any] = Field(default_factory=dict)
     errors: list[ErrorDetail] = Field(default_factory=list)
 
 
@@ -125,6 +126,21 @@ class KnowledgeBaseDocumentsResponse(BaseModel):
 class KnowledgeBaseDocumentResponse(BaseModel):
     success: bool
     item: dict[str, Any]
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class EvalReportListResponse(BaseModel):
+    success: bool
+    summary: dict[str, Any] = Field(default_factory=dict)
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class EvalReportDetailResponse(BaseModel):
+    success: bool
+    item: dict[str, Any]
+    report: dict[str, Any] = Field(default_factory=dict)
+    markdown_preview: str = ""
     errors: list[ErrorDetail] = Field(default_factory=list)
 
 

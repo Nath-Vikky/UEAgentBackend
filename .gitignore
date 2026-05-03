@@ -29,6 +29,7 @@ storage/artifacts/*
 storage/kb/raw/*
 storage/kb/normalized/*
 storage/kb/failed/*
+storage/test-eval-report-service/
 private-knowledge/
 private_knowledge/
 external-knowledge/

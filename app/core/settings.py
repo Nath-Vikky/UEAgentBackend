@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     kb_chunk_size: int = 600
     kb_chunk_overlap: int = 100
 
+    mcp_tool_adapter_enabled: bool = False
+    mcp_stdio_command: str = ""
+    mcp_stdio_args: StringListSetting = Field(default_factory=list)
+    mcp_allowed_tools: StringListSetting = Field(default_factory=list)
+    mcp_stdio_timeout_ms: int = 3000
+
     default_profile_id: str = "default"
     default_profile_name: str = "Default"
     default_profile_temperature: float = 0.2
@@ -111,6 +117,11 @@ class Settings(BaseSettings):
     @field_validator("kb_source_paths", mode="before")
     @classmethod
     def _parse_kb_source_paths(cls, value: Any) -> list[str]:
+        return _parse_string_list(value)
+
+    @field_validator("mcp_stdio_args", "mcp_allowed_tools", mode="before")
+    @classmethod
+    def _parse_mcp_string_lists(cls, value: Any) -> list[str]:
         return _parse_string_list(value)
 
 

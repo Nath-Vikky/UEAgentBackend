@@ -101,6 +101,21 @@ CAPABILITIES = {
         "extension_policy": "Add or adjust tool capability cards in app/tools/registry.py; router and capabilities consume the same registry.",
         "tools": tool_capability_cards(),
     },
+    "evaluation": {
+        "mode": "local_artifact_reports",
+        "report_api": {
+            "status": "available",
+            "list_route": "GET /api/v1/knowledge-base/eval/reports",
+            "detail_route": "GET /api/v1/knowledge-base/eval/reports/{report_id}",
+            "artifact_dir": "storage/artifacts/evals",
+            "supported_report_types": ["project_benchmark", "rag_eval", "task_eval"],
+        },
+        "scripts": [
+            "scripts/run_project_benchmark.py",
+            "scripts/run_rag_eval.py",
+            "scripts/run_task_eval.py",
+        ],
+    },
     "feature_catalog": FEATURE_CATALOG,
     "supported_languages": SUPPORTED_LANGUAGES,
     "supported_views": SUPPORTED_VIEWS,

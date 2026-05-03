@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import uuid
 from pathlib import Path
@@ -67,6 +68,11 @@ def test_system_health_exposes_startup_checks(client: TestClient) -> None:
         item["check_id"] == "tool_registry_contracts" and item["status"] == "ok"
         for item in body["startup_checks"]["checks"]
     )
+    assert body["mcp_adapter"]["status"] == "disabled"
+    assert any(
+        item["check_id"] == "mcp_tool_adapter" and item["status"] == "ok"
+        for item in body["startup_checks"]["checks"]
+    )
     assert body["startup_checks"]["blocking"] is False
 
 
@@ -99,6 +105,9 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
     assert body["capabilities"]["tool_registry"]["mode"] == "declarative_static_registry"
     assert body["capabilities"]["tool_registry"]["protocol_version"] == "tool_protocol_v2"
     assert "mcp_stdio" in body["capabilities"]["tool_registry"]["protocol"]["transports"]
+    assert body["capabilities"]["mcp_adapter"]["mode"] == "optional_tool_transport"
+    assert body["capabilities"]["mcp_adapter"]["frontend_protocol"] == "http"
+    assert body["capabilities"]["mcp_adapter"]["tool_layer_only"] is True
     assert any(
         item["tool_id"] == "query_project_inventory"
         and "当前项目" in item["trigger_keywords"]
@@ -119,6 +128,40 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
         item["task_type"] == "code_review" and item["frontend_ui"] == "file_picker"
         for item in body["capabilities"]["feature_catalog"]
     )
+    assert body["capabilities"]["evaluation"]["report_api"]["status"] == "available"
+    assert "run_project_benchmark.py" in body["capabilities"]["evaluation"]["scripts"][0]
+
+
+def test_knowledge_base_eval_reports_api(client: TestClient) -> None:
+    evals_dir = Path(get_settings().artifact_dir) / "evals"
+    evals_dir.mkdir(parents=True, exist_ok=True)
+    report_path = evals_dir / "project-benchmark-latest.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-03T10:00:00+00:00",
+                "rag_summary": {"hit_at_k": 0.75, "precision_at_k": 0.5},
+                "task_summary": {"pass_rate": 1.0},
+                "cases": [{"case_id": "smoke"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    report_path.with_suffix(".md").write_text("# Project Benchmark\n\nSmoke report.", encoding="utf-8")
+
+    listing = client.get("/api/v1/knowledge-base/eval/reports")
+    detail = client.get("/api/v1/knowledge-base/eval/reports/project-benchmark-latest.json")
+    missing = client.get("/api/v1/knowledge-base/eval/reports/../secret.json")
+
+    assert listing.status_code == 200
+    assert listing.json()["summary"]["report_count"] == 1
+    assert listing.json()["items"][0]["report_type"] == "project_benchmark"
+    assert listing.json()["items"][0]["summary"]["rag_summary"]["hit_at_k"] == 0.75
+    assert detail.status_code == 200
+    assert detail.json()["item"]["report_id"] == "project-benchmark-latest.json"
+    assert detail.json()["markdown_preview"].startswith("# Project Benchmark")
+    assert missing.status_code == 404
 
 
 def test_project_inventory_snapshot_and_query(client: TestClient) -> None:

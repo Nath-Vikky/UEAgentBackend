@@ -11,6 +11,7 @@ from app.core.startup_checks import collect_startup_checks
 from app.observability.redaction import redact_payload
 from app.observability.telemetry import service_health_snapshot
 from app.services.kb_service import KnowledgeBaseService
+from app.services.mcp_tool_adapter import build_mcp_adapter_status, build_mcp_capability
 from app.services.runtime_profile_service import RuntimeProfileService
 
 
@@ -50,6 +51,7 @@ class SystemService:
                 database_error=database_error,
             ),
             "observability": service_health_snapshot(),
+            "mcp_adapter": build_mcp_adapter_status(self.settings),
         }
 
     def bootstrap(self) -> dict:
@@ -65,7 +67,7 @@ class SystemService:
         return {
             "service_status": "ok",
             "version": self.settings.app_version,
-            "capabilities": CAPABILITIES,
+            "capabilities": self.capabilities(),
             "supported_languages": SUPPORTED_LANGUAGES,
             "default_profile": default_profile or {},
             "knowledge_base_summary": self.kb.status(),
@@ -73,7 +75,10 @@ class SystemService:
         }
 
     def capabilities(self) -> dict:
-        return CAPABILITIES
+        return {
+            **CAPABILITIES,
+            "mcp_adapter": build_mcp_capability(self.settings),
+        }
 
     def settings_snapshot(self) -> dict:
         payload = {
@@ -107,6 +112,7 @@ class SystemService:
                 "alerts_endpoint": "/api/v1/system/alerts",
                 "otel_mode": "local_stub",
             },
+            "mcp_adapter": build_mcp_adapter_status(self.settings),
             "safety": {
                 "default_task_cost_guard_usd": self.settings.default_profile_cost_guard_usd,
                 "session_cost_guard_usd": self.settings.session_cost_guard_usd,

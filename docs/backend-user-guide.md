@@ -2144,3 +2144,110 @@ POST /api/v1/proposals/{proposal_id}/decision
 - `debug_view.side_effects[].blocked_files[]` 会说明原因。
 
 这个能力仍然不是“LLM 自动改工程”。LLM 只生成草稿，后端只生成写入计划，真正写入必须由用户通过 Proposal 明确确认。
+
+## 22. MCP Tool Adapter 可选工具层
+
+后端现在有轻量 MCP Tool Adapter 骨架。它默认关闭，不影响 UE 前端通过 HTTP 调用后端，也不会自动启动任何外部 MCP server。
+
+配置项：
+
+```env
+MCP_TOOL_ADAPTER_ENABLED=false
+MCP_STDIO_COMMAND=
+MCP_STDIO_ARGS=
+MCP_ALLOWED_TOOLS=
+MCP_STDIO_TIMEOUT_MS=3000
+```
+
+设计边界：
+
+- HTTP 仍然是 UE 前端和后端之间的主协议。
+- MCP 只作为后端 Tool Registry 未来的一种可选 transport。
+- 默认不启用，不依赖 UMG-MCP 或其他外部 MCP 项目。
+- 即使启用，第一阶段也只允许只读验证工具。
+- 写入类 MCP 工具未来也必须走 Proposal，不允许 LLM 直接执行。
+
+查看状态：
+
+```http
+GET /api/v1/system/health
+```
+
+重点字段：
+
+- `mcp_adapter.status`
+- `mcp_adapter.enabled`
+- `mcp_adapter.stdio.command`
+- `startup_checks.checks[check_id="mcp_tool_adapter"]`
+
+查看能力：
+
+```http
+GET /api/v1/system/capabilities
+```
+
+重点字段：
+
+- `capabilities.mcp_adapter.mode = "optional_tool_transport"`
+- `capabilities.mcp_adapter.frontend_protocol = "http"`
+- `capabilities.mcp_adapter.tool_layer_only = true`
+- `capabilities.mcp_adapter.safety_policy`
+
+如果本机确实有一个 MCP stdio server，可以本地试配：
+
+```env
+MCP_TOOL_ADAPTER_ENABLED=true
+MCP_STDIO_COMMAND=uv
+MCP_STDIO_ARGS=run,--directory,D:/Path/To/McpServer,Server.py
+MCP_ALLOWED_TOOLS=get_target_umg_asset,get_widget_tree
+```
+
+当前阶段后端只做 readiness、allow-list 和 Debug/Health 契约，不把 MCP 工具自动注册进 Agent Chat，也不把 UMG-MCP 项目作为依赖提交。后续如果要接真实 MCP 工具，会从 `MCPToolAdapter` 继续扩展。
+
+## 23. Eval Report API 评测结果读取
+
+后端现在把本地评测产物也暴露成只读 API。它不会在线触发 benchmark，也不会调用 LLM，只读取 `storage/artifacts/evals/` 下已有的 `*.json` 和同名 `*.md` 报告，适合面试时展示“RAG / 路由 / 任务结构 / 性能”如何被量化。
+
+生成报告：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output storage\artifacts\evals\project-benchmark-latest.md
+```
+
+查看报告列表：
+
+```http
+GET /api/v1/knowledge-base/eval/reports
+```
+
+可选参数：
+
+- `limit`：返回最近 N 份报告，默认 `20`，最大 `100`。
+
+列表响应重点字段：
+
+- `summary.evals_dir`：后端读取的本地 eval 目录。
+- `summary.report_count`：当前目录下 JSON 报告数量。
+- `items[].report_id`：报告文件名，用于详情接口。
+- `items[].report_type`：`project_benchmark` / `rag_eval` / `task_eval` / `unknown`。
+- `items[].summary`：压缩后的核心指标，例如 `hit_at_k`、`precision_at_k`、`task_summary.pass_rate`、`performance.p95_latency_ms` 等。
+- `items[].markdown_path`：如果存在同名 Markdown 报告，会返回本地路径。
+
+查看单份详情：
+
+```http
+GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
+```
+
+详情响应重点字段：
+
+- `item`：与列表里的报告卡片一致。
+- `report`：完整 JSON 报告内容。
+- `markdown_preview`：同名 `.md` 文件前 8000 字符预览，便于 Debug View 或轻量页面直接展示。
+
+安全边界：
+
+- 只允许读取 `storage/artifacts/evals/` 下的 `.json` 文件。
+- 不允许路径穿越，例如 `../secret.json` 会返回 404。
+- API 只读，不删除、不写入、不重新运行评测。
+- 这不是企业级评测平台，只是作品级的可复现量化展示入口。

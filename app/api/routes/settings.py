@@ -29,10 +29,11 @@ def bootstrap(
 
 
 @router.get("/capabilities", response_model=CapabilitiesResponse)
-def capabilities() -> CapabilitiesResponse:
-    from app.core.config import CAPABILITIES
-
-    return CapabilitiesResponse(success=True, capabilities=CAPABILITIES)
+def capabilities(
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+) -> CapabilitiesResponse:
+    return CapabilitiesResponse(success=True, capabilities=SystemService(db, settings).capabilities())
 
 
 @router.get("/settings", response_model=SettingsSnapshotResponse)

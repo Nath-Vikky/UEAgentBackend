@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.settings import Settings
 from app.observability.redaction import redact_payload
+from app.services.mcp_tool_adapter import build_mcp_adapter_status
 from app.tools.contracts import validate_tool_registry
 
 
@@ -184,6 +185,34 @@ def collect_startup_checks(
             ),
             remediation="Fix app/tools/registry.py schema, side-effect, or route metadata." if not tool_registry_report["ok"] else "",
             details=tool_registry_report,
+        )
+    )
+
+    mcp_status = build_mcp_adapter_status(settings)
+    mcp_check_status = (
+        "ok"
+        if mcp_status["status"] in {"disabled", "ready"}
+        else "warning"
+    )
+    checks.append(
+        _check(
+            check_id="mcp_tool_adapter",
+            title="MCP Tool Adapter",
+            status=mcp_check_status,
+            severity="info" if mcp_check_status == "ok" else "warning",
+            message=(
+                "MCP Tool Adapter is disabled; HTTP remains the primary UE frontend/backend protocol."
+                if mcp_status["status"] == "disabled"
+                else "MCP Tool Adapter is configured and ready for optional read-only tool transport."
+                if mcp_status["status"] == "ready"
+                else f"MCP Tool Adapter is enabled but not ready: {mcp_status['reason']}."
+            ),
+            remediation=(
+                "Set MCP_TOOL_ADAPTER_ENABLED=false, or configure MCP_STDIO_COMMAND and MCP_ALLOWED_TOOLS."
+                if mcp_check_status == "warning"
+                else ""
+            ),
+            details=redact_payload(mcp_status),
         )
     )
 

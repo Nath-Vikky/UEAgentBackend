@@ -35,8 +35,11 @@ def test_startup_checks_warn_when_llm_key_is_missing() -> None:
         report = collect_startup_checks(settings, database_status="ok")
 
         llm_check = next(item for item in report["checks"] if item["check_id"] == "llm_api_key")
+        mcp_check = next(item for item in report["checks"] if item["check_id"] == "mcp_tool_adapter")
         assert report["blocking"] is False
         assert llm_check["status"] == "warning"
+        assert mcp_check["status"] == "ok"
+        assert mcp_check["details"]["status"] == "disabled"
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
