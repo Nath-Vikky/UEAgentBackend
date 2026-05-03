@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from app.agent.active_context import build_active_context
 from app.agent.context_builder import build_context_summary
 from app.agent.memory_manager import recall_long_term_memory
 from app.db.models.session import MessageModel, SessionModel
@@ -151,6 +152,7 @@ def _estimate_chars(bundle: dict[str, Any]) -> int:
     total += len(str(bundle.get("session_summary", {}).get("summary_text") or ""))
     for item in bundle.get("long_term_memory", {}).get("items", []):
         total += len(str(item.get("text") or ""))
+    total += len(str(bundle.get("active_context") or ""))
     total += len(str(bundle.get("editor_context") or ""))
     return total
 
@@ -191,6 +193,7 @@ def build_context_bundle(
             "selected_tool_id": routing.get("route", {}).get("selected_tool_id"),
             "latest_user_message": _clip(latest_user_message, 700),
         },
+        "active_context": build_active_context(request=request, routing=routing),
         "editor_context": build_context_summary(request),
         "language_context": dict(routing.get("locale") or {}),
         "recent_messages": recent_messages,
@@ -218,7 +221,7 @@ def build_context_bundle(
         "within_budget": estimated_chars <= char_budget,
         "recent_message_limit": recent_message_limit,
         "tool_task_limit": tool_task_limit,
-            "truncation_policy": "Keep latest messages, long-term memory snippets, and compact excerpts.",
+        "truncation_policy": "Keep latest messages, long-term memory snippets, and compact excerpts.",
     }
     if estimated_chars > char_budget:
         bundle["budget"]["warnings"] = ["context_bundle_over_budget_compact_excerpts_used"]
@@ -232,6 +235,15 @@ def context_bundle_prompt_excerpt(context_bundle: dict[str, Any]) -> str:
     editor_context = context_bundle.get("editor_context") or {}
     if editor_context:
         lines.append(f"- Editor context: {editor_context}")
+    active_context = context_bundle.get("active_context") or {}
+    if active_context:
+        lines.append(
+            "- Active context: "
+            f"project={active_context.get('project')}, "
+            f"asset={active_context.get('asset')}, "
+            f"code={active_context.get('code')}, "
+            f"log={active_context.get('log')}"
+        )
     session_summary = context_bundle.get("session_summary") or {}
     if session_summary.get("status") == "available":
         lines.append(f"- Session summary: {session_summary.get('summary_text')}")

@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.tools.registry import TOOL_REGISTRY, ToolSpec, get_tool_spec
+from app.tools.registry import (
+    ROUTE_PREFERENCES,
+    SIDE_EFFECT_LEVELS,
+    TOOL_CATEGORIES,
+    TOOL_REGISTRY,
+    TOOL_TRANSPORTS,
+    ToolSpec,
+    get_tool_spec,
+)
 
 _TYPE_MAP = {
     "object": dict,
@@ -99,7 +107,7 @@ def _validate_spec(tool_id: str, spec: ToolSpec) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     if tool_id != spec.tool_id:
         issues.append({"tool_id": tool_id, "field": "tool_id", "message": "Tool key and spec.tool_id differ."})
-    if spec.side_effect_level not in {"read_only", "plan_only", "confirmed_write"}:
+    if spec.side_effect_level not in SIDE_EFFECT_LEVELS:
         issues.append(
             {
                 "tool_id": tool_id,
@@ -107,12 +115,60 @@ def _validate_spec(tool_id: str, spec: ToolSpec) -> list[dict[str, Any]]:
                 "message": f"Unsupported side effect level: {spec.side_effect_level}",
             }
         )
-    if spec.route_preference not in {"project_qa", "single_tool", "workflow", "proposal_wait"}:
+    if spec.route_preference not in ROUTE_PREFERENCES:
         issues.append(
             {
                 "tool_id": tool_id,
                 "field": "route_preference",
                 "message": f"Unsupported route preference: {spec.route_preference}",
+            }
+        )
+    if spec.category not in TOOL_CATEGORIES:
+        issues.append(
+            {
+                "tool_id": tool_id,
+                "field": "category",
+                "message": f"Unsupported tool category: {spec.category}",
+            }
+        )
+    if spec.transport not in TOOL_TRANSPORTS:
+        issues.append(
+            {
+                "tool_id": tool_id,
+                "field": "transport",
+                "message": f"Unsupported tool transport: {spec.transport}",
+            }
+        )
+    if spec.side_effect_level == "confirmed_write" and not spec.effective_requires_confirmation:
+        issues.append(
+            {
+                "tool_id": tool_id,
+                "field": "requires_confirmation",
+                "message": "confirmed_write tools must require confirmation.",
+            }
+        )
+    if spec.side_effect_level == "confirmed_write" and spec.permission_gate in {"", "none"}:
+        issues.append(
+            {
+                "tool_id": tool_id,
+                "field": "permission_gate",
+                "message": "confirmed_write tools must define a permission gate.",
+            }
+        )
+    if spec.allowed_in_free_chat and spec.side_effect_level != "read_only":
+        issues.append(
+            {
+                "tool_id": tool_id,
+                "field": "allowed_in_free_chat",
+                "message": "Only read-only tools may be auto-selected from free chat.",
+            }
+        )
+    if spec.transport.startswith("mcp") and not spec.mcp_tool_name:
+        issues.append(
+            {
+                "tool_id": tool_id,
+                "field": "mcp_tool_name",
+                "message": "MCP transport tools must define mcp_tool_name.",
             }
         )
     for schema_name, schema in (("input_schema", spec.input_schema), ("output_schema", spec.output_schema)):

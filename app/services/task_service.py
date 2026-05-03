@@ -56,7 +56,14 @@ from app.skills.executors import (
 from app.skills.runtime import build_skill_runtime_descriptor
 from app.tools.config_validate import validate_design_config
 from app.tools.contracts import validate_tool_call_input, validate_tool_result
-from app.tools.registry import TOOL_ID_TO_TASK_TYPE, tool_capability_cards
+from app.tools.registry import (
+    TOOL_EXECUTION_POLICY,
+    TOOL_ID_TO_TASK_TYPE,
+    enrich_tool_debug_entries,
+    free_chat_tool_ids,
+    tool_capability_cards,
+    tool_protocol_summary,
+)
 from app.utils.json_tools import dumps_pretty
 from app.utils.paths import task_artifact_dir
 from app.utils.time import now_utc
@@ -576,10 +583,11 @@ class TaskService:
         deterministic_plan: dict[str, Any],
         output_language: str,
     ) -> list[dict[str, str]]:
+        allowed_tool_ids = free_chat_tool_ids()
         allowed_tools = [
             card
             for card in tool_capability_cards()
-            if card["tool_id"] in {"retrieve_project_knowledge", "query_project_inventory", "read_project_file"}
+            if card["tool_id"] in allowed_tool_ids
         ]
         system_prompt = (
             "You are a safe ReAct planner for UE Agent Project QA. "
@@ -608,7 +616,7 @@ class TaskService:
         chat_config: ChatRuntimeConfig,
         output_language: str,
     ) -> dict[str, Any]:
-        allowed_tool_ids = {"retrieve_project_knowledge", "query_project_inventory", "read_project_file"}
+        allowed_tool_ids = free_chat_tool_ids()
         planner_decision = {
             "status": "skipped",
             "reason": "llm_unavailable_or_not_attempted",
@@ -1079,6 +1087,12 @@ class TaskService:
             context_bundle=context_bundle,
             stream_sink=stream_sink,
         )
+        execution["debug_view"]["active_context"] = context_bundle.get("active_context", {})
+        execution["debug_view"]["tool_registry_protocol"] = tool_protocol_summary()
+        execution["debug_view"]["tool_execution_policy"] = TOOL_EXECUTION_POLICY
+        execution["debug_view"]["tools"] = enrich_tool_debug_entries(
+            list(execution["debug_view"].get("tools") or [])
+        )
         skill_runtime = build_skill_runtime_descriptor(
             requested_task_type=request.task_type,
             actual_task_type=actual_task_type,
@@ -1407,6 +1421,9 @@ class TaskService:
             "intent": routing["intent"],
             "route": routing["route"],
             "context_bundle": resolved_context_bundle,
+            "active_context": resolved_context_bundle.get("active_context", {}),
+            "tool_registry_protocol": tool_protocol_summary(),
+            "tool_execution_policy": TOOL_EXECUTION_POLICY,
             "retrieval": {},
             "retrieval_summary": {},
             "tools": [],

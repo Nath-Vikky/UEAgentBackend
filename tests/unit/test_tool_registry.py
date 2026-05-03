@@ -20,9 +20,26 @@ def test_tool_capability_card_exposes_schema_and_policy() -> None:
 
     assert spec is not None
     card = spec.capability_card()
+    assert card["protocol_version"] == "tool_protocol_v2"
+    assert card["category"] == "analysis"
+    assert card["transport"] == "local_python"
     assert card["side_effect_level"] == "read_only"
+    assert card["requires_confirmation"] is False
+    assert "log" in card["active_context_keys"]
+    assert card["owned_by_skill"] == "LogsAnalyzeSkill"
     assert "log_file_path" in card["optional_payload_fields"]
     assert card["input_schema"]["type"] == "object"
+
+
+def test_confirmed_write_tool_requires_permission_gate() -> None:
+    spec = get_tool_spec("execute_asset_operation")
+
+    assert spec is not None
+    card = spec.capability_card()
+    assert card["category"] == "write"
+    assert card["side_effect_level"] == "confirmed_write"
+    assert card["requires_confirmation"] is True
+    assert card["permission_gate"] == "proposal_confirmed"
 
 
 def test_tool_registry_contracts_are_valid() -> None:

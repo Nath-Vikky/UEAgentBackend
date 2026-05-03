@@ -49,6 +49,7 @@ def build_agent_decision_trace(
     route = dict(routing.get("route") or {})
     locale = dict(routing.get("locale") or {})
     context_budget = dict(context_bundle.get("budget") or {})
+    active_context = dict(context_bundle.get("active_context") or {})
     session_summary = dict(context_bundle.get("session_summary") or {})
     long_term_memory = dict(context_bundle.get("long_term_memory") or {})
     tool_plan = dict(data.get("tool_plan") or debug_view.get("tool_plan") or {})
@@ -102,6 +103,11 @@ def build_agent_decision_trace(
             confidence=1.0,
             details={
                 "context_bundle_version": context_bundle.get("version"),
+                "active_context_version": active_context.get("version"),
+                "active_project": active_context.get("project", {}),
+                "active_asset": active_context.get("asset", {}),
+                "active_code": active_context.get("code", {}),
+                "active_log": active_context.get("log", {}),
                 "recent_message_count": len(context_bundle.get("recent_messages") or []),
                 "tool_context_count": len(context_bundle.get("tool_context") or []),
                 "session_summary_status": session_summary.get("status"),

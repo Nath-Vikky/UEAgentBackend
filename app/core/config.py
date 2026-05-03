@@ -8,7 +8,7 @@ from app.skills.registry import (
     SKILL_PROTOCOL_VERSION,
     UI_RECOMMENDATIONS as SKILL_UI_RECOMMENDATIONS,
 )
-from app.tools.registry import tool_capability_cards
+from app.tools.registry import tool_capability_cards, tool_protocol_summary
 
 SUPPORTED_LANGUAGES = ["zh-CN", "en-US"]
 SUPPORTED_VIEWS = ["user", "debug"]
@@ -95,6 +95,8 @@ CAPABILITIES = {
     },
     "tool_registry": {
         "mode": "declarative_static_registry",
+        "protocol_version": tool_protocol_summary()["protocol_version"],
+        "protocol": tool_protocol_summary(),
         "runtime_hot_reload": False,
         "extension_policy": "Add or adjust tool capability cards in app/tools/registry.py; router and capabilities consume the same registry.",
         "tools": tool_capability_cards(),

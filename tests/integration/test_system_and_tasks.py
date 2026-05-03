@@ -97,10 +97,14 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
     assert body["capabilities"]["skill_architecture"]["public_skill_count"] == 5
     assert len(body["capabilities"]["skill_catalog"]) == 5
     assert body["capabilities"]["tool_registry"]["mode"] == "declarative_static_registry"
+    assert body["capabilities"]["tool_registry"]["protocol_version"] == "tool_protocol_v2"
+    assert "mcp_stdio" in body["capabilities"]["tool_registry"]["protocol"]["transports"]
     assert any(
         item["tool_id"] == "query_project_inventory"
         and "当前项目" in item["trigger_keywords"]
         and item["side_effect_level"] == "read_only"
+        and item["category"] == "sensing"
+        and item["allowed_in_free_chat"] is True
         for item in body["capabilities"]["tool_registry"]["tools"]
     )
     assert any(

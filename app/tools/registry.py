@@ -6,6 +6,29 @@ from typing import Any
 
 from app.skills.registry import PRIMARY_TOOL_ID_BY_TASK_TYPE
 
+TOOL_PROTOCOL_VERSION = "tool_protocol_v2"
+TOOL_CATEGORIES = {"context", "sensing", "retrieval", "analysis", "generation", "write"}
+TOOL_TRANSPORTS = {"local_python", "http", "mcp_stdio", "mcp_http"}
+SIDE_EFFECT_LEVELS = {"read_only", "plan_only", "confirmed_write"}
+ROUTE_PREFERENCES = {"project_qa", "single_tool", "workflow", "proposal_wait"}
+
+TOOL_EXECUTION_POLICY = {
+    "free_chat_auto_execute": "read_only_only",
+    "plan_only_behavior": "return_proposal_or_draft_without_side_effects",
+    "confirmed_write_behavior": "requires_frontend_confirmation_and_backend_safety_check",
+    "explicit_panel_behavior": "use_skill_owned_tools_before_llm_free_tool_selection",
+    "debug_contract": [
+        "tool_id",
+        "transport",
+        "side_effect_level",
+        "input_summary",
+        "output_summary",
+        "latency_ms",
+        "status",
+        "approval_state",
+    ],
+}
+
 
 @dataclass(frozen=True, slots=True)
 class ToolSpec:
@@ -15,6 +38,15 @@ class ToolSpec:
     description: str
     side_effect_level: str
     route_preference: str
+    category: str = "analysis"
+    transport: str = "local_python"
+    requires_confirmation: bool = False
+    active_context_keys: tuple[str, ...] = ()
+    owned_by_skill: str | None = None
+    allowed_in_free_chat: bool = False
+    permission_gate: str = "none"
+    mcp_tool_name: str | None = None
+    context_cost: str = "medium"
     requires_retrieval: bool = False
     trigger_keywords: tuple[str, ...] = ()
     required_payload_fields: tuple[str, ...] = ()
@@ -29,7 +61,17 @@ class ToolSpec:
             "task_type": self.task_type,
             "title": self.title,
             "description": self.description,
+            "protocol_version": TOOL_PROTOCOL_VERSION,
+            "category": self.category,
+            "transport": self.transport,
             "side_effect_level": self.side_effect_level,
+            "requires_confirmation": self.effective_requires_confirmation,
+            "active_context_keys": list(self.active_context_keys),
+            "owned_by_skill": self.owned_by_skill,
+            "allowed_in_free_chat": self.allowed_in_free_chat,
+            "permission_gate": self.permission_gate,
+            "mcp_tool_name": self.mcp_tool_name,
+            "context_cost": self.context_cost,
             "route_preference": self.route_preference,
             "requires_retrieval": self.requires_retrieval,
             "trigger_keywords": list(self.trigger_keywords),
@@ -38,6 +80,24 @@ class ToolSpec:
             "timeout_ms": self.timeout_ms,
             "input_schema": self.input_schema,
             "output_schema": self.output_schema,
+        }
+
+    @property
+    def effective_requires_confirmation(self) -> bool:
+        return self.requires_confirmation or self.side_effect_level == "confirmed_write"
+
+    def debug_policy_card(self) -> dict[str, Any]:
+        return {
+            "tool_id": self.tool_id,
+            "title": self.title,
+            "category": self.category,
+            "transport": self.transport,
+            "side_effect_level": self.side_effect_level,
+            "requires_confirmation": self.effective_requires_confirmation,
+            "active_context_keys": list(self.active_context_keys),
+            "owned_by_skill": self.owned_by_skill,
+            "allowed_in_free_chat": self.allowed_in_free_chat,
+            "permission_gate": self.permission_gate,
         }
 
 
@@ -49,6 +109,12 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Retrieve project-specific evidence from the knowledge base.",
         side_effect_level="read_only",
         route_preference="project_qa",
+        category="retrieval",
+        active_context_keys=("project", "kb"),
+        owned_by_skill="ProjectQASkill",
+        allowed_in_free_chat=True,
+        permission_gate="read_only_whitelist",
+        context_cost="medium",
         requires_retrieval=True,
         trigger_keywords=(
             "knowledge base",
@@ -89,6 +155,12 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Query the latest submitted project inventory snapshot for assets, code files, and UE metadata.",
         side_effect_level="read_only",
         route_preference="project_qa",
+        category="sensing",
+        active_context_keys=("project", "asset", "code"),
+        owned_by_skill="ProjectQASkill",
+        allowed_in_free_chat=True,
+        permission_gate="read_only_whitelist",
+        context_cost="low",
         requires_retrieval=False,
         trigger_keywords=(
             "current project assets",
@@ -137,6 +209,12 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Read a small text/code file from the current UE project root for project QA synthesis.",
         side_effect_level="read_only",
         route_preference="project_qa",
+        category="context",
+        active_context_keys=("project", "code"),
+        owned_by_skill="ProjectQASkill",
+        allowed_in_free_chat=True,
+        permission_gate="project_root_read_only",
+        context_cost="high",
         requires_retrieval=False,
         trigger_keywords=(
             "this file",
@@ -181,6 +259,11 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Scan UE C++ code or diffs for lifecycle, threading, loading, and boundary issues.",
         side_effect_level="read_only",
         route_preference="workflow",
+        category="analysis",
+        active_context_keys=("project", "code", "kb"),
+        owned_by_skill="CodeReviewSkill",
+        permission_gate="read_only_panel_scope",
+        context_cost="high",
         requires_retrieval=True,
         trigger_keywords=("code review", "review", "审查", "代码审查"),
         required_payload_fields=("user_query",),
@@ -209,6 +292,11 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Generate a code draft and file layout suggestions without writing to the project.",
         side_effect_level="plan_only",
         route_preference="single_tool",
+        category="generation",
+        active_context_keys=("project", "code", "kb"),
+        owned_by_skill="CodeGenerateSkill",
+        permission_gate="draft_only",
+        context_cost="high",
         requires_retrieval=True,
         trigger_keywords=("code generate", "generate code", "生成代码", "代码生成"),
         required_payload_fields=("user_query",),
@@ -235,6 +323,11 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Parse logs, extract signatures, and summarize likely failure families.",
         side_effect_level="read_only",
         route_preference="workflow",
+        category="analysis",
+        active_context_keys=("project", "log", "kb"),
+        owned_by_skill="LogsAnalyzeSkill",
+        permission_gate="read_only_panel_scope",
+        context_cost="high",
         requires_retrieval=True,
         trigger_keywords=("analyze log", "logs", "log", "日志", "日志分析"),
         optional_payload_fields=(
@@ -270,6 +363,9 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Generate a structured config draft from requirements, schemas, and examples.",
         side_effect_level="plan_only",
         route_preference="workflow",
+        category="generation",
+        active_context_keys=("project", "kb"),
+        permission_gate="draft_only",
         requires_retrieval=True,
         trigger_keywords=("config generate", "generate config", "生成配置"),
         required_payload_fields=("user_query",),
@@ -281,6 +377,9 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Validate a config payload against a schema and emit structured diagnostics.",
         side_effect_level="read_only",
         route_preference="single_tool",
+        category="analysis",
+        active_context_keys=("project",),
+        permission_gate="read_only_panel_scope",
         requires_retrieval=False,
         trigger_keywords=("validate config", "config validate", "校验配置"),
         required_payload_fields=("schema", "config_json"),
@@ -292,6 +391,11 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Inspect asset naming, folder hygiene, and duplicate candidates.",
         side_effect_level="read_only",
         route_preference="single_tool",
+        category="analysis",
+        active_context_keys=("project", "asset", "kb"),
+        owned_by_skill="AssetsInspectSkill",
+        permission_gate="read_only_panel_scope",
+        context_cost="medium",
         requires_retrieval=True,
         trigger_keywords=(
             "asset inspect",
@@ -311,6 +415,9 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Plan asset rename or reorganization actions without executing them.",
         side_effect_level="plan_only",
         route_preference="workflow",
+        category="generation",
+        active_context_keys=("project", "asset", "kb"),
+        permission_gate="proposal_required",
         requires_retrieval=True,
         trigger_keywords=("asset plan", "rename asset", "plan asset", "资产规划", "资产重命名"),
     ),
@@ -321,6 +428,10 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Execute a previously approved asset operation.",
         side_effect_level="confirmed_write",
         route_preference="proposal_wait",
+        category="write",
+        requires_confirmation=True,
+        active_context_keys=("project", "asset"),
+        permission_gate="proposal_confirmed",
         requires_retrieval=False,
         trigger_keywords=("execute asset", "apply asset", "执行资产"),
     ),
@@ -331,6 +442,9 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Parse performance and memory evidence and summarize bottlenecks.",
         side_effect_level="read_only",
         route_preference="workflow",
+        category="analysis",
+        active_context_keys=("project", "log", "kb"),
+        permission_gate="read_only_panel_scope",
         requires_retrieval=True,
         trigger_keywords=("perf", "performance", "memory", "性能", "内存"),
     ),
@@ -341,6 +455,9 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Retrieve config schemas and example payloads from the knowledge base.",
         side_effect_level="read_only",
         route_preference="workflow",
+        category="retrieval",
+        active_context_keys=("project", "kb"),
+        permission_gate="read_only_panel_scope",
         requires_retrieval=True,
         trigger_keywords=("schema", "examples", "配置示例", "配置模板"),
     ),
@@ -351,6 +468,9 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="Look up prior incidents or troubleshooting notes for log signatures.",
         side_effect_level="read_only",
         route_preference="workflow",
+        category="retrieval",
+        active_context_keys=("project", "log", "kb"),
+        permission_gate="read_only_panel_scope",
         requires_retrieval=True,
         trigger_keywords=("incident", "prior log", "历史故障", "历史日志"),
     ),
@@ -401,3 +521,52 @@ def detect_tool_for_text(text: str) -> str | None:
 
 def tool_capability_cards() -> list[dict[str, Any]]:
     return [spec.capability_card() for spec in TOOL_REGISTRY.values()]
+
+
+def tool_protocol_summary() -> dict[str, Any]:
+    return {
+        "protocol_version": TOOL_PROTOCOL_VERSION,
+        "categories": sorted(TOOL_CATEGORIES),
+        "transports": sorted(TOOL_TRANSPORTS),
+        "side_effect_levels": sorted(SIDE_EFFECT_LEVELS),
+        "route_preferences": sorted(ROUTE_PREFERENCES),
+        "execution_policy": TOOL_EXECUTION_POLICY,
+    }
+
+
+def free_chat_tool_ids() -> set[str]:
+    return {
+        tool_id
+        for tool_id, spec in TOOL_REGISTRY.items()
+        if spec.allowed_in_free_chat and spec.side_effect_level == "read_only"
+    }
+
+
+def enrich_tool_debug_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for entry in entries:
+        item = dict(entry)
+        spec = get_tool_spec(str(item.get("tool_id") or ""))
+        if spec:
+            item.setdefault("registered", True)
+            item.setdefault("title", spec.title)
+            item.setdefault("category", spec.category)
+            item.setdefault("transport", spec.transport)
+            item.setdefault("side_effect_level", spec.side_effect_level)
+            item.setdefault("requires_confirmation", spec.effective_requires_confirmation)
+            item.setdefault("active_context_keys", list(spec.active_context_keys))
+            item.setdefault("owned_by_skill", spec.owned_by_skill)
+            item.setdefault("permission_gate", spec.permission_gate)
+            item.setdefault("allowed_in_free_chat", spec.allowed_in_free_chat)
+            item.setdefault("approval_state", "not_required" if not spec.effective_requires_confirmation else "required")
+        else:
+            item.setdefault("registered", False)
+            item.setdefault("transport", "internal")
+            item.setdefault("side_effect_level", "read_only")
+            item.setdefault("requires_confirmation", False)
+            item.setdefault("approval_state", "not_required")
+        item.setdefault("input_summary", {})
+        item.setdefault("output_summary", item.get("summary") or "")
+        item.setdefault("latency_ms", None)
+        enriched.append(item)
+    return enriched

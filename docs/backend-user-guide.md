@@ -1988,3 +1988,55 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 - 为 Project QA 的 lexical chunks 做进程内预热索引。
 - 按任务类型裁剪不必要的 Debug View 深层字段，降低序列化成本。
 - 对 Code Generate / Code Review 的知识参考检索做 domain 预过滤和 top-k 限制。
+
+## 20. Tool Protocol v2 与 ActiveContext
+
+后端现在把 Tool Registry 从“工具列表”升级为更接近 Agent 工具协议的 v2 结构。它不会改变 UE 前端现有 HTTP 调用方式，而是让后端更清楚地描述每个工具的用途、权限、上下文依赖和是否允许自由聊天自动调用。
+
+查看入口：
+
+```http
+GET /api/v1/system/capabilities
+```
+
+关键字段：
+
+- `capabilities.tool_registry.protocol_version = "tool_protocol_v2"`
+- `capabilities.tool_registry.protocol.categories`：`context / sensing / retrieval / analysis / generation / write`
+- `capabilities.tool_registry.protocol.transports`：`local_python / http / mcp_stdio / mcp_http`
+- `capabilities.tool_registry.protocol.execution_policy`：自由聊天、草稿工具和确认写入工具的统一执行边界。
+- `capabilities.tool_registry.tools[].category`：工具类别。
+- `capabilities.tool_registry.tools[].transport`：当前工具执行通道。
+- `capabilities.tool_registry.tools[].requires_confirmation`：是否必须用户确认。
+- `capabilities.tool_registry.tools[].active_context_keys`：工具依赖哪些上下文。
+- `capabilities.tool_registry.tools[].allowed_in_free_chat`：是否允许 Agent Chat 自动选择。
+
+当前执行策略：
+
+- Agent Chat 只能自动调用 `read_only` 且 `allowed_in_free_chat=true` 的工具。
+- `plan_only` 工具只生成草稿、建议、计划或 preview，不写入项目。
+- `confirmed_write` 工具必须经过前端确认和后端安全校验。
+- 显式功能面板仍优先使用固定 Skill 流程，避免 LLM 自由选错工具。
+
+Debug View 新增：
+
+- `debug_view.active_context`
+- `debug_view.tool_registry_protocol`
+- `debug_view.tool_execution_policy`
+- `debug_view.tools[].category`
+- `debug_view.tools[].transport`
+- `debug_view.tools[].side_effect_level`
+- `debug_view.tools[].approval_state`
+
+`ActiveContext` 用于解释本轮 Agent 到底看到了什么上下文：
+
+- `project`：项目名、项目根目录、当前模块、UE 版本、插件版本。
+- `asset`：选中资产、资产数量、资产类型过滤、inventory snapshot。
+- `code`：当前文件、选中文件、最近打开文件、是否有 inline code。
+- `log`：日志来源、日志文件路径、是否有日志文本。
+- `kb`：知识库 domain hint、选中工具、是否需要 RAG。
+- `mcp`：当前 MCP 状态。现阶段默认 `disabled`，因为 MCP 只作为后续可选工具层，不是 UE 前端与后端的主协议。
+
+面试解释口径：
+
+这个项目不是“把 LLM 聊天窗口塞进 UE 编辑器”，而是一个可观测的 Agent 后端。UE 插件负责采集编辑器上下文和展示结果，后端负责意图判断、上下文压缩、知识检索、工具调用、权限分级、LLM 综合和评估指标。LLM 自己可能知道 UE 通用知识，但它不知道当前项目资产、源码、日志、团队规则和用户本地私有知识库，所以知识库和工具调用提供的是可追溯、可更新、可验证的项目事实。
