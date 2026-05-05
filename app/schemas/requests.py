@@ -77,6 +77,32 @@ class ProposalDecisionRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class EditorOperationProposalRequest(BaseModel):
+    operation_type: Literal[
+        "rename_selected_asset",
+        "apply_static_mesh_basic_settings",
+        "create_blueprint_asset",
+    ]
+    payload: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+    source_task_id: str | None = None
+    requested_by: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class EditorOperationResultRequest(BaseModel):
+    proposal_id: str
+    operation_type: str | None = None
+    execution_state: Literal["completed", "failed", "blocked", "cancelled"] = "completed"
+    success: bool = False
+    executed_by: str | None = None
+    transaction_id: str | None = None
+    undo_hint: str | None = None
+    result: dict[str, Any] = Field(default_factory=dict)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class SessionCreateRequest(BaseModel):
     session_id: str
     project_name: str | None = None

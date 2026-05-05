@@ -10,6 +10,7 @@
 - **声明式 Tool Registry**：工具有分类、输入输出契约、副作用等级、确认要求和 free-chat 白名单。
 - **RAG + 本地 grep 并存**：没有向量模型时使用本地 lexical/grep 检索；配置 Embedding + Qdrant 后可扩展为混合检索。
 - **安全写入闭环**：代码生成默认只返回草稿；只有显式请求并经 Proposal 确认后，才允许有限写入 `Source/` 或 `Plugins/`。
+- **Editor Operation Bridge**：第一版 MCP-like 编辑器操作通过 Proposal 表达，支持从 Assets Inspect / Agent Chat 生成重命名资产、应用 Static Mesh 基础设置、创建 Blueprint 资产提案，真实执行必须由 UE 插件确认后完成。
 - **可观测和可评测**：提供 `user_view / debug_view`、trace、artifact、Prometheus metrics、alerts、RAG eval 和项目级 benchmark。
 - **可选 MCP 工具层**：HTTP 仍是 UE 前端和后端主协议，MCP 只作为未来工具 transport，默认关闭。
 
@@ -71,6 +72,8 @@ OPENAI_API_KEY=your_key
 OPENAI_BASE_URL=
 CHAT_MODEL=gpt-4.1-mini
 ```
+
+如果修改了 `CHAT_MODEL` 后自由聊天仍显示旧模型或 LLM 未连接，重启后端即可让内置 `default` Runtime Profile 自动同步 `.env`。编辑器操作 Proposal 不依赖在线 LLM，所以模型不可用时仍可能正常生成并执行资产改名、Static Mesh 设置或 Blueprint 创建提案。
 
 知识库默认使用：
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import ast
+import http.client
 import json
 import re
 import time
 from dataclasses import dataclass
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -282,7 +284,6 @@ class LLMService:
                 stream_sink=stream_sink,
             )
 
-        url = self._chat_completions_url()
         request_payload = {
             "model": config.model,
             "messages": messages,
@@ -297,10 +298,11 @@ class LLMService:
 
         started = time.perf_counter()
         try:
-            with httpx.Client(timeout=self._client_timeout(config)) as client:
-                response = client.post(url, headers=headers, json=request_payload)
-                response.raise_for_status()
-            body = response.json()
+            body = self._post_chat_completion_json(
+                payload=request_payload,
+                headers=headers,
+                config=config,
+            )
             choice = (body.get("choices") or [{}])[0]
             message = choice.get("message") or {}
             text = _extract_text(message.get("content"))
@@ -316,7 +318,7 @@ class LLMService:
                 "model": body.get("model") or config.model,
                 "profile_id": config.profile_id,
                 "finish_reason": choice.get("finish_reason") or "completed",
-                "endpoint": url,
+                "endpoint": self._chat_completions_url(),
                 "text": text,
                 "usage": {
                     "input_tokens": int(usage_payload.get("prompt_tokens") or 0),
@@ -405,11 +407,15 @@ class LLMService:
                 },
             }
         except Exception as exc:  # pragma: no cover - depends on live remote endpoint
+            fallback = self.complete(messages=messages, config=config)
+            if fallback["ok"]:
+                stream_sink(fallback["text"])
+                return fallback
             return {
                 "ok": False,
                 "provider": "openai_compatible",
                 "reason": "request_failed",
-                "error": str(exc),
+                "error": f"{exc}; non_stream_fallback={fallback.get('error')}",
                 "model": config.model,
                 "profile_id": config.profile_id,
                 "usage": default_usage(),
@@ -515,6 +521,79 @@ class LLMService:
         if base_url.endswith("/chat/completions"):
             return base_url
         return f"{base_url}/chat/completions"
+
+    def _post_chat_completion_json(
+        self,
+        *,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        config: ChatRuntimeConfig,
+    ) -> dict[str, Any]:
+        url = self._chat_completions_url()
+        try:
+            with httpx.Client(timeout=self._client_timeout(config)) as client:
+                response = client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+            return response.json()
+        except Exception as httpx_exc:
+            try:
+                return self._post_chat_completion_json_stdlib(
+                    url=url,
+                    payload=payload,
+                    headers=headers,
+                    config=config,
+                )
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    f"httpx={httpx_exc}; stdlib_fallback={fallback_exc}"
+                ) from fallback_exc
+
+    def _post_chat_completion_json_stdlib(
+        self,
+        *,
+        url: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        config: ChatRuntimeConfig,
+    ) -> dict[str, Any]:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("unsupported_chat_completions_url")
+
+        body = json.dumps(payload).encode("utf-8")
+        request_path = parsed.path or "/"
+        if parsed.query:
+            request_path = f"{request_path}?{parsed.query}"
+        request_headers = {
+            **headers,
+            "Accept": "application/json",
+            "Content-Length": str(len(body)),
+            "User-Agent": "UEAgentBackend/0.1",
+        }
+        timeout_seconds = max(config.timeout_ms, 1000) / 1000
+        connection_cls = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        connection = connection_cls(
+            parsed.hostname,
+            parsed.port,
+            timeout=timeout_seconds,
+        )
+        try:
+            connection.request("POST", request_path, body=body, headers=request_headers)
+            response = connection.getresponse()
+            raw_body = response.read()
+        finally:
+            connection.close()
+
+        text = raw_body.decode("utf-8", errors="replace")
+        if response.status >= 400:
+            raise RuntimeError(f"HTTP {response.status} {response.reason}: {text[:500]}")
+        try:
+            decoded = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid_json_response: {exc}") from exc
+        if not isinstance(decoded, dict):
+            raise ValueError("chat_completion_response_object_expected")
+        return decoded
 
     @staticmethod
     def _client_timeout(config: ChatRuntimeConfig) -> httpx.Timeout:

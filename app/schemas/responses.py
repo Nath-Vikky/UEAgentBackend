@@ -198,6 +198,20 @@ class ProposalDecisionResponse(BaseModel):
     errors: list[ErrorDetail] = Field(default_factory=list)
 
 
+class EditorOperationProposalResponse(BaseModel):
+    success: bool
+    item: ActionProposal
+    operation: dict[str, Any] = Field(default_factory=dict)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class EditorOperationResultResponse(BaseModel):
+    success: bool
+    item: dict[str, Any]
+    proposal: ActionProposal | None = None
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
 class AlertsResponse(BaseModel):
     success: bool
     summary: dict[str, Any] = Field(default_factory=dict)

@@ -168,6 +168,12 @@
 - `kb_source_paths`：检查 `KB_SOURCE_PATHS` 指向的知识库源目录是否存在。
 - `qdrant_config`：提示向量检索配置状态；默认 `EMBEDDING_ENABLED=false`，只使用本地 lexical RAG 时不会探测 Qdrant。
 
+LLM 排查补充：
+- 自由聊天会优先使用当前 active Runtime Profile 的 `chat_model`。
+- 内置 `default` Runtime Profile 会在后端启动或查询 runtime profiles 时自动同步 `.env` 中的 `CHAT_MODEL`、温度、token 上限等默认配置。
+- 如果刚改过 `.env`，请重启后端，再查看 `GET /api/v1/system/runtime-profiles` 的 `active_profile_id` 和 `profiles[].chat_model`。
+- 资产改名、Static Mesh 设置、Blueprint 创建属于 Editor Operation Proposal 链路；它们可以由规则和上下文生成提案，不代表在线 LLM 一定可用。
+
 ### 面试增强验证
 
 本项目现在保留 4 类验证：
@@ -2255,3 +2261,134 @@ GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
 - 不允许路径穿越，例如 `../secret.json` 会返回 404。
 - API 只读，不删除、不写入、不重新运行评测。
 - 这不是企业级评测平台，只是作品级的可复现量化展示入口。
+
+## 24. UE Editor Operation Bridge / MCP-like 编辑器操作提案
+
+后端现在提供第一版 `Editor Operation Bridge` 后端契约。它和 UMG-MCP 属于同一类设计思想：把 UE 编辑器能力抽象成工具，让 Agent 能规划编辑器操作。但本项目不直接依赖 UMG-MCP，也不让 LLM 直接操作编辑器。
+
+核心原则：
+
+- HTTP 仍然是 UE 插件和后端之间的主协议。
+- MCP 是可选工具传输层；当前这版先用 HTTP proposal 契约表达 MCP-like 编辑器工具。
+- 后端只生成 `EditorOperationProposal`。
+- UE 插件必须让用户确认后才执行真实 Editor API。
+- 执行结果必须回传后端，进入 proposal 的 `dry_run_preview.operation_result` 和 audit log。
+
+第一版只支持 3 个操作：
+
+- `rename_selected_asset`：重命名一个选中资产，不移动目录，不批量重命名。
+- `apply_static_mesh_basic_settings`：修改一个 Static Mesh 的白名单基础设置。
+- `create_blueprint_asset`：在 `/Game` 下创建一个普通 Blueprint 资产。
+
+查看能力：
+
+```http
+GET /api/v1/editor-operations/capabilities
+```
+
+创建提案：
+
+```http
+POST /api/v1/editor-operations/proposals
+```
+
+重命名资产示例：
+
+```json
+{
+  "operation_type": "rename_selected_asset",
+  "payload": {
+    "asset_path": "/Game/Maps/NewMap",
+    "new_name": "L_TestCombatArena"
+  },
+  "reason": "资产命名仍是默认名，建议改成语义化地图名。"
+}
+```
+
+Static Mesh 设置示例：
+
+```json
+{
+  "operation_type": "apply_static_mesh_basic_settings",
+  "payload": {
+    "asset_path": "/Game/Props/SM_Crate",
+    "settings": {
+      "nanite_enabled": true,
+      "collision_complexity": "simple_and_complex",
+      "lod_group": "SmallProp",
+      "generate_lightmap_uv": true,
+      "lightmap_resolution": 64
+    }
+  }
+}
+```
+
+Blueprint 创建示例：
+
+```json
+{
+  "operation_type": "create_blueprint_asset",
+  "payload": {
+    "parent_class": "/Script/Engine.Character",
+    "target_folder": "/Game/Blueprints",
+    "asset_name": "BP_PlayerCharacter"
+  }
+}
+```
+
+确认或拒绝：
+
+```http
+POST /api/v1/editor-operations/proposals/{proposal_id}/confirm
+POST /api/v1/editor-operations/proposals/{proposal_id}/reject
+```
+
+UE 插件执行后回传：
+
+```http
+POST /api/v1/editor-operations/results
+```
+
+```json
+{
+  "proposal_id": "proposal_xxx",
+  "operation_type": "rename_selected_asset",
+  "execution_state": "completed",
+  "success": true,
+  "executed_by": "ue_plugin",
+  "transaction_id": "ue_transaction_id_or_empty",
+  "undo_hint": "可使用编辑器 Undo 或手动改回原名。",
+  "result": {
+    "final_asset_path": "/Game/Maps/L_TestCombatArena",
+    "dirty": true
+  },
+  "errors": []
+}
+```
+
+安全边界：
+
+- 未确认的 proposal 不能回传成功执行结果，后端会返回 `proposal_must_be_confirmed_before_execution_result`。
+- `apply_static_mesh_basic_settings` 只允许 `nanite_enabled / collision_complexity / lod_group / generate_lightmap_uv / lightmap_resolution`。
+- `create_blueprint_asset` 的目标目录必须在 `/Game` 下。
+- 后端不自动保存 UE 资产包，不直接调用 UE Editor API。
+- 后续“自动写蓝图图表”也应归入同一类 Editor Tool Bridge，但必须先做节点预览、白名单和用户确认。
+
+当前已接入的自动提案入口：
+
+- `Assets Inspect`：当只检查一个资产且后端产生合法重命名建议时，会自动附带 `proposal_type=editor_operation`、`operation_type=rename_selected_asset`。
+- `Agent Chat / Project QA`：当用户明确提出创建蓝图、重命名选中资产、或修改 Static Mesh 基础设置时，后端会生成 `editor_operation` proposal，而不是直接执行。
+- 直接调试接口仍可使用 `POST /api/v1/editor-operations/proposals` 手动创建提案。
+
+执行结果回传后的读取位置：
+
+- `GET /api/v1/editor-operations/proposals/{proposal_id}`：查看 proposal 的 `dry_run_preview.operation_result`。
+- `GET /api/v1/tasks/{task_id}`：如果 proposal 来源于某个任务，结果会同步进入 `data.editor_operation_results[]`。
+- `debug_view.side_effects[].operation_result`：用于 Debug View 展示执行状态、transaction、dirty package、错误原因等。
+
+推荐 UE 插件回传的 `result` 字段：
+
+- 通用：`asset_path`、`object_path`、`package_name`、`dirty`、`dirty_packages`。
+- 重命名资产：`final_asset_path`、`old_asset_path`、`redirector_hint`。
+- Static Mesh 设置：`applied_fields`、`failed_fields`、`field_results`。
+- Blueprint 创建：`asset_path`、`parent_class`、`opened_editor=false`。

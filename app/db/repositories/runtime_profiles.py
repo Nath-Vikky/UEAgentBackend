@@ -10,6 +10,27 @@ from app.db.models.runtime_profile import RuntimeProfileModel
 def seed_builtin_profiles(db: Session, settings: Settings) -> None:
     existing = db.get(RuntimeProfileModel, settings.default_profile_id)
     if existing:
+        if existing.is_builtin:
+            changed = False
+            desired_values = {
+                "name": settings.default_profile_name,
+                "chat_model": settings.chat_model,
+                "embedding_model": settings.embedding_model,
+                "temperature": settings.default_profile_temperature,
+                "max_tokens": settings.default_profile_max_tokens,
+                "rag_top_k": settings.rag_top_k,
+                "rerank_top_n": settings.rag_rerank_top_n,
+                "allow_streaming": settings.default_profile_allow_streaming,
+                "debug_mode": settings.default_profile_debug_mode,
+                "tool_timeout_ms": settings.default_profile_tool_timeout_ms,
+                "cost_guard_usd": settings.default_profile_cost_guard_usd,
+            }
+            for key, value in desired_values.items():
+                if getattr(existing, key) != value:
+                    setattr(existing, key, value)
+                    changed = True
+            if changed:
+                db.commit()
         return
 
     profile = RuntimeProfileModel(
@@ -68,4 +89,3 @@ def set_default_profile(db: Session, profile_id: str) -> RuntimeProfileModel | N
     db.commit()
     db.refresh(target)
     return target
-

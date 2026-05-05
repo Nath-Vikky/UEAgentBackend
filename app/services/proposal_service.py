@@ -221,6 +221,12 @@ class ProposalService:
                 )
                 if artifact_descriptor:
                     artifacts.append(artifact_descriptor)
+            elif proposal.proposal_type == "editor_operation":
+                execution_state = "waiting_for_ue_plugin"
+                data["editor_operation"] = {
+                    **dict(proposal.dry_run_preview_json or {}),
+                    "approval_state": "confirmed_waiting_for_ue_plugin",
+                }
 
             data["approval_result"] = {
                 "decision": "confirmed",
@@ -243,6 +249,13 @@ class ProposalService:
                     "The proposal was confirmed and generated code files were written into the project directory. Regenerate/compile in UE and follow the validation checklist.",
                 )
                 user_view["status_hint"] = "approved"
+            elif proposal.proposal_type == "editor_operation":
+                user_view["text"] = self._localized(
+                    task,
+                    "编辑器操作 Proposal 已确认，等待 UE 插件执行并回传结果。后端不会直接操作 UE 编辑器。",
+                    "The editor operation proposal was confirmed and is waiting for the UE plugin to execute and report the result. The backend does not directly operate Unreal Editor.",
+                )
+                user_view["status_hint"] = "waiting_editor_execution"
             else:
                 user_view["text"] = self._localized(
                     task,
@@ -335,6 +348,18 @@ class ProposalService:
                     "written_to_disk": data["code_write_result"].get("written_to_disk", False),
                     "written_files": data["code_write_result"].get("written_files", []),
                     "blocked_files": data["code_write_result"].get("blocked_files", []),
+                }
+            ]
+        if data.get("editor_operation"):
+            debug_view["side_effects"] = list(debug_view.get("side_effects") or []) + [
+                {
+                    "proposal_id": proposal.proposal_id,
+                    "proposal_type": proposal.proposal_type,
+                    "operation_type": data["editor_operation"].get("operation_type"),
+                    "tool_id": data["editor_operation"].get("tool_id"),
+                    "side_effect_level": "confirmed_write",
+                    "execution_state": "waiting_for_ue_plugin",
+                    "written_by_backend": False,
                 }
             ]
         response_payload["data"] = data
