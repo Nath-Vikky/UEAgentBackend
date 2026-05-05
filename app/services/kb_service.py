@@ -93,8 +93,13 @@ class KnowledgeBaseService:
 
         counts = kb_counts(self.db)
         latest_job_model = latest_import_job(self.db)
-        qdrant_ok, qdrant_reason = qdrant_available(self.settings)
         embedding_ok = embedding_available(self.settings)
+        qdrant_ok = False
+        qdrant_reason = "qdrant_not_checked_embedding_disabled"
+        if self.settings.embedding_enabled and embedding_ok:
+            qdrant_ok, qdrant_reason = qdrant_available(self.settings)
+        elif self.settings.embedding_enabled:
+            qdrant_reason = "qdrant_not_checked_embedding_unavailable"
         ingestion = ingestion_capabilities()
         local_search_status = LocalSearchService(self.settings).status()
         documents = list_documents(self.db)
@@ -113,7 +118,7 @@ class KnowledgeBaseService:
                 degraded_reasons.append("embedding_disabled")
             elif not embedding_ok:
                 degraded_reasons.append("embedding_unavailable")
-            if not qdrant_ok:
+            if self.settings.embedding_enabled and embedding_ok and not qdrant_ok:
                 degraded_reasons.append(qdrant_reason)
         effective_mode = self.settings.rag_mode
         if self.settings.rag_mode != "lexical" and not vector_store_ready:
@@ -691,13 +696,17 @@ class KnowledgeBaseService:
 
         chunks = list_chunks(self.db)
         embedding_ok = embedding_available(self.settings)
-        qdrant_ok, qdrant_reason = qdrant_available(self.settings)
         if not chunks:
+            if embedding_ok:
+                qdrant_ok, _ = qdrant_available(self.settings)
+            else:
+                qdrant_ok = False
             if qdrant_ok:
                 drop_collection(self.settings)
             return {"status": "empty", "indexed_chunks": 0}
         if not embedding_ok:
             return {"status": "embedding_not_available", "indexed_chunks": 0}
+        qdrant_ok, qdrant_reason = qdrant_available(self.settings)
         if not qdrant_ok:
             return {"status": qdrant_reason, "indexed_chunks": 0}
 

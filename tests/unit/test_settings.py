@@ -38,3 +38,10 @@ def test_settings_accept_csv_for_list_fields() -> None:
 
     assert settings.app_cors_origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
     assert settings.kb_source_paths == ["../backend.md", "../forward.md", "./docs"]
+
+
+def test_settings_default_to_lexical_first_rag() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.embedding_enabled is False
+    assert settings.rag_fallback_mode == "lexical_only"

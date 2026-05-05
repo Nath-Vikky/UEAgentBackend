@@ -7,6 +7,7 @@
 - `README.md`：快速启动和最小配置。
 - `docs/backend-user-guide.md`：完整使用手册。
 - `docs/benchmark-report.md`：当前量化评估结果。
+- `docs/project-review-checklist.md`：项目收口、验证和交付检查清单。
 
 开发过程文档，例如 `docs/improveplan.md`、`docs/backend-dev-log.md`、`docs/frontend-unified-handoff.md`、架构学习笔记和请求生命周期复盘，建议只保留在本地，不发布给普通使用者。这样 GitHub 页面会更清爽，也更接近一个可交付项目。
 
@@ -165,7 +166,7 @@
 - `database`：检查数据库连接状态。
 - `storage_dirs`：检查 storage、uploads、artifacts、kb 目录。
 - `kb_source_paths`：检查 `KB_SOURCE_PATHS` 指向的知识库源目录是否存在。
-- `qdrant_config`：提示向量检索配置状态；如果只用本地 lexical RAG，可以设置 `EMBEDDING_ENABLED=false`。
+- `qdrant_config`：提示向量检索配置状态；默认 `EMBEDDING_ENABLED=false`，只使用本地 lexical RAG 时不会探测 Qdrant。
 
 ### 面试增强验证
 
@@ -472,6 +473,8 @@ LLM 与知识库策略：
 
 - `EMBEDDING_ENABLED=true`
 - `EMBEDDING_MODEL`
+
+默认情况下 `EMBEDDING_ENABLED=false`，后端会优先使用本地 lexical 检索，不会在每次检索时探测 Qdrant。
 
 ### 启用 Qdrant
 
@@ -1073,7 +1076,8 @@ QDRANT_COLLECTION=rushba_local
 
 推荐配置：
 - 最小调试：`RAG_MODE=lexical`，`EMBEDDING_ENABLED=false`
-- 本地作品集演示：`RAG_MODE=hybrid`，`EMBEDDING_ENABLED=true`，接入 Qdrant
+- 本地作品集演示：`RAG_MODE=hybrid`，`EMBEDDING_ENABLED=false`，走 lexical fallback，依赖最少
+- 向量检索演示：`RAG_MODE=hybrid`，`EMBEDDING_ENABLED=true`，接入 Qdrant
 - 资料很多且表达差异大：`RAG_MODE=semantic` 或 `hybrid`
 
 ### 17.10 各 Skill 如何使用知识库

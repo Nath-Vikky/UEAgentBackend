@@ -106,8 +106,11 @@ def retrieve(
     }
     query_tokens_list = tokenize_query(query)
     query_tokens = query_token_counter(query)
-    qdrant_ok, qdrant_reason = qdrant_available(settings)
     embedding_ok = embedding_available(settings)
+    qdrant_ok = False
+    qdrant_reason = "qdrant_not_checked"
+    if settings.rag_mode != "lexical" and embedding_ok:
+        qdrant_ok, qdrant_reason = qdrant_available(settings)
     mode, degraded_mode = _resolve_mode(
         settings=settings,
         embedding_ok=embedding_ok,

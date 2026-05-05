@@ -80,3 +80,30 @@ def test_retrieve_falls_back_to_lexical_only_when_embedding_is_unavailable() -> 
     assert result.mode == "lexical_only"
     assert result.degraded_mode is True
     assert "embedding_not_available" in result.warnings
+
+
+def test_retrieve_does_not_probe_qdrant_when_embedding_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_qdrant_is_probed(settings: Settings) -> tuple[bool, str]:
+        raise AssertionError("qdrant_available should not be called when embeddings are disabled")
+
+    monkeypatch.setattr("app.rag.retrieval.hybrid.qdrant_available", fail_if_qdrant_is_probed)
+
+    settings = Settings(
+        openai_api_key="",
+        embedding_enabled=False,
+        rag_mode="hybrid",
+        rag_fallback_mode="lexical_only",
+    )
+    result = retrieve(
+        query="Explain the backend architecture.",
+        context=ContextInput(project_name="DemoProject", current_module="Backend"),
+        payload={"domain_filters": ["project_docs"]},
+        chunks=[_chunk(chunk_id="chunk_a", text="The backend architecture uses FastAPI services.")],
+        settings=settings,
+        output_language="en-US",
+    )
+
+    assert result.mode == "lexical_only"
+    assert result.reason == "embedding_not_available"

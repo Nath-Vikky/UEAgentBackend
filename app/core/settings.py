@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     openai_base_url: str = ""
     chat_model: str = "gpt-4.1-mini"
     embedding_model: str = "text-embedding-3-large"
-    embedding_enabled: bool = True
+    embedding_enabled: bool = False
 
     langsmith_tracing: bool = True
     langsmith_api_key: str = ""

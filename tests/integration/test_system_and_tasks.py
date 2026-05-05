@@ -25,6 +25,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("ARTIFACT_DIR", str((storage_dir / "artifacts").resolve()))
     monkeypatch.setenv("KB_DIR", str((storage_dir / "kb").resolve()))
     monkeypatch.setenv("KB_SOURCE_PATHS", "./knowledge")
+    monkeypatch.setenv("EMBEDDING_ENABLED", "false")
     monkeypatch.setenv("OPENAI_API_KEY", "")
     get_settings.cache_clear()
     get_engine.cache_clear()

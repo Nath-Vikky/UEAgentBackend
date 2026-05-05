@@ -77,6 +77,7 @@ CHAT_MODEL=gpt-4.1-mini
 ```env
 KB_SOURCE_PATHS=./knowledge
 KB_DIR=./storage/kb
+EMBEDDING_ENABLED=false
 RAG_MODE=hybrid
 RAG_FALLBACK_MODE=lexical_only
 ```
@@ -221,6 +222,12 @@ GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
 .\.venv\Scripts\python.exe -m pytest tests\unit tests\integration tests\contract tests\eval
 ```
 
+如果本机有 `make`，可以使用统一 review 入口：
+
+```powershell
+make review
+```
+
 RAG smoke eval：
 
 ```powershell
@@ -246,6 +253,7 @@ Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG。要�
 
 - [docs/backend-user-guide.md](./docs/backend-user-guide.md)：完整使用手册。
 - [docs/benchmark-report.md](./docs/benchmark-report.md)：当前量化评估结果。
+- [docs/project-review-checklist.md](./docs/project-review-checklist.md)：项目收口、验证和交付检查清单。
 
 开发日志、改进计划、前端交接、学习笔记等过程文档默认保留在本地，并已加入 `.gitignore`，避免公开仓库首页被过程资料稀释。
 
