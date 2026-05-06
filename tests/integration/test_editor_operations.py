@@ -50,6 +50,13 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "add_blueprint_component",
         "create_blueprint_event_stub",
     }.issubset(operation_types)
+    operation_items = {
+        item["operation_type"]: item
+        for item in body["capabilities"]["items"]
+    }
+    assert operation_items["add_blueprint_variable"]["frontend_status"] == "implemented_v1"
+    assert operation_items["add_blueprint_component"]["frontend_status"] == "implemented_v1"
+    assert operation_items["create_blueprint_event_stub"]["frontend_status"] == "implemented_v1"
     assert body["capabilities"]["safety_policy"]["requires_frontend_confirmation"] is True
 
     capabilities = client.get("/api/v1/system/capabilities").json()
@@ -186,6 +193,23 @@ def test_blueprint_graph_variable_proposal_contract(client: TestClient) -> None:
     assert payload["variable_type"] == "float"
     assert payload["save_policy"] == "mark_dirty_only"
     assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_blueprint_graph_variable_type_aliases_match_ue_frontend(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_variable",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "variable_name": "DisplayName",
+                "variable_type": "string",
+            },
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()["operation"]["operation_payload"]
+    assert payload["variable_type"] == "FString"
 
 
 def test_blueprint_graph_event_stub_is_whitelisted(client: TestClient) -> None:

@@ -39,6 +39,9 @@ STATIC_MESH_COLLISION_VALUES = {
 
 BLUEPRINT_VARIABLE_TYPES = {
     "bool",
+    "byte",
+    "uint8",
+    "int64",
     "int32",
     "float",
     "double",
@@ -50,6 +53,33 @@ BLUEPRINT_VARIABLE_TYPES = {
     "FTransform",
     "UObject",
     "AActor",
+}
+
+BLUEPRINT_VARIABLE_TYPE_ALIASES = {
+    "bool": "bool",
+    "byte": "byte",
+    "uint8": "uint8",
+    "int": "int32",
+    "int32": "int32",
+    "int64": "int64",
+    "float": "float",
+    "double": "double",
+    "name": "FName",
+    "fname": "FName",
+    "string": "FString",
+    "fstring": "FString",
+    "text": "FText",
+    "ftext": "FText",
+    "vector": "FVector",
+    "fvector": "FVector",
+    "rotator": "FRotator",
+    "frotator": "FRotator",
+    "transform": "FTransform",
+    "ftransform": "FTransform",
+    "object": "UObject",
+    "uobject": "UObject",
+    "actor": "AActor",
+    "aactor": "AActor",
 }
 
 BLUEPRINT_EVENT_NAMES = {
@@ -90,7 +120,7 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "MEDIUM",
         "summary": "Add one variable to one Blueprint after user confirmation.",
         "required_fields": ["blueprint_path", "variable_name", "variable_type"],
-        "frontend_status": "requires_frontend_support",
+        "frontend_status": "implemented_v1",
     },
     "add_blueprint_component": {
         "tool_id": "editor_add_blueprint_component",
@@ -98,7 +128,7 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "MEDIUM",
         "summary": "Add one component to one Blueprint after user confirmation.",
         "required_fields": ["blueprint_path", "component_name", "component_class"],
-        "frontend_status": "requires_frontend_support",
+        "frontend_status": "implemented_v1",
     },
     "create_blueprint_event_stub": {
         "tool_id": "editor_create_blueprint_event_stub",
@@ -106,7 +136,7 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "MEDIUM",
         "summary": "Create a small event stub in one Blueprint graph after user confirmation.",
         "required_fields": ["blueprint_path", "event_name"],
-        "frontend_status": "requires_frontend_support",
+        "frontend_status": "implemented_v1",
     },
 }
 
@@ -266,6 +296,9 @@ class EditorOperationService:
     @staticmethod
     def _normalize_blueprint_variable_type(value: Any) -> str:
         text = str(value or "").strip()
+        alias = BLUEPRINT_VARIABLE_TYPE_ALIASES.get(text.lower())
+        if alias:
+            return alias
         if text in BLUEPRINT_VARIABLE_TYPES:
             return text
         if not text or len(text) > 120 or not _CLASS_NAME_RE.match(text):
@@ -276,6 +309,7 @@ class EditorOperationService:
                 {
                     "variable_type": text,
                     "allowed_builtin_types": sorted(BLUEPRINT_VARIABLE_TYPES),
+                    "allowed_aliases": sorted(BLUEPRINT_VARIABLE_TYPE_ALIASES),
                     "allowed_custom_prefixes": ["/Script/", "/Game/"],
                 },
             )

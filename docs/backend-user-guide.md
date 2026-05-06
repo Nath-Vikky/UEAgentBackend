@@ -2444,7 +2444,7 @@ Agent Chat / Project QA 会把最近项目快照注入：
 
 ## 26. Blueprint Graph Automation v1 Proposal 契约
 
-后端已经把蓝图图表自动化纳入 `Editor Operation Bridge`，但第一版仍然只生成 proposal，不直接执行 UE Editor API。
+后端已经把蓝图图表自动化纳入 `Editor Operation Bridge`，但第一版仍然只生成 proposal，不直接执行 UE Editor API。UE 前端回传确认：以下三个 operation 已在 UE 侧接入真实执行路径，`GET /api/v1/editor-operations/capabilities` 中的 `frontend_status` 已标记为 `implemented_v1`。
 
 新增 operation：
 
@@ -2468,6 +2468,8 @@ create_blueprint_event_stub
   }
 }
 ```
+
+`variable_type` 支持 UE 前端常用短别名和后端规范名：`bool`、`byte`、`int`/`int32`、`int64`、`float`、`double`、`name`/`FName`、`string`/`FString`、`text`/`FText`、`vector`/`FVector`、`rotator`/`FRotator`、`transform`/`FTransform`、`object`/`UObject`、`actor`/`AActor`。自定义类型可传 `/Script/` 或 `/Game/` 开头的路径；后端不强制为 `/Game/` Blueprint 变量生成 `_C`，由 UE 前端按 Blueprint asset path 或 generated class path 自行解析。
 
 添加组件示例：
 
@@ -2502,5 +2504,5 @@ create_blueprint_event_stub
 - 仍然必须走 `confirm -> UE 前端执行 -> results 回传`。
 - v1 不做复杂节点连线、不生成大段蓝图逻辑、不自动放入关卡、不自动保存包。
 - `create_blueprint_event_stub` 仅允许 `BeginPlay / Tick / ActorBeginOverlap / ActorEndOverlap`。
-- 变量类型只允许常见内置类型，或 `/Script/`、`/Game/` 开头的项目/引擎类型。
-- UE 前端需要后续实现真实执行、Undo/Transaction、字段失败明细和 dirty package 回传。
+- 变量类型只允许常见内置类型、短别名，或 `/Script/`、`/Game/` 开头的项目/引擎类型。
+- `/api/v1/editor-operations/results` 的 `result` 是开放对象，后端接受 `applied_fields`、`failed_fields`、`dirty_packages`、`graph_name`、`created_nodes`、`save_policy` 等 UE 侧回传字段；`dirty_packages` 建议传字符串数组，当前不强制固定为某一种 package path 格式。
