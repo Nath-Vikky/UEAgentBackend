@@ -37,6 +37,28 @@ STATIC_MESH_COLLISION_VALUES = {
     "use_complex_as_simple",
 }
 
+BLUEPRINT_VARIABLE_TYPES = {
+    "bool",
+    "int32",
+    "float",
+    "double",
+    "FString",
+    "FName",
+    "FText",
+    "FVector",
+    "FRotator",
+    "FTransform",
+    "UObject",
+    "AActor",
+}
+
+BLUEPRINT_EVENT_NAMES = {
+    "BeginPlay",
+    "Tick",
+    "ActorBeginOverlap",
+    "ActorEndOverlap",
+}
+
 OPERATION_SPECS: dict[str, dict[str, Any]] = {
     "rename_selected_asset": {
         "tool_id": "editor_rename_asset",
@@ -44,6 +66,7 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "MEDIUM",
         "summary": "Rename one selected Unreal asset without moving it.",
         "required_fields": ["asset_path", "new_name"],
+        "frontend_status": "implemented_v1",
     },
     "apply_static_mesh_basic_settings": {
         "tool_id": "editor_apply_static_mesh_settings",
@@ -51,6 +74,7 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "MEDIUM",
         "summary": "Apply a small whitelist of Static Mesh settings to one selected asset.",
         "required_fields": ["asset_path", "settings"],
+        "frontend_status": "implemented_v1",
     },
     "create_blueprint_asset": {
         "tool_id": "editor_create_blueprint_asset",
@@ -58,6 +82,31 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "MEDIUM",
         "summary": "Create one Blueprint asset under /Game after user confirmation.",
         "required_fields": ["parent_class", "target_folder", "asset_name"],
+        "frontend_status": "implemented_v1",
+    },
+    "add_blueprint_variable": {
+        "tool_id": "editor_add_blueprint_variable",
+        "title": "Add Blueprint Variable",
+        "risk_flags": "MEDIUM",
+        "summary": "Add one variable to one Blueprint after user confirmation.",
+        "required_fields": ["blueprint_path", "variable_name", "variable_type"],
+        "frontend_status": "requires_frontend_support",
+    },
+    "add_blueprint_component": {
+        "tool_id": "editor_add_blueprint_component",
+        "title": "Add Blueprint Component",
+        "risk_flags": "MEDIUM",
+        "summary": "Add one component to one Blueprint after user confirmation.",
+        "required_fields": ["blueprint_path", "component_name", "component_class"],
+        "frontend_status": "requires_frontend_support",
+    },
+    "create_blueprint_event_stub": {
+        "tool_id": "editor_create_blueprint_event_stub",
+        "title": "Create Blueprint Event Stub",
+        "risk_flags": "MEDIUM",
+        "summary": "Create a small event stub in one Blueprint graph after user confirmation.",
+        "required_fields": ["blueprint_path", "event_name"],
+        "frontend_status": "requires_frontend_support",
     },
 }
 
@@ -93,6 +142,7 @@ class EditorOperationService:
                     "title": spec["title"],
                     "summary": spec["summary"],
                     "required_fields": spec["required_fields"],
+                    "frontend_status": spec["frontend_status"],
                 }
                 for operation_type, spec in OPERATION_SPECS.items()
             ],
@@ -213,6 +263,38 @@ class EditorOperationService:
                 normalized[key] = text
         return normalized
 
+    @staticmethod
+    def _normalize_blueprint_variable_type(value: Any) -> str:
+        text = str(value or "").strip()
+        if text in BLUEPRINT_VARIABLE_TYPES:
+            return text
+        if not text or len(text) > 120 or not _CLASS_NAME_RE.match(text):
+            raise EditorOperationValidationError("variable_type_invalid", {"variable_type": text})
+        if not (text.startswith("/Script/") or text.startswith("/Game/")):
+            raise EditorOperationValidationError(
+                "variable_type_not_whitelisted",
+                {
+                    "variable_type": text,
+                    "allowed_builtin_types": sorted(BLUEPRINT_VARIABLE_TYPES),
+                    "allowed_custom_prefixes": ["/Script/", "/Game/"],
+                },
+            )
+        return text
+
+    @staticmethod
+    def _normalize_optional_string(value: Any, *, max_length: int = 120) -> str:
+        text = str(value or "").strip()
+        if len(text) > max_length:
+            raise EditorOperationValidationError("text_field_too_long", {"max_length": max_length})
+        return text
+
+    @staticmethod
+    def _normalize_graph_name(value: Any) -> str:
+        text = str(value or "EventGraph").strip() or "EventGraph"
+        if not _ASSET_NAME_RE.match(text):
+            raise EditorOperationValidationError("graph_name_invalid", {"graph_name": text})
+        return text
+
     def _normalize_payload(self, operation_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         if operation_type == "rename_selected_asset":
             asset_path = self._normalize_asset_path(payload.get("asset_path"))
@@ -252,6 +334,53 @@ class EditorOperationService:
                 "blueprint_type": "Blueprint",
             }
 
+        if operation_type == "add_blueprint_variable":
+            blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
+            variable_name = self._normalize_asset_name(payload.get("variable_name"), "variable_name")
+            variable_type = self._normalize_blueprint_variable_type(payload.get("variable_type"))
+            category = self._normalize_optional_string(payload.get("category") or "Agent", max_length=80)
+            return {
+                "blueprint_path": blueprint_path,
+                "variable_name": variable_name,
+                "variable_type": variable_type,
+                "category": category,
+                "default_value": self._clean_text(payload.get("default_value"), max_length=120),
+                "editable": bool(payload.get("editable", True)),
+                "expose_on_spawn": bool(payload.get("expose_on_spawn", False)),
+                "save_policy": "mark_dirty_only",
+            }
+
+        if operation_type == "add_blueprint_component":
+            blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
+            component_name = self._normalize_asset_name(payload.get("component_name"), "component_name")
+            component_class = self._normalize_class_path(payload.get("component_class"))
+            attach_to = self._normalize_optional_string(payload.get("attach_to") or "", max_length=80)
+            return {
+                "blueprint_path": blueprint_path,
+                "component_name": component_name,
+                "component_class": component_class,
+                "attach_to": attach_to or None,
+                "transform": payload.get("transform") if isinstance(payload.get("transform"), dict) else {},
+                "save_policy": "mark_dirty_only",
+            }
+
+        if operation_type == "create_blueprint_event_stub":
+            blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
+            event_name = str(payload.get("event_name") or "").strip()
+            if event_name not in BLUEPRINT_EVENT_NAMES:
+                raise EditorOperationValidationError(
+                    "event_name_not_supported_in_v1",
+                    {"event_name": event_name, "allowed_events": sorted(BLUEPRINT_EVENT_NAMES)},
+                )
+            graph_name = self._normalize_graph_name(payload.get("graph_name"))
+            return {
+                "blueprint_path": blueprint_path,
+                "event_name": event_name,
+                "graph_name": graph_name,
+                "node_comment": self._clean_text(payload.get("node_comment"), max_length=160),
+                "save_policy": "mark_dirty_only",
+            }
+
         raise EditorOperationValidationError("unsupported_editor_operation", {"operation_type": operation_type})
 
     def _build_summaries(self, operation_type: str, payload: dict[str, Any]) -> tuple[str, str]:
@@ -270,6 +399,21 @@ class EditorOperationService:
             return (
                 f"No Blueprint will be created before confirmation. Parent class: {payload['parent_class']}",
                 f"Create Blueprint `{payload['asset_name']}` at {payload['target_path']}.",
+            )
+        if operation_type == "add_blueprint_variable":
+            return (
+                f"Blueprint before change: {payload['blueprint_path']}",
+                f"Add variable `{payload['variable_name']}` of type `{payload['variable_type']}`.",
+            )
+        if operation_type == "add_blueprint_component":
+            return (
+                f"Blueprint before change: {payload['blueprint_path']}",
+                f"Add component `{payload['component_name']}` of class `{payload['component_class']}`.",
+            )
+        if operation_type == "create_blueprint_event_stub":
+            return (
+                f"Blueprint graph before change: {payload['blueprint_path']}::{payload['graph_name']}",
+                f"Create event stub `{payload['event_name']}`. No complex node graph is generated in v1.",
             )
         return ("", "")
 
@@ -301,12 +445,15 @@ class EditorOperationService:
                 "execute_after_confirmation": True,
                 "result_endpoint": "POST /api/v1/editor-operations/results",
                 "llm_direct_execution": False,
+                "undo_required": True,
+                "auto_save": False,
             },
         }
         display_hints = {
             "ui": "editor_operation_confirmation",
             "operation_type": operation_type,
             "tool_id": spec["tool_id"],
+            "frontend_status": spec["frontend_status"],
             "requires_ue_plugin_execution": True,
             "confirm_endpoint": f"/api/v1/editor-operations/proposals/{resolved_proposal_id}/confirm",
             "reject_endpoint": f"/api/v1/editor-operations/proposals/{resolved_proposal_id}/reject",

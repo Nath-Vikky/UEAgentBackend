@@ -82,6 +82,9 @@ class EditorOperationProposalRequest(BaseModel):
         "rename_selected_asset",
         "apply_static_mesh_basic_settings",
         "create_blueprint_asset",
+        "add_blueprint_variable",
+        "add_blueprint_component",
+        "create_blueprint_event_stub",
     ]
     payload: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None
@@ -139,4 +142,5 @@ class ProjectInventoryQueryRequest(BaseModel):
     query: str
     project_id: str | None = None
     asset_type: str | None = None
+    selected_assets: list[str] = Field(default_factory=list)
     limit: int = Field(default=20, ge=1, le=200)

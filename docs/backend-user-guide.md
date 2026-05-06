@@ -2392,3 +2392,115 @@ POST /api/v1/editor-operations/results
 - 重命名资产：`final_asset_path`、`old_asset_path`、`redirector_hint`。
 - Static Mesh 设置：`applied_fields`、`failed_fields`、`field_results`。
 - Blueprint 创建：`asset_path`、`parent_class`、`opened_editor=false`。
+
+## 25. Active Context / Project Inventory v2
+
+本轮后端把 Project Inventory 从“资产/代码清单”深化为 Agent 可使用的项目上下文底座。UE 前端仍然通过：
+
+```http
+POST /api/v1/project-inventory/snapshot
+```
+
+提交快照。后端现在会尽量保留并归一化这些字段：
+
+- 资产基础：`asset_path`、`asset_name`、`asset_type`、`package_path`、`dependencies`、`referencers`。
+- Static Mesh：`settings.nanite_enabled`、`lod_count`、`collision_complexity`、`lightmap_resolution`。
+- Blueprint：`blueprint.parent_class`、`components`、`variables`、`functions`、`graphs`、`interfaces`、`editor_flags`。
+- 代码文件：`file_path`、`module_name`、`file_type`、`classes`、`symbols`、`modified_at`。
+
+提交后，`GET /api/v1/project-inventory/summary` 会额外返回：
+
+- `blueprint_count`
+- `static_mesh_count`
+- `map_count`
+- `blueprint_parent_class_counts`
+
+Agent Chat / Project QA 会把最近项目快照注入：
+
+- `debug_view.context_bundle.project_inventory_context`
+- `debug_view.active_context.inventory`
+- `debug_view.active_context.asset.selected_asset_details`
+- `debug_view.active_context.code.current_file_inventory`
+
+因此用户问“当前项目有哪些蓝图资产”“这个蓝图有哪些组件/变量”“当前文件属于哪个模块”时，后端可以优先用项目快照回答；如果问题包含“为什么、怎么做、建议、风险”，再组合知识库和 LLM 综合。
+
+`POST /api/v1/project-inventory/query` 也支持可选 `selected_assets`：
+
+```json
+{
+  "project_id": "RushBa",
+  "query": "What components does this asset have?",
+  "selected_assets": ["/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter"]
+}
+```
+
+当问题包含 `this asset / selected asset / components / variables / functions / graphs` 这类上下文词时，后端会优先返回选中资产，而不是列出全项目资产。
+
+边界：
+
+- 后端不解析 `.uasset`，只消费 UE 前端提交的结构化摘要。
+- 快照是本地 JSON 存储，不做企业级索引服务。
+- Active Context 只保留摘要，不把大段源码或完整资产元数据塞进 prompt。
+
+## 26. Blueprint Graph Automation v1 Proposal 契约
+
+后端已经把蓝图图表自动化纳入 `Editor Operation Bridge`，但第一版仍然只生成 proposal，不直接执行 UE Editor API。
+
+新增 operation：
+
+```text
+add_blueprint_variable
+add_blueprint_component
+create_blueprint_event_stub
+```
+
+添加变量示例：
+
+```json
+{
+  "operation_type": "add_blueprint_variable",
+  "payload": {
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "variable_name": "Health",
+    "variable_type": "float",
+    "category": "Combat",
+    "default_value": "100.0"
+  }
+}
+```
+
+添加组件示例：
+
+```json
+{
+  "operation_type": "add_blueprint_component",
+  "payload": {
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "component_name": "SpringArm",
+    "component_class": "/Script/Engine.SpringArmComponent",
+    "attach_to": "RootComponent"
+  }
+}
+```
+
+创建基础事件 stub 示例：
+
+```json
+{
+  "operation_type": "create_blueprint_event_stub",
+  "payload": {
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "event_name": "BeginPlay",
+    "graph_name": "EventGraph",
+    "node_comment": "Created by UE Agent proposal."
+  }
+}
+```
+
+安全边界：
+
+- 仍然必须走 `confirm -> UE 前端执行 -> results 回传`。
+- v1 不做复杂节点连线、不生成大段蓝图逻辑、不自动放入关卡、不自动保存包。
+- `create_blueprint_event_stub` 仅允许 `BeginPlay / Tick / ActorBeginOverlap / ActorEndOverlap`。
+- 变量类型只允许常见内置类型，或 `/Script/`、`/Game/` 开头的项目/引擎类型。
+- UE 前端需要后续实现真实执行、Undo/Transaction、字段失败明细和 dirty package 回传。

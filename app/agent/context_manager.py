@@ -244,6 +244,17 @@ def context_bundle_prompt_excerpt(context_bundle: dict[str, Any]) -> str:
             f"code={active_context.get('code')}, "
             f"log={active_context.get('log')}"
         )
+    inventory_context = context_bundle.get("project_inventory_context") or {}
+    if inventory_context.get("has_snapshot"):
+        summary = inventory_context.get("summary") or {}
+        lines.append(
+            "- Project inventory: "
+            f"snapshot={inventory_context.get('snapshot_id')}, "
+            f"assets={summary.get('asset_count', 0)}, "
+            f"code_files={summary.get('code_file_count', 0)}, "
+            f"selected_assets={inventory_context.get('selected_assets') or []}, "
+            f"current_file={inventory_context.get('current_file')}"
+        )
     session_summary = context_bundle.get("session_summary") or {}
     if session_summary.get("status") == "available":
         lines.append(f"- Session summary: {session_summary.get('summary_text')}")

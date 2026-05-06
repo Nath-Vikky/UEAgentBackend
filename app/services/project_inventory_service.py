@@ -39,6 +39,21 @@ def _contains_text(value: Any, needle: str) -> bool:
     return needle in str(value).lower()
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
 class ProjectInventoryService:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -60,6 +75,10 @@ class ProjectInventoryService:
             "code_file_count": len(code_files),
             "asset_type_counts": self._count_by(assets, "asset_type"),
             "code_file_type_counts": self._count_by(code_files, "file_type"),
+            "blueprint_count": sum(1 for item in assets if self._is_blueprint_asset(item)),
+            "static_mesh_count": sum(1 for item in assets if str(item.get("asset_type") or "") == "StaticMesh"),
+            "map_count": sum(1 for item in assets if str(item.get("asset_type") or "") in {"World", "Map"}),
+            "blueprint_parent_class_counts": self._count_blueprint_parent_classes(assets),
         }
         snapshot = {
             "status": "saved",
@@ -110,6 +129,10 @@ class ProjectInventoryService:
             "code_file_count": len(snapshot["code_files"]),
             "asset_type_counts": asset_type_counts,
             "code_file_type_counts": code_file_type_counts,
+            "blueprint_count": sum(1 for item in snapshot["assets"] if self._is_blueprint_asset(item)),
+            "static_mesh_count": sum(1 for item in snapshot["assets"] if str(item.get("asset_type") or "") == "StaticMesh"),
+            "map_count": sum(1 for item in snapshot["assets"] if str(item.get("asset_type") or "") in {"World", "Map"}),
+            "blueprint_parent_class_counts": self._count_blueprint_parent_classes(snapshot["assets"]),
             "source": snapshot.get("source"),
             "plugin_version": snapshot.get("plugin_version"),
             "scan_diagnostics": snapshot.get("scan_diagnostics", {}),
@@ -172,6 +195,7 @@ class ProjectInventoryService:
         query: str,
         project_id: str | None = None,
         asset_type: str | None = None,
+        selected_assets: list[str] | None = None,
         limit: int = 20,
     ) -> dict[str, Any]:
         needle = query.lower().strip()
@@ -180,6 +204,13 @@ class ProjectInventoryService:
         is_asset_query = inferred_type is not None or self._mentions_asset_domain(needle)
         assets: list[dict[str, Any]] = []
         if not is_code_query or is_asset_query:
+            if selected_assets and self._looks_like_selected_asset_query(needle):
+                selected_matches = [
+                    item
+                    for asset in selected_assets
+                    if (item := self.get_asset(asset, project_id)) is not None
+                ]
+                assets = selected_matches[:limit]
             if not assets and "nanite" in needle:
                 assets = [
                     item
@@ -242,7 +273,56 @@ class ProjectInventoryService:
                 "asset_match_count": len(assets),
                 "code_file_match_count": len(code_files),
                 "empty_reason": empty_reason,
+                "selected_asset_context_used": bool(
+                    selected_assets and self._looks_like_selected_asset_query(needle) and assets
+                ),
             },
+        }
+
+    def context_snapshot(
+        self,
+        *,
+        project_id: str | None = None,
+        selected_assets: list[str] | None = None,
+        current_file: str | None = None,
+        limit: int = 6,
+    ) -> dict[str, Any]:
+        snapshot = self._resolve_snapshot(project_id)
+        if not snapshot:
+            return {
+                "status": "missing_snapshot",
+                "has_snapshot": False,
+                "summary": self.summary(project_id),
+                "selected_assets": [],
+                "current_file": None,
+                "top_assets": [],
+                "top_code_files": [],
+            }
+
+        selected_items = []
+        for asset in selected_assets or []:
+            item = self.get_asset(asset, project_id)
+            if item:
+                selected_items.append(self._compact_asset(item))
+        current_file_item = None
+        if current_file:
+            for item in self.list_code_files(project_id=project_id, limit=10000):
+                if self._code_file_referenced_by_query(item, current_file.lower()):
+                    current_file_item = self._compact_code_file(item)
+                    break
+
+        return {
+            "status": "available",
+            "has_snapshot": True,
+            "snapshot_id": snapshot.get("snapshot_id"),
+            "project_id": snapshot.get("project_id"),
+            "project_name": snapshot.get("project_name"),
+            "created_at": snapshot.get("created_at"),
+            "summary": self.summary(project_id),
+            "selected_assets": selected_items[:limit],
+            "current_file": current_file_item,
+            "top_assets": [self._compact_asset(item) for item in snapshot["assets"][:limit]],
+            "top_code_files": [self._compact_code_file(item) for item in snapshot["code_files"][:limit]],
         }
 
     def _normalize_assets(self, assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -255,6 +335,69 @@ class ProjectInventoryService:
                 continue
             asset_name = str(raw.get("asset_name") or raw.get("name") or _asset_name(asset_path)).strip()
             asset_type = str(raw.get("asset_type") or raw.get("type") or "Unknown").strip() or "Unknown"
+            properties = _as_dict(raw.get("properties"))
+            settings = _as_dict(raw.get("settings"))
+            metadata = _as_dict(raw.get("metadata"))
+            blueprint = _as_dict(
+                _first_present(
+                    raw.get("blueprint"),
+                    raw.get("blueprint_summary"),
+                    properties.get("blueprint"),
+                    metadata.get("blueprint"),
+                )
+            )
+            components = _as_list(
+                _first_present(
+                    raw.get("components"),
+                    blueprint.get("components"),
+                    properties.get("components"),
+                    settings.get("components"),
+                )
+            )
+            variables = _as_list(
+                _first_present(raw.get("variables"), blueprint.get("variables"), properties.get("variables"))
+            )
+            functions = _as_list(
+                _first_present(raw.get("functions"), blueprint.get("functions"), properties.get("functions"))
+            )
+            graphs = _as_list(_first_present(raw.get("graphs"), blueprint.get("graphs"), properties.get("graphs")))
+            interfaces = _as_list(
+                _first_present(raw.get("interfaces"), blueprint.get("interfaces"), properties.get("interfaces"))
+            )
+            editor_flags = _as_dict(
+                _first_present(raw.get("editor_flags"), blueprint.get("editor_flags"), metadata.get("editor_flags"))
+            )
+            parent_class = str(
+                _first_present(
+                    raw.get("parent_class"),
+                    blueprint.get("parent_class"),
+                    settings.get("parent_class"),
+                    properties.get("parent_class"),
+                )
+                or ""
+            ).strip()
+            native_class = str(
+                _first_present(
+                    raw.get("native_class"),
+                    raw.get("class_path"),
+                    blueprint.get("native_class"),
+                    blueprint.get("generated_class"),
+                    properties.get("native_class"),
+                )
+                or ""
+            ).strip()
+            if blueprint or components or variables or functions or graphs or parent_class or native_class:
+                blueprint = {
+                    **blueprint,
+                    "parent_class": parent_class or blueprint.get("parent_class"),
+                    "native_class": native_class or blueprint.get("native_class"),
+                    "components": components,
+                    "variables": variables,
+                    "functions": functions,
+                    "graphs": graphs,
+                    "interfaces": interfaces,
+                    "editor_flags": editor_flags,
+                }
             normalized.append(
                 {
                     "asset_id": str(raw.get("asset_id") or _stable_id("asset", asset_path)).strip(),
@@ -265,9 +408,18 @@ class ProjectInventoryService:
                     "dependencies": list(raw.get("dependencies") or []),
                     "referencers": list(raw.get("referencers") or []),
                     "tags": dict(raw.get("tags") or {}),
-                    "properties": dict(raw.get("properties") or {}),
-                    "settings": dict(raw.get("settings") or {}),
-                    "metadata": dict(raw.get("metadata") or {}),
+                    "properties": properties,
+                    "settings": settings,
+                    "metadata": metadata,
+                    "blueprint": blueprint,
+                    "components": components,
+                    "variables": variables,
+                    "functions": functions,
+                    "graphs": graphs,
+                    "interfaces": interfaces,
+                    "editor_flags": editor_flags,
+                    "parent_class": parent_class,
+                    "native_class": native_class,
                 }
             )
         return normalized
@@ -352,8 +504,88 @@ class ProjectInventoryService:
     def _asset_matches(self, item: dict[str, Any], needle: str) -> bool:
         return any(
             _contains_text(item.get(key), needle)
-            for key in ("asset_path", "asset_name", "asset_type", "package_path", "tags", "properties", "settings")
+            for key in (
+                "asset_path",
+                "asset_name",
+                "asset_type",
+                "package_path",
+                "tags",
+                "properties",
+                "settings",
+                "blueprint",
+                "components",
+                "variables",
+                "functions",
+                "graphs",
+                "interfaces",
+                "parent_class",
+                "native_class",
+            )
         )
+
+    def _is_blueprint_asset(self, item: dict[str, Any]) -> bool:
+        asset_type = str(item.get("asset_type") or "").lower()
+        return asset_type in {"blueprint", "widgetblueprint", "animblueprint"} or bool(item.get("blueprint"))
+
+    def _count_blueprint_parent_classes(self, assets: list[dict[str, Any]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for item in assets:
+            if not self._is_blueprint_asset(item):
+                continue
+            parent_class = str(
+                item.get("parent_class")
+                or (_as_dict(item.get("blueprint")).get("parent_class"))
+                or (_as_dict(item.get("settings")).get("parent_class"))
+                or "Unknown"
+            )
+            counts[parent_class] = counts.get(parent_class, 0) + 1
+        return counts
+
+    def _compact_asset(self, item: dict[str, Any]) -> dict[str, Any]:
+        settings = _as_dict(item.get("settings"))
+        blueprint = _as_dict(item.get("blueprint"))
+        return {
+            "asset_id": item.get("asset_id"),
+            "asset_name": item.get("asset_name"),
+            "asset_type": item.get("asset_type"),
+            "asset_path": item.get("asset_path"),
+            "package_path": item.get("package_path"),
+            "parent_class": item.get("parent_class") or blueprint.get("parent_class") or settings.get("parent_class"),
+            "components": list(item.get("components") or blueprint.get("components") or [])[:12],
+            "variables": list(item.get("variables") or blueprint.get("variables") or [])[:12],
+            "functions": list(item.get("functions") or blueprint.get("functions") or [])[:12],
+            "graphs": list(item.get("graphs") or blueprint.get("graphs") or [])[:8],
+            "settings": {
+                key: value
+                for key, value in settings.items()
+                if key
+                in {
+                    "nanite_enabled",
+                    "lod_count",
+                    "collision_complexity",
+                    "parent_class",
+                    "tick_enabled",
+                    "blend_mode",
+                    "srgb",
+                    "lightmap_resolution",
+                }
+            },
+            "dependency_count": len(item.get("dependencies") or []),
+            "referencer_count": len(item.get("referencers") or []),
+        }
+
+    @staticmethod
+    def _compact_code_file(item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "file_id": item.get("file_id"),
+            "file_path": item.get("file_path"),
+            "module_name": item.get("module_name"),
+            "file_type": item.get("file_type"),
+            "language": item.get("language"),
+            "classes": list(item.get("classes") or [])[:12],
+            "size_bytes": item.get("size_bytes"),
+            "modified_at": item.get("modified_at") or item.get("last_modified"),
+        }
 
     def _asset_referenced_by_query(self, item: dict[str, Any], query: str) -> bool:
         candidates = [
@@ -441,6 +673,22 @@ class ProjectInventoryService:
                 "settings",
                 "属性",
                 "设置",
+            )
+        )
+
+    def _looks_like_selected_asset_query(self, query: str) -> bool:
+        return any(
+            token in query
+            for token in (
+                "this asset",
+                "that asset",
+                "selected asset",
+                "current asset",
+                "asset details",
+                "components",
+                "variables",
+                "functions",
+                "graphs",
             )
         )
 

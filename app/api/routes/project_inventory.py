@@ -80,6 +80,7 @@ def query_inventory(
         query=request.query,
         project_id=request.project_id,
         asset_type=request.asset_type,
+        selected_assets=request.selected_assets,
         limit=request.limit,
     )
     return ProjectInventoryQueryResponse(

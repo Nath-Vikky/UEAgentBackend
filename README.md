@@ -208,6 +208,18 @@ GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
 - `GET /api/v1/project-inventory/code-files`
 - `POST /api/v1/project-inventory/query`
 
+`Project Inventory v2` 会保留 UE 插件提交的蓝图父类、组件、变量、函数、图表、Static Mesh 设置、代码文件类名等摘要。Agent Chat 会把最近快照和当前选中资产注入 Active Context，用于回答“当前项目有哪些蓝图资产”“这个蓝图有哪些组件/变量”“当前文件属于哪个模块”等项目事实问题。
+
+编辑器操作：
+
+- `GET /api/v1/editor-operations/capabilities`
+- `POST /api/v1/editor-operations/proposals`
+- `POST /api/v1/editor-operations/proposals/{proposal_id}/confirm`
+- `POST /api/v1/editor-operations/proposals/{proposal_id}/reject`
+- `POST /api/v1/editor-operations/results`
+
+当前后端支持资产改名、Static Mesh 基础设置、Blueprint 创建，以及 Blueprint Graph Automation v1 的三个 proposal 契约：添加变量、添加组件、创建基础事件 stub。所有写入都必须由 UE 前端确认并执行。
+
 会话：
 
 - `POST /api/v1/sessions`

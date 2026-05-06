@@ -197,6 +197,13 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
                     "package_path": "/Game/Blueprints",
                     "settings": {"parent_class": "ACharacter", "tick_enabled": True},
                     "properties": {"components": ["Capsule", "SkeletalMesh", "Camera"]},
+                    "blueprint": {
+                        "parent_class": "ACharacter",
+                        "components": ["CapsuleComponent", "Mesh", "CameraBoom", "FollowCamera"],
+                        "variables": ["Health", "MoveSpeed"],
+                        "functions": ["SetupPlayerInputComponent", "ApplyDamage"],
+                        "graphs": ["EventGraph"],
+                    },
                 },
             ],
             "code_files": [
@@ -246,6 +253,8 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert snapshot.json()["snapshot"]["asset_count"] == 2
     assert snapshot.json()["snapshot"]["summary"]["asset_count"] == 2
     assert snapshot.json()["snapshot"]["summary"]["code_file_count"] == 1
+    assert snapshot.json()["snapshot"]["summary"]["blueprint_count"] == 1
+    assert snapshot.json()["snapshot"]["summary"]["blueprint_parent_class_counts"]["ACharacter"] == 1
     assert snapshot.json()["snapshot"]["scan_diagnostics"]["asset_count_from_editor"] == 2
     assert summary.status_code == 200
     assert summary.json()["summary"]["asset_type_counts"]["StaticMesh"] == 1
@@ -261,6 +270,13 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert asset_detail.json()["item"]["asset_path"] == "/Game/Environment/SM_Rock.SM_Rock"
     assert asset_name_query.status_code == 200
     assert asset_name_query.json()["items"][0]["asset_name"] == "BP_PlayerCharacter"
+    assert asset_name_query.json()["items"][0]["blueprint"]["components"] == [
+        "CapsuleComponent",
+        "Mesh",
+        "CameraBoom",
+        "FollowCamera",
+    ]
+    assert "Health" in asset_name_query.json()["items"][0]["variables"]
     assert code_name_query.status_code == 200
     assert code_name_query.json()["items"][0]["file_path"] == "Source/RushBa/Player/RBPlayerCharacter.cpp"
 
@@ -388,6 +404,79 @@ def test_agent_chat_project_asset_listing_selects_inventory_tool(client: TestCli
     assert body["debug_view"]["tools"][1]["status"] == "completed"
     assert "BP_PlayerCharacter" in body["assistant_message"]
     assert "BP_EnemySpawner" in body["assistant_message"]
+
+
+def test_agent_chat_context_bundle_includes_inventory_selected_asset_details(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "RushBa",
+            "project_name": "RushBa",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                    "asset_name": "BP_PlayerCharacter",
+                    "asset_type": "Blueprint",
+                    "blueprint": {
+                        "parent_class": "ACharacter",
+                        "components": ["CapsuleComponent", "Mesh", "FollowCamera"],
+                        "variables": ["Health", "MoveSpeed"],
+                        "functions": ["Jump", "Move"],
+                        "graphs": ["EventGraph"],
+                    },
+                }
+            ],
+            "code_files": [
+                {
+                    "file_path": "Source/RushBa/Private/RBPlayerCharacter.cpp",
+                    "module_name": "RushBa",
+                    "file_type": "cpp",
+                    "classes": ["ARBPlayerCharacter"],
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_context_bundle_session",
+                "messages": [{"role": "user", "content": "What components does this asset have?", "language": "auto"}],
+            },
+            "context": {
+                "project_name": "RushBa",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter"],
+                "current_file": "Source/RushBa/Private/RBPlayerCharacter.cpp",
+            },
+            "payload": {"user_query": "What components does this asset have?"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+    inventory_context = body["debug_view"]["context_bundle"]["project_inventory_context"]
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    assert body["intent"]["route_type"] == "project_qa"
+    assert body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
+    assert body["data"]["inventory"]["summary"]["selected_asset_context_used"] is True
+    assert body["data"]["inventory"]["items"][0]["asset_name"] == "BP_PlayerCharacter"
+    assert inventory_context["status"] == "available"
+    assert inventory_context["selected_assets"][0]["asset_name"] == "BP_PlayerCharacter"
+    assert "FollowCamera" in inventory_context["selected_assets"][0]["components"]
+    assert body["debug_view"]["active_context"]["inventory"]["has_snapshot"] is True
+    assert body["debug_view"]["active_context"]["code"]["current_file_inventory"]["classes"] == [
+        "ARBPlayerCharacter"
+    ]
 
 
 def test_agent_chat_project_asset_listing_handles_prefix_and_missing_snapshot(client: TestClient) -> None:

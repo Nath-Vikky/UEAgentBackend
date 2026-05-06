@@ -334,10 +334,32 @@ class TaskService:
                 )
                 continue
             settings = item.get("settings") if isinstance(item.get("settings"), dict) else {}
+            blueprint = item.get("blueprint") if isinstance(item.get("blueprint"), dict) else {}
             setting_bits = []
-            for key in ("nanite_enabled", "lod_count", "parent_class", "tick_enabled", "blend_mode", "srgb"):
+            for key in (
+                "nanite_enabled",
+                "lod_count",
+                "collision_complexity",
+                "parent_class",
+                "tick_enabled",
+                "blend_mode",
+                "srgb",
+                "lightmap_resolution",
+            ):
                 if key in settings:
                     setting_bits.append(f"{key}={settings[key]}")
+            parent_class = item.get("parent_class") or blueprint.get("parent_class") or settings.get("parent_class")
+            if parent_class and not any(bit.startswith("parent_class=") for bit in setting_bits):
+                setting_bits.append(f"parent_class={parent_class}")
+            for label, value in (
+                ("components", item.get("components") or blueprint.get("components")),
+                ("variables", item.get("variables") or blueprint.get("variables")),
+                ("functions", item.get("functions") or blueprint.get("functions")),
+                ("graphs", item.get("graphs") or blueprint.get("graphs")),
+            ):
+                if isinstance(value, list) and value:
+                    preview = ", ".join(str(entry) for entry in value[:5])
+                    setting_bits.append(f"{label}={preview}")
             lines.append(
                 f"- {item.get('asset_name') or item.get('asset_path')} | "
                 f"type={item.get('asset_type') or 'Unknown'} | path={item.get('asset_path')}"
@@ -365,6 +387,17 @@ class TaskService:
             "module",
             "settings",
             "properties",
+            "component",
+            "components",
+            "variable",
+            "variables",
+            "function",
+            "functions",
+            "graph",
+            "graphs",
+            "event graph",
+            "selected asset",
+            "current asset",
             "资产",
             "蓝图",
             "静态网格体",
@@ -1024,7 +1057,28 @@ class TaskService:
         )
         active_context = dict(bundle.get("active_context") or {})
         active_context["mcp"] = build_mcp_adapter_status(self.settings)
+        inventory_context = self.inventory_service.context_snapshot(
+            project_id=self._inventory_project_id(request),
+            selected_assets=list(request.context.selected_assets or []),
+            current_file=request.context.current_file,
+        )
+        active_context["inventory"] = {
+            "status": inventory_context.get("status"),
+            "has_snapshot": inventory_context.get("has_snapshot"),
+            "snapshot_id": inventory_context.get("snapshot_id"),
+            "project_id": inventory_context.get("project_id"),
+            "asset_count": (inventory_context.get("summary") or {}).get("asset_count", 0),
+            "code_file_count": (inventory_context.get("summary") or {}).get("code_file_count", 0),
+            "selected_asset_count": len(inventory_context.get("selected_assets") or []),
+        }
+        asset_context = dict(active_context.get("asset") or {})
+        asset_context["selected_asset_details"] = inventory_context.get("selected_assets", [])
+        active_context["asset"] = asset_context
+        code_context = dict(active_context.get("code") or {})
+        code_context["current_file_inventory"] = inventory_context.get("current_file")
+        active_context["code"] = code_context
         bundle["active_context"] = active_context
+        bundle["project_inventory_context"] = inventory_context
         return bundle
 
     def create_task(
@@ -1966,6 +2020,7 @@ class TaskService:
             self.inventory_service.query(
                 query=query_text,
                 project_id=self._inventory_project_id(request),
+                selected_assets=list(request.context.selected_assets or []),
                 limit=8,
             )
             if tool_plan["use_inventory"]

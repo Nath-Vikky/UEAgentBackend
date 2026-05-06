@@ -42,11 +42,14 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     operation_types = {item["operation_type"] for item in body["capabilities"]["items"]}
-    assert operation_types == {
+    assert {
         "rename_selected_asset",
         "apply_static_mesh_basic_settings",
         "create_blueprint_asset",
-    }
+        "add_blueprint_variable",
+        "add_blueprint_component",
+        "create_blueprint_event_stub",
+    }.issubset(operation_types)
     assert body["capabilities"]["safety_policy"]["requires_frontend_confirmation"] is True
 
     capabilities = client.get("/api/v1/system/capabilities").json()
@@ -57,6 +60,9 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_rename_asset" in tool_ids
     assert "editor_apply_static_mesh_settings" in tool_ids
     assert "editor_create_blueprint_asset" in tool_ids
+    assert "editor_add_blueprint_variable" in tool_ids
+    assert "editor_add_blueprint_component" in tool_ids
+    assert "editor_create_blueprint_event_stub" in tool_ids
 
 
 def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient) -> None:
@@ -153,6 +159,51 @@ def test_editor_operation_static_mesh_settings_are_whitelisted(client: TestClien
     body = response.json()
     assert body["errors"][0]["code"] == "settings_contains_unsupported_fields"
     assert body["errors"][0]["details"]["unsupported_fields"] == ["material_override"]
+
+
+def test_blueprint_graph_variable_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_variable",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "variable_name": "Health",
+                "variable_type": "float",
+                "category": "Combat",
+                "default_value": "100.0",
+            },
+            "reason": "Expose a health value for designers.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "add_blueprint_variable"
+    payload = body["operation"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
+    assert payload["variable_name"] == "Health"
+    assert payload["variable_type"] == "float"
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_blueprint_graph_event_stub_is_whitelisted(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "create_blueprint_event_stub",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "event_name": "CustomCombatEvent",
+                "graph_name": "EventGraph",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "event_name_not_supported_in_v1"
+    assert "BeginPlay" in body["errors"][0]["details"]["allowed_events"]
 
 
 def test_assets_inspect_emits_rename_editor_operation_proposal(client: TestClient) -> None:
