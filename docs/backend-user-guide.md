@@ -2506,3 +2506,58 @@ create_blueprint_event_stub
 - `create_blueprint_event_stub` 仅允许 `BeginPlay / Tick / ActorBeginOverlap / ActorEndOverlap`。
 - 变量类型只允许常见内置类型、短别名，或 `/Script/`、`/Game/` 开头的项目/引擎类型。
 - `/api/v1/editor-operations/results` 的 `result` 是开放对象，后端接受 `applied_fields`、`failed_fields`、`dirty_packages`、`graph_name`、`created_nodes`、`save_policy` 等 UE 侧回传字段；`dirty_packages` 建议传字符串数组，当前不强制固定为某一种 package path 格式。
+## 27. Multi-Agent Code Review Chain v1
+
+后端现在在默认 Code Review 之外，新增了一条轻量 Multi-Agent 链：`review_fix_validate`。它用于面试展示和真实辅助审查，不替代默认 Code Review，也不新增主菜单。
+
+### 触发方式
+
+仍然调用原接口：
+
+```http
+POST /api/v1/tasks/code-review
+```
+
+在 `payload` 中增加任意一个触发字段：
+
+```json
+{
+  "user_query": "review and fix this code",
+  "enable_multi_agent": true,
+  "workflow_mode": "review_fix_validate"
+}
+```
+
+如果不传这些字段，Code Review 仍走原来的单阶段审查。
+
+### 链路阶段
+
+- `Review`：复用现有 `CodeReviewSkill`，读取选中文件或 inline code，执行规则扫描、KB 检索和可选 LLM 综合审查。
+- `Decision Gate`：只有 `high > 0` 或 `medium >= 3` 时进入修复草案阶段；低风险文件会跳过 Generate。
+- `Fix Draft`：复用 `CodeGenerateSkill`，根据审查问题生成非破坏式 `generated_items`。
+- `Validate`：对生成草案再做一次轻量规则校验，形成 `validate_phase`。
+
+### 返回字段
+
+关键字段：
+
+- `data.multi_agent`：链路摘要、phase 列表、decision gate。
+- `data.review_phase`：原代码审查结构化结果。
+- `data.generate_phase`：生成草案结果；跳过时为空对象。
+- `data.validate_phase`：草案校验结果。
+- `data.generated_items`：生成的虚拟代码草案。
+- `debug_view.multi_agent`：用于 Debug View 展示完整链路。
+- `user_view.blocks[block_type="phase_result"]`：前端可用通用块渲染阶段结果。
+
+### 安全边界
+
+Multi-Agent 链不会写入 UE 工程，也不会绕过 Proposal：
+
+- Generate 阶段强制 `write_mode="draft"`。
+- `data.write_policy.written_to_disk=false`。
+- `action_proposals=[]`，不创建写入提案。
+- 如果未来要让用户把修复草案写入项目，必须单独走 `write_code_files` proposal，并让用户二次确认。
+
+### 前端说明
+
+当前 UE 前端不必强制修改。若前端已有通用 `user_view.blocks` 渲染能力，可以直接显示新增的 `phase_result` 和 `generated_items`。如果想做得更清楚，可在 Code Review 高亮弹窗里新增一个“Multi-Agent Chain”折叠区，读取 `data.multi_agent` 或 `debug_view.multi_agent`。

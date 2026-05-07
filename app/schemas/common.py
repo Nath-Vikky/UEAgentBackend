@@ -125,6 +125,7 @@ class DebugView(BaseModel):
     tool_execution_policy: dict[str, Any] = Field(default_factory=dict)
     agent_decision_trace: dict[str, Any] = Field(default_factory=dict)
     react_loop: dict[str, Any] = Field(default_factory=dict)
+    multi_agent: dict[str, Any] = Field(default_factory=dict)
     self_reflection: dict[str, Any] = Field(default_factory=dict)
     session_summary: dict[str, Any] = Field(default_factory=dict)
     memory_summary: dict[str, Any] = Field(default_factory=dict)

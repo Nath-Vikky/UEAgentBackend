@@ -281,3 +281,12 @@ Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG。要�
 - 不把外部课程或私有资料全文提交到公开仓库。
 
 面试时可以这样概括：这是一个面向 UE 研发管线的本地 Agent 后端，展示了上下文、知识库、工具调用、安全确认、观测和评测的完整闭环，而不是单纯把聊天模型接进编辑器。
+## Multi-Agent Code Review Chain
+
+Code Review 保留默认单阶段审查，同时支持轻量链式 Agent：
+
+- 触发方式：`POST /api/v1/tasks/code-review` 的 `payload.enable_multi_agent=true`，或 `payload.workflow_mode="review_fix_validate"`。
+- 链路阶段：`Review -> Fix Draft -> Validate`。
+- 安全边界：Generate 阶段只返回虚拟 `generated_items` 草案，不写入 UE 工程；如果未来要落盘，仍必须走独立的 `write_code_files` proposal 和用户确认。
+- 返回字段：`data.multi_agent`、`debug_view.multi_agent`、`user_view.blocks[block_type="phase_result"]`。
+- 默认行为：不传触发字段时，原 Code Review 接口和前端展示方式不变。

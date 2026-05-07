@@ -14,6 +14,7 @@ from app.agent.context_builder import build_context_summary
 from app.agent.context_manager import build_context_bundle, context_bundle_prompt_excerpt
 from app.agent.decision_trace import build_agent_decision_trace
 from app.agent.memory_manager import update_session_memory
+from app.agent.multi_agent import ReviewFixValidateChain
 from app.agent.response_composer import compose_unified_response
 from app.agent.router import classify_request
 from app.agent.self_reflection import build_self_reflection
@@ -1559,6 +1560,17 @@ class TaskService:
                 task_id=task_id,
             )
         if actual_task_type == "code_review":
+            if self._multi_agent_requested(request=request, routing=routing):
+                return self._execute_code_review_multi_agent(
+                    request=request,
+                    routing=routing,
+                    task_id=task_id,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    output_language=output_language,
+                    chat_config=chat_config,
+                    context_bundle=context_bundle,
+                )
             return self._execute_code_review(
                 request=request,
                 routing=routing,
@@ -1635,6 +1647,31 @@ class TaskService:
             or (request.session.messages[-1].content if request.session.messages else "")
             or ""
         ).strip()
+
+    def _multi_agent_requested(self, *, request: UnifiedTaskRequest, routing: dict[str, Any]) -> bool:
+        payload = request.payload or {}
+        workflow_mode = str(payload.get("workflow_mode") or payload.get("agent_chain") or "").strip().lower()
+        if workflow_mode in {"review_fix_validate", "multi_agent_review_fix", "code_review_fix_validate"}:
+            return True
+        enable_multi_agent = payload.get("enable_multi_agent")
+        if enable_multi_agent is True or str(enable_multi_agent or "").strip().lower() in {"1", "true", "yes", "on"}:
+            return True
+        selected_tool_id = str((routing.get("route") or {}).get("selected_tool_id") or "")
+        if selected_tool_id == "multi_agent_code_review_and_fix":
+            return True
+        text = self._query_text(request).lower()
+        trigger_phrases = (
+            "review and fix",
+            "fix after review",
+            "fix review issues",
+            "auto fix",
+            "review fix validate",
+            "审查并修复",
+            "检查并修复",
+            "自动修复",
+            "修复这些问题",
+        )
+        return any(phrase in text for phrase in trigger_phrases)
 
     @staticmethod
     def _extract_asset_name_from_text(text: str, default_name: str) -> str:
@@ -2785,6 +2822,34 @@ class TaskService:
             base_debug_builder=self._base_debug,
         )
         return executor.execute(
+            request=request,
+            routing=routing,
+            task_id=task_id,
+            run_id=run_id,
+            trace_id=trace_id,
+            output_language=output_language,
+            chat_config=chat_config,
+            context_bundle=context_bundle,
+        )
+
+    def _execute_code_review_multi_agent(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        routing: dict[str, Any],
+        task_id: str,
+        run_id: str,
+        trace_id: str,
+        output_language: str,
+        chat_config: ChatRuntimeConfig,
+        context_bundle: dict[str, Any],
+    ) -> dict[str, Any]:
+        chain = ReviewFixValidateChain(
+            kb_service=self.kb_service,
+            llm_service=self.llm_service,
+            base_debug_builder=self._base_debug,
+        )
+        return chain.run(
             request=request,
             routing=routing,
             task_id=task_id,

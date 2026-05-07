@@ -444,12 +444,36 @@ class CodeGenerationService:
                     ]
                 )
             )
+        review_issue_lines: list[str] = []
+        for index, item in enumerate(list(request.payload.get("review_issues") or [])[:8], start=1):
+            if not isinstance(item, dict):
+                continue
+            review_issue_lines.append(
+                " | ".join(
+                    part
+                    for part in (
+                        f"{index}. severity={item.get('severity') or 'unknown'}",
+                        f"rule={item.get('rule_id') or item.get('title') or 'review_finding'}",
+                        f"line={item.get('line')}" if item.get("line") else "",
+                        f"suggestion={item.get('suggestion') or ''}",
+                    )
+                    if part
+                )
+            )
+        fix_draft_items = []
+        fix_draft = request.payload.get("fix_draft") if isinstance(request.payload.get("fix_draft"), dict) else {}
+        for item in list(fix_draft.get("items") or [])[:6]:
+            if isinstance(item, dict):
+                text = str(item.get("suggested_change") or item.get("text") or item.get("summary") or "").strip()
+                if text:
+                    fix_draft_items.append(f"- {text}")
         system_prompt = (
             "You generate non-destructive code drafts for a local Unreal Engine assistant backend. "
             "Return JSON only with this exact schema: "
             '{"summary":"...","generated_items":[{"label":"...","file_path":"...","language":"...","code":"..."}],"notes":["..."]}. '
             "Do not wrap the JSON in markdown fences. "
             "When project-specific reference snippets are provided, align naming, structure, and style with them. "
+            "When review findings are provided, generate a focused fix draft that addresses those findings first. "
             "For Unreal C++ requests, prefer Source/<Module>/Public/<ClassName>.h and "
             "Source/<Module>/Private/<ClassName>.cpp instead of draft.txt. "
             "For Character or Enhanced Input requests, generate ACharacter-based code with UInputMappingContext, "
@@ -465,6 +489,10 @@ class CodeGenerationService:
                 f"Requirement:\n{query or 'Generate a useful starter implementation.'}",
                 f"Target type: {request.payload.get('target_type') or 'ue_cpp_class'}",
                 f"Context summary:\n{context_summary or '(none)'}",
+                "Review findings from previous agent phase:",
+                "\n".join(review_issue_lines) if review_issue_lines else "(none)",
+                "Review fix hints:",
+                "\n".join(fix_draft_items) if fix_draft_items else "(none)",
                 "Reference snippets:",
                 "\n\n".join(references) if references else "(none)",
             ]
