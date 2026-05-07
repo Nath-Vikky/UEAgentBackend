@@ -7,6 +7,7 @@ from app.api.routes import (
     editor_operations,
     health,
     kb_admin,
+    mcp_tools,
     project_inventory,
     proposals,
     sessions,
@@ -24,3 +25,4 @@ api_router.include_router(kb_admin.router)
 api_router.include_router(proposals.router)
 api_router.include_router(project_inventory.router)
 api_router.include_router(editor_operations.router)
+api_router.include_router(mcp_tools.router)

@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     mcp_stdio_args: StringListSetting = Field(default_factory=list)
     mcp_allowed_tools: StringListSetting = Field(default_factory=list)
     mcp_stdio_timeout_ms: int = 3000
+    mcp_auto_discover_on_startup: bool = False
 
     default_profile_id: str = "default"
     default_profile_name: str = "Default"

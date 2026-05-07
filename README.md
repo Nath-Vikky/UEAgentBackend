@@ -101,6 +101,7 @@ MCP_TOOL_ADAPTER_ENABLED=false
 MCP_STDIO_COMMAND=
 MCP_STDIO_ARGS=
 MCP_ALLOWED_TOOLS=
+MCP_AUTO_DISCOVER_ON_STARTUP=false
 ```
 
 ## 知识库使用
@@ -218,6 +219,11 @@ GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
 - `POST /api/v1/editor-operations/proposals/{proposal_id}/reject`
 - `POST /api/v1/editor-operations/results`
 
+MCP 调试接口，默认关闭，仅用于本地验证可选工具层：
+
+- `GET /api/v1/mcp/tools`
+- `POST /api/v1/mcp/tools/{tool_name}/call`
+
 当前后端支持资产改名、Static Mesh 基础设置、Blueprint 创建，以及 Blueprint Graph Automation v1 的三个 proposal 契约：添加变量、添加组件、创建基础事件 stub。所有写入都必须由 UE 前端确认并执行。
 
 会话：
@@ -290,3 +296,12 @@ Code Review 保留默认单阶段审查，同时支持轻量链式 Agent：
 - 安全边界：Generate 阶段只返回虚拟 `generated_items` 草案，不写入 UE 工程；如果未来要落盘，仍必须走独立的 `write_code_files` proposal 和用户确认。
 - 返回字段：`data.multi_agent`、`debug_view.multi_agent`、`user_view.blocks[block_type="phase_result"]`。
 - 默认行为：不传触发字段时，原 Code Review 接口和前端展示方式不变。
+
+## Optional MCP Stdio Client
+
+后端提供最小 MCP stdio client，用于本地连接只读 MCP server：
+
+- 默认关闭，不会随启动拉起外部进程。
+- 仅允许调用 `MCP_ALLOWED_TOOLS` 白名单中的工具。
+- 调用入口是 `/api/v1/mcp/tools` 和 `/api/v1/mcp/tools/{tool_name}/call`。
+- MCP 仍只是后端工具 transport；UE 前端和后端之间继续使用 HTTP。

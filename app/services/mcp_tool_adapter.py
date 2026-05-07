@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.settings import Settings
+from app.services.mcp_client import MCPClientError, MCPStdioClient, MCPTimeoutError
 
 MCP_ADAPTER_PROTOCOL_VERSION = "mcp_tool_adapter_v1"
 MCP_SUPPORTED_TRANSPORTS = ["mcp_stdio", "mcp_http"]
@@ -32,6 +33,9 @@ def build_mcp_adapter_status(settings: Settings) -> dict[str, Any]:
     elif not command_available:
         status = "warning"
         reason = "mcp_stdio_command_not_found_in_current_environment"
+    elif not settings.mcp_allowed_tools:
+        status = "misconfigured"
+        reason = "mcp_allowed_tools_missing"
     else:
         status = "ready"
         reason = "mcp_stdio_command_configured"
@@ -48,8 +52,14 @@ def build_mcp_adapter_status(settings: Settings) -> dict[str, Any]:
             "args": list(settings.mcp_stdio_args),
             "command_available": command_available,
             "timeout_ms": settings.mcp_stdio_timeout_ms,
+            "auto_discover_on_startup": settings.mcp_auto_discover_on_startup,
         },
         "allowed_tools": list(settings.mcp_allowed_tools),
+        "discovery": {
+            "status": "not_attempted",
+            "reason": "discovery_is_explicit_by_default",
+            "auto_discover_on_startup": settings.mcp_auto_discover_on_startup,
+        },
         "safety_policy": {
             "default_side_effect_level": "read_only",
             "free_chat_auto_execute": False,
@@ -73,6 +83,11 @@ def build_mcp_capability(settings: Settings) -> dict[str, Any]:
         "frontend_protocol": "http",
         "tool_layer_only": True,
         "configured_allowed_tools": status["allowed_tools"],
+        "discovery": status["discovery"],
+        "debug_endpoints": {
+            "list_tools": "/api/v1/mcp/tools",
+            "call_tool": "/api/v1/mcp/tools/{tool_name}/call",
+        },
         "safety_policy": status["safety_policy"],
     }
 
@@ -125,3 +140,96 @@ class MCPToolAdapter:
             "transport": status["transport"],
         }
 
+    def discover_tools(self) -> dict[str, Any]:
+        status = self.status()
+        if status["status"] != "ready":
+            return {
+                "ok": False,
+                "status": status["status"],
+                "reason": status["reason"],
+                "tools": [],
+                "allowed_tools": status["allowed_tools"],
+                "debug": {"adapter": status},
+            }
+        try:
+            with self._client() as client:
+                initialize_result = client.initialize()
+                tools_result = client.list_tools()
+        except MCPTimeoutError as exc:
+            return self._error_payload(exc, status=status, tools=[])
+        except MCPClientError as exc:
+            return self._error_payload(exc, status=status, tools=[])
+
+        raw_tools = tools_result.get("tools") if isinstance(tools_result.get("tools"), list) else []
+        tools = [item for item in raw_tools if isinstance(item, dict)]
+        allowed_tools = set(status["allowed_tools"])
+        if allowed_tools:
+            tools = [item for item in tools if str(item.get("name") or "") in allowed_tools]
+        return {
+            "ok": True,
+            "status": "ready",
+            "reason": "mcp_tools_discovered",
+            "tools": tools,
+            "tool_count": len(tools),
+            "allowed_tools": status["allowed_tools"],
+            "debug": {
+                "adapter": status,
+                "initialize": {
+                    "server_info": initialize_result.get("serverInfo") or {},
+                    "protocol_version": initialize_result.get("protocolVersion"),
+                    "capabilities": initialize_result.get("capabilities") or {},
+                },
+            },
+        }
+
+    def call_readonly_tool(self, tool_name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        validation = self.validate_readonly_tool_request(tool_name)
+        if not validation["ok"]:
+            return validation
+        try:
+            with self._client() as client:
+                initialize_result = client.initialize()
+                result = client.call_tool(validation["tool_name"], arguments or {})
+        except MCPTimeoutError as exc:
+            return self._error_payload(exc, status=self.status(), tools=[], tool_name=tool_name)
+        except MCPClientError as exc:
+            return self._error_payload(exc, status=self.status(), tools=[], tool_name=tool_name)
+        return {
+            "ok": True,
+            "status": "completed",
+            "reason": "mcp_readonly_tool_completed",
+            "tool_name": validation["tool_name"],
+            "result": result,
+            "debug": {
+                "adapter": self.status(),
+                "initialize": {
+                    "server_info": initialize_result.get("serverInfo") or {},
+                    "protocol_version": initialize_result.get("protocolVersion"),
+                },
+            },
+        }
+
+    def _client(self) -> MCPStdioClient:
+        return MCPStdioClient(
+            command=self.settings.mcp_stdio_command.strip(),
+            args=list(self.settings.mcp_stdio_args),
+            timeout_ms=self.settings.mcp_stdio_timeout_ms,
+        )
+
+    @staticmethod
+    def _error_payload(
+        exc: MCPClientError,
+        *,
+        status: dict[str, Any],
+        tools: list[dict[str, Any]],
+        tool_name: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "status": "error",
+            "reason": exc.reason,
+            "tool_name": tool_name,
+            "tools": tools,
+            "allowed_tools": status.get("allowed_tools") or [],
+            "debug": {"adapter": status, "error_details": exc.details},
+        }

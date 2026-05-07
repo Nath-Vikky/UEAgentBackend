@@ -2561,3 +2561,68 @@ Multi-Agent 链不会写入 UE 工程，也不会绕过 Proposal：
 ### 前端说明
 
 当前 UE 前端不必强制修改。若前端已有通用 `user_view.blocks` 渲染能力，可以直接显示新增的 `phase_result` 和 `generated_items`。如果想做得更清楚，可在 Code Review 高亮弹窗里新增一个“Multi-Agent Chain”折叠区，读取 `data.multi_agent` 或 `debug_view.multi_agent`。
+
+## 28. Optional MCP Stdio Client v1
+
+后端现在有最小 MCP stdio client。它仍是可选工具层，不是 UE 前端主通信协议，也不会替代现有 HTTP API。
+
+### 默认行为
+
+- `MCP_TOOL_ADAPTER_ENABLED=false` 时完全关闭。
+- 后端启动和健康检查不会自动拉起外部 MCP server。
+- `MCP_AUTO_DISCOVER_ON_STARTUP=false` 默认关闭，避免启动时产生不可控外部进程。
+- 只有显式调用 `/api/v1/mcp/tools` 或 `/api/v1/mcp/tools/{tool_name}/call` 时才会尝试启动配置的 stdio server。
+
+### 配置
+
+```env
+MCP_TOOL_ADAPTER_ENABLED=true
+MCP_STDIO_COMMAND=python
+MCP_STDIO_ARGS=D:/Path/To/your_mcp_server.py
+MCP_ALLOWED_TOOLS=get_widget_tree,get_target_umg_asset
+MCP_STDIO_TIMEOUT_MS=5000
+MCP_AUTO_DISCOVER_ON_STARTUP=false
+```
+
+`MCP_ALLOWED_TOOLS` 是强制安全边界。未在白名单内的工具会在后端调用 MCP server 前被拦截。
+
+### 调试接口
+
+发现工具：
+
+```http
+GET /api/v1/mcp/tools
+```
+
+调用白名单内只读工具：
+
+```http
+POST /api/v1/mcp/tools/{tool_name}/call
+Content-Type: application/json
+
+{
+  "arguments": {
+    "example": "value"
+  }
+}
+```
+
+返回结果会包含：
+
+- `success / ok`
+- `status / reason`
+- `tools[]` 或 `result`
+- `debug.adapter`
+- `debug.initialize`
+
+### 当前边界
+
+- 不实现 MCP server。
+- 不打包或依赖 UMG-MCP。
+- 不把 MCP 工具自动注册进 Agent Chat。
+- 不允许 LLM 自动调用未知 MCP 写入工具。
+- 写入类 MCP 工具未来也必须先转成 Editor Operation Proposal，由用户确认后再由 UE 前端执行。
+
+### 面试表达
+
+可以这样说明：项目主体是自研 HTTP Agent backend，MCP 是可选工具 transport。这样既能保持当前 UE 前端简单稳定，又为后续接入外部工具生态留下接口，而不是把整个项目绑定到某个 MCP 实现。
