@@ -1945,6 +1945,8 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 - `offline_fallback`：不调用 live LLM，适合可复现本地评估。
 - `RAG_MODE=lexical`：benchmark 中关闭向量依赖，确保没有 embedding / Qdrant 也能跑。
 - `source_paths=./README.md, ./docs, ./knowledge`：同时评估公开项目文档问答和 UE 知识库问答。
+- benchmark 会把 `--source-path` 同步写入隔离运行时的 `KB_SOURCE_PATHS`，保证 RAG 主索引和 local grep fallback 搜同一批资料。
+- 目录扫描默认跳过本地过程文档，例如 `docs/improveplan.md`、`docs/frontend-unified-handoff.md`、`docs/backend-dev-log.md`。如果确实要导入这些文件，需要显式把文件路径写进 `source_paths`。
 
 如果要评估真实 LLM 链路：
 
@@ -1973,23 +1975,25 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 当前基线结果：
 
 - RAG cases：8
-- `recall_at_k=0.6875`
-- `precision_at_k=0.1875`
-- `hit_at_k=0.7500`
-- `mrr=0.6667`
+- `recall_at_k=0.9375`
+- `precision_at_k=0.2500`
+- `hit_at_k=1.0000`
+- `mrr=0.9167`
+- `ndcg_at_k=0.9133`
 - `route_accuracy=1.0000`
 - `citation_coverage=1.0000`
+- `no_result_ratio=0.0000`
 - Task cases：12
 - `success_rate=1.0000`
 - `field_coverage=1.0000`
 - `semantic_accuracy=1.0000`
-- Performance：20 requests，`p50_ms≈2500`，`p95_ms≈2900`
+- Performance：20 requests，`p50_ms≈43`，`p95_ms≈80`
 
 如何解读：
 
 - `route_accuracy / field_coverage / semantic_accuracy` 已经适合作品集展示，说明后端功能链路稳定。
-- `recall_at_k / precision_at_k` 是后续 RAG 优化重点，尤其是旧项目文档问答集还有漏召回。
-- `p95_ms` 是后续性能优化重点，当前离线 fallback 仍约 2.9s，说明部分链路有固定开销，适合做缓存、跳过无效外部探测和本地检索预热。
+- `recall_at_k / hit_at_k / no_result_ratio` 已经恢复到稳定展示水平；后续如果继续优化，重点看 `precision_at_k` 和排序质量。
+- 离线 benchmark 的 `p95_ms` 已降到百毫秒内；live LLM benchmark 会受模型、代理和供应商延迟影响，不能和离线基线直接比较。
 
 后续性能优化建议：
 

@@ -63,10 +63,16 @@ def _classify_path_domain(path: Path) -> str | None:
     return None
 
 
-def _classify_domain(path: Path, text: str) -> str:
+def _is_project_doc_path(path: Path) -> bool:
     path_lower = path.as_posix().lower()
     name_lower = path.name.lower()
     stem_lower = path.stem.lower()
+    return name_lower in PROJECT_DOC_NAMES or stem_lower in PROJECT_DOC_STEMS or "/docs/" in path_lower
+
+
+def _classify_domain(path: Path, text: str) -> str:
+    path_lower = path.as_posix().lower()
+    name_lower = path.name.lower()
     suffix_lower = path.suffix.lower()
     preview_lower = text[:2000].lower()
     combined = f"{path_lower} {preview_lower}"
@@ -78,6 +84,11 @@ def _classify_domain(path: Path, text: str) -> str:
     if path_domain:
         return path_domain
 
+    # Public docs and README-style files are project documentation even if they
+    # mention config/schema/log keywords while explaining backend usage.
+    if _is_project_doc_path(path):
+        return "project_docs"
+
     if _contains_any(combined, ("schema", "config", ".ini", ".json", ".yaml", ".yml", ".toml")):
         return "config_schema"
     if _contains_any(combined, ("incident", "error", "exception", "callstack", "log")):
@@ -86,10 +97,6 @@ def _classify_domain(path: Path, text: str) -> str:
         return "perf_notes"
     if _contains_any(combined, ("asset", "/game/", "uasset")):
         return "asset_rules"
-
-    # Project docs are common enough that they should win before weaker content hints.
-    if name_lower in PROJECT_DOC_NAMES or stem_lower in PROJECT_DOC_STEMS or "/docs/" in path_lower:
-        return "project_docs"
 
     if _contains_any(
         path_lower,

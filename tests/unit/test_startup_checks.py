@@ -63,3 +63,32 @@ def test_startup_checks_marks_empty_chat_model_as_error() -> None:
         assert chat_model_check["status"] == "error"
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def test_startup_checks_accepts_kb_source_files_and_directories() -> None:
+    root = _runtime_root()
+    try:
+        docs_dir = root / "docs"
+        docs_dir.mkdir()
+        readme = root / "README.md"
+        readme.write_text("# Demo", encoding="utf-8")
+        storage_dir = root / "storage"
+        storage_dir.mkdir()
+
+        settings = Settings(
+            openai_api_key="",
+            storage_dir=str(storage_dir),
+            upload_dir=str(storage_dir / "uploads"),
+            artifact_dir=str(storage_dir / "artifacts"),
+            kb_dir=str(storage_dir / "kb"),
+            kb_source_paths=[str(readme), str(docs_dir)],
+        )
+
+        report = collect_startup_checks(settings, database_status="ok")
+
+        kb_check = next(item for item in report["checks"] if item["check_id"] == "kb_source_paths")
+        assert kb_check["status"] == "ok"
+        assert kb_check["details"]["paths"][0]["is_file"] is True
+        assert kb_check["details"]["paths"][1]["is_dir"] is True
+    finally:
+        shutil.rmtree(root, ignore_errors=True)

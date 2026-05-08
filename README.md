@@ -136,6 +136,8 @@ KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../TeamNote
 .\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output docs\benchmark-report.md
 ```
 
+默认 benchmark 只使用公开项目资料和 UE 知识库：`./README.md`、`./docs`、`./knowledge`。目录扫描会跳过本地过程文档，例如 `improveplan.md`、`frontend-unified-handoff.md`、`backend-dev-log.md`，避免评测和用户知识库被开发过程资料污染。
+
 如果本机有 `make`：
 
 ```powershell

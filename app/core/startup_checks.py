@@ -38,6 +38,7 @@ def _path_status(raw_path: str) -> dict[str, Any]:
         "resolved_path": str(resolved),
         "exists": resolved.exists(),
         "is_dir": resolved.is_dir(),
+        "is_file": resolved.is_file(),
     }
 
 
@@ -129,7 +130,7 @@ def collect_startup_checks(
     )
 
     kb_sources = [_path_status(path) for path in settings.kb_source_paths]
-    missing_kb_sources = [item for item in kb_sources if not item["exists"] or not item["is_dir"]]
+    missing_kb_sources = [item for item in kb_sources if not item["exists"]]
     checks.append(
         _check(
             check_id="kb_source_paths",

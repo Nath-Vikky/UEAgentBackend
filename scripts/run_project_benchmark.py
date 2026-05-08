@@ -70,7 +70,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 @contextmanager
-def _isolated_runtime(*, use_live_llm: bool) -> Iterator[None]:
+def _isolated_runtime(*, source_paths: list[str], use_live_llm: bool) -> Iterator[None]:
     runtime_path = Path(".eval-runtime") / f"project-benchmark-{uuid.uuid4().hex}"
     storage_dir = runtime_path / "storage"
     shutil.rmtree(runtime_path, ignore_errors=True)
@@ -81,6 +81,7 @@ def _isolated_runtime(*, use_live_llm: bool) -> Iterator[None]:
         "UPLOAD_DIR": str((storage_dir / "uploads").resolve()),
         "ARTIFACT_DIR": str((storage_dir / "artifacts").resolve()),
         "KB_DIR": str((storage_dir / "kb").resolve()),
+        "KB_SOURCE_PATHS": ",".join(source_paths),
         "EMBEDDING_ENABLED": "false",
         "RAG_MODE": "lexical",
         "RAG_FALLBACK_MODE": "lexical_only",
@@ -159,9 +160,9 @@ def main() -> int:
         if not dataset_path.exists():
             raise SystemExit(f"Dataset not found: {dataset_path}")
 
-    source_paths = args.source_paths or ["../backend.md", "./docs", "./knowledge"]
+    source_paths = args.source_paths or ["./README.md", "./docs", "./knowledge"]
 
-    with _isolated_runtime(use_live_llm=args.use_live_llm):
+    with _isolated_runtime(source_paths=source_paths, use_live_llm=args.use_live_llm):
         with TestClient(create_app()) as client:
             refresh_start = time.perf_counter()
             refresh = client.post(
