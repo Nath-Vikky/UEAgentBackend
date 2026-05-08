@@ -54,6 +54,18 @@ def test_code_write_tool_is_confirmed_write() -> None:
     assert card["allowed_in_free_chat"] is False
 
 
+def test_code_preflight_tool_is_read_only() -> None:
+    spec = get_tool_spec("preflight_generated_code")
+
+    assert spec is not None
+    card = spec.capability_card()
+    assert card["owned_by_skill"] == "CodeGenerateSkill"
+    assert card["side_effect_level"] == "read_only"
+    assert card["category"] == "analysis"
+    assert card["requires_confirmation"] is False
+    assert card["required_payload_fields"] == ["generated_items"]
+
+
 def test_tool_registry_contracts_are_valid() -> None:
     report = validate_tool_registry()
 

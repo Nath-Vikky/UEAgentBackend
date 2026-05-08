@@ -1235,6 +1235,8 @@ def test_project_qa_chinese_actor_lifecycle_hits_engine_note(client: TestClient)
         for item in body["data"]["retrieved_docs"]
     )
     assert body["data"]["citations"]
+    assert body["data"]["retrieval_quality_gate"]["status"] == "passed"
+    assert "agentic_rag" in body["retrieval_trace"]
     assert body["debug_view"]["retrieval"]["mode"] in {
         "lexical_only",
         "local_hybrid_fallback",
@@ -2646,6 +2648,8 @@ def test_code_generate_returns_draft_and_artifact(client: TestClient) -> None:
     assert body["data"]["generated_items"]
     assert body["data"]["generation_mode"]
     assert body["data"]["reference_lookup"]["local_reference_count"] >= 1
+    assert "agentic_rag" in body["data"]["reference_lookup"]
+    assert "retrieval_quality_gate" in body["data"]["reference_lookup"]
     assert body["data"]["local_search"]["items"]
     assert body["debug_view"]["local_search"]["summary"]["result_count"] >= 1
     assert "engine_notes" in body["debug_view"]["local_search"]["summary"]["domain_filters"]
@@ -2657,6 +2661,10 @@ def test_code_generate_returns_draft_and_artifact(client: TestClient) -> None:
     assert body["data"]["validation_plan"]["items"]
     assert body["data"]["validation_plan"]["write_policy"]["written_to_disk"] is False
     assert any(item["category"] == "compile" for item in body["data"]["validation_plan"]["items"])
+    assert body["data"]["preflight_report"]["status"] in {"passed", "warning"}
+    assert body["data"]["preflight_report"]["summary"]["checked_item_count"] >= 1
+    assert any(item["category"] == "preflight" for item in body["data"]["validation_plan"]["items"])
+    assert any(tool["tool_id"] == "preflight_generated_code" for tool in body["debug_view"]["tools"])
     assert body["debug_view"]["skill"]["skill_id"] == "CodeGenerateSkill"
     assert body["debug_view"]["skill"]["collector"] == "user_requirement_and_optional_editor_context"
     assert body["trace_summary"]["skill_id"] == "CodeGenerateSkill"
@@ -2848,6 +2856,7 @@ def test_code_generate_returns_enhanced_input_character_for_chinese_request(clie
     assert "Source/RushBa/Private/EnhancedInputCharacter.cpp" in body["data"]["code_draft"]
     assert "UEnhancedInputComponent" in body["data"]["code_draft"]["Source/RushBa/Private/EnhancedInputCharacter.cpp"]
     assert "EnhancedInput" in "\n".join(body["data"]["patch_plan"])
+    assert body["data"]["preflight_report"]["status"] == "passed"
     assert body["data"]["reference_lookup"]["local_reference_count"] >= 1
     assert any("enhanced-input" in item["source"] for item in body["data"]["retrieved_references"])
 

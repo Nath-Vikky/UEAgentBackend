@@ -30,7 +30,12 @@ def test_evaluate_case_tracks_rank_and_language() -> None:
     assert result["language_ok"] is True
     assert result["matched_sources"] == ["backend.md"]
     assert result["metrics"]["hit_at_k"] == 1.0
+    assert result["metrics"]["top1_accuracy"] == 0.0
     assert result["metrics"]["mrr"] == 0.5
+    assert result["metrics"]["precision_at_k"] == 0.3333
+    assert result["metrics"]["precision_at_retrieved"] == 0.5
+    assert result["metrics"]["labeled_precision_ceiling"] == 0.3333
+    assert result["metrics"]["normalized_precision_at_k"] == 1.0
 
 
 def test_summarize_cases_aggregates_metrics() -> None:
@@ -43,7 +48,11 @@ def test_summarize_cases_aggregates_metrics() -> None:
             "metrics": {
                 "recall_at_k": 1.0,
                 "precision_at_k": 0.5,
+                "precision_at_retrieved": 1.0,
+                "labeled_precision_ceiling": 0.5,
+                "normalized_precision_at_k": 1.0,
                 "hit_at_k": 1.0,
+                "top1_accuracy": 1.0,
                 "mrr": 1.0,
                 "ndcg_at_k": 1.0,
             },
@@ -56,7 +65,11 @@ def test_summarize_cases_aggregates_metrics() -> None:
             "metrics": {
                 "recall_at_k": 0.0,
                 "precision_at_k": 0.0,
+                "precision_at_retrieved": 0.0,
+                "labeled_precision_ceiling": 0.5,
+                "normalized_precision_at_k": 0.0,
                 "hit_at_k": 0.0,
+                "top1_accuracy": 0.0,
                 "mrr": 0.0,
                 "ndcg_at_k": 0.0,
             },
@@ -68,6 +81,10 @@ def test_summarize_cases_aggregates_metrics() -> None:
     assert summary["cases"] == 2
     assert summary["recall_at_k"] == 0.5
     assert summary["precision_at_k"] == 0.25
+    assert summary["precision_at_retrieved"] == 0.5
+    assert summary["labeled_precision_ceiling"] == 0.5
+    assert summary["normalized_precision_at_k"] == 0.5
+    assert summary["top1_accuracy"] == 0.5
     assert summary["route_accuracy"] == 0.5
     assert summary["citation_coverage"] == 0.5
     assert summary["low_confidence_ratio"] == 0.5
@@ -98,6 +115,10 @@ def test_evaluate_case_deduplicates_same_source_hits() -> None:
 
     assert result["retrieved_sources"] == ["backend.md"]
     assert result["metrics"]["recall_at_k"] == 1.0
+    assert result["metrics"]["precision_at_k"] == 0.25
+    assert result["metrics"]["precision_at_retrieved"] == 1.0
+    assert result["metrics"]["normalized_precision_at_k"] == 1.0
+    assert result["metrics"]["top1_accuracy"] == 1.0
     assert result["metrics"]["ndcg_at_k"] == 1.0
 
 
@@ -110,6 +131,7 @@ def test_build_markdown_report_includes_summary_and_cases() -> None:
         "summary": {
             "cases": 1,
             "hit_at_k": 1.0,
+            "top1_accuracy": 1.0,
             "route_accuracy": 1.0,
             "citation_coverage": 1.0,
         },
@@ -120,7 +142,7 @@ def test_build_markdown_report_includes_summary_and_cases() -> None:
                 "language_ok": True,
                 "confidence": 0.9,
                 "matched_sources": ["enhanced-input-character.md"],
-                "metrics": {"hit_at_k": 1.0, "mrr": 1.0},
+                "metrics": {"hit_at_k": 1.0, "top1_accuracy": 1.0, "mrr": 1.0},
             }
         ],
     }
@@ -129,5 +151,6 @@ def test_build_markdown_report_includes_summary_and_cases() -> None:
 
     assert "# RAG Eval Report" in markdown
     assert "| `hit_at_k` | 1.0000 |" in markdown
+    assert "| `top1_accuracy` | 1.0000 |" in markdown
     assert "`ue-enhanced-input`" in markdown
     assert "enhanced-input-character.md" in markdown

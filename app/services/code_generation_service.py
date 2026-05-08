@@ -9,6 +9,7 @@ from app.services.kb_service import KnowledgeBaseService
 from app.services.local_search_service import LocalSearchService
 from app.services.llm_service import ChatRuntimeConfig, LLMService
 from app.tools.code_generate import generate_code_draft
+from app.tools.code_preflight import build_code_generation_preflight
 from app.tools.retrieval import retrieve_support_notes
 
 
@@ -146,13 +147,27 @@ class CodeGenerationService:
             domain_filters=domain_filters,
             extra_payload={"disable_local_search": True},
         )
+        support_agentic_rag = dict(support.get("retrieval_trace", {}).get("agentic_rag") or {})
+        support_quality_gate = dict(support.get("retrieval_quality_gate") or {})
+        local_search_query = str(
+            support_agentic_rag.get("selected_query")
+            or query
+            or "Generate a UE code draft."
+        )
         local_search = LocalSearchService(self.kb_service.settings).search(
-            query=query or "Generate a UE code draft.",
+            query=local_search_query,
             domain_filters=domain_filters,
             top_k=6,
         )
         local_docs = _local_search_docs(local_search)
         local_citations = _local_search_citations(local_search)
+        support_warnings = list(support["warnings"])
+        if local_docs:
+            support_warnings = [
+                item
+                for item in support_warnings
+                if item not in {"no_retrieval_hits", "evidence_insufficient"}
+            ]
         merged_docs = [*local_docs, *support["retrieved_docs"]]
         merged_citations = [*local_citations, *support["citations"]]
         reference_lookup = {
@@ -162,6 +177,9 @@ class CodeGenerationService:
             "domains": sorted({item.get("domain") for item in merged_docs if item.get("domain")}),
             "sources": [{"title": item["title"], "source": item["source"]} for item in merged_citations],
             "local_search": local_search["summary"],
+            "local_search_query": local_search_query,
+            "agentic_rag": support_agentic_rag,
+            "retrieval_quality_gate": support_quality_gate,
         }
 
         support_for_generation = {
@@ -250,6 +268,18 @@ class CodeGenerationService:
             "supporting_notes": support["answer"],
             "local_search": local_search,
         }
+        preflight_report = build_code_generation_preflight(
+            result=result,
+            requirement=query,
+            target_module=str(
+                request.payload.get("target_module")
+                or request.payload.get("module_name")
+                or request.context.current_module
+                or request.context.project_name
+                or ""
+            ),
+        )
+        result["preflight_report"] = preflight_report
 
         step_results = [
             {
@@ -273,6 +303,15 @@ class CodeGenerationService:
                     "files": result["file_structure_suggestions"],
                 },
             },
+            {
+                "step_id": "preflight_generated_code",
+                "title": "Preflight Generated Code",
+                "status": preflight_report["status"],
+                "summary": (
+                    f"Code preflight found {preflight_report['summary']['finding_count']} finding(s)."
+                ),
+                "details": preflight_report,
+            },
         ]
 
         tools = [
@@ -290,6 +329,14 @@ class CodeGenerationService:
                 "tool_id": "live_llm_code_generate" if llm_attempt["ok"] else "generate_code_draft",
                 "status": "completed",
                 "summary": tool_summary,
+            },
+            {
+                "tool_id": "preflight_generated_code",
+                "status": preflight_report["status"],
+                "summary": (
+                    f"Checked {preflight_report['summary']['checked_item_count']} generated item(s); "
+                    f"{preflight_report['summary']['finding_count']} finding(s)."
+                ),
             },
         ]
 
@@ -361,6 +408,8 @@ class CodeGenerationService:
             "retrieval_trace": {
                 **support["retrieval_trace"],
                 "local_search": local_search,
+                "agentic_rag": support_agentic_rag,
+                "retrieval_quality_gate": support_quality_gate,
                 "retrieved_docs": [
                     *local_docs,
                     *support["retrieval_trace"].get("retrieved_docs", []),
@@ -368,9 +417,14 @@ class CodeGenerationService:
             },
             "tools": tools,
             "warnings": [
-                *support["warnings"],
+                *support_warnings,
                 *(["local_search_no_matches"] if not local_docs else []),
                 *(["write_proposal_blocked"] if create_write_proposal and write_plan["status"] != "ready" else []),
+                *(
+                    [f"code_preflight_{preflight_report['status']}"]
+                    if preflight_report["status"] != "passed"
+                    else []
+                ),
                 *llm_attempt["warnings"],
             ],
             "artifacts": artifacts,

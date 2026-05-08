@@ -124,12 +124,13 @@ BUILT_IN_SKILLS: tuple[BuiltInSkillSpec, ...] = (
         side_effect_level="plan_only",
         requires_retrieval=True,
         collector="user_requirement_and_optional_editor_context",
-        rules=["code_reference_precheck", "non_writing_output_policy"],
+        rules=["code_reference_precheck", "generated_code_preflight", "non_writing_output_policy"],
         retrieval_domains=["code_reference", "examples", "engine_notes"],
         projector_outputs=[
             "user_view.blocks",
             "data.generated_code",
             "data.reference_matches",
+            "data.preflight_report",
             "data.validation_plan",
         ],
         notes=(

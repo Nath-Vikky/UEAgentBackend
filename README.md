@@ -9,7 +9,8 @@
 - **固定 Skill 架构**：每个显式功能由内置 Skill 执行，避免所有能力都交给 LLM 自由发挥。
 - **声明式 Tool Registry**：工具有分类、输入输出契约、副作用等级、确认要求和 free-chat 白名单。
 - **RAG + 本地 grep 并存**：没有向量模型时使用本地 lexical/grep 检索；配置 Embedding + Qdrant 后可扩展为混合检索。
-- **安全写入闭环**：代码生成默认只返回草稿；只有显式请求并经 Proposal 确认后，才允许有限写入 `Source/` 或 `Plugins/`。
+- **Agentic RAG 轻量增强**：Project QA / Code Generate 在第一轮证据不足时最多再做 1 轮 query rewrite，并在 Debug View 暴露 `agentic_rag` 与 `retrieval_quality_gate`。
+- **安全写入闭环**：代码生成默认只返回草稿，并先做轻量 UE C++ Preflight；只有显式请求并经 Proposal 确认后，才允许有限写入 `Source/` 或 `Plugins/`。
 - **Editor Operation Bridge**：第一版 MCP-like 编辑器操作通过 Proposal 表达，支持从 Assets Inspect / Agent Chat 生成重命名资产、应用 Static Mesh 基础设置、创建 Blueprint 资产提案，真实执行必须由 UE 插件确认后完成。
 - **可观测和可评测**：提供 `user_view / debug_view`、trace、artifact、Prometheus metrics、alerts、RAG eval 和项目级 benchmark。
 - **可选 MCP 工具层**：HTTP 仍是 UE 前端和后端主协议，MCP 只作为未来工具 transport，默认关闭。
@@ -38,7 +39,7 @@ Unreal Editor Plugin
 | --- | --- | --- |
 | Agent Chat / Project QA | 自由聊天、项目事实问答、知识库问答、项目资产/代码清单查询 | 只允许自动调用只读工具 |
 | Code Review | 扫描并审查 UE C++ / C# 文件 | 生成审查结果，不自动改源码 |
-| Code Generate | 根据需求和知识库生成 UE 代码草稿 | 默认不落盘，可选确认式写入 |
+| Code Generate | 根据需求和知识库生成 UE 代码草稿，并附带轻量 Preflight | 默认不落盘，可选确认式写入 |
 | Logs Analyze | 分析 UE 日志文本、错误片段或日志文件路径 | RAG 只作辅助，不覆盖日志本身判断 |
 | Assets Inspect | 分析选中资产、命名、类型、依赖、常见设置 | 批量修改或重命名后续必须走 Proposal |
 
@@ -152,7 +153,7 @@ make benchmark
 
 报告包含：
 
-- RAG：`recall_at_k`、`precision_at_k`、`hit_at_k`、`mrr`、`citation_coverage`
+- RAG：`recall_at_k`、`precision_at_k`、`normalized_precision_at_k`、`top1_accuracy`、`hit_at_k`、`mrr`、`citation_coverage`
 - 路由：`route_accuracy`
 - 任务：`success_rate`、`field_coverage`、`semantic_accuracy`
 - 性能：`p50_ms`、`p95_ms`

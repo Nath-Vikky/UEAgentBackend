@@ -43,7 +43,11 @@ def build_markdown_report(report: dict[str, Any]) -> str:
         "cases",
         "recall_at_k",
         "precision_at_k",
+        "precision_at_retrieved",
+        "labeled_precision_ceiling",
+        "normalized_precision_at_k",
         "hit_at_k",
+        "top1_accuracy",
         "mrr",
         "ndcg_at_k",
         "route_accuracy",
@@ -60,8 +64,8 @@ def build_markdown_report(report: dict[str, Any]) -> str:
             "",
             "## Cases",
             "",
-            "| Case | Route | Language | Confidence | Hit@K | MRR | Matched Sources |",
-            "| --- | --- | --- | ---: | ---: | ---: | --- |",
+            "| Case | Route | Language | Confidence | Hit@K | Top1 | MRR | Matched Sources |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
         ]
     )
     for case in cases:
@@ -82,6 +86,7 @@ def build_markdown_report(report: dict[str, Any]) -> str:
                     language_status,
                     _fmt(case.get("confidence", 0.0)),
                     _fmt(metrics.get("hit_at_k", 0.0)),
+                    _fmt(metrics.get("top1_accuracy", 0.0)),
                     _fmt(metrics.get("mrr", 0.0)),
                     matched_sources,
                 ]

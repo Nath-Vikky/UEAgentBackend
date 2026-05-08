@@ -80,6 +80,7 @@ class CodeGenerateSkillExecutor:
                         "generation_mode": result["generation_mode"],
                         "reference_count": result["reference_lookup"]["reference_count"],
                         "write_policy": result.get("write_policy", {}),
+                        "preflight": result.get("preflight_report", {}).get("summary", {}),
                     },
                 ).model_dump(mode="json"),
                 UserViewBlock(

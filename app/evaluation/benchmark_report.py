@@ -63,8 +63,12 @@ def build_benchmark_markdown(report: dict[str, Any]) -> str:
     metric_notes = {
         "cases": "Evaluation case count.",
         "recall_at_k": "How many expected sources were recovered in top-k.",
-        "precision_at_k": "How many top-k results were relevant.",
+        "precision_at_k": "Relevant hits divided by configured top-k; intentionally strict for sparse labels.",
+        "precision_at_retrieved": "Relevant hits divided by unique retrieved source count.",
+        "labeled_precision_ceiling": "Maximum possible Precision@K for the current label density.",
+        "normalized_precision_at_k": "Precision@K normalized by the label-density ceiling.",
         "hit_at_k": "Whether each case hit at least one expected source.",
+        "top1_accuracy": "Whether the first retrieved source was expected.",
         "mrr": "How early the first relevant source appeared.",
         "ndcg_at_k": "Ranking quality with position discount.",
         "route_accuracy": "Whether route_type matched expectation.",
@@ -145,6 +149,8 @@ def build_benchmark_markdown(report: dict[str, Any]) -> str:
             "## Notes",
             "",
             "- Recall and precision are computed from expected source files in eval datasets.",
+            "- Precision@K is strict: with one expected file and top_k=4, its ceiling is 0.25 even for a perfect top-1 hit.",
+            "- For sparse labels, read Top1, MRR, Hit@K, and normalized_precision_at_k together with Precision@K.",
             "- This report is a local benchmark for portfolio/interview demonstration, not a production SLA.",
             "- Use it as a baseline before and after RAG, routing, context, or performance optimizations.",
         ]

@@ -74,6 +74,24 @@ def build_code_generation_validation_plan(
                 source="code_generation",
             )
         )
+    preflight_report = result.get("preflight_report") or {}
+    preflight_summary = preflight_report.get("summary") or {}
+    if preflight_report:
+        finding_count = int(preflight_summary.get("finding_count") or 0)
+        status = str(preflight_report.get("status") or "unknown")
+        items.append(
+            _item(
+                "review_codegen_preflight",
+                _localized(output_language, "复查代码生成预检结果", "Review code generation preflight"),
+                _localized(
+                    output_language,
+                    f"后端轻量预检状态为 {status}，发现 {finding_count} 个结构、路径、UE 反射或 Enhanced Input 相关提示；复制进工程前先处理 warning/error。",
+                    f"Backend preflight status is {status} with {finding_count} structure, path, UE reflection, or Enhanced Input finding(s); review warnings/errors before copying the draft into the project.",
+                ),
+                category="preflight",
+                source="code_preflight",
+            )
+        )
     if "linetracesinglebychannel" in lowered or "line trace" in lowered:
         items.append(
             _item(

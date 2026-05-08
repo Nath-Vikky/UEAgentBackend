@@ -453,6 +453,32 @@ class TaskService:
             "citations": [],
             "retrieved_docs": [],
             "filters_applied": {},
+            "local_search": {
+                "query": query,
+                "mode": "not_used",
+                "status": "skipped",
+                "reason": "tool_plan_skipped_knowledge_retrieval",
+                "items": [],
+                "summary": {
+                    "result_count": 0,
+                    "candidate_count": 0,
+                    "searched_file_count": 0,
+                    "skipped_file_count": 0,
+                    "domain_filters": [],
+                    "terms": [],
+                },
+            },
+            "retrieval_quality_gate": {
+                "status": "skipped",
+                "evidence_sufficient": False,
+                "evidence_insufficient": False,
+                "reason": "tool_plan_skipped_knowledge_retrieval",
+                "selected_round": 0,
+                "selected_query": query,
+                "retrieved_count": 0,
+                "rag_retrieved_count": 0,
+                "local_retrieved_count": 0,
+            },
             "retrieval_trace": {
                 "mode": "not_used",
                 "degraded_mode": False,
@@ -460,6 +486,28 @@ class TaskService:
                 "filters_applied": {},
                 "retrieved_docs": [],
                 "query": query,
+                "selected_query": query,
+                "retrieval_quality_gate": {
+                    "status": "skipped",
+                    "evidence_sufficient": False,
+                    "evidence_insufficient": False,
+                    "reason": "tool_plan_skipped_knowledge_retrieval",
+                    "selected_round": 0,
+                    "selected_query": query,
+                    "retrieved_count": 0,
+                    "rag_retrieved_count": 0,
+                    "local_retrieved_count": 0,
+                },
+                "agentic_rag": {
+                    "enabled": False,
+                    "max_rounds": 0,
+                    "attempts": [],
+                    "selected_round": 0,
+                    "selected_query": query,
+                    "evidence_sufficient": False,
+                    "evidence_insufficient": False,
+                    "final_reason": "tool_plan_skipped_knowledge_retrieval",
+                },
             },
             "warnings": [],
         }
@@ -2306,6 +2354,7 @@ class TaskService:
                     "answer_generation_mode": answer_generation_mode,
                     "llm_reason": llm_result["reason"],
                     "model": llm_result["model"],
+                    "retrieval_quality_gate": qa_result.get("retrieval_quality_gate", {}),
                 },
             },
         ]
@@ -2336,6 +2385,7 @@ class TaskService:
                         "kb_chunk_count": len(qa_result["retrieved_docs"]),
                         "inventory_item_count": len(inventory_result["items"]),
                         "project_file_status": project_file_result.get("status"),
+                        "retrieval_quality_gate": qa_result.get("retrieval_quality_gate", {}),
                     },
                 ).model_dump(mode="json")
             ],
@@ -2354,6 +2404,7 @@ class TaskService:
             "answer_mode": qa_result.get("answer_mode", answer_generation_mode),
             "catalog": qa_result.get("catalog", {}),
             "local_search": qa_result.get("local_search", {}),
+            "retrieval_quality_gate": qa_result.get("retrieval_quality_gate", {}),
             "inventory": inventory_result,
             "project_file": project_file_result,
             "answer_generation": {
@@ -2374,6 +2425,7 @@ class TaskService:
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
         base_debug["local_search"] = qa_result.get("local_search", {})
+        base_debug["retrieval_quality_gate"] = qa_result.get("retrieval_quality_gate", {})
         base_debug["inventory"] = inventory_result
         base_debug["project_file"] = {
             key: value for key, value in project_file_result.items() if key != "text_excerpt"
@@ -2701,9 +2753,13 @@ class TaskService:
             "filters_applied": qa_result["filters_applied"],
             "citations": qa_result["citations"],
             "warnings": qa_result["warnings"],
+            "local_search": qa_result.get("local_search", {}),
+            "retrieval_quality_gate": qa_result.get("retrieval_quality_gate", {}),
             "context_summary": build_context_summary(request),
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
+        base_debug["local_search"] = qa_result.get("local_search", {})
+        base_debug["retrieval_quality_gate"] = qa_result.get("retrieval_quality_gate", {})
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
         base_debug["warnings"] = qa_result["warnings"]

@@ -26,7 +26,8 @@ def evaluate_case(case: dict[str, Any], response: dict[str, Any], *, top_k: int)
     retrieved_docs = list(response.get("retrieval_trace", {}).get("retrieved_docs", []))[:top_k]
     retrieved_sources = _dedupe_preserving_order(
         [
-        normalize_source_name(item.get("source_path") or item.get("source")) for item in retrieved_docs
+            normalize_source_name(item.get("source_path") or item.get("source"))
+            for item in retrieved_docs
         ]
     )
     expected_sources = {
@@ -37,8 +38,16 @@ def evaluate_case(case: dict[str, Any], response: dict[str, Any], *, top_k: int)
     expected_total = len(expected_sources)
 
     precision_at_k = relevant_hits / top_k if top_k else 0.0
+    precision_at_retrieved = relevant_hits / len(retrieved_sources) if retrieved_sources else 0.0
     recall_at_k = relevant_hits / expected_total if expected_total else 0.0
     hit_at_k = 1.0 if relevant_hits else 0.0
+    top1_accuracy = (
+        1.0 if retrieved_sources and retrieved_sources[0] in expected_sources else 0.0
+    )
+    labeled_precision_ceiling = min(expected_total, top_k) / top_k if top_k else 0.0
+    normalized_precision_at_k = (
+        precision_at_k / labeled_precision_ceiling if labeled_precision_ceiling else 0.0
+    )
 
     reciprocal_rank = 0.0
     for index, flag in enumerate(relevance_flags, start=1):
@@ -80,7 +89,11 @@ def evaluate_case(case: dict[str, Any], response: dict[str, Any], *, top_k: int)
         "metrics": {
             "recall_at_k": round(recall_at_k, 4),
             "precision_at_k": round(precision_at_k, 4),
+            "precision_at_retrieved": round(precision_at_retrieved, 4),
+            "labeled_precision_ceiling": round(labeled_precision_ceiling, 4),
+            "normalized_precision_at_k": round(normalized_precision_at_k, 4),
             "hit_at_k": round(hit_at_k, 4),
+            "top1_accuracy": round(top1_accuracy, 4),
             "mrr": round(reciprocal_rank, 4),
             "ndcg_at_k": round(ndcg_at_k, 4),
         },
@@ -93,7 +106,11 @@ def summarize_cases(results: list[dict[str, Any]]) -> dict[str, Any]:
             "cases": 0,
             "recall_at_k": 0.0,
             "precision_at_k": 0.0,
+            "precision_at_retrieved": 0.0,
+            "labeled_precision_ceiling": 0.0,
+            "normalized_precision_at_k": 0.0,
             "hit_at_k": 0.0,
+            "top1_accuracy": 0.0,
             "mrr": 0.0,
             "ndcg_at_k": 0.0,
             "route_accuracy": 0.0,
@@ -104,7 +121,17 @@ def summarize_cases(results: list[dict[str, Any]]) -> dict[str, Any]:
         }
 
     count = len(results)
-    metric_names = ("recall_at_k", "precision_at_k", "hit_at_k", "mrr", "ndcg_at_k")
+    metric_names = (
+        "recall_at_k",
+        "precision_at_k",
+        "precision_at_retrieved",
+        "labeled_precision_ceiling",
+        "normalized_precision_at_k",
+        "hit_at_k",
+        "top1_accuracy",
+        "mrr",
+        "ndcg_at_k",
+    )
     summary = {"cases": count}
     for metric_name in metric_names:
         summary[metric_name] = round(

@@ -334,18 +334,21 @@ make docker-down
 - 返回非破坏性的代码草稿结果
 - 返回 `generated_items` 供前端做按钮 / Tab / 列表展示
 - 返回 `reference_lookup`、`generation_mode`、`retrieved_references`
+- 返回 `preflight_report`，对生成结果做轻量 UE C++ 预检
 - 返回 `write_policy.written_to_disk=false`，并在每个 `generated_items[]` 上标记 `write_status=not_written`、`is_virtual=true`
 
 边界：
 
 - 不直接写用户工程
 - 不自动 patch 文件
-- 不做 compile / build 验证
+- 不做真实 compile / build 验证；`preflight_report` 只是静态烟测，不替代 UE 编译器或 UnrealHeaderTool
 - 代码参考增强已经落地，但结果仍然是“建议草稿”而不是执行器
 
 注意：`generated_items[].file_path` 是建议放置路径或虚拟草稿路径，不代表后端已经创建了这个文件。前端应把它渲染为“生成结果按钮 / Tab”，点击后展示 `generated_items[].code`，不要把它显示成“已生成到磁盘的文件路径”。
 
 当前 Code Generate 已补充第一批常用 UE 场景模板：当需求包含“角色增强输入 / Enhanced Input Character / Input Mapping Context / Input Action”等信号时，即使没有配置 LLM，也会返回 `ACharacter` 版本的 Enhanced Input 草稿，建议路径为 `Source/<Module>/Public/<Class>.h` 和 `Source/<Module>/Private/<Class>.cpp`，并在 `patch_plan` 中提示添加 `EnhancedInput` 模块依赖。交互组件、射线交互组件、GameInstanceSubsystem 也有基础兜底草稿。
+
+`preflight_report` 会检查 3-5 类常见生成问题：不安全路径、`.h/.cpp` 配对、UE `UCLASS / GENERATED_BODY / .generated.h` 反射结构、`.cpp` 是否包含同名头文件、Enhanced Input 是否包含 `InputAction / MappingContext / BindAction / AddMappingContext / Build.cs` 提示等。它会返回 `status=passed/warning/failed`、`quality_score`、`summary` 和 `findings[]`。如果出现 warning/error，仍然不会自动改工程，前端可把它作为“复制进工程前请复查”的提示。
 
 ### 4.4 Logs Analyze
 
@@ -553,6 +556,22 @@ POST /api/v1/knowledge-base/import
 如果用户问“知识库有哪些内容”这类目录问题，后端会走 `knowledge_catalog` 模式，只返回已索引文档的标题、分类和路径，不展开源码正文。这样可以避免把 `knowledge/code-reference` 里的 `.h/.cpp` 内容直接当成聊天回答。
 
 中文问题也能检索英文知识笔记。当前后端会做轻量 query 扩展，例如“actor的生命周期是什么”会补充 `lifecycle`、`constructor`、`BeginPlay`、`Tick`、`EndPlay` 等英文检索词；这能提升未接入向量模型时的命中率。它不是完整翻译，也不替代向量检索，只是个人作品级的稳定增强。
+
+### Agentic RAG v1：两轮检索与证据门槛
+
+Project QA 和 Code Generate 现在会在第一轮 RAG 证据不足时，自动做一次轻量 query rewrite。它会把中文 UE 术语、domain filter、当前 module / file 等信息补进第二轮检索 query，例如“角色增强输入代码怎么写”会补充 `EnhancedInput`、`UInputAction`、`UEnhancedInputComponent`、`Build.cs` 等词。
+
+这不是复杂 Planner，也不会无限循环。当前边界是最多 2 轮检索：
+- 第一轮：按用户原始问题检索。
+- 第二轮：仅当第一轮没有足够证据时才改写 query 后重试。
+- 如果仍然没有证据，会在 `retrieval_quality_gate.evidence_insufficient=true` 中标记，而不是强行把弱命中当成事实。
+
+可在响应里查看：
+- `retrieval_trace.agentic_rag`：两轮检索的 query、质量判断、选择了哪一轮。
+- `data.retrieval_quality_gate`：最终是否有可用证据、RAG 命中数、本地 grep 命中数。
+- `data.reference_lookup.agentic_rag`：Code Generate 使用的改写检索摘要。
+
+前端不需要强制适配这些字段；它们主要用于 Debug View、面试演示和后续 RAG 调优。
 
 ## 10. 检索模式说明
 
@@ -788,15 +807,18 @@ Code Review 现在还会在上述固定块之后追加面试演示用的轻量 A
 为了让工具结果更贴近游戏研发流程，后端现在会在多个 Skill 中附加 `validation_plan`：
 
 - `Code Review`：修复建议之后，提示编译、PIE、UObject 生命周期、Tick、线程、资产引用、蓝图编译、日志复查。
-- `Code Generate`：生成草稿之后，提示手动放置文件、编译模块、检查 Build.cs、配置 Enhanced Input 资产、验证 Trace / Overlap / Subsystem 场景。
+- `Code Generate`：生成草稿之后，先附加 `preflight_report` 静态预检，再提示手动放置文件、编译模块、检查 Build.cs、配置 Enhanced Input 资产、验证 Trace / Overlap / Subsystem 场景。
 - `Logs Analyze`：日志分析之后，提示保留完整日志窗口、复现步骤、首个 Error/Fatal、资产路径、相关模块。
 - `Assets Inspect`：资产检查之后，提示重命名确认、Fix Up Redirectors、蓝图编译、StaticMesh 设置、Reference Viewer。
 
 统一字段：
 
 - `data.validation_plan`
+- `data.preflight_report`
 - `user_view.blocks[block_type="validation_plan"]`
+- `step_results[].step_id = "preflight_generated_code"`
 - `step_results[].step_id = "build_validation_plan"`
+- `debug_view.tools[].tool_id = "preflight_generated_code"`
 - `debug_view.tools[].tool_id = "build_validation_plan"`
 
 边界：这些都是建议，不代表后端已经修改工程、运行测试或保存资产。
@@ -1603,7 +1625,11 @@ POST /api/v1/sessions
 
 - `recall_at_k`
 - `precision_at_k`
+- `precision_at_retrieved`
+- `labeled_precision_ceiling`
+- `normalized_precision_at_k`
 - `hit_at_k`
+- `top1_accuracy`
 - `mrr`
 - `ndcg_at_k`
 - `route_accuracy`
@@ -1791,6 +1817,24 @@ Code Generate 的质量很依赖 `knowledge/code-reference` 和 `knowledge/examp
 
 后续如果某类代码生成结果太空，优先补同类 `engine_notes` 和 `code_reference`，再考虑是否增强兜底模板。这样范围保持小而稳，不会变成复杂模板市场。
 
+### 18.16.1 Code Generate Preflight
+
+Code Generate 现在会在生成 `.h/.cpp` 草稿后自动运行轻量预检，输出：
+
+- `data.preflight_report.status`：`passed`、`warning` 或 `failed`。
+- `data.preflight_report.quality_score`：0-1 之间的启发式质量分。
+- `data.preflight_report.summary`：检查文件数量、C++ 文件数量、warning/error 数量、是否存在 `.h/.cpp` 配对。
+- `data.preflight_report.findings[]`：结构、路径、UE 反射、include、Enhanced Input 等问题提示。
+- `debug_view.tools[].tool_id="preflight_generated_code"`：本轮是否执行预检。
+- `step_results[].step_id="preflight_generated_code"`：预检步骤详情。
+
+当前预检边界：
+
+- 不调用 clang、UnrealHeaderTool 或 UE 编辑器。
+- 不解析完整 C++ AST。
+- 不证明代码一定能编译通过。
+- 只作为复制代码前的静态烟测，帮助发现 `draft.txt`、路径不规范、缺少 `.generated.h`、缺少 `GENERATED_BODY()`、Enhanced Input 要素缺失等低级问题。
+
 官方文档整理边界：
 
 - 保留 `source_url`，但不整站爬取。
@@ -1962,8 +2006,12 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 核心指标：
 
 - `recall_at_k`：召回率，期望来源中有多少被 top-k 检索找回。
-- `precision_at_k`：精确率，top-k 检索结果里有多少是期望来源。
+- `precision_at_k`：严格 top-k 精确率，相关命中数除以配置的 `top_k`。当数据集每条只标 1 个期望来源且 `top_k=4` 时，即使命中第一名，上限也只有 `0.25`。
+- `precision_at_retrieved`：相关命中数除以实际去重后的检索来源数，更适合观察本地 lexical RAG 是否混入过多无关文档。
+- `labeled_precision_ceiling`：当前标注密度下 `precision_at_k` 的理论上限。
+- `normalized_precision_at_k`：`precision_at_k / labeled_precision_ceiling`，用于把“标签稀疏导致的天然低分”归一化。
 - `hit_at_k`：每条 case 是否至少命中一个期望来源。
+- `top1_accuracy`：第一条检索结果是否就是期望来源。
 - `mrr`：第一个正确来源出现得越靠前越高。
 - `ndcg_at_k`：考虑排序位置的检索质量。
 - `route_accuracy`：Agent 是否选对 direct / project_qa / workflow / single_tool。
@@ -1977,7 +2025,11 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 - RAG cases：8
 - `recall_at_k=0.9375`
 - `precision_at_k=0.2500`
+- `precision_at_retrieved=0.6250`
+- `labeled_precision_ceiling=0.2812`
+- `normalized_precision_at_k=0.9375`
 - `hit_at_k=1.0000`
+- `top1_accuracy=0.8750`
 - `mrr=0.9167`
 - `ndcg_at_k=0.9133`
 - `route_accuracy=1.0000`
@@ -1987,12 +2039,13 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 - `success_rate=1.0000`
 - `field_coverage=1.0000`
 - `semantic_accuracy=1.0000`
-- Performance：20 requests，`p50_ms≈43`，`p95_ms≈80`
+- Performance：20 requests，`p50_ms≈41`，`p95_ms≈81`
 
 如何解读：
 
 - `route_accuracy / field_coverage / semantic_accuracy` 已经适合作品集展示，说明后端功能链路稳定。
-- `recall_at_k / hit_at_k / no_result_ratio` 已经恢复到稳定展示水平；后续如果继续优化，重点看 `precision_at_k` 和排序质量。
+- `precision_at_k=0.25` 不是单独的失败信号，因为当前多数 case 只标一个期望文件，`top_k=4` 时单标签 case 的精确率上限就是 0.25；应结合 `normalized_precision_at_k=0.9375`、`top1_accuracy=0.8750`、`mrr=0.9167` 一起看。
+- `recall_at_k / hit_at_k / no_result_ratio` 已经恢复到稳定展示水平；后续如果继续优化，重点看没命中的那条 UE 知识样例、Top1 排序和更细的 domain 过滤。
 - 离线 benchmark 的 `p95_ms` 已降到百毫秒内；live LLM benchmark 会受模型、代理和供应商延迟影响，不能和离线基线直接比较。
 
 后续性能优化建议：

@@ -39,6 +39,8 @@ def test_build_benchmark_markdown_includes_core_metrics() -> None:
             "cases": 1,
             "recall_at_k": 1.0,
             "precision_at_k": 0.25,
+            "normalized_precision_at_k": 1.0,
+            "top1_accuracy": 1.0,
             "route_accuracy": 1.0,
         },
         "task_summary": {
@@ -68,4 +70,6 @@ def test_build_benchmark_markdown_includes_core_metrics() -> None:
     assert "# UE Agent Backend Benchmark Report" in markdown
     assert "`recall_at_k`" in markdown
     assert "`precision_at_k`" in markdown
+    assert "`normalized_precision_at_k`" in markdown
+    assert "`top1_accuracy`" in markdown
     assert "`p95_ms`" in markdown

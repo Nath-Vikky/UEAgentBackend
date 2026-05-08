@@ -28,6 +28,7 @@ from app.rag.ingestion.dedup import content_hash
 from app.rag.ingestion.jobs import utc_now
 from app.rag.ingestion.loaders import discover_source_paths
 from app.rag.ingestion.parsers import parse_path
+from app.rag.retrieval.agentic import refine_retrieval_if_needed
 from app.rag.retrieval.hybrid import retrieve
 from app.rag.schemas import ParsedDocument
 from app.schemas.requests import ContextInput, KnowledgeBaseImportRequest
@@ -258,16 +259,26 @@ class KnowledgeBaseService:
             settings=self.settings,
             output_language=output_language,
         )
+        result, agentic_rag, agentic_warnings = refine_retrieval_if_needed(
+            query=query,
+            context=context,
+            payload=payload,
+            chunks=chunks,
+            settings=self.settings,
+            output_language=output_language,
+            initial_result=result,
+        )
+        selected_query = str(agentic_rag.get("selected_query") or query)
         local_search = (
             LocalSearchService(self.settings).search(
-                query=query,
+                query=selected_query,
                 domain_filters=payload.get("domain_filters") or context.kb_domains_hint or [],
                 top_k=min(max(self.settings.rag_top_k, 3), 8),
             )
             if (not payload.get("disable_local_search"))
             and (not result.retrieved_docs or payload.get("use_local_search"))
             else {
-                "query": query,
+                "query": selected_query,
                 "mode": "local_grep",
                 "status": "skipped",
                 "reason": "rag_hits_available",
@@ -352,10 +363,32 @@ class KnowledgeBaseService:
             }
             for item in result.retrieved_docs
         ]
-        warnings = list(result.warnings)
+        final_evidence_count = len(result.retrieved_docs) + len(local_docs)
+        evidence_sufficient = final_evidence_count > 0
+        retrieval_quality_gate = {
+            "status": "passed" if evidence_sufficient else "warning",
+            "evidence_sufficient": evidence_sufficient,
+            "evidence_insufficient": not evidence_sufficient,
+            "reason": (
+                "rag_or_local_evidence_available"
+                if evidence_sufficient
+                else agentic_rag.get("final_reason", "no_evidence")
+            ),
+            "selected_round": agentic_rag.get("selected_round", 1),
+            "selected_query": selected_query,
+            "retrieved_count": final_evidence_count,
+            "rag_retrieved_count": len(result.retrieved_docs),
+            "local_retrieved_count": len(local_docs),
+        }
+        warnings = list(dict.fromkeys([*result.warnings, *agentic_warnings]))
         if local_docs:
-            warnings = [item for item in warnings if item != "no_retrieval_hits"]
+            warnings = [
+                item
+                for item in warnings
+                if item not in {"no_retrieval_hits", "evidence_insufficient"}
+            ]
             warnings.append("local_search_fallback_used")
+        warnings = list(dict.fromkeys(warnings))
         return {
             "answer": answer_text,
             "confidence": max(result.confidence, 0.38 if local_docs else result.confidence),
@@ -368,13 +401,18 @@ class KnowledgeBaseService:
             "retrieved_docs": [*retrieved_docs, *local_docs],
             "filters_applied": result.filters_applied,
             "local_search": local_search,
+            "retrieval_quality_gate": retrieval_quality_gate,
             "retrieval_trace": {
                 "mode": result.mode,
                 "degraded_mode": result.degraded_mode,
                 "reason": result.reason,
+                "query": query,
+                "selected_query": selected_query,
                 "filters_applied": result.filters_applied,
                 "retrieved_docs": [*retrieval_trace_docs, *local_docs],
                 "local_search": local_search,
+                "agentic_rag": agentic_rag,
+                "retrieval_quality_gate": retrieval_quality_gate,
             },
             "warnings": warnings,
         }
@@ -438,6 +476,17 @@ class KnowledgeBaseService:
             }
             for item in catalog_items[:5]
         ]
+        retrieval_quality_gate = {
+            "status": "skipped",
+            "evidence_sufficient": bool(catalog_items),
+            "evidence_insufficient": not bool(catalog_items),
+            "reason": "catalog_query",
+            "selected_round": 1,
+            "selected_query": query,
+            "retrieved_count": len(catalog_items),
+            "rag_retrieved_count": 0,
+            "local_retrieved_count": 0,
+        }
         return {
             "answer": answer_text,
             "answer_mode": "knowledge_catalog",
@@ -456,6 +505,7 @@ class KnowledgeBaseService:
                 "source_paths": self.settings.kb_source_paths,
             },
             "filters_applied": {},
+            "retrieval_quality_gate": retrieval_quality_gate,
             "local_search": {
                 "query": query,
                 "mode": "knowledge_catalog",
@@ -477,6 +527,17 @@ class KnowledgeBaseService:
                 "reason": "catalog_query",
                 "filters_applied": {},
                 "retrieved_docs": [],
+                "agentic_rag": {
+                    "enabled": False,
+                    "max_rounds": 1,
+                    "attempts": [],
+                    "selected_round": 1,
+                    "selected_query": query,
+                    "evidence_sufficient": bool(catalog_items),
+                    "evidence_insufficient": not bool(catalog_items),
+                    "final_reason": "catalog_query",
+                },
+                "retrieval_quality_gate": retrieval_quality_gate,
                 "catalog": {
                     "document_count": len(catalog_items),
                     "domain_counts": domain_counts,
