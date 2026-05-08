@@ -20,8 +20,10 @@ def test_discover_source_paths_skips_local_only_docs_during_directory_scan() -> 
         docs_dir.mkdir(parents=True)
         public_guide = docs_dir / "backend-user-guide.md"
         local_plan = docs_dir / "improveplan.md"
+        eval_report = docs_dir / "rag-agentic-ab-report.md"
         public_guide.write_text("# User Guide\n\nPublic project docs.", encoding="utf-8")
         local_plan.write_text("# Improve Plan\n\nLocal-only planning notes.", encoding="utf-8")
+        eval_report.write_text("# Eval Report\n\nGenerated metric notes.", encoding="utf-8")
 
         files = discover_source_paths(
             Settings(openai_api_key="", kb_source_paths=[str(docs_dir)]),
@@ -30,6 +32,7 @@ def test_discover_source_paths_skips_local_only_docs_during_directory_scan() -> 
 
         assert "backend-user-guide.md" in names
         assert "improveplan.md" not in names
+        assert "rag-agentic-ab-report.md" not in names
     finally:
         shutil.rmtree(runtime_root, ignore_errors=True)
 

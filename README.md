@@ -151,6 +151,14 @@ make benchmark
 .\.venv\Scripts\python.exe scripts\run_code_review_benchmark.py --min-recall 0.85 --min-precision 0.85
 ```
 
+Agentic RAG A/B 对比（普通 RAG vs 最多 2 轮 query rewrite）：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_rag_agentic_ab.py --top-k 4 --max-hit-drop 0.0
+```
+
+该脚本会生成 `docs/rag-agentic-ab-report.md`，用于展示 Agentic RAG 是否提升检索指标，或至少证明没有造成回退。
+
 报告包含：
 
 - RAG：`recall_at_k`、`precision_at_k`、`normalized_precision_at_k`、`top1_accuracy`、`hit_at_k`、`mrr`、`citation_coverage`

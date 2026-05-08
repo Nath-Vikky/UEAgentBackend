@@ -194,6 +194,22 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `storage/artifacts/evals/*.md` 是本地生成的 Markdown 评估报告，展示 `hit_at_k`、`mrr`、`route_accuracy`、`citation_coverage` 等核心指标。当前评估是 smoke 级别，用于证明“可测、可复现、可继续优化”，不是企业级大规模 benchmark。
 
+Agentic RAG A/B 对比：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_rag_agentic_ab.py --top-k 4 --max-hit-drop 0.0
+```
+
+这个脚本会在同一套数据集上分别运行：
+- baseline：`payload.disable_agentic_rag=true`
+- agentic：`payload.disable_agentic_rag=false`
+
+输出文件：
+- `storage/artifacts/evals/rag-agentic-ab-latest.json`
+- `docs/rag-agentic-ab-report.md`
+
+报告适合用于面试说明：当前 Agentic RAG 不是复杂 planner，而是一个可量化、可关闭、可回归测试的轻量 query refinement 层。
+
 ### Docker 本地演示
 
 本项目提供轻量 Docker / Compose 入口，用于面试演示和项目留档：

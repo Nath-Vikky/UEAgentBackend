@@ -106,3 +106,20 @@ def test_refine_retrieval_runs_second_round_when_initial_evidence_is_weak() -> N
     assert trace["attempts"][1]["rewrite_applied"] is True
     assert selected.retrieved_docs
     assert "agentic_rag_query_rewrite_used" in warnings
+
+
+def test_refine_retrieval_retries_moderate_confidence_when_hint_is_available() -> None:
+    selected, trace, warnings = refine_retrieval_if_needed(
+        query="\u89d2\u8272\u8f93\u5165\u7ed1\u5b9a\u600e\u4e48\u5199",
+        context=ContextInput(project_name="Demo", current_module="RushBa"),
+        payload={"domain_filters": ["code_reference"]},
+        chunks=[_chunk()],
+        settings=Settings(openai_api_key="", embedding_enabled=False, rag_mode="lexical", rag_top_k=3),
+        output_language="zh-CN",
+        initial_result=_result(docs=[_candidate(score=0.05)], confidence=0.55),
+    )
+
+    assert trace["selected_round"] == 2
+    assert trace["attempts"][1]["rewrite_reason"] == "known_hint_refinement"
+    assert selected.retrieved_docs
+    assert "agentic_rag_query_rewrite_used" in warnings
