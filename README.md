@@ -142,12 +142,19 @@ KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../TeamNote
 make benchmark
 ```
 
+代码审查专项离线 benchmark（不需要 LLM / Qdrant）：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_code_review_benchmark.py --min-recall 0.85 --min-precision 0.85
+```
+
 报告包含：
 
 - RAG：`recall_at_k`、`precision_at_k`、`hit_at_k`、`mrr`、`citation_coverage`
 - 路由：`route_accuracy`
 - 任务：`success_rate`、`field_coverage`、`semantic_accuracy`
 - 性能：`p50_ms`、`p95_ms`
+- Code Review 专项：`recall`、`precision`、`false_positive_rate`、`clean_case_accuracy`、多阶段链路耗时
 
 读取本地评测报告：
 
@@ -158,7 +165,7 @@ GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
 
 这两个接口只读，不会重新运行评测，适合 Debug View 或面试演示页展示。
 
-当前量化报告见 [docs/benchmark-report.md](./docs/benchmark-report.md)。
+当前量化报告见 [docs/benchmark-report.md](./docs/benchmark-report.md) 和 [docs/code-review-benchmark-report.md](./docs/code-review-benchmark-report.md)。
 
 ## 关键 API
 
@@ -255,6 +262,12 @@ RAG smoke eval：
 .\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
 ```
 
+Code Review benchmark：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_code_review_benchmark.py --min-recall 0.85 --min-precision 0.85
+```
+
 GitHub Actions 当前只保留手动触发入口，不随 push 自动运行。日常验证以本地 Ruff、pytest 和 eval 为准。
 
 ## Docker 本地演示
@@ -274,6 +287,7 @@ Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG。要�
 
 - [docs/backend-user-guide.md](./docs/backend-user-guide.md)：完整使用手册。
 - [docs/benchmark-report.md](./docs/benchmark-report.md)：当前量化评估结果。
+- [docs/code-review-benchmark-report.md](./docs/code-review-benchmark-report.md)：代码审查专项量化结果。
 - [docs/project-review-checklist.md](./docs/project-review-checklist.md)：项目收口、验证和交付检查清单。
 
 开发日志、改进计划、前端交接、学习笔记等过程文档默认保留在本地，并已加入 `.gitignore`，避免公开仓库首页被过程资料稀释。

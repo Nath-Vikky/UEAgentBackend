@@ -92,6 +92,10 @@ def _chain_summary_text(
     )
 
 
+def _node_failed(chain_result: AgentChainResult) -> bool:
+    return any(item.status == "failed" for item in chain_result.phase_results)
+
+
 @dataclass(slots=True)
 class ReviewFixValidateChain:
     kb_service: KnowledgeBaseService
@@ -141,23 +145,37 @@ class ReviewFixValidateChain:
         if gate.status == "passed" and not review_execution.get("errors"):
             generate_request = self._build_generate_request(request, review_data)
             generate_routing = self._phase_routing(routing, selected_tool_id="generate_code_draft")
-            generate_execution, generate_node = run_timed_node(
-                node_id="fix_draft",
-                role="FixDraftAgent",
-                input_summary="Generate non-destructive code drafts from review findings.",
-                runner=lambda: self._run_generate(
-                    request=generate_request,
-                    routing=generate_routing,
-                    trace_id=trace_id,
-                    output_language=output_language,
-                    chat_config=chat_config,
-                    context_bundle=context_bundle,
-                ),
-                output_summary=self._generate_output_summary,
-                data_summary=self._generate_data_summary,
-                warnings=lambda item: list((item.get("data") or {}).get("warnings") or []),
-            )
-            chain_result.phase_results.append(generate_node)
+            try:
+                generate_execution, generate_node = run_timed_node(
+                    node_id="fix_draft",
+                    role="FixDraftAgent",
+                    input_summary="Generate non-destructive code drafts from review findings.",
+                    runner=lambda: self._run_generate(
+                        request=generate_request,
+                        routing=generate_routing,
+                        trace_id=trace_id,
+                        output_language=output_language,
+                        chat_config=chat_config,
+                        context_bundle=context_bundle,
+                    ),
+                    output_summary=self._generate_output_summary,
+                    data_summary=self._generate_data_summary,
+                    warnings=lambda item: list((item.get("data") or {}).get("warnings") or []),
+                )
+                chain_result.phase_results.append(generate_node)
+            except Exception as exc:
+                chain_result.warnings.append(f"fix_draft_phase_failed: {exc}")
+                chain_result.phase_results.append(
+                    AgentNodeResult(
+                        node_id="fix_draft",
+                        role="FixDraftAgent",
+                        status="failed",
+                        input_summary="Generate non-destructive code drafts from review findings.",
+                        output_summary="Fix draft generation failed; returning completed review phase only.",
+                        data={"reason": "fix_draft_phase_failed", "error": str(exc)},
+                        warnings=[str(exc)],
+                    )
+                )
         else:
             chain_result.phase_results.append(
                 AgentNodeResult(
@@ -170,18 +188,37 @@ class ReviewFixValidateChain:
                 )
             )
 
-        validation_report, validation_node = run_timed_node(
-            node_id="validate",
-            role="ValidationAgent",
-            input_summary="Validate generated draft when available, otherwise keep review validation checklist.",
-            runner=lambda: self._run_validate(request=request, generate_execution=generate_execution),
-            output_summary=lambda item: str(item.get("summary") or ""),
-            data_summary=lambda item: {
-                "issue_count": len(item.get("issue_list") or []),
-                "severity_summary": item.get("severity_summary") or {},
-                "validated_generated_code": bool(item.get("validated_generated_code")),
-            },
-        )
+        try:
+            validation_report, validation_node = run_timed_node(
+                node_id="validate",
+                role="ValidationAgent",
+                input_summary="Validate generated draft when available, otherwise keep review validation checklist.",
+                runner=lambda: self._run_validate(request=request, generate_execution=generate_execution),
+                output_summary=lambda item: str(item.get("summary") or ""),
+                data_summary=lambda item: {
+                    "issue_count": len(item.get("issue_list") or []),
+                    "severity_summary": item.get("severity_summary") or {},
+                    "validated_generated_code": bool(item.get("validated_generated_code")),
+                },
+            )
+        except Exception as exc:
+            chain_result.warnings.append(f"validate_phase_failed: {exc}")
+            validation_report = {
+                "summary": "Validation phase failed; review and generated draft results are still available.",
+                "issue_list": [],
+                "severity_summary": {"high": 0, "medium": 0, "low": 0},
+                "validated_generated_code": False,
+                "error": str(exc),
+            }
+            validation_node = AgentNodeResult(
+                node_id="validate",
+                role="ValidationAgent",
+                status="failed",
+                input_summary="Validate generated draft when available, otherwise keep review validation checklist.",
+                output_summary="Validation phase failed; returning prior phase results.",
+                data={"reason": "validate_phase_failed", "error": str(exc)},
+                warnings=[str(exc)],
+            )
         chain_result.phase_results.append(validation_node)
 
         return self._project_result(
@@ -362,7 +399,12 @@ class ReviewFixValidateChain:
         generate_data = dict((generate_execution or {}).get("data") or {})
         generated_items = list(generate_data.get("generated_items") or [])
         gate = chain_result.decision_gates[0]
-        chain_result.status = "completed" if not review_execution.get("errors") else "failed"
+        if review_execution.get("errors"):
+            chain_result.status = "failed"
+        elif _node_failed(chain_result):
+            chain_result.status = "degraded"
+        else:
+            chain_result.status = "completed"
         chain_summary = chain_result.summary()
         user_text = _chain_summary_text(
             output_language=output_language,
@@ -371,6 +413,12 @@ class ReviewFixValidateChain:
             validation_issue_count=len(validation_report.get("issue_list") or []),
             gate=gate,
         )
+        if chain_result.status == "degraded":
+            user_text = _localized(
+                output_language,
+                "多阶段代码审查链部分阶段失败；已返回已完成的审查结果、失败阶段原因和可继续人工处理的建议。",
+                "The multi-agent code review chain partially failed; completed review results, failed phase details, and manual follow-up guidance are still returned.",
+            )
         base_debug = self.base_debug_builder(
             request=request,
             routing=routing,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import sys
 from pathlib import Path
 
@@ -8,6 +9,9 @@ from app.services.mcp_tool_adapter import MCPToolAdapter, build_mcp_adapter_stat
 
 
 FIXTURE_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "weather_mcp_server.py"
+CRASHING_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "crashing_mcp_server.py"
+STDERR_SPAM_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "stderr_spam_mcp_server.py"
+TIMEOUT_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "timeout_mcp_server.py"
 
 
 def test_mcp_adapter_is_disabled_by_default() -> None:
@@ -110,3 +114,73 @@ def test_mcp_adapter_blocks_unlisted_fixture_tool_before_process_call() -> None:
 
     assert result["ok"] is False
     assert result["reason"] == "tool_not_in_mcp_allowed_tools"
+
+
+def test_mcp_adapter_returns_error_when_server_crashes_mid_call() -> None:
+    settings = Settings(
+        mcp_tool_adapter_enabled=True,
+        mcp_stdio_command=sys.executable,
+        mcp_stdio_args=[str(CRASHING_SERVER)],
+        mcp_allowed_tools=["crash_tool"],
+        mcp_stdio_timeout_ms=1000,
+    )
+
+    result = MCPToolAdapter(settings).call_readonly_tool("crash_tool", {})
+
+    assert result["ok"] is False
+    assert result["status"] == "error"
+    assert result["reason"] in {"mcp_stdio_timeout", "mcp_stdio_process_exited", "mcp_stdio_write_failed"}
+    assert "fixture crash" in result["debug"]["error_details"].get("stderr", "")
+
+
+def test_mcp_adapter_times_out_when_server_never_responds() -> None:
+    settings = Settings(
+        mcp_tool_adapter_enabled=True,
+        mcp_stdio_command=sys.executable,
+        mcp_stdio_args=[str(TIMEOUT_SERVER)],
+        mcp_allowed_tools=["slow_tool"],
+        mcp_stdio_timeout_ms=300,
+    )
+
+    result = MCPToolAdapter(settings).discover_tools()
+
+    assert result["ok"] is False
+    assert result["status"] == "error"
+    assert result["reason"] == "mcp_stdio_timeout"
+
+
+def test_mcp_adapter_handles_stderr_spam_without_blocking() -> None:
+    settings = Settings(
+        mcp_tool_adapter_enabled=True,
+        mcp_stdio_command=sys.executable,
+        mcp_stdio_args=[str(STDERR_SPAM_SERVER)],
+        mcp_allowed_tools=["echo_tool"],
+        mcp_stdio_timeout_ms=5000,
+    )
+
+    result = MCPToolAdapter(settings).call_readonly_tool("echo_tool", {"text": "hello"})
+
+    assert result["ok"] is True
+    assert result["result"]["content"][0]["text"] == "hello"
+
+
+def test_mcp_adapter_concurrent_calls_use_isolated_stdio_processes() -> None:
+    def _call(index: int) -> dict:
+        settings = Settings(
+            mcp_tool_adapter_enabled=True,
+            mcp_stdio_command=sys.executable,
+            mcp_stdio_args=[str(FIXTURE_SERVER)],
+            mcp_allowed_tools=["get_weather"],
+            mcp_stdio_timeout_ms=5000,
+        )
+        return MCPToolAdapter(settings).call_readonly_tool("get_weather", {"city": f"City{index}"})
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        results = list(executor.map(_call, range(3)))
+
+    assert all(item["ok"] for item in results)
+    assert [item["result"]["content"][0]["text"] for item in results] == [
+        "City0: sunny, 24C",
+        "City1: sunny, 24C",
+        "City2: sunny, 24C",
+    ]

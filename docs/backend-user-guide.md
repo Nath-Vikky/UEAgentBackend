@@ -2562,7 +2562,48 @@ Multi-Agent 链不会写入 UE 工程，也不会绕过 Proposal：
 
 当前 UE 前端不必强制修改。若前端已有通用 `user_view.blocks` 渲染能力，可以直接显示新增的 `phase_result` 和 `generated_items`。如果想做得更清楚，可在 Code Review 高亮弹窗里新增一个“Multi-Agent Chain”折叠区，读取 `data.multi_agent` 或 `debug_view.multi_agent`。
 
-## 28. Optional MCP Stdio Client v1
+## 28. Code Review 专项 Benchmark
+
+后端补充了一个离线代码审查专项 benchmark，用于量化 `CodeReviewSkill` 和 `Review -> Generate -> Validate` 多阶段链路的基础效果。它默认关闭 LLM、Embedding 和 Qdrant，因此不需要代理、不需要 API Key，适合本地稳定版留存、回归测试和面试展示。
+
+运行命令：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_code_review_benchmark.py --min-recall 0.85 --min-precision 0.85
+```
+
+输入数据集：
+
+```text
+tests/eval/code_review_benchmark_dataset.jsonl
+```
+
+输出结果：
+
+```text
+docs/code-review-benchmark-report.md
+storage/artifacts/evals/code-review-benchmark-latest.json
+```
+
+当前报告指标：
+
+- `recall`：预期规则命中是否被检测到。
+- `precision`：检测到的规则命中中，有多少属于预期命中。
+- `false_positive_rate`：额外规则命中的比例，用于观察规则是否过宽。
+- `clean_case_accuracy`：干净样例是否没有被误报。
+- `generated_draft_case_rate`：多阶段链路中触发修复草稿的样例比例。
+- `validation_issue_per_generated_file`：生成草稿后验证阶段发现的新风险密度。
+- `latency_ms`：单阶段审查和多阶段链路的平均/最大耗时。
+
+当前离线 benchmark 不测 LLM 幻觉率，因为 LLM 调用被显式关闭。后续如果要测 live LLM，可以单独新增一个小型人工标注数据集，检查 LLM 的解释是否引入了“源码中不存在的事实”。不要把 live LLM 评测放进默认 pytest 或默认 benchmark，避免受代理、额度、模型波动影响。
+
+设计边界：
+
+- 这是作品级回归 benchmark，不是企业级大规模评测平台。
+- 数据集使用原创短代码片段，不依赖外部项目源码。
+- Multi-Agent 的 review phase 复用同一套规则检测，因此检出率预期与单阶段 Code Review 一致；多阶段价值主要体现在修复草稿和验证阶段是否被正确触发、是否保持 no-write guarantee。
+
+## 29. Optional MCP Stdio Client v1
 
 后端现在有最小 MCP stdio client。它仍是可选工具层，不是 UE 前端主通信协议，也不会替代现有 HTTP API。
 
