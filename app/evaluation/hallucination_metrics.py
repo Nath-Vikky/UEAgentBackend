@@ -22,6 +22,23 @@ def _collect_text(value: Any) -> list[str]:
     return []
 
 
+def _visible_answer_text(response: dict[str, Any]) -> str:
+    user_view = response.get("user_view") if isinstance(response.get("user_view"), dict) else {}
+    parts: list[str] = []
+    for key in ("title", "text"):
+        value = user_view.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    for block in user_view.get("blocks") or []:
+        if not isinstance(block, dict):
+            continue
+        for key in ("title", "text"):
+            value = block.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+    return "\n".join(part for part in parts if part).strip()
+
+
 def _contains_any(text: str, terms: list[str]) -> bool:
     if not terms:
         return True
@@ -62,7 +79,9 @@ def evaluate_hallucination_case(
     assertions = dict(case.get("assertions") or {})
     expected_behavior = str(assertions.get("expected_behavior") or "grounded_answer")
     data = dict(response.get("data") or {})
-    user_text = "\n".join(_collect_text(response.get("user_view") or {}))
+    user_text = _visible_answer_text(response) or "\n".join(
+        _collect_text(response.get("user_view") or {})
+    )
     confidence = float(data.get("confidence") or 0.0)
     citations = list(data.get("citations") or [])
     sources = _retrieved_sources(response)

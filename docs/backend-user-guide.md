@@ -2034,6 +2034,20 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 - `docs/hallucination-guard-report.md`
 - `storage/artifacts/evals/project-benchmark-latest.json`
 
+当前 Hallucination Guard 报告重点：
+
+- `cases=15`：覆盖证据不足拒答、通用 UE 知识命中、知识库目录回答三类问题。
+- `grounding_accuracy=1.0`：离线 fallback 模式下，所有样例都符合预期 grounding 行为。
+- `unsupported_answer_rate=0.0`：没有 Project Inventory 或没有专名证据时，不编造当前项目事实。
+- `knowledge_catalog_accuracy=1.0`：用户问“知识库有哪些内容”时，只返回目录和用途，不把源码正文整段展开。
+
+Project QA 的 grounding 边界：
+
+- 当前项目事实类问题，例如“当前项目有哪些蓝图资产”“选中的 StaticMesh 是否开启 Nanite”，必须依赖 Project Inventory 快照。
+- 如果没有快照或快照没有命中，后端会降低置信度并提示补充快照，不再把通用 UE 文档当成当前项目证据。
+- 通用 UE 知识类问题，例如 Actor 生命周期、Enhanced Input、HTTP 模块依赖、软引用异步加载，仍然走知识库 / local grep / RAG，不会被 Inventory fallback 覆盖。
+- 离线 fallback 回答会补充 `证据关键词`，便于用户和评测看到本轮命中的核心知识点；live LLM 可在这些证据基础上生成更自然的表达。
+
 核心指标：
 
 - `recall_at_k`：召回率，期望来源中有多少被 top-k 检索找回。
@@ -2061,8 +2075,8 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 - `normalized_precision_at_k=0.9375`
 - `hit_at_k=1.0000`
 - `top1_accuracy=0.8750`
-- `mrr=0.9167`
-- `ndcg_at_k=0.9133`
+- `mrr=0.9375`
+- `ndcg_at_k=0.9234`
 - `route_accuracy=1.0000`
 - `citation_coverage=1.0000`
 - `no_result_ratio=0.0000`
@@ -2070,12 +2084,13 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 - `success_rate=1.0000`
 - `field_coverage=1.0000`
 - `semantic_accuracy=1.0000`
-- Performance：20 requests，`p50_ms≈41`，`p95_ms≈81`
+- Hallucination Guard：15 cases，`grounding_accuracy=1.0000`，`unsupported_answer_rate=0.0000`
+- Performance：35 requests，`p50_ms≈39`，`p95_ms≈108`
 
 如何解读：
 
 - `route_accuracy / field_coverage / semantic_accuracy` 已经适合项目质量展示，说明后端功能链路稳定。
-- `precision_at_k=0.25` 不是单独的失败信号，因为当前多数 case 只标一个期望文件，`top_k=4` 时单标签 case 的精确率上限就是 0.25；应结合 `normalized_precision_at_k=0.9375`、`top1_accuracy=0.8750`、`mrr=0.9167` 一起看。
+- `precision_at_k=0.25` 不是单独的失败信号，因为当前多数 case 只标一个期望文件，`top_k=4` 时单标签 case 的精确率上限就是 0.25；应结合 `normalized_precision_at_k=0.9375`、`top1_accuracy=0.8750`、`mrr=0.9375` 一起看。
 - `recall_at_k / hit_at_k / no_result_ratio` 已经恢复到稳定展示水平；后续如果继续优化，重点看没命中的那条 UE 知识样例、Top1 排序和更细的 domain 过滤。
 - 离线 benchmark 的 `p95_ms` 已降到百毫秒内；live LLM benchmark 会受模型、代理和供应商延迟影响，不能和离线基线直接比较。
 
@@ -2682,6 +2697,13 @@ storage/artifacts/evals/code-review-benchmark-latest.json
 - `generated_draft_case_rate`：多阶段链路中触发修复草稿的样例比例。
 - `validation_issue_per_generated_file`：生成草稿后验证阶段发现的新风险密度。
 - `latency_ms`：单阶段审查和多阶段链路的平均/最大耗时。
+
+当前数据集规模与规则边界：
+
+- 数据集已有 `20` 个原创 UE C++ 短样例，其中包含 `9` 个干净 / 噪声样例。
+- 干净样例覆盖注释中的风险词、`UPROPERTY` 保护的 UE raw pointer、`TObjectPtr`、`TSoftObjectPtr`、`AsyncTask(ENamedThreads::GameThread)`、轻量 includes、DataTable row 等常见误报来源。
+- 规则层现在会跳过纯注释行，不再把 `UPROPERTY` 保护的 UE 指针当成裸指针风险，也不会把回到 GameThread 的 `AsyncTask` 当成后台线程风险。
+- 仍会保留真实风险检测，例如后台线程访问 UObject、同步加载、硬编码资源路径、Tick 热路径和 Blueprint API surface 过宽。
 
 当前离线 benchmark 不测 LLM 幻觉率，因为 LLM 调用被显式关闭。后续如果要测 live LLM，可以单独新增一个小型人工标注数据集，检查 LLM 的解释是否引入了“源码中不存在的事实”。不要把 live LLM 评测放进默认 pytest 或默认 benchmark，避免受代理、额度、模型波动影响。
 

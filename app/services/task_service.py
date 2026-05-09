@@ -311,7 +311,7 @@ class TaskService:
             if not summary.get("has_snapshot"):
                 return _localized(
                     output_language,
-                    "当前还没有可用的 Project Inventory 快照，所以我无法列出当前工程里的资产或代码文件。请先在 UE 插件 Debug View 点击 Submit Inventory，提交一次项目快照后再询问。",
+                    "当前没有找到可用的 Project Inventory 快照，所以我无法列出当前工程里的资产或代码文件。请先在 UE 插件 Debug View 点击 Submit Inventory，提交一次项目快照后再询问。",
                     "No Project Inventory snapshot is available yet, so I cannot list assets or code files from the current project. Submit a Project Inventory snapshot from the UE plugin Debug View first, then ask again.",
                 )
             return _localized(
@@ -444,6 +444,93 @@ class TaskService:
                 else "retrieval_backed_project_qa"
             ),
         }
+
+    def _inventory_fact_query_requires_snapshot(self, query: str) -> bool:
+        """Project-state questions must be grounded in UE inventory, not generic KB notes."""
+        query_lower = query.lower()
+        project_fact_markers = (
+            "current",
+            "selected",
+            "this project",
+            "my project",
+            "in project",
+            "opened",
+            "currently",
+            "当前",
+            "选中",
+            "现在",
+            "当前项目",
+            "当前工程",
+            "我的项目",
+            "我们项目",
+            "本项目",
+            "工程里",
+            "工程中",
+            "工程是否",
+            "项目里",
+            "项目中",
+            "项目是否",
+            "项目规定",
+            "这个项目",
+            "这个资产",
+            "这个蓝图",
+            "某个资产",
+            "某个蓝图",
+            "该资产",
+            "该蓝图",
+            "团队规定",
+            "有哪些",
+            "列出",
+            "是否打开",
+            "是否启用",
+            "用了哪些",
+            "包含哪些",
+        )
+        return any(marker in query_lower or marker in query for marker in project_fact_markers)
+
+    def _project_qa_evidence_terms(self, retrieved_docs: list[dict[str, Any]]) -> list[str]:
+        highlight_terms = (
+            "BeginPlay",
+            "Tick",
+            "EndPlay",
+            "EnhancedInput",
+            "UInputAction",
+            "InputAction",
+            "UInputMappingContext",
+            "MappingContext",
+            "BindAction",
+            "AsyncTask",
+            "FRunnable",
+            "GameThread",
+            "TaskGraph",
+            "HTTP",
+            "JsonUtilities",
+            "Json",
+            "FHttpModule",
+            "TSoftObjectPtr",
+            "SoftObjectPath",
+            "StreamableManager",
+            "GameplayAbility",
+            "AbilitySystemComponent",
+            "DataAsset",
+            "GameplayTag",
+            "增强输入",
+            "生命周期",
+            "异步加载",
+            "软引用",
+        )
+        blob = "\n".join(
+            " ".join(
+                str(doc.get(key) or "")
+                for key in ("title", "source_path", "section_path", "text")
+            )
+            for doc in retrieved_docs
+        ).lower()
+        terms: list[str] = []
+        for term in highlight_terms:
+            if term.lower() in blob and term not in terms:
+                terms.append(term)
+        return terms[:12]
 
     def _empty_project_qa_result(self, *, query: str) -> dict[str, Any]:
         return {
@@ -2176,18 +2263,49 @@ class TaskService:
         }
         answer_generation_mode = qa_result.get("answer_mode") or "retrieval_summary_fallback"
         if tool_plan["use_inventory"]:
-            qa_result["answer"] = self._inventory_fallback_answer(
-                inventory_result=inventory_result,
-                output_language=output_language,
-            )
+            inventory_requires_snapshot = self._inventory_fact_query_requires_snapshot(query_text)
             if inventory_result["items"]:
+                qa_result["answer"] = self._inventory_fallback_answer(
+                    inventory_result=inventory_result,
+                    output_language=output_language,
+                )
                 qa_result["confidence"] = max(float(qa_result["confidence"]), 0.72)
-            else:
-                qa_result["confidence"] = max(
-                    float(qa_result["confidence"]),
-                    0.25 if inventory_result["summary"].get("has_snapshot") else 0.12,
-            )
-            answer_generation_mode = "inventory_summary_fallback"
+                answer_generation_mode = "inventory_summary_fallback"
+            elif inventory_requires_snapshot:
+                qa_result["answer"] = self._inventory_fallback_answer(
+                    inventory_result=inventory_result,
+                    output_language=output_language,
+                )
+                fallback_confidence = 0.25 if inventory_result["summary"].get("has_snapshot") else 0.12
+                qa_result["confidence"] = fallback_confidence
+                qa_result["sources"] = []
+                qa_result["citations"] = []
+                qa_result["retrieved_docs"] = []
+                qa_result["warnings"] = list(qa_result.get("warnings") or [])
+                qa_result["warnings"].append(
+                    "inventory_no_matching_items"
+                    if inventory_result["summary"].get("has_snapshot")
+                    else "inventory_snapshot_required"
+                )
+                quality_gate = dict(qa_result.get("retrieval_quality_gate") or {})
+                quality_gate.update(
+                    {
+                        "status": "warning",
+                        "evidence_sufficient": False,
+                        "evidence_insufficient": True,
+                        "reason": "inventory_snapshot_required",
+                        "retrieved_count": 0,
+                        "rag_retrieved_count": 0,
+                        "local_retrieved_count": 0,
+                    }
+                )
+                qa_result["retrieval_quality_gate"] = quality_gate
+                retrieval_trace = dict(qa_result.get("retrieval_trace") or {})
+                retrieval_trace["retrieved_docs"] = []
+                retrieval_trace["reason"] = "inventory_snapshot_required"
+                retrieval_trace["retrieval_quality_gate"] = quality_gate
+                qa_result["retrieval_trace"] = retrieval_trace
+                answer_generation_mode = "inventory_summary_fallback"
         if (
             answer_generation_mode == "retrieval_summary_fallback"
             and not qa_result.get("answer")
@@ -2368,6 +2486,15 @@ class TaskService:
                 ),
             ).model_dump(mode="json")
         ]
+        evidence_terms = self._project_qa_evidence_terms(qa_result.get("retrieved_docs", []))
+        if evidence_terms and answer_generation_mode != "llm_synthesized":
+            evidence_text = _localized(
+                output_language,
+                "证据关键词：" + ", ".join(evidence_terms),
+                "Evidence highlights: " + ", ".join(evidence_terms),
+            )
+            if evidence_text not in str(qa_result.get("answer") or ""):
+                qa_result["answer"] = f"{qa_result['answer']}\n\n{evidence_text}"
         user_view = {
             "title": _localized(output_language, "项目问答结果", "Project QA Result"),
             "text": qa_result["answer"],

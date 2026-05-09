@@ -10,6 +10,7 @@ DIFF_HUNK_RE = re.compile(r"^@@", re.MULTILINE)
 FUNCTION_RE = re.compile(r"\b(?:virtual\s+)?(?:void|bool|int32|float|double|F\w+|U\w+|A\w+)\s+(\w+)\s*\(")
 CLASS_RE = re.compile(r"\bclass\s+(\w+)")
 INCLUDE_RE = re.compile(r'^\s*#include\s+["<]([^">]+)[">]', re.MULTILINE)
+RAW_UOBJECT_POINTER_RE = re.compile(r"\b(?:UObject|U[A-Za-z_]\w*|A[A-Za-z_]\w*)\s*\*")
 
 
 def _read_focus(payload: dict[str, Any]) -> str:
@@ -77,7 +78,53 @@ def _collect_source(payload: dict[str, Any], context: ContextInput) -> tuple[str
 
 
 def _line_numbers(lines: list[str], predicate) -> list[int]:
-    return [index for index, line in enumerate(lines, start=1) if predicate(line)]
+    return [
+        index
+        for index, line in enumerate(lines, start=1)
+        if not _is_comment_only_line(line) and predicate(line)
+    ]
+
+
+def _is_comment_only_line(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith(("//", "/*", "*", "*/"))
+
+
+def _is_background_thread_line(line: str) -> bool:
+    if "std::thread" in line or "FRunnable" in line:
+        return True
+    if "AsyncTask(" not in line:
+        return False
+    return "ENamedThreads::GameThread" not in line
+
+
+def _has_uproperty_guard(lines: list[str], line_index: int) -> bool:
+    for previous_index in range(line_index - 1, max(-1, line_index - 4), -1):
+        previous = lines[previous_index].strip()
+        if not previous:
+            continue
+        if _is_comment_only_line(previous):
+            continue
+        if "UPROPERTY" in previous:
+            return True
+        if previous.endswith((";", "{", "}")):
+            return False
+    return False
+
+
+def _raw_pointer_line_numbers(lines: list[str]) -> list[int]:
+    line_numbers: list[int] = []
+    for index, line in enumerate(lines):
+        if _is_comment_only_line(line):
+            continue
+        if "TObjectPtr" in line or "TWeakObjectPtr" in line:
+            continue
+        if not RAW_UOBJECT_POINTER_RE.search(line):
+            continue
+        if "UPROPERTY" in line or _has_uproperty_guard(lines, index):
+            continue
+        line_numbers.append(index + 1)
+    return line_numbers
 
 
 def _issue(rule_id: str, severity: str, title: str, line_no: int | None, evidence: str, suggestion: str) -> dict[str, Any]:
@@ -96,10 +143,7 @@ def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[
     lines = source_text.splitlines() or [source_text]
     issues: list[dict[str, Any]] = []
 
-    for line_no in _line_numbers(
-        lines,
-        lambda line: "*" in line and "TObjectPtr" not in line and "TWeakObjectPtr" not in line and "UPROPERTY" not in line,
-    )[:5]:
+    for line_no in _raw_pointer_line_numbers(lines)[:5]:
         issues.append(
             _issue(
                 "raw_pointer_ownership",
@@ -128,7 +172,7 @@ def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[
 
     for line_no in _line_numbers(
         lines,
-        lambda line: "AsyncTask(" in line or "FRunnable" in line or "std::thread" in line,
+        _is_background_thread_line,
     )[:3]:
         issues.append(
             _issue(

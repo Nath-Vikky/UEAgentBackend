@@ -30,6 +30,7 @@ storage/kb/raw/*
 storage/kb/normalized/*
 storage/kb/failed/*
 storage/test-eval-report-service/
+tests/eval/reports/
 private-knowledge/
 private_knowledge/
 external-knowledge/

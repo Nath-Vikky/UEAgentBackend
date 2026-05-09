@@ -2,7 +2,7 @@
 
 ## Summary
 
-- Generated at: `2026-05-09T04:18:02.196918+00:00`
+- Generated at: `2026-05-09T05:32:55.928720+00:00`
 - Source paths: `./README.md, ./docs, ./knowledge`
 - RAG datasets: `tests/eval/rag_project_qa_dataset.jsonl, tests/eval/rag_ue_knowledge_dataset.jsonl`
 - Task datasets: `tests/eval/intent_language_dataset.jsonl, tests/eval/code_generate_dataset.jsonl, tests/eval/code_review_dataset.jsonl, tests/eval/logs_analyze_dataset.jsonl, tests/eval/config_task_dataset.jsonl`
@@ -44,7 +44,7 @@
 
 | Metric | Value | Meaning |
 | --- | ---: | --- |
-| `cases` | 5 | Hallucination guard case count. |
+| `cases` | 15 | Hallucination guard case count. |
 | `grounding_accuracy` | 1.0000 | Expected grounding behavior: grounded answer, abstention, or catalog answer. |
 | `route_accuracy` | 1.0000 | Route matched expected workflow. |
 | `unsupported_answer_rate` | 0.0000 | No-evidence cases that still made unsupported claims. |
@@ -57,30 +57,30 @@
 
 | Metric | Value |
 | --- | ---: |
-| `requests` | 25 |
-| `p50_ms` | 40.6500 |
-| `p95_ms` | 108.8900 |
-| `max_ms` | 118.4100 |
-| `kb_refresh_ms` | 137.4300 |
+| `requests` | 35 |
+| `p50_ms` | 39.4000 |
+| `p95_ms` | 108.3000 |
+| `max_ms` | 115.9200 |
+| `kb_refresh_ms` | 141.5900 |
 
 ## Endpoint Latency
 
 | Endpoint | Requests | P50 ms | P95 ms | Max ms |
 | --- | ---: | ---: | ---: | ---: |
-| `/api/v1/chat/runs` | 3 | 17.8300 | 40.6500 | 40.6500 |
-| `/api/v1/tasks/code-generate` | 3 | 108.8900 | 118.4100 | 118.4100 |
-| `/api/v1/tasks/code-review` | 2 | 48.8700 | 51.0700 | 51.0700 |
-| `/api/v1/tasks/config-generate` | 1 | 54.5900 | 54.5900 | 54.5900 |
-| `/api/v1/tasks/config-validate` | 1 | 14.2300 | 14.2300 | 14.2300 |
-| `/api/v1/tasks/logs-analyze` | 2 | 52.1600 | 53.6000 | 53.6000 |
-| `/api/v1/tasks/project-qa` | 13 | 30.2300 | 54.3500 | 54.3500 |
+| `/api/v1/chat/runs` | 3 | 18.2000 | 41.8800 | 41.8800 |
+| `/api/v1/tasks/code-generate` | 3 | 108.3000 | 115.9200 | 115.9200 |
+| `/api/v1/tasks/code-review` | 2 | 44.5300 | 46.0200 | 46.0200 |
+| `/api/v1/tasks/config-generate` | 1 | 53.0500 | 53.0500 | 53.0500 |
+| `/api/v1/tasks/config-validate` | 1 | 15.4500 | 15.4500 | 15.4500 |
+| `/api/v1/tasks/logs-analyze` | 2 | 53.9400 | 54.1500 | 54.1500 |
+| `/api/v1/tasks/project-qa` | 23 | 32.7000 | 54.9400 | 88.3800 |
 
 ## Knowledge Base Snapshot
 
-- Documents: `32`
-- Chunks: `45`
+- Documents: `33`
+- Chunks: `47`
 - Effective mode: `lexical`
-- Searchable local files: `33`
+- Searchable local files: `34`
 
 ## Notes
 
