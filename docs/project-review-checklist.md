@@ -1,6 +1,6 @@
 # Project Review Checklist
 
-This checklist is for keeping UE Agent Backend clean as a portfolio project. It is intentionally small: the goal is a stable, explainable local Agent backend, not an enterprise platform.
+This checklist is for keeping UE Agent Backend clean as an open-source local Agent project. It is intentionally small: the goal is a stable, explainable local Agent backend, not an enterprise platform.
 
 ## Release Readiness
 

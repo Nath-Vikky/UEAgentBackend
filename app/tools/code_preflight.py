@@ -154,7 +154,7 @@ def build_code_generation_preflight(
 ) -> dict[str, Any]:
     """Run lightweight deterministic checks on generated UE C++ drafts.
 
-    This is intentionally smaller than clang/UHT. It catches common portfolio-demo
+    This is intentionally smaller than clang/UHT. It catches common local-agent
     failures before users copy a draft into an Unreal project.
     """
 

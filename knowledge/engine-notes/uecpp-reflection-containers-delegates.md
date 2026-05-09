@@ -1,7 +1,7 @@
 # UE C++ Reflection, Containers, Delegates, And Text Types
 
-source_note: distilled from local UE C++ course notes and rewritten for this portfolio knowledge base
-scope: portfolio knowledge base
+source_note: distilled from local UE C++ course notes and rewritten for this project knowledge base
+scope: local UE knowledge base
 license_check: source repository says course materials are for purchased learners; this file is an original summary, not a copied chapter
 domain: engine_notes
 topic: reflection, UObject, containers, delegates, strings, timers, gameplay tags
@@ -51,4 +51,3 @@ Use UE reflection macros when data must be visible to the editor, Blueprint, ser
 - Store the `FTimerHandle` when a timer may need to be cancelled.
 - `FGameplayTag` is better than raw strings for gameplay state labels, ability categories, item tags, and filtering.
 - Define tags in Project Settings or tag tables; code should request and validate tags rather than inventing ad-hoc strings.
-

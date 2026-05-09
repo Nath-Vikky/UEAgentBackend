@@ -49,7 +49,7 @@ FEATURE_CATALOG = [
         "entry_mode": "hidden",
         "panel_id": "AssetPlanner",
         "frontend_ui": "hidden",
-        "notes": "Deferred for the narrowed portfolio scope.",
+        "notes": "Deferred for the narrowed local-agent scope.",
     },
     {
         "task_type": "assets_execute",
@@ -58,7 +58,7 @@ FEATURE_CATALOG = [
         "entry_mode": "hidden",
         "panel_id": "AssetExecutor",
         "frontend_ui": "hidden",
-        "notes": "Deferred for the narrowed portfolio scope.",
+        "notes": "Deferred for the narrowed local-agent scope.",
     },
     {
         "task_type": "perf_analyze",
@@ -67,7 +67,7 @@ FEATURE_CATALOG = [
         "entry_mode": "hidden",
         "panel_id": "PerfAnalysis",
         "frontend_ui": "hidden",
-        "notes": "Deferred for the narrowed portfolio scope.",
+        "notes": "Deferred for the narrowed local-agent scope.",
     },
 ]
 

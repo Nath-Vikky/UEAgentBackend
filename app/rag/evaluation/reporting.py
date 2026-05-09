@@ -99,7 +99,7 @@ def build_markdown_report(report: dict[str, Any]) -> str:
             "",
             "## Notes",
             "",
-            "- This is an offline local evaluation for portfolio/interview demonstration.",
+            "- This is an offline local evaluation for regression and project quality checks.",
             "- Metrics focus on retrieval hit quality, routing correctness, citation coverage, and low-confidence detection.",
             "- It is not an online production monitoring or A/B testing system.",
             "",

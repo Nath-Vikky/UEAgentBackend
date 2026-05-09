@@ -1,7 +1,7 @@
 # UE C++ HTTP, WebSocket, And AsyncAction Example Notes
 
-source_note: distilled from local UE C++ course notes and rewritten for this portfolio knowledge base
-scope: portfolio knowledge base
+source_note: distilled from local UE C++ course notes and rewritten for this project knowledge base
+scope: local UE knowledge base
 license_check: source repository says course materials are for purchased learners; this file is an original summary, not a copied chapter
 domain: examples
 topic: HTTP request, WebSocket client, Blueprint async action, network module dependencies
@@ -65,4 +65,3 @@ Common structure:
 ## Generated Code Boundaries
 
 The backend should return non-destructive drafts. It should not write `.h`, `.cpp`, `.uasset`, `.ini`, or secrets to the UE project automatically.
-

@@ -1,7 +1,7 @@
 # UE C++ Async, Networking, Replication, And GAS Notes
 
-source_note: distilled from local UE C++ course notes and rewritten for this portfolio knowledge base
-scope: portfolio knowledge base
+source_note: distilled from local UE C++ course notes and rewritten for this project knowledge base
+scope: local UE knowledge base
 license_check: source repository says course materials are for purchased learners; this file is an original summary, not a copied chapter
 domain: engine_notes
 topic: async, threading, HTTP, WebSocket, TCP, replication, RPC, GAS
@@ -53,4 +53,3 @@ async, AsyncTask, Async, TFuture, FRunnable, FRunnableThread, FGraphEvent, Paral
 - Socket loops have no stop flag, timeout, or shutdown path.
 - RPC accepts client-provided damage, inventory, or position values without validation.
 - GAS ability activation bypasses tags, costs, cooldowns, or authority checks.
-

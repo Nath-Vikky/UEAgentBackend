@@ -1,6 +1,6 @@
 # UE Agent Backend
 
-面向 Unreal Editor 插件的本地 AI Agent 后端。项目定位是个人作品集和校招面试级工程，不做企业级云部署、多租户权限或复杂运维平台，重点展示一个可运行、可调试、可评测、能接入 UE 研发场景的 Agent 工具链。
+面向 Unreal Editor 插件的本地 AI Agent 后端。项目定位是可本地运行、可调试、可评测、可接入 UE 研发场景的开源 Agent 工具链；当前不提供企业级云部署、多租户权限或复杂运维平台。
 
 ## 项目亮点
 
@@ -131,7 +131,7 @@ KB_SOURCE_PATHS=./knowledge,../XG-UE-Cpp-Course-Skill-main/knowledge,../TeamNote
 
 ## 量化评估
 
-生成面试展示用 benchmark：
+生成本地 benchmark：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output docs\benchmark-report.md
@@ -174,7 +174,7 @@ GET /api/v1/knowledge-base/eval/reports
 GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
 ```
 
-这两个接口只读，不会重新运行评测，适合 Debug View 或面试演示页展示。
+这两个接口只读，不会重新运行评测，适合 Debug View 或本地项目质量面板展示。
 
 当前量化报告见 [docs/benchmark-report.md](./docs/benchmark-report.md) 和 [docs/code-review-benchmark-report.md](./docs/code-review-benchmark-report.md)。
 
@@ -311,7 +311,7 @@ Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG。要�
 - 不承诺覆盖所有 UE API，知识库按高频研发场景持续蒸馏。
 - 不把外部课程或私有资料全文提交到公开仓库。
 
-面试时可以这样概括：这是一个面向 UE 研发管线的本地 Agent 后端，展示了上下文、知识库、工具调用、安全确认、观测和评测的完整闭环，而不是单纯把聊天模型接进编辑器。
+可以这样概括：这是一个面向 UE 研发管线的本地 Agent 后端，包含上下文、知识库、工具调用、安全确认、观测和评测的完整闭环，而不是单纯把聊天模型接进编辑器。
 ## Multi-Agent Code Review Chain
 
 Code Review 保留默认单阶段审查，同时支持轻量链式 Agent：

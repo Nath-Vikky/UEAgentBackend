@@ -11,7 +11,7 @@ use_for: Code Generate, Project QA, Code Review
 
 ## Summary
 
-The local code generation knowledge base should prefer small, reusable Unreal patterns instead of large project templates. For portfolio-level generation, the most useful patterns are interaction components, line trace helpers, subsystem managers, and data-driven configuration notes.
+The local code generation knowledge base should prefer small, reusable Unreal patterns instead of large project templates. For local-agent generation, the most useful patterns are interaction components, line trace helpers, subsystem managers, and data-driven configuration notes.
 
 ## Pattern Boundaries
 
@@ -27,4 +27,3 @@ The local code generation knowledge base should prefer small, reusable Unreal pa
 - Include concrete method bodies and TODO comments for project-specific hooks.
 - Explain required editor setup separately from generated C++.
 - Do not claim the backend writes files or modifies the project.
-

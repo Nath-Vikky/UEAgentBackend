@@ -16,7 +16,7 @@ LOCAL_ONLY_DOC_NAMES = {
     "code-review-benchmark-report.md",
     "frontend-unified-handoff.md",
     "improveplan.md",
-    "interview-demo-script.md",
+    "project-demo-script.md",
     "rag-agentic-ab-report.md",
     "rag-and-memory-study.md",
     "rag-eval-report.md",

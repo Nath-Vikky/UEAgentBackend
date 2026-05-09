@@ -1,7 +1,7 @@
 # UE C++ Review Rules For Async, Networking, And GAS
 
-source_note: distilled from local UE C++ course notes and rewritten for this portfolio knowledge base
-scope: portfolio knowledge base
+source_note: distilled from local UE C++ course notes and rewritten for this project knowledge base
+scope: local UE knowledge base
 license_check: source repository says course materials are for purchased learners; this file is an original summary, not a copied chapter
 domain: team_rules
 topic: code review, threading, networking, replication, GAS, config, delegates
@@ -40,4 +40,3 @@ use_for: Code Review, Logs Analyze, Project QA
 - Use `UDeveloperSettings` for editable project-wide settings and avoid committed secrets.
 - Dynamic multicast delegates exposed to Blueprint should be unbound or naturally owned by a safe lifetime object.
 - Prefer `TWeakObjectPtr` or explicit unbinding when a callback may outlive the receiver.
-

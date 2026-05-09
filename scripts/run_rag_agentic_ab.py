@@ -268,7 +268,7 @@ def build_comparison_report(
         "delta": _delta_summary(agentic_summary, baseline_summary),
         "cases": cases,
         "notes": [
-            "This is an offline deterministic A/B evaluation for interview demonstration.",
+            "This is an offline deterministic A/B evaluation for regression and project quality checks.",
             "Agentic RAG uses at most one query rewrite round after weak first-round evidence.",
             "No live LLM, embedding model, or Qdrant connection is required for this report.",
         ],

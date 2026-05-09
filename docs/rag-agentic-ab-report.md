@@ -2,7 +2,7 @@
 
 ## Summary
 
-- Generated at: `2026-05-08T12:05:50.244506+00:00`
+- Generated at: `2026-05-09T03:47:00.728217+00:00`
 - Datasets: `D:\Projects\agent-infra-study\UEAgentBackend\backend\tests\eval\rag_project_qa_dataset.jsonl, D:\Projects\agent-infra-study\UEAgentBackend\backend\tests\eval\rag_ue_knowledge_dataset.jsonl, D:\Projects\agent-infra-study\UEAgentBackend\backend\tests\eval\rag_agentic_ab_dataset.jsonl`
 - Source paths: `./README.md, ./docs, ./knowledge`
 - Top K: `4`
@@ -16,8 +16,8 @@
 | `normalized_precision_at_k` | 0.8636 | 0.9091 | 0.0455 |
 | `hit_at_k` | 0.9091 | 1.0000 | 0.0909 |
 | `top1_accuracy` | 0.7273 | 0.7273 | 0.0000 |
-| `mrr` | 0.8030 | 0.8258 | 0.0228 |
-| `ndcg_at_k` | 0.8182 | 0.8422 | 0.0240 |
+| `mrr` | 0.8182 | 0.8409 | 0.0227 |
+| `ndcg_at_k` | 0.8255 | 0.8495 | 0.0240 |
 | `route_accuracy` | 1.0000 | 1.0000 | 0.0000 |
 | `language_accuracy` | 1.0000 | 1.0000 | 0.0000 |
 | `citation_coverage` | 1.0000 | 1.0000 | 0.0000 |

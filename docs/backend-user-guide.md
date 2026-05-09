@@ -13,7 +13,7 @@
 
 ## 1. 项目定位
 
-这个后端服务配合 Unreal Editor 插件使用，定位是本地单机作品集项目。它不追求企业级部署和过宽的功能面，而是收口到 5 个核心能力：
+这个后端服务配合 Unreal Editor 插件使用，定位是本地单机开源项目。它不追求企业级部署和过宽的功能面，而是收口到 5 个核心能力：
 
 - `Agent Chat / Project QA`
 - `Code Review`
@@ -74,7 +74,7 @@
 
 - 工具能力统一登记在 `app/tools/registry.py`。
 - 每个工具都有 capability card：`tool_id`、`task_type`、描述、触发词、输入字段、副作用级别、超时、`input_schema` 和 `output_schema`。
-- `/api/v1/system/capabilities` 会返回 `capabilities.tool_registry.tools`，方便前端和面试展示查看当前后端支持哪些工具。
+- `/api/v1/system/capabilities` 会返回 `capabilities.tool_registry.tools`，方便前端和调试页面查看当前后端支持哪些工具。
 - `Agent Chat / Project QA` 会在 Debug View 输出 `react_loop`，展示轻量版 `thought -> action -> observation -> final` 轨迹。
 - 当前 ReAct Lite 只用于可解释工具决策，不会让 LLM 自动写入工程或执行危险操作。
 
@@ -107,7 +107,7 @@
 - `Project QA` 响应的 `data.tool_contracts`
 - `Debug View` 的 `debug_view.tool_contracts`
 
-这层校验不引入重依赖，只用于作品级稳定性和 Debug 透明度，不会替代完整企业级 schema 平台。
+这层校验不引入重依赖，只用于本地稳定性和 Debug 透明度，不会替代完整企业级 schema 平台。
 
 ### Self-Reflection
 
@@ -125,7 +125,7 @@
 - 是否出现降级 warning。
 - Direct Answer 是否使用了 live LLM。
 
-这不是额外的 LLM 评审，不增加模型调用成本；它主要用于 Debug View 和面试讲解“回答质量自检”。
+这不是额外的 LLM 评审，不增加模型调用成本；它主要用于 Debug View 和问题排查时解释“回答质量自检”。
 
 ### 轻量长期记忆
 
@@ -174,7 +174,7 @@ LLM 排查补充：
 - 如果刚改过 `.env`，请重启后端，再查看 `GET /api/v1/system/runtime-profiles` 的 `active_profile_id` 和 `profiles[].chat_model`。
 - 资产改名、Static Mesh 设置、Blueprint 创建属于 Editor Operation Proposal 链路；它们可以由规则和上下文生成提案，不代表在线 LLM 一定可用。
 
-### 面试增强验证
+### 增强能力验证
 
 本项目现在保留 4 类验证：
 
@@ -208,11 +208,11 @@ Agentic RAG A/B 对比：
 - `storage/artifacts/evals/rag-agentic-ab-latest.json`
 - `docs/rag-agentic-ab-report.md`
 
-报告适合用于面试说明：当前 Agentic RAG 不是复杂 planner，而是一个可量化、可关闭、可回归测试的轻量 query refinement 层。
+报告适合用于项目说明：当前 Agentic RAG 不是复杂 planner，而是一个可量化、可关闭、可回归测试的轻量 query refinement 层。
 
 ### Docker 本地演示
 
-本项目提供轻量 Docker / Compose 入口，用于面试演示和项目留档：
+本项目提供轻量 Docker / Compose 入口，用于本地演示和项目留档：
 
 ```powershell
 docker compose up --build
@@ -571,7 +571,7 @@ POST /api/v1/knowledge-base/import
 
 如果用户问“知识库有哪些内容”这类目录问题，后端会走 `knowledge_catalog` 模式，只返回已索引文档的标题、分类和路径，不展开源码正文。这样可以避免把 `knowledge/code-reference` 里的 `.h/.cpp` 内容直接当成聊天回答。
 
-中文问题也能检索英文知识笔记。当前后端会做轻量 query 扩展，例如“actor的生命周期是什么”会补充 `lifecycle`、`constructor`、`BeginPlay`、`Tick`、`EndPlay` 等英文检索词；这能提升未接入向量模型时的命中率。它不是完整翻译，也不替代向量检索，只是个人作品级的稳定增强。
+中文问题也能检索英文知识笔记。当前后端会做轻量 query 扩展，例如“actor的生命周期是什么”会补充 `lifecycle`、`constructor`、`BeginPlay`、`Tick`、`EndPlay` 等英文检索词；这能提升未接入向量模型时的命中率。它不是完整翻译，也不替代向量检索，只是本地项目级的稳定增强。
 
 ### Agentic RAG v1：两轮检索与证据门槛
 
@@ -587,7 +587,7 @@ Project QA 和 Code Generate 现在会在第一轮 RAG 证据不足时，自动�
 - `data.retrieval_quality_gate`：最终是否有可用证据、RAG 命中数、本地 grep 命中数。
 - `data.reference_lookup.agentic_rag`：Code Generate 使用的改写检索摘要。
 
-前端不需要强制适配这些字段；它们主要用于 Debug View、面试演示和后续 RAG 调优。
+前端不需要强制适配这些字段；它们主要用于 Debug View、本地演示和后续 RAG 调优。
 
 ## 10. 检索模式说明
 
@@ -801,7 +801,7 @@ Code Review 的 `user_view.blocks` 当前固定优先输出：
 - `references`：引用的知识库证据；没有命中时说明使用通用规则 fallback
 - `next_steps`：编译、编辑器验证、补充知识库等后续动作
 
-Code Review 现在还会在上述固定块之后追加面试演示用的轻量 Agent 工作流块：
+Code Review 现在还会在上述固定块之后追加用于说明链路的轻量 Agent 工作流块：
 
 - `agent_workflow`：说明本轮是否按“采集代码 -> 规则扫描 -> 知识库参考 -> LLM 解释 -> 修复草稿 -> 验证清单”执行
 - `fix_draft`：非破坏性修复草稿，只给建议，不写入工程
@@ -816,7 +816,7 @@ Code Review 现在还会在上述固定块之后追加面试演示用的轻量 A
 - `data.localized_review.fix_draft`
 - `data.localized_review.validation_plan`
 
-这些字段用于展示“Agent 如何组合工具和推理步骤”，但仍保持个人作品边界：不自动改文件、不自动运行 UE 测试、不替代人工确认。
+这些字段用于展示“Agent 如何组合工具和推理步骤”，但仍保持本地 Agent 边界：不自动改文件、不自动运行 UE 测试、不替代人工确认。
 
 ### Validation Advisor
 
@@ -1120,7 +1120,7 @@ QDRANT_COLLECTION=rushba_local
 
 推荐配置：
 - 最小调试：`RAG_MODE=lexical`，`EMBEDDING_ENABLED=false`
-- 本地作品集演示：`RAG_MODE=hybrid`，`EMBEDDING_ENABLED=false`，走 lexical fallback，依赖最少
+- 本地演示：`RAG_MODE=hybrid`，`EMBEDDING_ENABLED=false`，走 lexical fallback，依赖最少
 - 向量检索演示：`RAG_MODE=hybrid`，`EMBEDDING_ENABLED=true`，接入 Qdrant
 - 资料很多且表达差异大：`RAG_MODE=semantic` 或 `hybrid`
 
@@ -1252,7 +1252,7 @@ Agent Chat 总是检索：
 - 不抓取登录、搜索、账户、过滤器、portal 一类页面；`https://dev.epicgames.com/robots.txt` 当前明确限制了这些路径，并提供了文档 sitemap。
 - 不把抓取到的 Epic 内容用于模型训练、微调或任何“模型会从输入继续学习”的流程。保持在本地知识库检索、引用和摘要范围内即可。
 - 控制抓取频率，保留原始来源 URL、标题和抓取时间，便于后续删除或更新。
-- 对作品集项目，优先使用“官方文档摘要 + 原始链接”方式入库；不要把整站镜像直接塞进仓库。
+- 对本地开源项目，优先使用“官方文档摘要 + 原始链接”方式入库；不要把整站镜像直接塞进仓库。
 
 推荐先补这些官方主题：
 
@@ -1599,7 +1599,7 @@ POST /api/v1/sessions
 
 - Decision Trace 不额外调用 LLM，只汇总后端已有判断。
 - 普通用户界面不需要展示完整 trace。
-- 面试演示或排查“为什么这次走 RAG / 为什么没走 RAG / 为什么 LLM skipped”时，优先看这里。
+- 调试展示或排查“为什么这次走 RAG / 为什么没走 RAG / 为什么 LLM skipped”时，优先看这里。
 
 ### 18.12 RAG Readiness 与本地评测
 
@@ -1654,7 +1654,7 @@ POST /api/v1/sessions
 - `low_confidence_ratio`
 - `no_result_ratio`
 
-如果加上 `--markdown-output`，脚本会额外生成本地 Markdown 报告，方便直接给面试官展示每条 case 的路由、语言、命中来源和核心指标。
+如果加上 `--markdown-output`，脚本会额外生成本地 Markdown 报告，方便查看每条 case 的路由、语言、命中来源和核心指标。
 
 ### 18.13 Skill Protocol v1
 
@@ -1714,18 +1714,18 @@ GET /api/v1/system/capabilities
 - 新增“代码审查规则”应归入 `CodeReviewSkill.rules`。
 - 新增“把审查结果交给 LLM 解释成人话”应归入 `CodeReviewSkill.llm_analyzer`。
 - 新增“高亮按钮、摘要卡片、建议列表字段”应归入 `CodeReviewSkill.projector`。
-- 不做动态安装 Skill、不做 marketplace、不做复杂沙箱；这是个人作品级、面试展示级项目，目标是稳定、清晰、可讲。
+- 不做动态安装 Skill、不做 marketplace、不做复杂沙箱；这是本地开源 Agent 项目，目标是稳定、清晰、可讲。
 
 ### 18.14 本地学习文档入口
 
-如果要系统复习这个后端，可以在本地保留并阅读下面这些开发文档。它们默认已加入 `.gitignore`，不随公开仓库发布：
+如果要系统复习这个后端，可以在本地另建私有学习目录保存开发过程文档。它们不随公开仓库发布：
 
-- `docs/agent-architecture-study.md`：先理解整体 Agent loop、模块边界和面试讲法。
-- `docs/request-lifecycle.md`：再用真实请求复盘 Agent Chat、Project QA、Code Review 等路径。
-- `docs/rag-and-memory-study.md`：理解知识库、检索、向量模型、Qdrant 和上下文压缩。
-- `docs/skill-development-guide.md`：最后看后续如何扩展固定内置 Skill。
+- 本地私有学习文档：不随公开仓库发布，可用于理解整体 Agent loop、模块边界和项目讲解方式。
+- 请求生命周期复盘：用真实请求复盘 Agent Chat、Project QA、Code Review 等路径。
+- RAG 与记忆复盘：理解知识库、检索、向量模型、Qdrant 和上下文压缩。
+- Skill 扩展复盘：记录后续如何扩展固定内置 Skill。
 
-这些文档不要求 UE 前端实现新 UI，主要用于后端学习、复盘和作品集展示。
+这些文档不要求 UE 前端实现新 UI，主要用于后端学习、复盘和本地项目总结。
 
 ### 18.15 Local Grep Retrieval v1
 
@@ -1914,7 +1914,7 @@ GET /api/v1/knowledge-base/documents
 
 ### 18.18 Agent Chat 的 UE 技术知识路由
 
-当前内置知识库是蒸馏版，不是 `XG-UE-Cpp-Course-Skill-main` 的完整复刻。当前 `knowledge/` 约 29 个文件，外部参考仓库 `knowledge/` 约 283 个文件，所以覆盖量明显更少；这是为了保持作品集项目的合规边界和可维护性。
+当前内置知识库是蒸馏版，不是 `XG-UE-Cpp-Course-Skill-main` 的完整复刻。当前 `knowledge/` 约 29 个文件，外部参考仓库 `knowledge/` 约 283 个文件，所以覆盖量明显更少；这是为了保持开源项目的合规边界和可维护性。
 
 后端已经补充 Agent Chat 的 UE 技术知识识别。用户在自由聊天中问以下类型问题时，会优先进入 `project_qa` 并选择 `retrieve_project_knowledge`：
 
@@ -1992,7 +1992,7 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 
 ## 19. 项目级 Benchmark 与量化结果
 
-后端现在提供项目级 benchmark，用于面试展示和后续性能优化对比。它把 RAG、Agent 路由、工具型任务和接口耗时放到同一份报告中。
+后端现在提供项目级 benchmark，用于本地质量评估和后续性能优化对比。它把 RAG、Agent 路由、工具型任务和接口耗时放到同一份报告中。
 
 运行命令：
 
@@ -2059,7 +2059,7 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 
 如何解读：
 
-- `route_accuracy / field_coverage / semantic_accuracy` 已经适合作品集展示，说明后端功能链路稳定。
+- `route_accuracy / field_coverage / semantic_accuracy` 已经适合项目质量展示，说明后端功能链路稳定。
 - `precision_at_k=0.25` 不是单独的失败信号，因为当前多数 case 只标一个期望文件，`top_k=4` 时单标签 case 的精确率上限就是 0.25；应结合 `normalized_precision_at_k=0.9375`、`top1_accuracy=0.8750`、`mrr=0.9167` 一起看。
 - `recall_at_k / hit_at_k / no_result_ratio` 已经恢复到稳定展示水平；后续如果继续优化，重点看没命中的那条 UE 知识样例、Top1 排序和更细的 domain 过滤。
 - 离线 benchmark 的 `p95_ms` 已降到百毫秒内；live LLM benchmark 会受模型、代理和供应商延迟影响，不能和离线基线直接比较。
@@ -2120,7 +2120,7 @@ Debug View 新增：
 - `kb`：知识库 domain hint、选中工具、是否需要 RAG。
 - `mcp`：当前 MCP 状态。现阶段默认 `disabled`，因为 MCP 只作为后续可选工具层，不是 UE 前端与后端的主协议。
 
-面试解释口径：
+指标解释口径：
 
 这个项目不是“把 LLM 聊天窗口塞进 UE 编辑器”，而是一个可观测的 Agent 后端。UE 插件负责采集编辑器上下文和展示结果，后端负责意图判断、上下文压缩、知识检索、工具调用、权限分级、LLM 综合和评估指标。LLM 自己可能知道 UE 通用知识，但它不知道当前项目资产、源码、日志、团队规则和用户本地私有知识库，所以知识库和工具调用提供的是可追溯、可更新、可验证的项目事实。
 
@@ -2289,7 +2289,7 @@ MCP_ALLOWED_TOOLS=get_target_umg_asset,get_widget_tree
 
 ## 23. Eval Report API 评测结果读取
 
-后端现在把本地评测产物也暴露成只读 API。它不会在线触发 benchmark，也不会调用 LLM，只读取 `storage/artifacts/evals/` 下已有的 `*.json` 和同名 `*.md` 报告，适合面试时展示“RAG / 路由 / 任务结构 / 性能”如何被量化。
+后端现在把本地评测产物也暴露成只读 API。它不会在线触发 benchmark，也不会调用 LLM，只读取 `storage/artifacts/evals/` 下已有的 `*.json` 和同名 `*.md` 报告，适合本地查看“RAG / 路由 / 任务结构 / 性能”如何被量化。
 
 生成报告：
 
@@ -2333,7 +2333,7 @@ GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
 - 只允许读取 `storage/artifacts/evals/` 下的 `.json` 文件。
 - 不允许路径穿越，例如 `../secret.json` 会返回 404。
 - API 只读，不删除、不写入、不重新运行评测。
-- 这不是企业级评测平台，只是作品级的可复现量化展示入口。
+- 这不是企业级评测平台，只是本地项目级的可复现量化展示入口。
 
 ## 24. UE Editor Operation Bridge / MCP-like 编辑器操作提案
 
@@ -2581,7 +2581,7 @@ create_blueprint_event_stub
 - `/api/v1/editor-operations/results` 的 `result` 是开放对象，后端接受 `applied_fields`、`failed_fields`、`dirty_packages`、`graph_name`、`created_nodes`、`save_policy` 等 UE 侧回传字段；`dirty_packages` 建议传字符串数组，当前不强制固定为某一种 package path 格式。
 ## 27. Multi-Agent Code Review Chain v1
 
-后端现在在默认 Code Review 之外，新增了一条轻量 Multi-Agent 链：`review_fix_validate`。它用于面试展示和真实辅助审查，不替代默认 Code Review，也不新增主菜单。
+后端现在在默认 Code Review 之外，新增了一条轻量 Multi-Agent 链：`review_fix_validate`。它用于展示链式审查流程和真实辅助审查，不替代默认 Code Review，也不新增主菜单。
 
 ### 触发方式
 
@@ -2637,7 +2637,7 @@ Multi-Agent 链不会写入 UE 工程，也不会绕过 Proposal：
 
 ## 28. Code Review 专项 Benchmark
 
-后端补充了一个离线代码审查专项 benchmark，用于量化 `CodeReviewSkill` 和 `Review -> Generate -> Validate` 多阶段链路的基础效果。它默认关闭 LLM、Embedding 和 Qdrant，因此不需要代理、不需要 API Key，适合本地稳定版留存、回归测试和面试展示。
+后端补充了一个离线代码审查专项 benchmark，用于量化 `CodeReviewSkill` 和 `Review -> Generate -> Validate` 多阶段链路的基础效果。它默认关闭 LLM、Embedding 和 Qdrant，因此不需要代理、不需要 API Key，适合本地稳定版留存、回归测试和质量展示。
 
 运行命令：
 
@@ -2672,7 +2672,7 @@ storage/artifacts/evals/code-review-benchmark-latest.json
 
 设计边界：
 
-- 这是作品级回归 benchmark，不是企业级大规模评测平台。
+- 这是本地回归 benchmark，不是企业级大规模评测平台。
 - 数据集使用原创短代码片段，不依赖外部项目源码。
 - Multi-Agent 的 review phase 复用同一套规则检测，因此检出率预期与单阶段 Code Review 一致；多阶段价值主要体现在修复草稿和验证阶段是否被正确触发、是否保持 no-write guarantee。
 
@@ -2737,6 +2737,6 @@ Content-Type: application/json
 - 不允许 LLM 自动调用未知 MCP 写入工具。
 - 写入类 MCP 工具未来也必须先转成 Editor Operation Proposal，由用户确认后再由 UE 前端执行。
 
-### 面试表达
+### 项目表达
 
 可以这样说明：项目主体是自研 HTTP Agent backend，MCP 是可选工具 transport。这样既能保持当前 UE 前端简单稳定，又为后续接入外部工具生态留下接口，而不是把整个项目绑定到某个 MCP 实现。

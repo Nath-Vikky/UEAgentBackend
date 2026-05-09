@@ -2,7 +2,7 @@
 
 ## Summary
 
-- Generated at: `2026-05-08T11:40:16.120758+00:00`
+- Generated at: `2026-05-09T03:47:00.917819+00:00`
 - Source paths: `./README.md, ./docs, ./knowledge`
 - RAG datasets: `tests/eval/rag_project_qa_dataset.jsonl, tests/eval/rag_ue_knowledge_dataset.jsonl`
 - Task datasets: `tests/eval/intent_language_dataset.jsonl, tests/eval/code_generate_dataset.jsonl, tests/eval/code_review_dataset.jsonl, tests/eval/logs_analyze_dataset.jsonl, tests/eval/config_task_dataset.jsonl`
@@ -20,8 +20,8 @@
 | `normalized_precision_at_k` | 0.9375 | Precision@K normalized by the label-density ceiling. |
 | `hit_at_k` | 1.0000 | Whether each case hit at least one expected source. |
 | `top1_accuracy` | 0.8750 | Whether the first retrieved source was expected. |
-| `mrr` | 0.9167 | How early the first relevant source appeared. |
-| `ndcg_at_k` | 0.9133 | Ranking quality with position discount. |
+| `mrr` | 0.9375 | How early the first relevant source appeared. |
+| `ndcg_at_k` | 0.9234 | Ranking quality with position discount. |
 | `route_accuracy` | 1.0000 | Whether route_type matched expectation. |
 | `language_accuracy` | 1.0000 | Whether output language matched expectation. |
 | `citation_coverage` | 1.0000 | Whether responses included citations. |
@@ -44,34 +44,34 @@
 | Metric | Value |
 | --- | ---: |
 | `requests` | 20 |
-| `p50_ms` | 41.0000 |
-| `p95_ms` | 86.5900 |
-| `max_ms` | 87.0900 |
-| `kb_refresh_ms` | 146.8300 |
+| `p50_ms` | 40.0400 |
+| `p95_ms` | 94.3900 |
+| `max_ms` | 98.8000 |
+| `kb_refresh_ms` | 133.5000 |
 
 ## Endpoint Latency
 
 | Endpoint | Requests | P50 ms | P95 ms | Max ms |
 | --- | ---: | ---: | ---: | ---: |
-| `/api/v1/chat/runs` | 3 | 18.1300 | 40.4400 | 40.4400 |
-| `/api/v1/tasks/code-generate` | 3 | 86.5900 | 87.0900 | 87.0900 |
-| `/api/v1/tasks/code-review` | 2 | 45.0600 | 48.5600 | 48.5600 |
-| `/api/v1/tasks/config-generate` | 1 | 60.3000 | 60.3000 | 60.3000 |
-| `/api/v1/tasks/config-validate` | 1 | 14.1000 | 14.1000 | 14.1000 |
-| `/api/v1/tasks/logs-analyze` | 2 | 54.6100 | 55.2800 | 55.2800 |
-| `/api/v1/tasks/project-qa` | 8 | 33.4700 | 52.0700 | 52.0700 |
+| `/api/v1/chat/runs` | 3 | 16.6200 | 40.9900 | 40.9900 |
+| `/api/v1/tasks/code-generate` | 3 | 94.3900 | 98.8000 | 98.8000 |
+| `/api/v1/tasks/code-review` | 2 | 41.4200 | 42.4000 | 42.4000 |
+| `/api/v1/tasks/config-generate` | 1 | 59.3200 | 59.3200 | 59.3200 |
+| `/api/v1/tasks/config-validate` | 1 | 15.4800 | 15.4800 | 15.4800 |
+| `/api/v1/tasks/logs-analyze` | 2 | 53.8200 | 53.8300 | 53.8300 |
+| `/api/v1/tasks/project-qa` | 8 | 35.2700 | 52.8000 | 52.8000 |
 
 ## Knowledge Base Snapshot
 
-- Documents: `33`
-- Chunks: `46`
+- Documents: `31`
+- Chunks: `44`
 - Effective mode: `lexical`
-- Searchable local files: `34`
+- Searchable local files: `32`
 
 ## Notes
 
 - Recall and precision are computed from expected source files in eval datasets.
 - Precision@K is strict: with one expected file and top_k=4, its ceiling is 0.25 even for a perfect top-1 hit.
 - For sparse labels, read Top1, MRR, Hit@K, and normalized_precision_at_k together with Precision@K.
-- This report is a local benchmark for portfolio/interview demonstration, not a production SLA.
+- This report is a local regression benchmark for project quality checks, not a production SLA.
 - Use it as a baseline before and after RAG, routing, context, or performance optimizations.

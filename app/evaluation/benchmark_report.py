@@ -151,7 +151,7 @@ def build_benchmark_markdown(report: dict[str, Any]) -> str:
             "- Recall and precision are computed from expected source files in eval datasets.",
             "- Precision@K is strict: with one expected file and top_k=4, its ceiling is 0.25 even for a perfect top-1 hit.",
             "- For sparse labels, read Top1, MRR, Hit@K, and normalized_precision_at_k together with Precision@K.",
-            "- This report is a local benchmark for portfolio/interview demonstration, not a production SLA.",
+            "- This report is a local regression benchmark for project quality checks, not a production SLA.",
             "- Use it as a baseline before and after RAG, routing, context, or performance optimizations.",
         ]
     )

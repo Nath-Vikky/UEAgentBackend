@@ -296,7 +296,7 @@ def build_review_workflow_advice(
             "status": "ready",
             "write_policy": {
                 "written_to_disk": False,
-                "reason": "Code Review fix drafts are advisory only in this personal-project scope.",
+                "reason": "Code Review fix drafts are advisory only in this local-agent scope.",
             },
             "items": fix_items,
             "recommendation_count": len(recommendations),

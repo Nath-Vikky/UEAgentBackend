@@ -1,7 +1,7 @@
 # Prompt Pack: UE C++ Practices
 
-source_note: distilled from local UE C++ course skill notes and rewritten for this portfolio knowledge base
-scope: portfolio prompt guidance
+source_note: distilled from local UE C++ course skill notes and rewritten for this project knowledge base
+scope: local UE prompt guidance
 license_check: source repository says course materials are for purchased learners; this file is an original behavior guide, not a copied skill file
 domain: prompt_packs
 prompt_pack_id: ue_cpp_practices
@@ -35,4 +35,3 @@ When the question is about Unreal Engine C++, act like a practical UE tools/game
 - Look for lifetime, GC, GameThread, delegate, module dependency, networking, and authority risks.
 - For each issue, explain impact, when it triggers, and how to verify the fix.
 - If evidence is weak, mark it as a recommendation instead of a confirmed bug.
-

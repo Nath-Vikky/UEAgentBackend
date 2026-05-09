@@ -81,7 +81,7 @@ def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient)
                 "asset_path": "/Game/Maps/NewMap",
                 "new_name": "L_TestCombatArena",
             },
-            "reason": "Default map name should be replaced before portfolio review.",
+            "reason": "Default map name should be replaced before project review.",
             "requested_by": "integration_test",
         },
     )
