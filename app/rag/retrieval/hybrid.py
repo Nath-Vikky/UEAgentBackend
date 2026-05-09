@@ -35,6 +35,42 @@ def _jaccard(query_tokens: list[str], doc_tokens: list[str]) -> float:
     return intersection / union if union else 0.0
 
 
+def _required_exact_query_tokens(query_tokens: list[str]) -> list[str]:
+    """Keep retrieval from answering unknown proper nouns through generic UE words."""
+    ignored = {
+        "enhancedinput",
+        "gameplayability",
+        "abilitysystem",
+        "abilitysystemcomponent",
+        "blueprintasyncactionbase",
+    }
+    required: list[str] = []
+    for token in query_tokens:
+        normalized = token.lower()
+        if normalized in ignored:
+            continue
+        if len(normalized) >= 14 and any(char.isalpha() for char in normalized):
+            required.append(normalized)
+    return required
+
+
+def _candidate_contains_required_terms(
+    candidate: RetrievalCandidate,
+    required_terms: list[str],
+) -> bool:
+    if not required_terms:
+        return True
+    blob = " ".join(
+        [
+            candidate.title,
+            candidate.source_path,
+            candidate.section_path,
+            candidate.text,
+        ]
+    ).lower()
+    return all(term in blob for term in required_terms)
+
+
 def _confidence(candidates: list[RetrievalCandidate], filters_applied: dict) -> float:
     if not candidates:
         return 0.12
@@ -194,6 +230,17 @@ def retrieve(
                 metadata=chunk.metadata_json,
             )
         )
+
+    required_terms = _required_exact_query_tokens(tokenize(query))
+    if required_terms:
+        before_count = len(candidates)
+        candidates = [
+            candidate
+            for candidate in candidates
+            if _candidate_contains_required_terms(candidate, required_terms)
+        ]
+        if before_count and not candidates:
+            warnings.append("required_query_terms_not_found")
 
     reranked = rerank_candidates(candidates, settings.rag_rerank_top_n)
     top_results = reranked[: settings.rag_top_k]

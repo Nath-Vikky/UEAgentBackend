@@ -35,6 +35,7 @@ def test_build_benchmark_markdown_includes_core_metrics() -> None:
         "source_paths": ["./knowledge"],
         "rag_datasets": ["tests/eval/rag_ue_knowledge_dataset.jsonl"],
         "task_datasets": ["tests/eval/code_generate_dataset.jsonl"],
+        "hallucination_dataset": "tests/eval/hallucination_guard_dataset.jsonl",
         "rag_summary": {
             "cases": 1,
             "recall_at_k": 1.0,
@@ -48,6 +49,11 @@ def test_build_benchmark_markdown_includes_core_metrics() -> None:
             "success_rate": 1.0,
             "field_coverage": 1.0,
             "semantic_accuracy": 1.0,
+        },
+        "hallucination_summary": {
+            "cases": 1,
+            "grounding_accuracy": 1.0,
+            "unsupported_answer_rate": 0.0,
         },
         "performance": {
             "requests": 2,
@@ -72,4 +78,5 @@ def test_build_benchmark_markdown_includes_core_metrics() -> None:
     assert "`precision_at_k`" in markdown
     assert "`normalized_precision_at_k`" in markdown
     assert "`top1_accuracy`" in markdown
+    assert "`unsupported_answer_rate`" in markdown
     assert "`p95_ms`" in markdown

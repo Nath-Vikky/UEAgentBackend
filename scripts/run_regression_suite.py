@@ -53,6 +53,17 @@ def main() -> int:
             "task_eval",
             [python, "scripts/run_task_eval.py"],
         ),
+        _run_step(
+            "hallucination_eval",
+            [
+                python,
+                "scripts/run_hallucination_eval.py",
+                "--min-grounding-accuracy",
+                "1.0",
+                "--max-unsupported-answer-rate",
+                "0.0",
+            ],
+        ),
     ]
     report = {
         "generated_at": datetime.now(UTC).isoformat(),

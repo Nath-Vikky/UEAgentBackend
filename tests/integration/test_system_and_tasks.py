@@ -742,7 +742,7 @@ def test_create_task_and_fetch_dual_views(client: TestClient) -> None:
 def test_kb_refresh_builds_documents_and_chunks(client: TestClient) -> None:
     refreshed = client.post(
         "/api/v1/knowledge-base/refresh",
-        json={"source_paths": ["../backend.md"], "force_rebuild": True},
+        json={"source_paths": ["docs/backend-user-guide.md"], "force_rebuild": True},
     )
     refreshed_body = refreshed.json()
     job_id = refreshed_body["job"]["job_id"]
@@ -1088,7 +1088,7 @@ def test_tool_tasks_do_not_pollute_agent_chat_session_history(client: TestClient
 def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None:
     client.post(
         "/api/v1/knowledge-base/refresh",
-        json={"source_paths": ["../backend.md"], "force_rebuild": True},
+        json={"source_paths": ["docs/backend-user-guide.md"], "force_rebuild": True},
     )
     response = client.post(
         "/api/v1/tasks/project-qa",
@@ -1107,7 +1107,7 @@ def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None
             "context": {
                 "project_name": "DemoProject",
                 "active_panel": "AgentChat",
-                "current_file": "backend.md",
+                "current_file": "docs/backend-user-guide.md",
                 "kb_domains_hint": ["project_docs"],
             },
             "payload": {
@@ -1248,7 +1248,7 @@ def test_project_qa_chinese_actor_lifecycle_hits_engine_note(client: TestClient)
 def test_project_qa_explicit_english_preference_keeps_english_locale(client: TestClient) -> None:
     client.post(
         "/api/v1/knowledge-base/refresh",
-        json={"source_paths": ["../backend.md"], "force_rebuild": True},
+        json={"source_paths": ["docs/backend-user-guide.md"], "force_rebuild": True},
     )
     response = client.post(
         "/api/v1/tasks/project-qa",
@@ -1267,7 +1267,7 @@ def test_project_qa_explicit_english_preference_keeps_english_locale(client: Tes
             "context": {
                 "project_name": "DemoProject",
                 "active_panel": "AgentChat",
-                "current_file": "backend.md",
+                "current_file": "docs/backend-user-guide.md",
                 "kb_domains_hint": ["project_docs"],
             },
             "payload": {
@@ -1391,7 +1391,7 @@ def test_direct_chat_with_project_context_still_skips_kb_when_query_is_generic(c
 def test_agent_chat_with_explicit_project_reference_routes_to_project_qa(client: TestClient) -> None:
     client.post(
         "/api/v1/knowledge-base/refresh",
-        json={"source_paths": ["../backend.md"], "force_rebuild": True},
+        json={"source_paths": ["docs/backend-user-guide.md"], "force_rebuild": True},
     )
     response = client.post(
         "/api/v1/chat/runs",
@@ -1410,7 +1410,7 @@ def test_agent_chat_with_explicit_project_reference_routes_to_project_qa(client:
             "context": {
                 "project_name": "DemoProject",
                 "active_panel": "AgentChat",
-                "current_file": "backend.md",
+                "current_file": "docs/backend-user-guide.md",
                 "current_module": "Backend",
                 "kb_domains_hint": ["project_docs"],
             },
@@ -1444,7 +1444,7 @@ def test_ambiguous_agent_chat_can_be_promoted_to_project_qa_by_llm_judge(
 ) -> None:
     client.post(
         "/api/v1/knowledge-base/refresh",
-        json={"source_paths": ["../backend.md"], "force_rebuild": True},
+        json={"source_paths": ["docs/backend-user-guide.md"], "force_rebuild": True},
     )
 
     def _fake_route_judge(self, *, messages, config):  # type: ignore[no-untyped-def]
@@ -1486,7 +1486,7 @@ def test_ambiguous_agent_chat_can_be_promoted_to_project_qa_by_llm_judge(
             "context": {
                 "project_name": "DemoProject",
                 "active_panel": "AgentChat",
-                "current_file": "backend.md",
+                "current_file": "docs/backend-user-guide.md",
                 "current_module": "Backend",
             },
             "payload": {"user_query": "How is this organized?"},
@@ -3409,7 +3409,7 @@ def test_metrics_endpoint_exposes_phase4_counters(client: TestClient) -> None:
 def test_kb_document_management_and_retry_reindex(client: TestClient) -> None:
     refresh = client.post(
         "/api/v1/knowledge-base/refresh",
-        json={"source_paths": ["../backend.md"], "force_rebuild": True},
+        json={"source_paths": ["docs/backend-user-guide.md"], "force_rebuild": True},
     )
     refresh_body = refresh.json()
     job_id = refresh_body["job"]["job_id"]
@@ -3421,7 +3421,7 @@ def test_kb_document_management_and_retry_reindex(client: TestClient) -> None:
     retry_alias = client.post(f"/api/v1/knowledge-base/jobs/{job_id}/retry")
     reindex = client.post(
         "/api/v1/knowledge-base/reindex",
-        json={"source_paths": ["../backend.md"], "force_rebuild": True},
+        json={"source_paths": ["docs/backend-user-guide.md"], "force_rebuild": True},
     )
     deleted = client.delete(f"/api/v1/knowledge-base/documents/{first_doc_id}")
 

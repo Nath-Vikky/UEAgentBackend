@@ -2,10 +2,11 @@
 
 ## Summary
 
-- Generated at: `2026-05-09T03:47:00.917819+00:00`
+- Generated at: `2026-05-09T04:18:02.196918+00:00`
 - Source paths: `./README.md, ./docs, ./knowledge`
 - RAG datasets: `tests/eval/rag_project_qa_dataset.jsonl, tests/eval/rag_ue_knowledge_dataset.jsonl`
 - Task datasets: `tests/eval/intent_language_dataset.jsonl, tests/eval/code_generate_dataset.jsonl, tests/eval/code_review_dataset.jsonl, tests/eval/logs_analyze_dataset.jsonl, tests/eval/config_task_dataset.jsonl`
+- Hallucination dataset: `tests/eval/hallucination_guard_dataset.jsonl`
 - LLM mode: `offline_fallback`
 
 ## RAG Retrieval Quality
@@ -39,34 +40,47 @@
 | `semantic_accuracy` | 1.0000 | Rule/issue/value checks matched expectations. |
 | `error_rate` | 0.0000 | Responses containing errors. |
 
+## Hallucination Guard Quality
+
+| Metric | Value | Meaning |
+| --- | ---: | --- |
+| `cases` | 5 | Hallucination guard case count. |
+| `grounding_accuracy` | 1.0000 | Expected grounding behavior: grounded answer, abstention, or catalog answer. |
+| `route_accuracy` | 1.0000 | Route matched expected workflow. |
+| `unsupported_answer_rate` | 0.0000 | No-evidence cases that still made unsupported claims. |
+| `abstention_accuracy` | 1.0000 | No-evidence cases that refused or asked for more evidence. |
+| `grounded_answer_accuracy` | 1.0000 | Evidence-backed cases with citations and expected sources. |
+| `knowledge_catalog_accuracy` | 1.0000 | Catalog questions answered as catalog, not raw file dumps. |
+| `citation_coverage` | 0.6000 | Cases with citation objects. |
+
 ## Runtime Performance
 
 | Metric | Value |
 | --- | ---: |
-| `requests` | 20 |
-| `p50_ms` | 40.0400 |
-| `p95_ms` | 94.3900 |
-| `max_ms` | 98.8000 |
-| `kb_refresh_ms` | 133.5000 |
+| `requests` | 25 |
+| `p50_ms` | 40.6500 |
+| `p95_ms` | 108.8900 |
+| `max_ms` | 118.4100 |
+| `kb_refresh_ms` | 137.4300 |
 
 ## Endpoint Latency
 
 | Endpoint | Requests | P50 ms | P95 ms | Max ms |
 | --- | ---: | ---: | ---: | ---: |
-| `/api/v1/chat/runs` | 3 | 16.6200 | 40.9900 | 40.9900 |
-| `/api/v1/tasks/code-generate` | 3 | 94.3900 | 98.8000 | 98.8000 |
-| `/api/v1/tasks/code-review` | 2 | 41.4200 | 42.4000 | 42.4000 |
-| `/api/v1/tasks/config-generate` | 1 | 59.3200 | 59.3200 | 59.3200 |
-| `/api/v1/tasks/config-validate` | 1 | 15.4800 | 15.4800 | 15.4800 |
-| `/api/v1/tasks/logs-analyze` | 2 | 53.8200 | 53.8300 | 53.8300 |
-| `/api/v1/tasks/project-qa` | 8 | 35.2700 | 52.8000 | 52.8000 |
+| `/api/v1/chat/runs` | 3 | 17.8300 | 40.6500 | 40.6500 |
+| `/api/v1/tasks/code-generate` | 3 | 108.8900 | 118.4100 | 118.4100 |
+| `/api/v1/tasks/code-review` | 2 | 48.8700 | 51.0700 | 51.0700 |
+| `/api/v1/tasks/config-generate` | 1 | 54.5900 | 54.5900 | 54.5900 |
+| `/api/v1/tasks/config-validate` | 1 | 14.2300 | 14.2300 | 14.2300 |
+| `/api/v1/tasks/logs-analyze` | 2 | 52.1600 | 53.6000 | 53.6000 |
+| `/api/v1/tasks/project-qa` | 13 | 30.2300 | 54.3500 | 54.3500 |
 
 ## Knowledge Base Snapshot
 
-- Documents: `31`
-- Chunks: `44`
+- Documents: `32`
+- Chunks: `45`
 - Effective mode: `lexical`
-- Searchable local files: `32`
+- Searchable local files: `33`
 
 ## Notes
 

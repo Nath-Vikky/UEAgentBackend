@@ -5,7 +5,7 @@ This checklist is for keeping UE Agent Backend clean as an open-source local Age
 ## Release Readiness
 
 - `README.md` explains the project as a local UE Agent backend, not a generic chatbot.
-- Public docs are limited to user-facing material: `README.md`, `docs/backend-user-guide.md`, `docs/benchmark-report.md`, and this checklist.
+- Public docs are limited to user-facing material: `README.md`, `docs/backend-user-guide.md`, eval reports, release notes, and this checklist.
 - Local process docs remain ignored by Git, including dev logs, frontend handoff notes, and improvement plans.
 - `.env` and private knowledge sources are never committed.
 - `KB_SOURCE_PATHS` defaults to `./knowledge`.
@@ -29,6 +29,7 @@ Run before tagging or presenting the project:
 .\.venv\Scripts\python.exe -m compileall app
 .\.venv\Scripts\python.exe -m pytest tests\unit tests\contract tests\eval
 .\.venv\Scripts\python.exe -m pytest tests\integration
+.\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md
 ```
 
 If `make` is available:
@@ -36,6 +37,7 @@ If `make` is available:
 ```powershell
 make review
 make benchmark
+make hallucination-eval
 ```
 
 ## Demo Checklist
@@ -49,6 +51,7 @@ make benchmark
 - Project Inventory snapshot can be submitted from the UE plugin Debug View.
 - Agent Chat can answer project inventory questions after a snapshot is submitted.
 - Eval reports are readable through `GET /api/v1/knowledge-base/eval/reports`.
+- Hallucination guard report shows `grounding_accuracy=1.0` and `unsupported_answer_rate=0.0` for the stable local dataset.
 
 ## Known Non-Goals
 

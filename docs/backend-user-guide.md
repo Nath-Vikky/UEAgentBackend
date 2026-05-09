@@ -7,7 +7,9 @@
 - `README.md`：快速启动和最小配置。
 - `docs/backend-user-guide.md`：完整使用手册。
 - `docs/benchmark-report.md`：当前量化评估结果。
+- `docs/hallucination-guard-report.md`：证据不足与幻觉守卫评估结果。
 - `docs/project-review-checklist.md`：项目收口、验证和交付检查清单。
+- `docs/release-notes/v0.1.0.md`：稳定版本说明。
 
 开发过程文档，例如 `docs/improveplan.md`、`docs/backend-dev-log.md`、`docs/frontend-unified-handoff.md`、架构学习笔记和请求生命周期复盘，建议只保留在本地，不发布给普通使用者。这样 GitHub 页面会更清爽，也更接近一个可交付项目。
 
@@ -188,11 +190,23 @@ LLM 排查补充：
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/unit tests/integration tests/contract tests/eval
 .\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
+.\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md
 ```
 
 GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行。日常验证以本地 Ruff、pytest 和 RAG eval 为准；CI 只用于需要时手动复核，不做部署。
 
 `storage/artifacts/evals/*.md` 是本地生成的 Markdown 评估报告，展示 `hit_at_k`、`mrr`、`route_accuracy`、`citation_coverage` 等核心指标。当前评估是 smoke 级别，用于证明“可测、可复现、可继续优化”，不是企业级大规模 benchmark。
+
+幻觉守卫评测专门覆盖：
+- 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
+- 检索不到专名证据时，不能用泛化 UE 文档凑答案。
+- “知识库有哪些内容”应进入 catalog 模式，只列目录和用途，不展开源码正文。
+- 有明确证据的 UE 问答需要返回 citations 和期望来源。
+
+核心指标：
+- `grounding_accuracy`：是否符合“有证据再回答、无证据则拒答或要求补充资料”的预期行为。
+- `abstention_accuracy`：无证据样例是否正确拒答。
+- `unsupported_answer_rate`：无证据样例中仍然编造细节的比例，稳定版目标是 `0.0`。
 
 Agentic RAG A/B 对比：
 
@@ -2017,6 +2031,7 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 当前报告位置：
 
 - `docs/benchmark-report.md`
+- `docs/hallucination-guard-report.md`
 - `storage/artifacts/evals/project-benchmark-latest.json`
 
 核心指标：

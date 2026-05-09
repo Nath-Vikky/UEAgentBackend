@@ -1,4 +1,4 @@
-.PHONY: dev test lint review rag-eval rag-agentic-ab benchmark code-review-benchmark docker-up docker-down docker-logs
+.PHONY: dev test lint review rag-eval rag-agentic-ab hallucination-eval benchmark code-review-benchmark docker-up docker-down docker-logs
 
 dev:
 	python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
@@ -15,10 +15,13 @@ review:
 	python -m pytest tests/unit tests/contract tests/eval
 
 rag-eval:
-	python scripts/run_rag_eval.py --source-path ../backend.md --source-path ./docs --source-path ./knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75
+	python scripts/run_rag_eval.py --source-path ./README.md --source-path ./docs --source-path ./knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75
 
 rag-agentic-ab:
 	python scripts/run_rag_agentic_ab.py --top-k 4 --max-hit-drop 0.0
+
+hallucination-eval:
+	python scripts/run_hallucination_eval.py --source-path ./README.md --source-path ./docs --source-path ./knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --markdown-output docs/hallucination-guard-report.md
 
 benchmark:
 	python scripts/run_project_benchmark.py --output storage/artifacts/evals/project-benchmark-latest.json --markdown-output docs/benchmark-report.md

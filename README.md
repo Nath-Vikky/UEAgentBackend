@@ -159,11 +159,18 @@ Agentic RAG A/B 对比（普通 RAG vs 最多 2 轮 query rewrite）：
 
 该脚本会生成 `docs/rag-agentic-ab-report.md`，用于展示 Agentic RAG 是否提升检索指标，或至少证明没有造成回退。
 
+幻觉守卫评测（证据不足时是否拒答、是否避免展开不存在的项目事实）：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md
+```
+
 报告包含：
 
 - RAG：`recall_at_k`、`precision_at_k`、`normalized_precision_at_k`、`top1_accuracy`、`hit_at_k`、`mrr`、`citation_coverage`
 - 路由：`route_accuracy`
 - 任务：`success_rate`、`field_coverage`、`semantic_accuracy`
+- 幻觉守卫：`grounding_accuracy`、`abstention_accuracy`、`unsupported_answer_rate`
 - 性能：`p50_ms`、`p95_ms`
 - Code Review 专项：`recall`、`precision`、`false_positive_rate`、`clean_case_accuracy`、多阶段链路耗时
 
@@ -176,7 +183,7 @@ GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
 
 这两个接口只读，不会重新运行评测，适合 Debug View 或本地项目质量面板展示。
 
-当前量化报告见 [docs/benchmark-report.md](./docs/benchmark-report.md) 和 [docs/code-review-benchmark-report.md](./docs/code-review-benchmark-report.md)。
+当前量化报告见 [docs/benchmark-report.md](./docs/benchmark-report.md)、[docs/hallucination-guard-report.md](./docs/hallucination-guard-report.md) 和 [docs/code-review-benchmark-report.md](./docs/code-review-benchmark-report.md)。
 
 ## 关键 API
 
@@ -273,6 +280,11 @@ RAG smoke eval：
 .\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
 ```
 
+幻觉守卫 eval：
+```powershell
+.\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md
+```
+
 Code Review benchmark：
 
 ```powershell
@@ -298,8 +310,10 @@ Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG。要�
 
 - [docs/backend-user-guide.md](./docs/backend-user-guide.md)：完整使用手册。
 - [docs/benchmark-report.md](./docs/benchmark-report.md)：当前量化评估结果。
+- [docs/hallucination-guard-report.md](./docs/hallucination-guard-report.md)：证据不足与幻觉守卫评估结果。
 - [docs/code-review-benchmark-report.md](./docs/code-review-benchmark-report.md)：代码审查专项量化结果。
 - [docs/project-review-checklist.md](./docs/project-review-checklist.md)：项目收口、验证和交付检查清单。
+- [docs/release-notes/v0.1.0.md](./docs/release-notes/v0.1.0.md)：`v0.1.0` 版本说明。
 
 开发日志、改进计划、前端交接、学习笔记等过程文档默认保留在本地，并已加入 `.gitignore`，避免公开仓库首页被过程资料稀释。
 

@@ -1,6 +1,6 @@
 # Code Review Benchmark Report
 
-- Generated at: `2026-05-08T07:08:02.826668+00:00`
+- Generated at: `2026-05-09T04:21:27.924325+00:00`
 - Dataset: `tests\eval\code_review_benchmark_dataset.jsonl`
 - Cases: `10`
 - LLM mode: `disabled/offline`
@@ -25,8 +25,8 @@
 
 | Metric | Single Review | Multi-Agent Chain |
 | --- | ---: | ---: |
-| Average latency ms | 67.74 | 85.83 |
-| Max latency ms | 284.7 | 146.46 |
+| Average latency ms | 40.59 | 59.84 |
+| Max latency ms | 156.84 | 103.87 |
 
 ## LLM Hallucination
 

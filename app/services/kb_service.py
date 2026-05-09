@@ -276,6 +276,7 @@ class KnowledgeBaseService:
                 top_k=min(max(self.settings.rag_top_k, 3), 8),
             )
             if (not payload.get("disable_local_search"))
+            and ("required_query_terms_not_found" not in result.warnings)
             and (not result.retrieved_docs or payload.get("use_local_search"))
             else {
                 "query": selected_query,

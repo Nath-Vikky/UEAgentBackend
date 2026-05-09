@@ -41,6 +41,7 @@ def summarize_latency(samples: list[dict[str, Any]]) -> dict[str, Any]:
 def build_benchmark_markdown(report: dict[str, Any]) -> str:
     rag_summary = dict(report.get("rag_summary") or {})
     task_summary = dict(report.get("task_summary") or {})
+    hallucination_summary = dict(report.get("hallucination_summary") or {})
     performance = dict(report.get("performance") or {})
     knowledge = dict(report.get("knowledge_base") or {})
 
@@ -53,6 +54,7 @@ def build_benchmark_markdown(report: dict[str, Any]) -> str:
         f"- Source paths: `{', '.join(report.get('source_paths') or [])}`",
         f"- RAG datasets: `{', '.join(_fmt_paths(report.get('rag_datasets') or []))}`",
         f"- Task datasets: `{', '.join(_fmt_paths(report.get('task_datasets') or []))}`",
+        f"- Hallucination dataset: `{_fmt_paths([report.get('hallucination_dataset')])[0] if report.get('hallucination_dataset') else ''}`",
         f"- LLM mode: `{report.get('llm_mode', 'offline_fallback')}`",
         "",
         "## RAG Retrieval Quality",
@@ -101,6 +103,29 @@ def build_benchmark_markdown(report: dict[str, Any]) -> str:
     for key, note in task_notes.items():
         if key in task_summary:
             lines.append(f"| `{key}` | {_fmt(task_summary[key])} | {note} |")
+
+    lines.extend(
+        [
+            "",
+            "## Hallucination Guard Quality",
+            "",
+            "| Metric | Value | Meaning |",
+            "| --- | ---: | --- |",
+        ]
+    )
+    hallucination_notes = {
+        "cases": "Hallucination guard case count.",
+        "grounding_accuracy": "Expected grounding behavior: grounded answer, abstention, or catalog answer.",
+        "route_accuracy": "Route matched expected workflow.",
+        "unsupported_answer_rate": "No-evidence cases that still made unsupported claims.",
+        "abstention_accuracy": "No-evidence cases that refused or asked for more evidence.",
+        "grounded_answer_accuracy": "Evidence-backed cases with citations and expected sources.",
+        "knowledge_catalog_accuracy": "Catalog questions answered as catalog, not raw file dumps.",
+        "citation_coverage": "Cases with citation objects.",
+    }
+    for key, note in hallucination_notes.items():
+        if key in hallucination_summary:
+            lines.append(f"| `{key}` | {_fmt(hallucination_summary[key])} | {note} |")
 
     lines.extend(
         [
