@@ -3,10 +3,11 @@ from __future__ import annotations
 import ast
 import http.client
 import json
+import logging
 import re
 import time
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
@@ -15,6 +16,8 @@ import httpx
 from app.core.settings import Settings
 from app.db.models.runtime_profile import RuntimeProfileModel
 from app.observability.metrics import default_usage
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +271,15 @@ class LLMService:
     ) -> dict[str, Any]:
         available, reason = self.availability(config)
         if not available:
+            logger.warning(
+                "llm_fallback_triggered",
+                extra={
+                    "reason": reason,
+                    "fallback_mode": "deterministic",
+                    "profile_id": config.profile_id,
+                    "model": config.model,
+                },
+            )
             return {
                 "ok": False,
                 "provider": "openai_compatible",
@@ -275,6 +287,11 @@ class LLMService:
                 "error": "",
                 "model": config.model,
                 "profile_id": config.profile_id,
+                "fallback": {
+                    "triggered": True,
+                    "mode": "deterministic",
+                    "reason": reason,
+                },
                 "usage": default_usage(),
             }
         if stream_sink:
@@ -328,6 +345,15 @@ class LLMService:
                 },
             }
         except Exception as exc:  # pragma: no cover - depends on live remote endpoint
+            logger.warning(
+                "llm_fallback_triggered",
+                extra={
+                    "reason": exc.__class__.__name__,
+                    "fallback_mode": "deterministic",
+                    "profile_id": config.profile_id,
+                    "model": config.model,
+                },
+            )
             return {
                 "ok": False,
                 "provider": "openai_compatible",
@@ -335,6 +361,11 @@ class LLMService:
                 "error": str(exc),
                 "model": config.model,
                 "profile_id": config.profile_id,
+                "fallback": {
+                    "triggered": True,
+                    "mode": "deterministic",
+                    "reason": "request_failed",
+                },
                 "usage": default_usage(),
             }
 
@@ -407,6 +438,15 @@ class LLMService:
                 },
             }
         except Exception as exc:  # pragma: no cover - depends on live remote endpoint
+            logger.warning(
+                "llm_stream_fallback_triggered",
+                extra={
+                    "reason": exc.__class__.__name__,
+                    "fallback_mode": "non_stream_completion",
+                    "profile_id": config.profile_id,
+                    "model": config.model,
+                },
+            )
             fallback = self.complete(messages=messages, config=config)
             if fallback["ok"]:
                 stream_sink(fallback["text"])
@@ -418,6 +458,12 @@ class LLMService:
                 "error": f"{exc}; non_stream_fallback={fallback.get('error')}",
                 "model": config.model,
                 "profile_id": config.profile_id,
+                "fallback": {
+                    "triggered": True,
+                    "mode": "deterministic",
+                    "reason": "stream_request_failed",
+                    "non_stream_reason": fallback.get("reason"),
+                },
                 "usage": default_usage(),
             }
 
@@ -486,6 +532,14 @@ class LLMService:
                 "provider": llm_result["provider"],
                 "model": llm_result["model"],
                 "profile_id": llm_result["profile_id"],
+                "fallback": llm_result.get(
+                    "fallback",
+                    {
+                        "triggered": True,
+                        "mode": "deterministic",
+                        "reason": llm_result["reason"],
+                    },
+                ),
                 "usage": llm_result["usage"],
             }
         try:
@@ -502,6 +556,15 @@ class LLMService:
                 "usage": llm_result["usage"],
             }
         except Exception as exc:
+            logger.warning(
+                "llm_json_fallback_triggered",
+                extra={
+                    "reason": exc.__class__.__name__,
+                    "fallback_mode": "deterministic",
+                    "profile_id": llm_result["profile_id"],
+                    "model": llm_result["model"],
+                },
+            )
             return {
                 "ok": False,
                 "payload": None,
@@ -511,6 +574,11 @@ class LLMService:
                 "model": llm_result["model"],
                 "profile_id": llm_result["profile_id"],
                 "text": llm_result["text"],
+                "fallback": {
+                    "triggered": True,
+                    "mode": "deterministic",
+                    "reason": "json_parse_failed",
+                },
                 "usage": llm_result["usage"],
             }
 

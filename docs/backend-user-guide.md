@@ -2777,3 +2777,19 @@ Content-Type: application/json
 ### 项目表达
 
 可以这样说明：项目主体是自研 HTTP Agent backend，MCP 是可选工具 transport。这样既能保持当前 UE 前端简单稳定，又为后续接入外部工具生态留下接口，而不是把整个项目绑定到某个 MCP 实现。
+## 2026-05-10 后端连通性与 smoke test 补充
+
+当前后端增加了几项内部可维护性补强：RAG 统一 facade、Workflow 可复用节点、轻量 ingestion job queue，以及 LLM fallback 的结构化标记。这些改动不改变 UE 前端已有主接口，也不要求前端 UI 立即调整。
+
+本地验证建议优先查看：
+
+- `docs/integration-smoke-tests.md`：7 条最小端到端 HTTP smoke test。
+- `debug_view.tools`：确认本轮用了哪些工具。
+- `debug_view.memory_summary`：确认 session summary / long-term memory 是否参与上下文。
+- `data.llm_analysis`、`data.llm_review` 或相关 LLM 字段：如果没有配置 LLM key，会以 fallback 方式标记。
+
+边界说明：
+
+- `app/rag/__init__.py` 现在提供统一检索 facade，但旧调用方不会被一次性强制迁移，避免引入回归。
+- `app/rag/ingestion/jobs.py` 是本地 in-process job queue，不是 Redis/Celery，不承担企业级后台任务语义。
+- UE 前端当前无需修改；如果后续 N2 阶段新增 `debug_view.react_loop` 或更细的 `tool_call_sequence`，再通过交接文档通知前端适配。

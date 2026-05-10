@@ -103,6 +103,21 @@ def test_classify_agent_chat_llm_failure_returns_structured_failure(monkeypatch)
     assert result["error"] == "boom"
 
 
+def test_complete_without_api_key_marks_deterministic_fallback() -> None:
+    result = LLMService(Settings(openai_api_key="")).complete(
+        messages=[{"role": "user", "content": "hi"}],
+        config=_config(),
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "missing_openai_api_key"
+    assert result["fallback"] == {
+        "triggered": True,
+        "mode": "deterministic",
+        "reason": "missing_openai_api_key",
+    }
+
+
 def test_complete_json_object_accepts_common_llm_json_like_output(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     def _fake_complete(self, *, messages, config):  # type: ignore[no-untyped-def]
         return {
@@ -158,3 +173,32 @@ def test_complete_json_object_accepts_python_style_dict_output(monkeypatch) -> N
     assert result["ok"] is True
     assert result["payload"]["summary"] == "Looks clean"
     assert result["payload"]["recommendations"] == ["Add tests"]
+
+
+def test_complete_json_object_parse_failure_marks_fallback(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def _fake_complete(self, *, messages, config):  # type: ignore[no-untyped-def]
+        return {
+            "ok": True,
+            "reason": "completed",
+            "error": "",
+            "provider": "openai_compatible",
+            "model": config.model,
+            "profile_id": config.profile_id,
+            "text": "not json",
+            "usage": _usage(),
+        }
+
+    monkeypatch.setattr("app.services.llm_service.LLMService.complete", _fake_complete)
+
+    result = LLMService(Settings(openai_api_key="test")).complete_json_object(
+        messages=[{"role": "user", "content": "review"}],
+        config=_config(),
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "json_parse_failed"
+    assert result["fallback"] == {
+        "triggered": True,
+        "mode": "deterministic",
+        "reason": "json_parse_failed",
+    }

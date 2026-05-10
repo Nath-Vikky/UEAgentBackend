@@ -309,6 +309,7 @@ Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG。要�
 ## 文档入口
 
 - [docs/backend-user-guide.md](./docs/backend-user-guide.md)：完整使用手册。
+- [docs/integration-smoke-tests.md](./docs/integration-smoke-tests.md)：本地端到端 smoke test 请求示例。
 - [docs/benchmark-report.md](./docs/benchmark-report.md)：当前量化评估结果。
 - [docs/hallucination-guard-report.md](./docs/hallucination-guard-report.md)：证据不足与幻觉守卫评估结果。
 - [docs/code-review-benchmark-report.md](./docs/code-review-benchmark-report.md)：代码审查专项量化结果。
