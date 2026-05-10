@@ -41,7 +41,6 @@ local_knowledge/
 # Local-only development notes. Keep these on your machine, but do not publish them.
 docs/agent-architecture-study.md
 docs/agent-project-study-notes.md
-docs/architecture.md
 docs/backend-dev-log.md
 docs/frontend-unified-handoff.md
 docs/improveplan.md

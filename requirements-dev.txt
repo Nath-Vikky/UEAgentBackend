@@ -1,2 +1,4 @@
+# Compatibility shim for local development.
+# pyproject.toml optional dependencies are the source of truth.
 -r requirements.txt
 -e .[dev,rag]

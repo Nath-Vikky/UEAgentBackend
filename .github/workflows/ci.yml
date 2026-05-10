@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -29,24 +33,4 @@ jobs:
         run: python -m ruff check app tests scripts
 
       - name: Tests
-        run: python -m pytest tests/unit tests/contract tests/eval tests/integration
-
-      - name: RAG eval smoke
-        run: >
-          python scripts/run_rag_eval.py
-          --source-path ./README.md
-          --source-path ./docs
-          --source-path ./knowledge
-          --top-k 4
-          --min-hit-at-k 0.25
-          --min-route-accuracy 0.75
-          --output storage/artifacts/evals/ci-rag-eval.json
-          --markdown-output storage/artifacts/evals/ci-rag-eval.md
-
-      - name: Upload RAG eval report
-        uses: actions/upload-artifact@v4
-        with:
-          name: rag-eval-report
-          path: |
-            storage/artifacts/evals/ci-rag-eval.json
-            storage/artifacts/evals/ci-rag-eval.md
+        run: python -m pytest tests/unit tests/contract -q

@@ -1,9 +1,12 @@
-.PHONY: dev test lint review rag-eval rag-agentic-ab hallucination-eval benchmark code-review-benchmark docker-up docker-down docker-logs
+.PHONY: dev test test-all lint review integration-test smoke-test rag-eval rag-agentic-ab hallucination-eval benchmark code-review-benchmark docker-up docker-down docker-logs
 
 dev:
 	python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 test:
+	python -m pytest tests/unit tests/contract -q
+
+test-all:
 	python -m pytest tests/unit tests/contract tests/eval tests/integration
 
 lint:
@@ -13,6 +16,12 @@ review:
 	python -m ruff check app tests scripts
 	python -m compileall app
 	python -m pytest tests/unit tests/contract tests/eval
+
+integration-test:
+	python -m pytest tests/integration -q
+
+smoke-test:
+	@echo "Start the backend, then follow docs/integration-smoke-tests.md"
 
 rag-eval:
 	python scripts/run_rag_eval.py --source-path ./README.md --source-path ./docs --source-path ./knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75

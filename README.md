@@ -309,12 +309,15 @@ Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG。要�
 ## 文档入口
 
 - [docs/backend-user-guide.md](./docs/backend-user-guide.md)：完整使用手册。
+- [docs/architecture.md](./docs/architecture.md)：后端架构分层、请求链路和安全边界。
 - [docs/integration-smoke-tests.md](./docs/integration-smoke-tests.md)：本地端到端 smoke test 请求示例。
 - [docs/benchmark-report.md](./docs/benchmark-report.md)：当前量化评估结果。
 - [docs/hallucination-guard-report.md](./docs/hallucination-guard-report.md)：证据不足与幻觉守卫评估结果。
 - [docs/code-review-benchmark-report.md](./docs/code-review-benchmark-report.md)：代码审查专项量化结果。
 - [docs/project-review-checklist.md](./docs/project-review-checklist.md)：项目收口、验证和交付检查清单。
 - [docs/release-notes/v0.1.0.md](./docs/release-notes/v0.1.0.md)：`v0.1.0` 版本说明。
+- [CONTRIBUTING.md](./CONTRIBUTING.md)：贡献、测试和扩展 Skill/Tool 的约定。
+- [CHANGELOG.md](./CHANGELOG.md)：公开版本变更记录。
 
 开发日志、改进计划、前端交接、学习笔记等过程文档默认保留在本地，并已加入 `.gitignore`，避免公开仓库首页被过程资料稀释。
 

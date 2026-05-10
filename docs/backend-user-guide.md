@@ -6,6 +6,8 @@
 
 - `README.md`：快速启动和最小配置。
 - `docs/backend-user-guide.md`：完整使用手册。
+- `docs/architecture.md`：公开架构说明。
+- `docs/integration-smoke-tests.md`：本地端到端 smoke test 请求示例。
 - `docs/benchmark-report.md`：当前量化评估结果。
 - `docs/hallucination-guard-report.md`：证据不足与幻觉守卫评估结果。
 - `docs/project-review-checklist.md`：项目收口、验证和交付检查清单。
