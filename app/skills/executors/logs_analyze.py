@@ -61,6 +61,66 @@ def _localized_llm_skip_reason(reason_code: str, output_language: str) -> str:
     )
 
 
+def _build_log_react_loop(
+    *,
+    result: dict[str, Any],
+    workflow: dict[str, Any],
+    llm_result: dict[str, Any],
+) -> dict[str, Any]:
+    retrieval_tool = next(
+        (item for item in workflow.get("tools", []) if item.get("tool_id") == "lookup_incident_history"),
+        {},
+    )
+    steps = [
+        {
+            "phase": "thought",
+            "text": "Parse the log first, then decide whether accepted incident-history evidence is strong enough to use.",
+            "details": {
+                "line_count": (result.get("log_summary") or {}).get("line_count"),
+                "issue_families": result.get("issue_families", [])[:5],
+            },
+        },
+        {
+            "phase": "action",
+            "tool_id": "analyze_ue_log",
+            "input": {"source": (result.get("input_context") or {}).get("log_source")},
+        },
+        {
+            "phase": "observation",
+            "tool_id": "analyze_ue_log",
+            "summary": result.get("summary"),
+            "details": result.get("parser_diagnostics") or {},
+        },
+        {
+            "phase": "action",
+            "tool_id": "lookup_incident_history",
+            "input": {"issue_families": result.get("issue_families", [])[:5]},
+        },
+        {
+            "phase": "observation",
+            "tool_id": "lookup_incident_history",
+            "summary": retrieval_tool.get("summary") or "",
+            "details": result.get("retrieval_quality_gate") or {},
+        },
+        {
+            "phase": "final",
+            "text": "Compose log guidance from parser facts, accepted retrieval evidence, and optional LLM synthesis.",
+            "details": {
+                "llm_status": "completed" if llm_result.get("ok") else "skipped",
+                "llm_reason": llm_result.get("reason"),
+            },
+        },
+    ]
+    return {
+        "mode": "bounded_log_react_v1",
+        "max_iterations": 3,
+        "iterations_used": 2,
+        "stop_reason": "agent_decided_done",
+        "tool_call_sequence": ["analyze_ue_log", "lookup_incident_history"],
+        "steps": steps,
+    }
+
+
 @dataclass(slots=True)
 class LogsAnalyzeSkillExecutor:
     kb_service: KnowledgeBaseService
@@ -278,6 +338,11 @@ class LogsAnalyzeSkillExecutor:
             llm_result=llm_result,
             output_language=output_language,
         )
+        react_loop = _build_log_react_loop(
+            result=result,
+            workflow=workflow,
+            llm_result=llm_result,
+        )
         user_text = _localized(
             output_language,
             f"已完成日志分析，识别到 {issue_count} 组问题特征。",
@@ -388,6 +453,7 @@ class LogsAnalyzeSkillExecutor:
             "validation_plan": validation_plan,
             "llm_analysis": llm_analysis,
             "llm_analysis_raw": llm_result,
+            "react_loop": react_loop,
         }
         step_results = [
             *workflow["step_results"],
@@ -423,6 +489,7 @@ class LogsAnalyzeSkillExecutor:
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
         base_debug["warnings"] = workflow["warnings"]
+        base_debug["react_loop"] = react_loop
         return {
             "user_view": user_view,
             "debug_view": base_debug,

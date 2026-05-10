@@ -2793,3 +2793,21 @@ Content-Type: application/json
 - `app/rag/__init__.py` 现在提供统一检索 facade，但旧调用方不会被一次性强制迁移，避免引入回归。
 - `app/rag/ingestion/jobs.py` 是本地 in-process job queue，不是 Redis/Celery，不承担企业级后台任务语义。
 - UE 前端当前无需修改；如果后续 N2 阶段新增 `debug_view.react_loop` 或更细的 `tool_call_sequence`，再通过交接文档通知前端适配。
+
+## 2026-05-10 轻量 Agent 工具规划补充
+
+阶段 N2 已把 Project QA 的 ReAct Lite 规划逻辑抽出到 `app/agent/tool_planner.py`。这不是把项目改成新的 Agent 框架，而是把原来散在 `TaskService` 里的工具选择、输入清洗和工具调用序列整理成可测试模块。
+
+本阶段新增或强化的调试字段：
+
+- `data.tool_plan.tool_call_sequence`：本次 Project QA 计划调用的工具 ID 顺序。
+- `data.react_loop.tool_call_sequence`：Project QA 的 thought/action/observation 调试轨迹中的工具顺序。
+- `data.react_loop.mode = "react_lite"`：自由聊天 / Project QA 的受控 ReAct Lite 模式。
+- `logs_analyze.data.react_loop.mode = "bounded_log_react_v1"`：日志分析内部的有限步骤调试轨迹。
+- `project_inventory.items[].field_view`：当用户询问变量、组件、父类、Nanite、LOD、依赖等字段时，后端会在命中项里附带一个更聚焦的字段视图。
+
+前端兼容性：
+
+- 这些字段都是新增可选字段，旧前端可以忽略，不影响现有 `user_view.blocks`。
+- 如果 UE 前端后续想增强 Debug View，可以优先展示 `react_loop.tool_call_sequence` 和 `react_loop.steps`。
+- Assets Inspect 面板不变；自由聊天询问“当前项目某个资产有哪些变量/组件/依赖”时，仍走 Project Inventory。

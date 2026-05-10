@@ -194,7 +194,9 @@ class ProjectInventoryService:
         *,
         query: str,
         project_id: str | None = None,
+        asset_path: str | None = None,
         asset_type: str | None = None,
+        fields: list[str] | None = None,
         selected_assets: list[str] | None = None,
         limit: int = 20,
     ) -> dict[str, Any]:
@@ -202,9 +204,13 @@ class ProjectInventoryService:
         inferred_type = asset_type or self._infer_asset_type(needle)
         is_code_query = self._looks_like_code_query(needle)
         is_asset_query = inferred_type is not None or self._mentions_asset_domain(needle)
+        requested_fields = self._normalize_requested_fields(fields or self._infer_requested_fields(needle))
         assets: list[dict[str, Any]] = []
         if not is_code_query or is_asset_query:
-            if selected_assets and self._looks_like_selected_asset_query(needle):
+            if asset_path:
+                asset = self.get_asset(asset_path, project_id)
+                assets = [asset] if asset else []
+            if not assets and selected_assets and self._looks_like_selected_asset_query(needle):
                 selected_matches = [
                     item
                     for asset in selected_assets
@@ -256,12 +262,9 @@ class ProjectInventoryService:
             empty_reason = "no_project_inventory_snapshot"
         elif not assets and not code_files:
             empty_reason = "no_matching_inventory_items"
-        items = [
-            {"kind": "asset", "score_reason": "asset_inventory_match", **item}
-            for item in assets
-        ]
+        items = [self._inventory_asset_result_item(item, requested_fields) for item in assets]
         items.extend(
-            {"kind": "code_file", "score_reason": "code_inventory_match", **item}
+            self._inventory_code_result_item(item, requested_fields)
             for item in code_files
         )
         return {
@@ -273,6 +276,9 @@ class ProjectInventoryService:
                 "asset_match_count": len(assets),
                 "code_file_match_count": len(code_files),
                 "empty_reason": empty_reason,
+                "requested_asset_path": asset_path or "",
+                "requested_fields": requested_fields,
+                "field_view_available": bool(requested_fields),
                 "selected_asset_context_used": bool(
                     selected_assets and self._looks_like_selected_asset_query(needle) and assets
                 ),
@@ -587,6 +593,72 @@ class ProjectInventoryService:
             "modified_at": item.get("modified_at") or item.get("last_modified"),
         }
 
+    def _inventory_asset_result_item(
+        self,
+        item: dict[str, Any],
+        requested_fields: list[str],
+    ) -> dict[str, Any]:
+        result = {"kind": "asset", "score_reason": "asset_inventory_match", **item}
+        if requested_fields:
+            result["field_view"] = self._asset_field_view(item, requested_fields)
+        return result
+
+    def _inventory_code_result_item(
+        self,
+        item: dict[str, Any],
+        requested_fields: list[str],
+    ) -> dict[str, Any]:
+        result = {"kind": "code_file", "score_reason": "code_inventory_match", **item}
+        if requested_fields:
+            result["field_view"] = self._code_file_field_view(item, requested_fields)
+        return result
+
+    def _asset_field_view(self, item: dict[str, Any], requested_fields: list[str]) -> dict[str, Any]:
+        blueprint = _as_dict(item.get("blueprint"))
+        settings = _as_dict(item.get("settings"))
+        properties = _as_dict(item.get("properties"))
+        metadata = _as_dict(item.get("metadata"))
+        direct_sources = (item, blueprint, settings, properties, metadata)
+        derived = {
+            "parent_class": item.get("parent_class") or blueprint.get("parent_class") or settings.get("parent_class"),
+            "native_class": item.get("native_class") or blueprint.get("native_class"),
+            "components": item.get("components") or blueprint.get("components") or [],
+            "variables": item.get("variables") or blueprint.get("variables") or [],
+            "functions": item.get("functions") or blueprint.get("functions") or [],
+            "graphs": item.get("graphs") or blueprint.get("graphs") or [],
+            "interfaces": item.get("interfaces") or blueprint.get("interfaces") or [],
+            "dependencies": item.get("dependencies") or [],
+            "referencers": item.get("referencers") or [],
+        }
+        view: dict[str, Any] = {}
+        for field in requested_fields:
+            if field in derived:
+                view[field] = derived[field]
+                continue
+            for source in direct_sources:
+                if field in source:
+                    view[field] = source.get(field)
+                    break
+        return view
+
+    @staticmethod
+    def _code_file_field_view(item: dict[str, Any], requested_fields: list[str]) -> dict[str, Any]:
+        allowed = {
+            "file_path",
+            "relative_path",
+            "label",
+            "module_name",
+            "file_type",
+            "language",
+            "size_bytes",
+            "modified_at",
+            "last_modified",
+            "classes",
+            "symbols",
+            "metadata",
+        }
+        return {field: item.get(field) for field in requested_fields if field in allowed}
+
     def _asset_referenced_by_query(self, item: dict[str, Any], query: str) -> bool:
         candidates = [
             str(item.get("asset_name") or "").lower(),
@@ -765,6 +837,74 @@ class ProjectInventoryService:
             if term not in terms:
                 terms.append(term)
         return terms[:8]
+
+    def _infer_requested_fields(self, query: str) -> list[str]:
+        field_hints = {
+            "components": ("component", "组件"),
+            "variables": ("variable", "变量"),
+            "functions": ("function", "函数"),
+            "graphs": ("graph", "图表", "蓝图图"),
+            "interfaces": ("interface", "接口"),
+            "parent_class": ("parent class", "parent_class", "父类"),
+            "native_class": ("native class", "native_class", "原生类", "生成类"),
+            "dependencies": ("dependency", "dependencies", "依赖", "引用了哪些"),
+            "referencers": ("referencer", "referencers", "被谁引用", "引用者"),
+            "nanite_enabled": ("nanite", "nanite_enabled"),
+            "lod_count": ("lod", "lod_count"),
+            "collision_complexity": ("collision", "碰撞", "collision_complexity"),
+            "module_name": ("module", "模块"),
+            "classes": ("class", "类"),
+            "symbols": ("symbol", "符号"),
+        }
+        fields: list[str] = []
+        for field, hints in field_hints.items():
+            if any(hint in query for hint in hints):
+                fields.append(field)
+        return fields
+
+    @staticmethod
+    def _normalize_requested_fields(fields: list[str]) -> list[str]:
+        aliases = {
+            "parent": "parent_class",
+            "parentclass": "parent_class",
+            "父类": "parent_class",
+            "native": "native_class",
+            "components": "components",
+            "component": "components",
+            "组件": "components",
+            "variables": "variables",
+            "variable": "variables",
+            "变量": "variables",
+            "functions": "functions",
+            "function": "functions",
+            "函数": "functions",
+            "dependencies": "dependencies",
+            "dependency": "dependencies",
+            "依赖": "dependencies",
+            "referencers": "referencers",
+            "referencer": "referencers",
+            "nanite": "nanite_enabled",
+            "nanite_enabled": "nanite_enabled",
+            "lod": "lod_count",
+            "lod_count": "lod_count",
+            "collision": "collision_complexity",
+            "collision_complexity": "collision_complexity",
+            "module": "module_name",
+            "module_name": "module_name",
+            "classes": "classes",
+            "class": "classes",
+            "symbols": "symbols",
+            "symbol": "symbols",
+        }
+        normalized: list[str] = []
+        for raw_field in fields:
+            key = str(raw_field or "").strip().lower()
+            if not key:
+                continue
+            field = aliases.get(key, key)
+            if field not in normalized:
+                normalized.append(field)
+        return normalized[:12]
 
     def _matches_nanite_query(self, item: dict[str, Any], query: str) -> bool:
         settings = item.get("settings") if isinstance(item.get("settings"), dict) else {}

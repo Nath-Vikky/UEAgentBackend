@@ -181,7 +181,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "模块",
         ),
         required_payload_fields=("user_query",),
-        optional_payload_fields=("project_id", "asset_type", "limit"),
+        optional_payload_fields=("project_id", "asset_path", "asset_type", "fields", "limit"),
         input_schema={
             "type": "object",
             "required": ["query"],
@@ -189,7 +189,13 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                 "query": {"type": "string"},
                 "user_query": {"type": "string"},
                 "project_id": {"type": "string"},
+                "asset_path": {"type": "string"},
                 "asset_type": {"type": "string"},
+                "fields": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional field names such as components, variables, parent_class, nanite_enabled, lod_count, dependencies, module_name.",
+                },
                 "limit": {"type": "integer", "minimum": 1, "maximum": 200},
             },
         },
