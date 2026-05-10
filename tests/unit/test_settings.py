@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+
+import pytest
+
 from app.core.settings import Settings
 
 
 TEST_TMP_DIR = Path(__file__).resolve().parent / ".tmp"
+LIST_ENV_KEYS = ("APP_CORS_ORIGINS", "KB_SOURCE_PATHS")
+
+
+@pytest.fixture
+def clean_list_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in LIST_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
 
 
 def _write_env_file(name: str, content: str) -> Path:
@@ -14,7 +24,7 @@ def _write_env_file(name: str, content: str) -> Path:
     return env_file
 
 
-def test_settings_accept_single_quoted_json_for_cors() -> None:
+def test_settings_accept_single_quoted_json_for_cors(clean_list_env: None) -> None:
     env_file = _write_env_file(
         "cors-single-quoted.env",
         "APP_CORS_ORIGINS='[\"http://localhost:3000\",\"http://127.0.0.1:3000\"]'\n"
@@ -24,7 +34,7 @@ def test_settings_accept_single_quoted_json_for_cors() -> None:
     assert settings.app_cors_origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 
-def test_settings_accept_csv_for_list_fields() -> None:
+def test_settings_accept_csv_for_list_fields(clean_list_env: None) -> None:
     env_file = _write_env_file(
         "csv-lists.env",
         "\n".join(
