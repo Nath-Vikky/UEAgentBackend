@@ -18,6 +18,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   UE knowledge separation.
 - Code Review LLM fallback unit tests for malformed JSON-like model responses
   and stable highlight-card analysis output.
+- Project QA local grep fallback unit tests for no-vector/no-index retrieval
+  traces and explicit local-search skip reasons.
 
 ### Changed
 
@@ -27,6 +29,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   remains the dependency source of truth.
 - RAG subpackage entry points now expose public contracts instead of
   placeholder-only package files.
+- Project QA local search traces now report why local grep was skipped, for
+  example `disabled_by_payload` or `required_query_terms_not_found`.
 
 ## 0.1.0 - 2026-05-09
 

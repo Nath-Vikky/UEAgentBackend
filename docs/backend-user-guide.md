@@ -2889,3 +2889,22 @@ Content-Type: application/json
 ```
 
 这组测试不依赖 live LLM，主要用于防止“代码审查结果从摘要卡片退化成完整 JSON”的回归。
+
+## 2026-05-11 Project QA Local Grep Fallback 回归测试
+
+本次补充了 `tests/unit/test_kb_service_local_fallback.py`，用于确认没有向量模型、没有 Qdrant，甚至当前 DB lexical index 没有命中时，Project QA 仍然可以用 `KB_SOURCE_PATHS` 指向的本地 markdown/code 文件做可解释 fallback。
+
+覆盖点：
+
+- `RAG_MODE=hybrid` 且 `EMBEDDING_ENABLED=false` 时，检索会稳定降级到 `lexical_only`，不会探测 Qdrant。
+- 当 DB 中没有可用 chunk，但本地文件命中时，`retrieval_quality_gate.local_retrieved_count` 会记录 local grep 证据数。
+- local grep 命中会进入 `retrieved_docs`，并带上 `retrieval_source = "local_grep"`。
+- 如果请求显式传入 `disable_local_search=true`，`local_search.reason` 会返回 `disabled_by_payload`，而不是误写成 `rag_hits_available`。
+
+运行命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_kb_service_local_fallback.py -q
+```
+
+这组测试强化的是“无向量也可用、降级原因可解释”的边界。UE 前端无需修改；如果 Debug View 展示 `data.retrieval_trace.local_search`，可以直接读取其中的 `status/reason/summary/items`。

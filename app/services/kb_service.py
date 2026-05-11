@@ -269,27 +269,38 @@ class KnowledgeBaseService:
             initial_result=result,
         )
         selected_query = str(agentic_rag.get("selected_query") or query)
+        local_domain_filters = payload.get("domain_filters") or context.kb_domains_hint or []
+        local_search_disabled = bool(payload.get("disable_local_search"))
+        local_required_terms_missing = "required_query_terms_not_found" in result.warnings
+        should_run_local_search = (
+            not local_search_disabled
+            and not local_required_terms_missing
+            and (not result.retrieved_docs or payload.get("use_local_search"))
+        )
+        local_skip_reason = "rag_hits_available"
+        if local_search_disabled:
+            local_skip_reason = "disabled_by_payload"
+        elif local_required_terms_missing:
+            local_skip_reason = "required_query_terms_not_found"
         local_search = (
             LocalSearchService(self.settings).search(
                 query=selected_query,
-                domain_filters=payload.get("domain_filters") or context.kb_domains_hint or [],
+                domain_filters=local_domain_filters,
                 top_k=min(max(self.settings.rag_top_k, 3), 8),
             )
-            if (not payload.get("disable_local_search"))
-            and ("required_query_terms_not_found" not in result.warnings)
-            and (not result.retrieved_docs or payload.get("use_local_search"))
+            if should_run_local_search
             else {
                 "query": selected_query,
                 "mode": "local_grep",
                 "status": "skipped",
-                "reason": "rag_hits_available",
+                "reason": local_skip_reason,
                 "items": [],
                 "summary": {
                     "result_count": 0,
                     "candidate_count": 0,
                     "searched_file_count": 0,
                     "skipped_file_count": 0,
-                    "domain_filters": payload.get("domain_filters") or context.kb_domains_hint or [],
+                    "domain_filters": local_domain_filters,
                     "terms": [],
                 },
             }
