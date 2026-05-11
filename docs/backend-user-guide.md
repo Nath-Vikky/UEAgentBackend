@@ -2871,3 +2871,21 @@ Content-Type: application/json
 ```
 
 这组测试不依赖 LLM、Qdrant、UE 编辑器或代理，适合放在默认 CI 中长期守护。
+
+## 2026-05-11 Code Review LLM Fallback 回归测试
+
+本次补充了 `tests/unit/test_code_review_llm_fallback.py`，用于保护代码审查面板里的 LLM 分析卡片，避免模型返回伪 JSON、不完整 JSON 或无法解析的结构化文本时，前端高亮区直接显示原始 JSON。
+
+覆盖点：
+
+- LLM 返回类似 `{summary: "...", issue: ...}` 的不标准 JSON 时，后端会尽量提取可读的 summary、issue 和 recommendation。
+- LLM 返回无法可靠解析的 JSON-like 文本时，后端只在 Debug View 保留原始内容，用户卡片改用安全的 fallback 文案。
+- `data.llm_analysis.text`、`key_points`、`priority` 会保持面向 UI 的稳定结构，不要求 UE 前端额外解析原始模型文本。
+
+运行命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_code_review_llm_fallback.py -q
+```
+
+这组测试不依赖 live LLM，主要用于防止“代码审查结果从摘要卡片退化成完整 JSON”的回归。

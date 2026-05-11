@@ -16,6 +16,8 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Public architecture and contribution docs.
 - Project QA grounding unit tests for inventory-first project facts and generic
   UE knowledge separation.
+- Code Review LLM fallback unit tests for malformed JSON-like model responses
+  and stable highlight-card analysis output.
 
 ### Changed
 
