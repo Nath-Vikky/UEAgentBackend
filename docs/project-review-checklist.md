@@ -33,6 +33,8 @@ Run before tagging or presenting the project:
 .\.venv\Scripts\python.exe -m compileall app
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_project_qa_grounding.py -q
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_code_review_llm_fallback.py -q
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_code_review_rules.py -q
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_logs_workflow_trace.py -q
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_kb_service_local_fallback.py -q
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_function_calling_adapter.py -q
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_graph_adapter.py -q

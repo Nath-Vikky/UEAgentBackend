@@ -50,6 +50,8 @@ def retrieve_support_notes_node(
     output_language: str,
     domain_filters: list[str],
     extra_payload: dict[str, Any] | None = None,
+    step_id: str = "retrieve_support_notes",
+    title: str = "Retrieve Support Notes",
 ) -> WorkflowState:
     """Reusable KB retrieval node for legacy graph-style workflows."""
     guidance = retrieve_support_notes(
@@ -63,8 +65,8 @@ def retrieve_support_notes_node(
     state.retrieved_context = guidance
     return append_step_result_node(
         state,
-        step_id="retrieve_support_notes",
-        title="Retrieve Support Notes",
+        step_id=step_id,
+        title=title,
         summary=f"Retrieved {len(guidance.get('retrieved_docs') or [])} support chunk(s).",
         details=guidance.get("retrieval_trace") or {},
     )

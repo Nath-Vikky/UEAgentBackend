@@ -2469,6 +2469,15 @@ def test_logs_analyze_workflow_returns_structured_events(client: TestClient) -> 
     ]
     assert body["data"]["llm_analysis"]["status"] == "skipped"
     assert body["data"]["llm_analysis"]["reason_code"] == "missing_openai_api_key"
+    assert body["data"]["workflow_trace"]["mode"] == "fixed_log_workflow_v1"
+    assert body["data"]["workflow_trace"]["stop_reason"] == "workflow_completed"
+    assert body["data"]["workflow_trace"]["steps_executed"] == 2
+    assert body["data"]["workflow_trace"]["tool_call_sequence"] == [
+        "analyze_ue_log",
+        "lookup_incident_history",
+    ]
+    assert body["debug_view"]["workflow_trace"] == body["data"]["workflow_trace"]
+    assert body["debug_view"]["react_loop"] == body["data"]["workflow_trace"]
     assert body["data"]["retrieval_quality_gate"]["status"] in {"passed", "skipped"}
     assert body["data"]["validation_plan"]["items"]
     assert any(item["category"] == "asset_validation" for item in body["data"]["validation_plan"]["items"])

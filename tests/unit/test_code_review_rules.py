@@ -67,3 +67,74 @@ void FInventoryWorker::Run()
 
     assert "thread_context" in hits
     assert "raw_pointer_ownership" in hits
+
+
+def test_code_review_flags_raw_pointer_without_uproperty() -> None:
+    code = """
+UCLASS()
+class UInventoryHolder : public UObject
+{
+    GENERATED_BODY()
+private:
+    UObject* CurrentItem = nullptr;
+};
+"""
+
+    assert "raw_pointer_ownership" in _rule_hits(code)
+
+
+def test_code_review_flags_synchronous_asset_loading() -> None:
+    code = """
+void ASpawner::LoadMesh()
+{
+    StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Game/Props/SM_Cube"));
+}
+"""
+
+    hits = _rule_hits(code)
+
+    assert "sync_load_usage" in hits
+    assert "hardcoded_asset_path" in hits
+
+
+def test_code_review_flags_hardcoded_asset_path() -> None:
+    code = """
+void ASpawner::Configure()
+{
+    const FString Path = TEXT("/Game/Characters/BP_Hero");
+}
+"""
+
+    assert "hardcoded_asset_path" in _rule_hits(code)
+
+
+def test_code_review_flags_tick_hot_path_usage() -> None:
+    code = """
+void AMyActor::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);
+}
+"""
+
+    assert "tick_hot_path" in _rule_hits(code)
+
+
+def test_code_review_flags_include_pollution() -> None:
+    includes = "\n".join(f'#include "Header{i}.h"' for i in range(11))
+
+    assert "include_pollution" in _rule_hits(includes)
+
+
+def test_code_review_flags_blueprint_surface_exposure() -> None:
+    code = """
+UCLASS()
+class AMyActor : public AActor
+{
+    GENERATED_BODY()
+public:
+    UFUNCTION(BlueprintCallable)
+    void RunGameplayAction();
+};
+"""
+
+    assert "blueprint_surface" in _rule_hits(code)

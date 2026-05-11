@@ -124,6 +124,7 @@ class DebugView(BaseModel):
     tool_registry_protocol: dict[str, Any] = Field(default_factory=dict)
     tool_execution_policy: dict[str, Any] = Field(default_factory=dict)
     agent_decision_trace: dict[str, Any] = Field(default_factory=dict)
+    workflow_trace: dict[str, Any] = Field(default_factory=dict)
     react_loop: dict[str, Any] = Field(default_factory=dict)
     multi_agent: dict[str, Any] = Field(default_factory=dict)
     self_reflection: dict[str, Any] = Field(default_factory=dict)

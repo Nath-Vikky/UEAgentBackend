@@ -27,6 +27,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   `review_fix_validate` chain, keeping future LangGraph integration optional.
 - MCP transport boundary regression for HTTP-as-frontend-protocol and
   proposal-required write policy.
+- Assembly Sprint N8 updates: honest Logs Analyze workflow trace, RAG facade
+  production wiring for Project QA, Code Review workflow node reuse, and wider
+  Code Review rule regression coverage.
 
 ### Changed
 

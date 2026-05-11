@@ -2805,13 +2805,13 @@ Content-Type: application/json
 - `data.tool_plan.tool_call_sequence`：本次 Project QA 计划调用的工具 ID 顺序。
 - `data.react_loop.tool_call_sequence`：Project QA 的 thought/action/observation 调试轨迹中的工具顺序。
 - `data.react_loop.mode = "react_lite"`：自由聊天 / Project QA 的受控 ReAct Lite 模式。
-- `logs_analyze.data.react_loop.mode = "bounded_log_react_v1"`：日志分析内部的有限步骤调试轨迹。
+- `logs_analyze.data.workflow_trace.mode = "fixed_log_workflow_v1"`：日志分析内部的固定工作流调试轨迹；`react_loop` 暂时作为兼容字段保留。
 - `project_inventory.items[].field_view`：当用户询问变量、组件、父类、Nanite、LOD、依赖等字段时，后端会在命中项里附带一个更聚焦的字段视图。
 
 前端兼容性：
 
 - 这些字段都是新增可选字段，旧前端可以忽略，不影响现有 `user_view.blocks`。
-- 如果 UE 前端后续想增强 Debug View，可以优先展示 `react_loop.tool_call_sequence` 和 `react_loop.steps`。
+- 如果 UE 前端后续想增强 Debug View，Project QA 优先展示 `react_loop.tool_call_sequence` 和 `react_loop.steps`；Logs Analyze 优先展示 `workflow_trace.tool_call_sequence` 和 `workflow_trace.steps`。
 - Assets Inspect 面板不变；自由聊天询问“当前项目某个资产有哪些变量/组件/依赖”时，仍走 Project Inventory。
 
 ## 2026-05-11 后端稳定版收口清理
@@ -2890,6 +2890,27 @@ Content-Type: application/json
 
 这组测试不依赖 live LLM，主要用于防止“代码审查结果从摘要卡片退化成完整 JSON”的回归。
 
+## 2026-05-11 Code Review Rules 回归测试扩充
+
+本次扩充了 `tests/unit/test_code_review_rules.py`，把 Code Review 规则层从“主要测误报抑制”扩展到“核心规则触发 + 误报抑制”并存。
+
+新增覆盖的 `rule_id`：
+
+- `raw_pointer_ownership`
+- `sync_load_usage`
+- `hardcoded_asset_path`
+- `tick_hot_path`
+- `include_pollution`
+- `blueprint_surface`
+
+运行命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_code_review_rules.py -q
+```
+
+这组测试不依赖 LLM，适合作为 Code Review 规则层的长期质量门。
+
 ## 2026-05-11 Project QA Local Grep Fallback 回归测试
 
 本次补充了 `tests/unit/test_kb_service_local_fallback.py`，用于确认没有向量模型、没有 Qdrant，甚至当前 DB lexical index 没有命中时，Project QA 仍然可以用 `KB_SOURCE_PATHS` 指向的本地 markdown/code 文件做可解释 fallback。
@@ -2947,6 +2968,31 @@ Content-Type: application/json
 ```
 
 这一步主要服务于架构表达和后续扩展，不要求 UE 前端修改。
+
+## 2026-05-11 Assembly Sprint N8 小收口
+
+N8 目标是把已经存在的 facade / workflow node / trace 组件接到主链路，减少“看起来有模块但生产链路没使用”的割裂感。本次仍不新增 UE 前端必改接口。
+
+已完成：
+
+- Logs Analyze 的调试轨迹从 `bounded_log_react_v1` 改为更诚实的 `fixed_log_workflow_v1`。
+- Logs Analyze 现在在 `data.workflow_trace` 和 `debug_view.workflow_trace` 暴露固定工作流轨迹。
+- 为前端兼容，`data.react_loop` 和 `debug_view.react_loop` 暂时仍保留，并指向同一份 workflow trace。
+- `KnowledgeBaseService.project_qa()` 已改用 `app.rag.retrieve_knowledge()` facade，而不是直接拼接底层 `retrieve()` 与 `refine_retrieval_if_needed()`。
+- Code Review workflow 已小步复用 `append_step_result_node`、`record_tool_output_node`、`retrieve_support_notes_node`、`aggregate_step_results_node`。
+- Code Review 核心规则测试已扩充。
+
+运行建议：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_logs_workflow_trace.py tests\unit\test_code_review_rules.py tests\unit\test_kb_service_local_fallback.py -q
+```
+
+前端影响：
+
+- 普通 UI 无需修改。
+- 如果 Debug View 想更准确展示日志分析链路，优先读取 `debug_view.workflow_trace`。
+- 旧的 `debug_view.react_loop` 暂时可继续读取，但它现在是兼容字段，不代表 LLM 自主多轮 ReAct。
 
 ## 2026-05-11 MCP Transport Boundary 回归测试
 

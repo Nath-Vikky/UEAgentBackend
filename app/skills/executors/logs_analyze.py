@@ -61,7 +61,7 @@ def _localized_llm_skip_reason(reason_code: str, output_language: str) -> str:
     )
 
 
-def _build_log_react_loop(
+def _build_log_workflow_trace(
     *,
     result: dict[str, Any],
     workflow: dict[str, Any],
@@ -111,13 +111,20 @@ def _build_log_react_loop(
             },
         },
     ]
+    action_steps = [item for item in steps if item.get("phase") == "action"]
     return {
-        "mode": "bounded_log_react_v1",
-        "max_iterations": 3,
-        "iterations_used": 2,
-        "stop_reason": "agent_decided_done",
-        "tool_call_sequence": ["analyze_ue_log", "lookup_incident_history"],
+        "mode": "fixed_log_workflow_v1",
+        "workflow_kind": "deterministic_bounded_workflow",
+        "steps_executed": len(action_steps),
+        "stop_reason": "workflow_completed",
+        "tool_call_sequence": [
+            str(item.get("tool_id") or "") for item in action_steps if item.get("tool_id")
+        ],
         "steps": steps,
+        "compatibility": {
+            "previous_mode": "bounded_log_react_v1",
+            "react_loop_field_retained": True,
+        },
     }
 
 
@@ -338,7 +345,7 @@ class LogsAnalyzeSkillExecutor:
             llm_result=llm_result,
             output_language=output_language,
         )
-        react_loop = _build_log_react_loop(
+        workflow_trace = _build_log_workflow_trace(
             result=result,
             workflow=workflow,
             llm_result=llm_result,
@@ -453,7 +460,8 @@ class LogsAnalyzeSkillExecutor:
             "validation_plan": validation_plan,
             "llm_analysis": llm_analysis,
             "llm_analysis_raw": llm_result,
-            "react_loop": react_loop,
+            "workflow_trace": workflow_trace,
+            "react_loop": workflow_trace,
         }
         step_results = [
             *workflow["step_results"],
@@ -489,7 +497,8 @@ class LogsAnalyzeSkillExecutor:
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
         base_debug["warnings"] = workflow["warnings"]
-        base_debug["react_loop"] = react_loop
+        base_debug["workflow_trace"] = workflow_trace
+        base_debug["react_loop"] = workflow_trace
         return {
             "user_view": user_view,
             "debug_view": base_debug,

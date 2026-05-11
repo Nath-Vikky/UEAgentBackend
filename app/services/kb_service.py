@@ -28,8 +28,7 @@ from app.rag.ingestion.dedup import content_hash
 from app.rag.ingestion.jobs import utc_now
 from app.rag.ingestion.loaders import discover_source_paths
 from app.rag.ingestion.parsers import parse_path
-from app.rag.retrieval.agentic import refine_retrieval_if_needed
-from app.rag.retrieval.hybrid import retrieve
+from app.rag import retrieve_knowledge
 from app.rag.schemas import ParsedDocument
 from app.schemas.requests import ContextInput, KnowledgeBaseImportRequest
 from app.services.local_search_service import LocalSearchService
@@ -251,7 +250,7 @@ class KnowledgeBaseService:
         if _is_knowledge_catalog_query(query):
             return self._knowledge_catalog_result(query=query, output_language=output_language)
         chunks = list_chunks(self.db)
-        result = retrieve(
+        rag_result = retrieve_knowledge(
             query=query,
             context=context,
             payload=payload,
@@ -259,15 +258,9 @@ class KnowledgeBaseService:
             settings=self.settings,
             output_language=output_language,
         )
-        result, agentic_rag, agentic_warnings = refine_retrieval_if_needed(
-            query=query,
-            context=context,
-            payload=payload,
-            chunks=chunks,
-            settings=self.settings,
-            output_language=output_language,
-            initial_result=result,
-        )
+        result = rag_result["result"]
+        agentic_rag = dict(rag_result.get("agentic_rag") or {})
+        rag_warnings = list(rag_result.get("warnings") or [])
         selected_query = str(agentic_rag.get("selected_query") or query)
         local_domain_filters = payload.get("domain_filters") or context.kb_domains_hint or []
         local_search_disabled = bool(payload.get("disable_local_search"))
@@ -392,7 +385,7 @@ class KnowledgeBaseService:
             "rag_retrieved_count": len(result.retrieved_docs),
             "local_retrieved_count": len(local_docs),
         }
-        warnings = list(dict.fromkeys([*result.warnings, *agentic_warnings]))
+        warnings = list(dict.fromkeys(rag_warnings or result.warnings))
         if local_docs:
             warnings = [
                 item
