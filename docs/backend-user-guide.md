@@ -2947,3 +2947,23 @@ Content-Type: application/json
 ```
 
 这一步主要服务于架构表达和后续扩展，不要求 UE 前端修改。
+
+## 2026-05-11 MCP Transport Boundary 回归测试
+
+后端已有 MCP stdio client、MCPToolAdapter、`/api/v1/mcp/tools` 调试接口，以及 fixture server 级测试。本次补充一条更明确的边界测试：MCP 只是可选工具 transport，不是 UE 前端主协议，也不能绕过 Proposal 写入流程。
+
+覆盖点：
+
+- `build_mcp_capability()` 的 `mode = optional_tool_transport`。
+- `frontend_protocol = http`，UE 前端仍然走现有 HTTP API。
+- `tool_layer_only = true`，MCP 不接管 TaskService 主链路。
+- `free_chat_auto_execute = false`，自由聊天不会自动执行 MCP 工具。
+- `write_tools_require_proposal = true`，写入类工具未来即使来自 MCP，也必须先转成 Proposal。
+
+运行命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_mcp_tool_adapter.py -q
+```
+
+UE 前端无需修改。只有未来要让 MCP 工具参与实际编辑器写操作时，才需要新增“操作提案 -> 用户确认 -> UE Editor API 执行”的前端链路适配。

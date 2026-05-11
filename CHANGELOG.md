@@ -25,6 +25,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   existing planner contract.
 - Framework-neutral graph adapter blueprint for the existing
   `review_fix_validate` chain, keeping future LangGraph integration optional.
+- MCP transport boundary regression for HTTP-as-frontend-protocol and
+  proposal-required write policy.
 
 ### Changed
 

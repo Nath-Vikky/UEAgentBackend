@@ -26,6 +26,24 @@ def test_mcp_adapter_is_disabled_by_default() -> None:
     assert capability["frontend_protocol"] == "http"
 
 
+def test_mcp_capability_preserves_http_and_proposal_boundaries() -> None:
+    settings = Settings(
+        mcp_tool_adapter_enabled=True,
+        mcp_stdio_command=sys.executable,
+        mcp_allowed_tools=["get_widget_tree"],
+    )
+
+    capability = build_mcp_capability(settings)
+
+    assert capability["mode"] == "optional_tool_transport"
+    assert capability["frontend_protocol"] == "http"
+    assert capability["tool_layer_only"] is True
+    assert capability["default_enabled"] is False
+    assert capability["safety_policy"]["free_chat_auto_execute"] is False
+    assert capability["safety_policy"]["write_tools_require_proposal"] is True
+    assert capability["configured_allowed_tools"] == ["get_widget_tree"]
+
+
 def test_mcp_adapter_warns_when_enabled_without_command() -> None:
     settings = Settings(mcp_tool_adapter_enabled=True, mcp_stdio_command="")
 
