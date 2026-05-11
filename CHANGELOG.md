@@ -20,6 +20,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   and stable highlight-card analysis output.
 - Project QA local grep fallback unit tests for no-vector/no-index retrieval
   traces and explicit local-search skip reasons.
+- Optional function-calling adapter that exports read-only Tool Registry entries
+  as provider-style function schemas and normalizes tool calls back into the
+  existing planner contract.
 
 ### Changed
 

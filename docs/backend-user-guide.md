@@ -2908,3 +2908,23 @@ Content-Type: application/json
 ```
 
 这组测试强化的是“无向量也可用、降级原因可解释”的边界。UE 前端无需修改；如果 Debug View 展示 `data.retrieval_trace.local_search`，可以直接读取其中的 `status/reason/summary/items`。
+
+## 2026-05-11 Function Calling Adapter 小步实现
+
+后端新增 `app/agent/function_calling_adapter.py`。它不是新的主 Agent 框架，也不会替换当前 ReAct Lite / deterministic planner，而是给未来接入模型原生 tool calling 留出一个很薄的适配层。
+
+当前能力：
+
+- 把 Tool Registry 中允许自由聊天使用的只读工具转换成 provider-style function schema。
+- 默认只导出 `read_only` 工具，例如 `retrieve_project_knowledge`、`query_project_inventory`、`read_project_file`。
+- 不默认导出 `confirmed_write` 工具，例如资产重命名、写入代码、调整 Static Mesh 设置等。
+- 把模型返回的 function/tool call 归一化为现有 planner contract：`requested_tool_ids` 与 `tool_inputs_by_id`。
+- 对参数做最小白名单清洗，只保留 ToolSpec 中声明的 schema / payload 字段。
+
+运行命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_function_calling_adapter.py -q
+```
+
+这一步的意义是“为后续框架化留接口”，不是要求 UE 前端修改。现阶段 UE 前端仍然调用原有 HTTP API；后端也仍然通过 Tool Registry、Proposal 和 Skill Executor 控制工具执行边界。

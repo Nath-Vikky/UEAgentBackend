@@ -79,6 +79,23 @@ Evaluation
 Skills compose tools. Tools declare side effects. MCP does not replace the
 backend; it can become one transport under the Tool Registry.
 
+## Optional Function Calling Adapter
+
+`app/agent/function_calling_adapter.py` is a small compatibility layer for
+future model-native tool calling. It exports selected Tool Registry entries as
+provider-style function schemas, then normalizes provider tool-call payloads
+back into the current `requested_tool_ids / tool_inputs_by_id` planner
+contract.
+
+This adapter is deliberately not the primary router. The stable path remains:
+
+```text
+Tool Registry -> deterministic/ReAct Lite planner -> existing Skill executor
+```
+
+Free-chat exports are read-only by default. Confirmed-write tools stay behind
+the existing Proposal confirmation flow.
+
 ## Safety Boundary
 
 The backend does not directly mutate UE assets or project files from an LLM
