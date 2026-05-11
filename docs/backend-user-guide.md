@@ -2813,3 +2813,42 @@ Content-Type: application/json
 - 这些字段都是新增可选字段，旧前端可以忽略，不影响现有 `user_view.blocks`。
 - 如果 UE 前端后续想增强 Debug View，可以优先展示 `react_loop.tool_call_sequence` 和 `react_loop.steps`。
 - Assets Inspect 面板不变；自由聊天询问“当前项目某个资产有哪些变量/组件/依赖”时，仍走 Project Inventory。
+
+## 2026-05-11 后端稳定版收口清理
+
+本次清理目标是消除源码中的“占位感”，让公开仓库更像一个稳定可维护的本地 Agent 后端，而不是只为展示准备的半成品。
+
+已完成：
+
+- `app/rag/ingestion/__init__.py` 改为真实导出 ingestion pipeline 能力、chunker、loader、parser 和轻量 ingestion job queue。
+- `app/rag/indexing/__init__.py` 改为真实导出 lexical tokenizer、embedding helper 和 Qdrant adapter 边界。
+- `app/rag/retrieval/__init__.py` 改为真实导出 hybrid retrieval、agentic refinement、citation builder 和 rerank helper。
+- 删除未被主链路引用的 `app/services/file_service.py` 占位文件。
+- 新增 RAG 子包导入契约测试，确认公开导出不会引入循环依赖。
+
+对使用者的影响：
+
+- HTTP API 没有变化。
+- UE 前端不需要修改。
+- `user_view`、`debug_view`、`data` 的结构没有变化。
+- RAG、local grep、Project Inventory、Code Review、Code Generate、Logs Analyze、Assets Inspect 的使用方式不变。
+
+验证建议：
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check app tests scripts
+.\.venv\Scripts\python.exe -m pytest tests\unit tests\contract -q
+```
+
+如果要做完整本地回归，可以额外运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\eval -q
+.\.venv\Scripts\python.exe -m pytest tests\integration -q
+```
+
+当前仍然合理保留的非完成态标记：
+
+- `deferred_task_types` 表示已从当前产品范围隐藏的兼容任务，不代表核心功能缺失。
+- `langsmith_stub / local_stub` 表示 LangSmith 和 OpenTelemetry 只保留本地契约，不作为强依赖。
+- `tool_placeholder` 只会出现在未纳入当前 5 个核心 Skill 的旧任务路由中。

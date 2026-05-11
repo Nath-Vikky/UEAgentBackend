@@ -19,6 +19,8 @@ This checklist is for keeping UE Agent Backend clean as an open-source local Age
 - Agent Chat may auto-select only read-only tools from the Tool Registry whitelist.
 - Write-capable tools must use Proposal confirmation and backend safety checks.
 - MCP remains an optional backend tool transport; HTTP remains the UE frontend/backend protocol.
+- RAG package entry points expose real public contracts rather than placeholder-only modules.
+- Unused service placeholders should be deleted instead of kept for future speculation.
 
 ## Verification Commands
 
@@ -30,6 +32,7 @@ Run before tagging or presenting the project:
 .\.venv\Scripts\python.exe -m pytest tests\unit tests\contract tests\eval
 .\.venv\Scripts\python.exe -m pytest tests\integration
 .\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md
+rg -n "placeholder|not implemented|NotImplemented|raise NotImplementedError" app
 ```
 
 If `make` is available:

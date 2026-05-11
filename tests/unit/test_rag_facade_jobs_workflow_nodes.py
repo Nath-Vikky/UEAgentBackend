@@ -92,3 +92,27 @@ def test_workflow_nodes_record_steps_tools_and_summary() -> None:
     assert state.tool_outputs["review_ue_cpp_files"]["issue_count"] == 1
     assert state.tool_outputs["workflow_summary"]["step_count"] == 1
     assert state.tool_outputs["workflow_summary"]["status_counts"] == {"completed": 1}
+
+
+def test_rag_subpackages_expose_public_contracts() -> None:
+    from app.rag import retrieve_knowledge as rag_retrieve_knowledge
+    from app.rag.indexing import embedding_available, query_token_counter, tokenize_query
+    from app.rag.ingestion import (
+        SUPPORTED_SUFFIXES,
+        chunk_text,
+        discover_source_paths,
+        ingestion_capabilities,
+    )
+    from app.rag.retrieval import build_citations, evaluate_evidence, retrieve
+
+    assert callable(rag_retrieve_knowledge)
+    assert callable(discover_source_paths)
+    assert callable(chunk_text)
+    assert callable(ingestion_capabilities)
+    assert ".md" in SUPPORTED_SUFFIXES
+    assert callable(tokenize_query)
+    assert callable(query_token_counter)
+    assert callable(embedding_available)
+    assert callable(retrieve)
+    assert callable(evaluate_evidence)
+    assert callable(build_citations)
