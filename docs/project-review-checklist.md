@@ -35,6 +35,7 @@ Run before tagging or presenting the project:
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_code_review_llm_fallback.py -q
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_kb_service_local_fallback.py -q
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_function_calling_adapter.py -q
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_graph_adapter.py -q
 .\.venv\Scripts\python.exe -m pytest tests\unit tests\contract tests\eval
 .\.venv\Scripts\python.exe -m pytest tests\integration
 .\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md

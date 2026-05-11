@@ -2928,3 +2928,22 @@ Content-Type: application/json
 ```
 
 这一步的意义是“为后续框架化留接口”，不是要求 UE 前端修改。现阶段 UE 前端仍然调用原有 HTTP API；后端也仍然通过 Tool Registry、Proposal 和 Skill Executor 控制工具执行边界。
+
+## 2026-05-11 Graph Adapter 蓝图
+
+后端新增 `app/agent/graph_adapter.py`，用于把现有轻量 Multi-Agent 链 `review -> fix_draft -> validate` 表达成可序列化的图蓝图。它不是 LangGraph 运行时，也不会引入新依赖；当前真正执行仍然由 `ReviewFixValidateChain` 完成。
+
+当前能力：
+
+- `review_fix_validate_graph_spec()` 返回当前链路的节点、边、入口、终止节点。
+- `langgraph_adapter_blueprint()` 返回一个不依赖 LangGraph 的 adapter blueprint，方便后续替换或对接。
+- `review` 和 `validate` 是 `read_only`，`fix_draft` 是 `plan_only`。
+- 图蓝图不允许绕过 Proposal 流程写入项目文件。
+
+运行命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_graph_adapter.py -q
+```
+
+这一步主要服务于架构表达和后续扩展，不要求 UE 前端修改。

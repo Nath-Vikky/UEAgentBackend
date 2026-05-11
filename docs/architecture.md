@@ -96,6 +96,21 @@ Tool Registry -> deterministic/ReAct Lite planner -> existing Skill executor
 Free-chat exports are read-only by default. Confirmed-write tools stay behind
 the existing Proposal confirmation flow.
 
+## Optional Graph Adapter
+
+`app/agent/graph_adapter.py` describes the existing
+`review -> fix_draft -> validate` code-review chain as a framework-neutral graph
+spec. The current runtime still uses the self-contained
+`ReviewFixValidateChain`; the graph spec is a small bridge for future
+LangGraph-style orchestration.
+
+The boundary is intentionally narrow:
+
+- No LangGraph dependency is required.
+- The graph spec is serializable and testable.
+- `fix_draft` remains `plan_only`; it does not write files.
+- Confirmed writes still require Proposal confirmation outside the graph.
+
 ## Safety Boundary
 
 The backend does not directly mutate UE assets or project files from an LLM

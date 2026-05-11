@@ -23,6 +23,8 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Optional function-calling adapter that exports read-only Tool Registry entries
   as provider-style function schemas and normalizes tool calls back into the
   existing planner contract.
+- Framework-neutral graph adapter blueprint for the existing
+  `review_fix_validate` chain, keeping future LangGraph integration optional.
 
 ### Changed
 
