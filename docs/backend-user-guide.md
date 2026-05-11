@@ -2852,3 +2852,22 @@ Content-Type: application/json
 - `deferred_task_types` 表示已从当前产品范围隐藏的兼容任务，不代表核心功能缺失。
 - `langsmith_stub / local_stub` 表示 LangSmith 和 OpenTelemetry 只保留本地契约，不作为强依赖。
 - `tool_placeholder` 只会出现在未纳入当前 5 个核心 Skill 的旧任务路由中。
+
+## 2026-05-11 Project QA Grounding 回归测试
+
+本次补充了 `tests/unit/test_project_qa_grounding.py`，用于把 Project QA 的关键防幻觉边界从大型集成测试中抽成更小的单元测试。
+
+覆盖点：
+
+- 当前项目事实类问题必须依赖 Project Inventory，例如“当前项目有哪些资产”“选中的 StaticMesh 是否开启 Nanite”。
+- 通用 UE 知识问题不能被误判成当前项目事实，例如 Actor 生命周期、Enhanced Input 绑定、TArray/TMap 区别。
+- 当 Project Inventory 没有快照时，后端应明确拒绝列出当前项目资产，而不是用知识库或 LLM 常识编造答案。
+- 当 Project Inventory 命中蓝图资产时，fallback 摘要应只使用快照里的字段，例如 `parent_class`、`components`、`variables`。
+
+运行命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_project_qa_grounding.py -q
+```
+
+这组测试不依赖 LLM、Qdrant、UE 编辑器或代理，适合放在默认 CI 中长期守护。

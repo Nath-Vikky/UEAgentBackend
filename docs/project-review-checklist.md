@@ -21,6 +21,8 @@ This checklist is for keeping UE Agent Backend clean as an open-source local Age
 - MCP remains an optional backend tool transport; HTTP remains the UE frontend/backend protocol.
 - RAG package entry points expose real public contracts rather than placeholder-only modules.
 - Unused service placeholders should be deleted instead of kept for future speculation.
+- Project fact questions must be grounded by Project Inventory; generic UE
+  knowledge should still use KB/RAG/local grep.
 
 ## Verification Commands
 
@@ -29,6 +31,7 @@ Run before tagging or presenting the project:
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check app tests scripts
 .\.venv\Scripts\python.exe -m compileall app
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_project_qa_grounding.py -q
 .\.venv\Scripts\python.exe -m pytest tests\unit tests\contract tests\eval
 .\.venv\Scripts\python.exe -m pytest tests\integration
 .\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md

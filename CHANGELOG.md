@@ -14,6 +14,8 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Bounded log-analysis ReAct debug trace.
 - Lightweight CI for Ruff plus unit/contract tests.
 - Public architecture and contribution docs.
+- Project QA grounding unit tests for inventory-first project facts and generic
+  UE knowledge separation.
 
 ### Changed
 
@@ -21,6 +23,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   on push/pull request runs.
 - Requirements files are documented as compatibility shims; `pyproject.toml`
   remains the dependency source of truth.
+- RAG subpackage entry points now expose public contracts instead of
+  placeholder-only package files.
 
 ## 0.1.0 - 2026-05-09
 
