@@ -708,6 +708,13 @@ LLM 复核只负责判断是否需要项目知识检索，不负责生成最终�
 }
 ```
 
+兼容字段：如果 UE 端更方便传“选中文件对象”，后端也会识别
+`payload.selected_file.relative_path`、`payload.selected_file.absolute_path`、`payload.selected_files[0].relative_path`
+或 `payload.files[0].path`。如果前端已经读取了文本，可直接传 `payload.code`、`payload.source_text`、
+`payload.file_content`、`payload.code_content`，或 `payload.files[0].content`。这些字段都会进入同一套
+Code Review collector，成功时 `data.review_scope.read_status = "ok"` 或 `inline`，且不会再被误判为
+`missing_selected_code_content`。
+
 后端会读取该文件内容，并在 `data.review_scope` 中返回：
 - `resolved_absolute_path`
 - `read_status`
@@ -1433,8 +1440,12 @@ Agent Chat 的项目事实问题现在会优先走 Project Inventory。常见中
 Code Review 判断是否真的读到了 cpp/h/cs 文件，优先看 `data.review_scope`：
 
 - `read_status = "ok"` 且 `content_length > 0`：后端已经读取到选中文件内容。
+- `read_status = "inline"` 且 `content_length > 0`：前端直接传了源码文本，后端已用该文本审查。
 - `source_kind = "query_only"` 或 `llm_analysis.reason_code = "missing_selected_code_content"`：请求缺少可解析的选中文件内容，通常需要前端补齐 `payload.project_root + payload.file_path`。
+- `source_field`：本次后端实际识别到的字段，例如 `file_path`、`relative_path`、`content`，可用于排查 UE 端传参。
 - `llm_review.reason = "completed_text_fallback"`：LLM 已返回内容但未严格按 JSON schema 返回，后端会尽量修复常见 JSON-like 格式；如果仍不合法，也会尝试从原文提取 summary / issue / suggestion 放入 `llm_analysis.text`，状态仍是 `completed`。
+- `llm_review.fallback_mode = "compact_text_retry"`：首轮结构化 Code Review LLM 请求失败后，后端使用更短的自然语言复核 prompt 再请求一次 LLM。该路径用于解决长文件、JSON-only 输出不稳定或模型端拒绝结构化响应时“LLM 已连接但 Code Review 显示 skipped”的问题。
+- 如果 `llm_analysis.status = "skipped"`，优先查看 `llm_review.reason/error/fallback_result`。`request_failed` 通常表示模型接口、代理、超时或模型上下文长度问题；`missing_selected_code_content` 则表示前端没有给到可读源码。
 
 ### 18.7 Code Review 高亮展示与 raw JSON 边界
 

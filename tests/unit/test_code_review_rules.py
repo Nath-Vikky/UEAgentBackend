@@ -97,6 +97,18 @@ void ASpawner::LoadMesh()
     assert "hardcoded_asset_path" in hits
 
 
+def test_code_review_accepts_files_payload_content_alias() -> None:
+    code = 'void ASpawner::LoadMesh(){ StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Game/Props/SM_Cube")); }'
+    result = review_ue_cpp_files(
+        {"files": [{"path": "Source/Demo/Private/Spawner.cpp", "content": code}]},
+        ContextInput(),
+    )
+
+    assert result["review_scope"]["source_kind"] == "content"
+    assert result["review_scope"]["content_length"] == len(code)
+    assert "sync_load_usage" in result["rule_hits"]
+
+
 def test_code_review_flags_hardcoded_asset_path() -> None:
     code = """
 void ASpawner::Configure()

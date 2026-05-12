@@ -1972,6 +1972,70 @@ def test_code_review_file_listing_and_selected_file_review(client: TestClient) -
         shutil.rmtree(project_root, ignore_errors=True)
 
 
+def test_code_review_accepts_selected_file_object_alias(client: TestClient) -> None:
+    project_root = Path(".test-workspace") / f"code-review-selected-object-{uuid.uuid4().hex}"
+    code_dir = project_root / "Source" / "MyModule"
+    shutil.rmtree(project_root, ignore_errors=True)
+    code_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        file_path = code_dir / "MyActor.cpp"
+        file_path.write_text(
+            '#include "MyActor.h"\n'
+            "void AMyActor::Tick(float DeltaTime)\n"
+            "{\n"
+            '    StaticLoadObject(UObject::StaticClass(), nullptr, TEXT("/Game/Hero/Hero01"));\n'
+            "}\n",
+            encoding="utf-8",
+        )
+
+        review = client.post(
+            "/api/v1/tasks/code-review",
+            json={
+                "task_type": "code_review",
+                "session": {
+                    "session_id": "code_review_selected_file_object_session",
+                    "messages": [{"role": "user", "content": "Review selected file.", "language": "auto"}],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "active_panel": "CodeReview",
+                    "project_root": str(project_root.resolve()),
+                },
+                "payload": {
+                    "user_query": "Review selected file.",
+                    "source_roots": ["Source"],
+                    "selected_file": {
+                        "relative_path": "Source/MyModule/MyActor.cpp",
+                        "label": "MyActor.cpp",
+                        "module_name": "MyModule",
+                        "file_type": "cpp",
+                    },
+                    "focus": "General",
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "CodeReview"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "zh-CN",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = review.json()
+
+        assert review.status_code == 200
+        assert body["data"]["review_scope"]["source_kind"] == "file_path"
+        assert body["data"]["review_scope"]["file_path"] == "Source/MyModule/MyActor.cpp"
+        assert body["data"]["review_scope"]["read_status"] == "ok"
+        assert body["data"]["review_scope"]["content_length"] > 0
+        assert body["data"]["review_scope"]["source_field"] == "relative_path"
+        assert body["data"]["llm_analysis"]["reason_code"] != "missing_selected_code_content"
+        assert "sync_load_usage" in body["data"]["rule_hits"]
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
+
+
 def test_code_review_live_llm_uses_compact_timeout_config(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -2166,6 +2230,117 @@ def test_code_review_llm_text_fallback_is_rendered_as_analysis(
         assert body["data"]["llm_review"]["reason"] == "completed_text_fallback"
         assert body["data"]["llm_review"]["structured"] is False
         assert "selected C++ file" in body["data"]["llm_analysis"]["text"]
+    finally:
+        shutil.rmtree(project_root, ignore_errors=True)
+
+
+def test_code_review_compact_text_retry_runs_when_structured_llm_request_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = Path(".test-workspace") / f"code-review-compact-retry-{uuid.uuid4().hex}"
+    code_dir = project_root / "Source" / "MyModule"
+    shutil.rmtree(project_root, ignore_errors=True)
+    code_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        file_path = code_dir / "MyActor.cpp"
+        file_path.write_text(
+            '#include "MyActor.h"\n'
+            "void AMyActor::Tick(float DeltaTime)\n"
+            "{\n"
+            '    auto Asset = LoadObject<UObject>(nullptr, TEXT("/Game/Hero/Hero01"));\n'
+            "}\n",
+            encoding="utf-8",
+        )
+
+        def _fake_complete_json_object(self, *, messages, config):  # type: ignore[no-untyped-def]
+            assert messages
+            return {
+                "ok": False,
+                "payload": None,
+                "reason": "request_failed",
+                "error": "context length exceeded",
+                "provider": "openai_compatible",
+                "model": config.model,
+                "profile_id": config.profile_id,
+                "usage": {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                    "latency_ms": 60000,
+                },
+            }
+
+        def _fake_complete(self, *, messages, config, stream_sink=None):  # type: ignore[no-untyped-def]
+            assert messages
+            assert "compact fallback" in messages[0]["content"]
+            assert stream_sink is None
+            return {
+                "ok": True,
+                "provider": "openai_compatible",
+                "reason": "completed",
+                "error": "",
+                "model": config.model,
+                "profile_id": config.profile_id,
+                "finish_reason": "completed",
+                "text": "The selected file loads an asset inside Tick, so move it to initialization or async loading.",
+                "usage": {
+                    "input_tokens": 25,
+                    "output_tokens": 18,
+                    "estimated_cost_usd": 0.0,
+                    "latency_ms": 12,
+                },
+            }
+
+        monkeypatch.setattr(
+            "app.services.llm_service.LLMService.complete_json_object",
+            _fake_complete_json_object,
+        )
+        monkeypatch.setattr(
+            "app.services.llm_service.LLMService.complete",
+            _fake_complete,
+        )
+
+        review = client.post(
+            "/api/v1/tasks/code-review",
+            json={
+                "task_type": "code_review",
+                "session": {
+                    "session_id": "code_review_compact_text_retry_session",
+                    "messages": [{"role": "user", "content": "Review the selected file.", "language": "auto"}],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "active_panel": "CodeReview",
+                    "current_file": "Source/MyModule/MyActor.cpp",
+                    "current_module": "MyModule",
+                },
+                "payload": {
+                    "user_query": "Review the selected file.",
+                    "project_root": str(project_root.resolve()),
+                    "source_roots": ["Source"],
+                    "file_path": "Source/MyModule/MyActor.cpp",
+                    "focus": "General",
+                },
+                "ui_state": {"active_view": "user", "selected_panel": "CodeReview"},
+                "runtime_options": {
+                    "profile_id": "default",
+                    "stream": False,
+                    "debug": True,
+                    "preferred_output_language": "auto",
+                    "return_debug_projection": True,
+                },
+            },
+        )
+        body = review.json()
+
+        assert review.status_code == 200
+        assert body["data"]["llm_analysis"]["status"] == "completed"
+        assert body["data"]["llm_review"]["reason"] == "completed_text_fallback"
+        assert body["data"]["llm_review"]["fallback_attempted"] is True
+        assert body["data"]["llm_review"]["fallback_mode"] == "compact_text_retry"
+        assert body["data"]["llm_review"]["fallback_from"]["reason"] == "request_failed"
+        assert "loads an asset inside Tick" in body["data"]["llm_analysis"]["text"]
     finally:
         shutil.rmtree(project_root, ignore_errors=True)
 

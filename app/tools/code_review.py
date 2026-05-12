@@ -12,29 +12,80 @@ CLASS_RE = re.compile(r"\bclass\s+(\w+)")
 INCLUDE_RE = re.compile(r'^\s*#include\s+["<]([^">]+)[">]', re.MULTILINE)
 RAW_UOBJECT_POINTER_RE = re.compile(r"\b(?:UObject|U[A-Za-z_]\w*|A[A-Za-z_]\w*)\s*\*")
 
+INLINE_SOURCE_KEYS = (
+    "diff_text",
+    "code",
+    "source_text",
+    "file_content",
+    "code_content",
+    "selected_code",
+    "selected_file_content",
+    "content",
+)
+FILE_PATH_KEYS = (
+    "file_path",
+    "relative_path",
+    "path",
+    "read_file_path",
+    "selected_file_path",
+    "absolute_path",
+    "resolved_absolute_path",
+)
+SELECTED_FILE_KEYS = ("selected_file", "selected_code_file", "code_file")
+SELECTED_FILE_LIST_KEYS = ("selected_files", "selected_code_files", "files")
+
 
 def _read_focus(payload: dict[str, Any]) -> str:
     return str(payload.get("focus") or payload.get("review_focus") or "General").strip() or "General"
 
 
+def _first_text_value(payload: dict[str, Any], keys: tuple[str, ...]) -> tuple[str, str] | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return key, value
+    return None
+
+
+def _selected_file_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    for key in SELECTED_FILE_KEYS:
+        value = payload.get(key)
+        if isinstance(value, dict):
+            return value
+    for key in SELECTED_FILE_LIST_KEYS:
+        value = payload.get(key)
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    return item
+    return {}
+
+
+def _source_roots_from(payload: dict[str, Any], selected_file: dict[str, Any]) -> list[str]:
+    raw_value = payload.get("source_roots")
+    if raw_value is None:
+        raw_value = selected_file.get("source_roots")
+    return list(raw_value or [])
+
+
 def _collect_source(payload: dict[str, Any], context: ContextInput) -> tuple[str, str, str | None, dict[str, Any]]:
     focus = _read_focus(payload)
-    if payload.get("diff_text"):
-        text = str(payload["diff_text"])
-        return text, "diff_text", None, {"read_status": "inline", "content_length": len(text), "applied_focus": focus}
-    if payload.get("code"):
-        text = str(payload["code"])
-        return text, "code", None, {"read_status": "inline", "content_length": len(text), "applied_focus": focus}
-    if payload.get("file_content"):
-        text = str(payload["file_content"])
-        return text, "file_content", None, {"read_status": "inline", "content_length": len(text), "applied_focus": focus}
-    project_root = payload.get("project_root") or context.project_root
-    if payload.get("file_path") and project_root:
+    selected_file = _selected_file_payload(payload)
+    inline_source = _first_text_value(payload, INLINE_SOURCE_KEYS) or _first_text_value(selected_file, INLINE_SOURCE_KEYS)
+    if inline_source:
+        source_key, text = inline_source
+        return text, source_key, None, {"read_status": "inline", "content_length": len(text), "applied_focus": focus}
+
+    file_path_value = _first_text_value(payload, FILE_PATH_KEYS) or _first_text_value(selected_file, FILE_PATH_KEYS)
+    project_root = payload.get("project_root") or selected_file.get("project_root") or context.project_root
+    if file_path_value and project_root:
+        source_key, file_path = file_path_value
+        source_roots = _source_roots_from(payload, selected_file)
         try:
             file_payload = read_project_code_file(
                 project_root=str(project_root),
-                file_path=str(payload["file_path"]),
-                source_roots=list(payload.get("source_roots") or []),
+                file_path=str(file_path),
+                source_roots=source_roots,
             )
             payload.setdefault("file_path", file_payload["relative_path"])
             metadata = {
@@ -55,6 +106,8 @@ def _collect_source(payload: dict[str, Any], context: ContextInput) -> tuple[str
                 )
             }
             metadata["applied_focus"] = focus
+            metadata["requested_file_path"] = str(file_path)
+            metadata["source_field"] = source_key
             return str(file_payload["text"]), "file_path", None, metadata
         except ProjectFileAccessError as exc:
             return (
@@ -63,13 +116,14 @@ def _collect_source(payload: dict[str, Any], context: ContextInput) -> tuple[str
                 str(exc),
                 {
                     "project_root": str(project_root),
-                    "requested_file_path": str(payload.get("file_path") or ""),
+                    "requested_file_path": str(file_path),
                     "resolved_absolute_path": None,
                     "read_status": "error",
                     "content_length": 0,
                     "load_error": str(exc),
                     "applied_focus": focus,
-                    "source_roots": list(payload.get("source_roots") or []),
+                    "source_roots": source_roots,
+                    "source_field": source_key,
                 },
             )
     fallback = payload.get("user_query") or context.current_file or ""
@@ -270,6 +324,8 @@ def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[
         "content_length": source_metadata.get("content_length", len(source_text)),
         "applied_focus": source_metadata.get("applied_focus"),
         "source_roots": source_metadata.get("source_roots") or payload.get("source_roots") or [],
+        "source_field": source_metadata.get("source_field"),
+        "requested_file_path": source_metadata.get("requested_file_path") or payload.get("file_path"),
         "source_excerpt_truncated": len(source_text) > 12000,
     }
     change_summary = {

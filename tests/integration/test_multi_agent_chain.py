@@ -168,10 +168,26 @@ def test_code_review_chain_keeps_running_when_llm_review_times_out(
             "usage": {"latency_ms": config.timeout_ms},
         }
 
+    def _fake_compact_retry_timeout(self, *, messages, config, stream_sink=None):  # type: ignore[no-untyped-def]
+        assert stream_sink is None
+        return {
+            "ok": False,
+            "provider": "openai_compatible",
+            "reason": "request_failed",
+            "error": "timeout",
+            "model": config.model,
+            "profile_id": config.profile_id,
+            "usage": {"latency_ms": config.timeout_ms},
+        }
+
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(
         "app.services.llm_service.LLMService.complete_json_object",
         _fake_timeout,
+    )
+    monkeypatch.setattr(
+        "app.services.llm_service.LLMService.complete",
+        _fake_compact_retry_timeout,
     )
 
     response = client.post(

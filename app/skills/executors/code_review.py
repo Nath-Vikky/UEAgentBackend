@@ -458,7 +458,7 @@ class CodeReviewSkillExecutor:
         output_language: str,
     ) -> list[dict[str, str]]:
         analysis_input = result.get("analysis_input") or {}
-        source_excerpt = str(analysis_input.get("source_excerpt") or "")[:5000]
+        source_excerpt = str(analysis_input.get("source_excerpt") or "")[:3000]
         review_scope = result.get("review_scope") or {}
         static_findings = [
             {
@@ -493,6 +493,48 @@ class CodeReviewSkillExecutor:
                 f"Editor context:\n{build_context_summary(request)}",
                 f"Static findings:\n{dumps_pretty(static_findings)}",
                 f"Retrieved guidance:\n{dumps_pretty(reference_titles)}",
+                f"Source excerpt:\n{source_excerpt}",
+            ]
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _code_review_llm_text_messages(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        result: dict[str, Any],
+        output_language: str,
+        first_error: dict[str, Any],
+    ) -> list[dict[str, str]]:
+        analysis_input = result.get("analysis_input") or {}
+        source_excerpt = str(analysis_input.get("source_excerpt") or "")[:1800]
+        review_scope = result.get("review_scope") or {}
+        static_findings = [
+            {
+                "rule_id": item.get("rule_id"),
+                "severity": item.get("severity"),
+                "line": item.get("line"),
+                "title": item.get("title"),
+                "evidence": item.get("evidence"),
+            }
+            for item in result.get("issue_list", [])[:5]
+        ]
+        system_prompt = (
+            "You are a senior Unreal Engine code reviewer. "
+            f"Answer in {self._language_label(output_language)}. "
+            "This is a compact fallback after structured JSON review failed. "
+            "Do not return JSON. Give one concise human-readable synthesis with risk, likely cause, and next action. "
+            "Base the answer only on the selected source excerpt and static findings."
+        )
+        user_prompt = "\n\n".join(
+            [
+                f"First LLM attempt failed with reason: {first_error.get('reason')}; error: {first_error.get('error')}",
+                f"Review scope:\n{dumps_pretty(review_scope)}",
+                f"Editor context:\n{build_context_summary(request)}",
+                f"Static findings:\n{dumps_pretty(static_findings)}",
                 f"Source excerpt:\n{source_excerpt}",
             ]
         )
@@ -641,6 +683,45 @@ class CodeReviewSkillExecutor:
             }
         if result_payload.get("ok"):
             result_payload["structured"] = True
+            result_payload["fallback_attempted"] = False
+            return result_payload
+        if result_payload.get("reason") in {"request_failed", "json_parse_failed"}:
+            compact_result = self.llm_service.complete(
+                messages=self._code_review_llm_text_messages(
+                    request=request,
+                    result=result,
+                    output_language=output_language,
+                    first_error=result_payload,
+                ),
+                config=self._llm_review_config(chat_config),
+            )
+            compact_text = str(compact_result.get("text") or "").strip()
+            if compact_result.get("ok") and compact_text:
+                return {
+                    **compact_result,
+                    "ok": True,
+                    "payload": self._text_fallback_review_payload(
+                        compact_text,
+                        output_language=output_language,
+                    ),
+                    "reason": "completed_text_fallback",
+                    "structured": False,
+                    "fallback_attempted": True,
+                    "fallback_mode": "compact_text_retry",
+                    "fallback_from": {
+                        "reason": result_payload.get("reason"),
+                        "error": result_payload.get("error"),
+                    },
+                }
+            result_payload["fallback_attempted"] = True
+            result_payload["fallback_mode"] = "compact_text_retry"
+            result_payload["fallback_result"] = {
+                "ok": bool(compact_result.get("ok")),
+                "reason": compact_result.get("reason"),
+                "error": compact_result.get("error"),
+                "model": compact_result.get("model"),
+                "profile_id": compact_result.get("profile_id"),
+            }
         return result_payload
 
     def _llm_analysis_from_review(

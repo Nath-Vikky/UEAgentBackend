@@ -30,6 +30,10 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Assembly Sprint N8 updates: honest Logs Analyze workflow trace, RAG facade
   production wiring for Project QA, Code Review workflow node reuse, and wider
   Code Review rule regression coverage.
+- Code Review compact LLM retry path for cases where the first structured JSON
+  synthesis fails but the chat model is still reachable.
+- Compatibility handling for selected-file and inline-content Code Review
+  payload aliases from editor integrations.
 
 ### Changed
 
@@ -41,6 +45,10 @@ Changelog. Dates use `YYYY-MM-DD`.
   placeholder-only package files.
 - Project QA local search traces now report why local grep was skipped, for
   example `disabled_by_payload` or `required_query_terms_not_found`.
+- Code Review smoke documentation now explains PowerShell `Method Not Allowed`
+  pitfalls and the `compact_text_retry` diagnostics path.
+- Code Review benchmark report refreshed on 2026-05-12 with 20 offline cases
+  passing at 1.0 recall and 1.0 precision.
 
 ## 0.1.0 - 2026-05-09
 

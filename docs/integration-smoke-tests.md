@@ -16,6 +16,11 @@ Set a base URL:
 $BaseUrl = "http://127.0.0.1:8000/api/v1"
 ```
 
+PowerShell 注意：如果使用反引号换行，反引号后面不能有空格。否则后续
+`-Method Post` 可能不会被解析，`Invoke-RestMethod` 会按默认 GET 请求发送，
+后端就会返回 `{"detail":"Method Not Allowed"}`。排查时优先使用本文的单行
+`Invoke-RestMethod "$BaseUrl/..." -Method Post ...` 写法。
+
 ## 1. Agent Chat Direct Answer
 
 ```powershell
@@ -109,9 +114,14 @@ Invoke-RestMethod "$BaseUrl/tasks/code-review" -Method Post -ContentType "applic
 
 Pass criteria:
 
-- `data.findings` or `data.review_result.issue_list` contains at least one issue.
+- `data.review_scope.source_kind` is `content` or `file_path`.
+- `data.review_scope.content_length` is greater than `0`.
+- `data.issue_list` contains at least one issue for the sample risky code.
 - `user_view.blocks` includes review summary / suggestions.
 - `debug_view.tools` includes `review_ue_cpp_files`.
+- If an LLM key is configured, `data.llm_analysis.status` should normally be `completed`; otherwise it should be `skipped` with a stable `reason_code`.
+- If the first structured LLM review fails because the selected file is long or the model returns non-JSON text, backend will try a compact natural-language retry. In that case `data.llm_review.reason = "completed_text_fallback"` and `data.llm_review.fallback_mode = "compact_text_retry"`.
+- If it is still skipped, inspect `data.review_scope.read_status/content_length/source_field` first, then `data.llm_review.reason/error/fallback_result`.
 
 ## 4. Code Generate
 
