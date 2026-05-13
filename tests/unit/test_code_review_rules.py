@@ -97,6 +97,35 @@ void ASpawner::LoadMesh()
     assert "hardcoded_asset_path" in hits
 
 
+def test_code_review_flags_constructorhelpers_sync_load() -> None:
+    code = """
+AMenuActor::AMenuActor()
+{
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> MeshFinder(TEXT("/Game/Props/SM_MenuCube.SM_MenuCube"));
+}
+"""
+
+    hits = _rule_hits(code)
+
+    assert "sync_load_usage" in hits
+    assert "hardcoded_asset_path" in hits
+
+
+def test_code_review_flags_loadclass_sync_load() -> None:
+    code = """
+void UMenuSubsystem::LoadMenuClass()
+{
+    UClass* MenuClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UI/WBP_Menu.WBP_Menu_C"));
+}
+"""
+
+    hits = _rule_hits(code)
+
+    assert "sync_load_usage" in hits
+    assert "hardcoded_asset_path" in hits
+    assert "raw_pointer_ownership" in hits
+
+
 def test_code_review_accepts_files_payload_content_alias() -> None:
     code = 'void ASpawner::LoadMesh(){ StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Game/Props/SM_Cube")); }'
     result = review_ue_cpp_files(
@@ -129,6 +158,83 @@ void AMyActor::Tick(float DeltaTime)
 """
 
     assert "tick_hot_path" in _rule_hits(code)
+
+
+def test_code_review_flags_missing_super_beginplay() -> None:
+    code = """
+void AQuestActor::BeginPlay()
+{
+    InitializeQuestRuntime();
+}
+"""
+
+    assert "lifecycle_super_call" in _rule_hits(code)
+
+
+def test_code_review_does_not_flag_lifecycle_with_super() -> None:
+    code = """
+void AQuestActor::BeginPlay()
+{
+    Super::BeginPlay();
+    InitializeQuestRuntime();
+}
+"""
+
+    assert "lifecycle_super_call" not in _rule_hits(code)
+
+
+def test_code_review_does_not_accept_commented_super_call() -> None:
+    code = """
+void AQuestActor::BeginPlay()
+{
+    // Super::BeginPlay();
+    InitializeQuestRuntime();
+}
+"""
+
+    assert "lifecycle_super_call" in _rule_hits(code)
+
+
+def test_code_review_does_not_flag_lifecycle_declaration() -> None:
+    code = """
+class AQuestActor : public AActor
+{
+public:
+    virtual void BeginPlay() override;
+};
+"""
+
+    assert "lifecycle_super_call" not in _rule_hits(code)
+
+
+def test_code_review_flags_delegate_binding_without_cleanup() -> None:
+    code = """
+void UInventoryWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+    InventorySubsystem->OnInventoryChanged.AddDynamic(this, &UInventoryWidget::RefreshInventory);
+}
+"""
+
+    assert "delegate_lifetime" in _rule_hits(code)
+
+
+def test_code_review_does_not_flag_delegate_binding_with_cleanup() -> None:
+    code = """
+void UInventoryWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+    InventorySubsystem->OnInventoryChanged.AddDynamic(this, &UInventoryWidget::RefreshInventory);
+}
+
+void UInventoryWidget::NativeDestruct()
+{
+    InventorySubsystem->OnInventoryChanged.RemoveDynamic(this, &UInventoryWidget::RefreshInventory);
+    Super::NativeDestruct();
+}
+"""
+
+    assert "delegate_lifetime" not in _rule_hits(code)
 
 
 def test_code_review_flags_include_pollution() -> None:

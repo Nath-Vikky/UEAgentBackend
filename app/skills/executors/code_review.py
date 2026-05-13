@@ -249,6 +249,8 @@ class CodeReviewSkillExecutor:
             "thread_context": "代码涉及线程或异步执行，需要确认是否在非游戏线程访问 UObject、World 或编辑器对象。",
             "hardcoded_asset_path": "代码中硬编码了 /Game/ 资产路径，后续重命名、迁移或打包时容易失效。",
             "sync_load_usage": "代码使用同步加载 API，运行时可能阻塞游戏线程或编辑器交互。",
+            "lifecycle_super_call": "生命周期函数重写没有看到对应的 Super 调用，可能绕过父类初始化、销毁或控件生命周期逻辑。",
+            "delegate_lifetime": "代码绑定了委托，但当前片段中没有看到匹配的解绑或清理路径，容易在对象销毁后留下悬挂回调。",
             "blueprint_surface": "代码暴露了 Blueprint API，需要确认这确实是稳定的蓝图调用边界。",
             "include_pollution": "include 数量偏多，可能扩大编译依赖和模块耦合。",
         }
@@ -258,6 +260,8 @@ class CodeReviewSkillExecutor:
             "thread_context": "The code uses threading or async execution and should be checked for UObject or World access off the game thread.",
             "hardcoded_asset_path": "The code hard-codes a /Game/ asset path, which can break after rename, migration, or packaging changes.",
             "sync_load_usage": "The code uses synchronous loading APIs that may block the game thread or editor interaction.",
+            "lifecycle_super_call": "The lifecycle override does not visibly call the matching Super method, which can skip parent initialization or teardown behavior.",
+            "delegate_lifetime": "The code binds a delegate without a visible matching unbind or cleanup path, which can leave stale callbacks after owner destruction.",
             "blueprint_surface": "The code exposes Blueprint-facing API and should be checked against the intended public surface.",
             "include_pollution": "The file has a large include surface, which may increase build cost and module coupling.",
         }
@@ -275,6 +279,8 @@ class CodeReviewSkillExecutor:
             "thread_context": "确认 UObject/World 访问发生在游戏线程；必要时用 AsyncTask(ENamedThreads::GameThread, ...) 切回主线程。",
             "hardcoded_asset_path": "优先改为软引用、配置项或数据资产引用，并在注释中说明依赖原因。",
             "sync_load_usage": "确认同步加载不会发生在高频路径；能延迟加载时优先使用软引用或异步加载。",
+            "lifecycle_super_call": "除非明确要屏蔽父类行为，否则在 BeginPlay/EndPlay/NativeConstruct/NativeDestruct 等函数中补充对应 Super 调用。",
+            "delegate_lifetime": "在 NativeDestruct/EndPlay/BeginDestroy 等清理路径里补充 RemoveDynamic、RemoveAll、Clear 或说明委托持有者生命周期。",
             "blueprint_surface": "复核 BlueprintCallable/BlueprintReadWrite 是否必须公开；内部能力尽量保持 C++ 私有边界。",
             "include_pollution": "尝试使用前向声明、拆分头文件依赖，或把重依赖移动到 .cpp。",
         }
@@ -309,6 +315,8 @@ class CodeReviewSkillExecutor:
                     "thread_context": "潜在线程上下文风险",
                     "hardcoded_asset_path": "检测到硬编码资产路径",
                     "sync_load_usage": "检测到同步资产加载",
+                    "lifecycle_super_call": "生命周期 Super 调用缺失",
+                    "delegate_lifetime": "委托绑定缺少清理路径",
                     "blueprint_surface": "Blueprint 暴露边界需要复核",
                     "include_pollution": "include 依赖面偏大",
                 }
@@ -321,6 +329,8 @@ class CodeReviewSkillExecutor:
             "UObject 生命周期",
             "Tick / 高频路径",
             "线程上下文",
+            "生命周期 Super 调用",
+            "委托绑定清理",
             "资产加载与硬编码路径",
             "Blueprint 暴露边界",
             "include 依赖面",
@@ -337,7 +347,7 @@ class CodeReviewSkillExecutor:
             "reason": _localized(
                 output_language,
                 f"本次规则扫描覆盖了 {', '.join(dimensions)}，没有发现明确的高风险问题。",
-                "The rule scan covered UObject lifetime, Tick paths, thread context, asset loading, Blueprint API surface, and include dependencies without obvious high-risk hits.",
+                "The rule scan covered UObject lifetime, Tick paths, thread context, lifecycle Super calls, delegate cleanup, asset loading, Blueprint API surface, and include dependencies without obvious high-risk hits.",
             ),
             "suggestion": _localized(
                 output_language,

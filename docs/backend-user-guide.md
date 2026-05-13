@@ -2713,10 +2713,12 @@ storage/artifacts/evals/code-review-benchmark-latest.json
 
 当前数据集规模与规则边界：
 
-- 数据集已有 `20` 个原创 UE C++ 短样例，其中包含 `9` 个干净 / 噪声样例。
+- 数据集已有 `26` 个原创 UE C++ 短样例，其中包含 `9` 个干净 / 噪声样例、`2` 个仍保留的已知局限样例。
 - 干净样例覆盖注释中的风险词、`UPROPERTY` 保护的 UE raw pointer、`TObjectPtr`、`TSoftObjectPtr`、`AsyncTask(ENamedThreads::GameThread)`、轻量 includes、DataTable row 等常见误报来源。
 - 规则层现在会跳过纯注释行，不再把 `UPROPERTY` 保护的 UE 指针当成裸指针风险，也不会把回到 GameThread 的 `AsyncTask` 当成后台线程风险。
-- 仍会保留真实风险检测，例如后台线程访问 UObject、同步加载、硬编码资源路径、Tick 热路径和 Blueprint API surface 过宽。
+- 规则层已覆盖常见真实风险：后台线程访问 UObject、同步加载、硬编码资源路径、`ConstructorHelpers::FObjectFinder/FClassFinder`、`LoadClass`、Tick 热路径、Blueprint API surface 过宽、生命周期函数缺少 `Super::` 调用、委托绑定缺少清理路径。
+- 当前已知局限保留为量化样例：`FStreamableManager::RequestSyncLoad` 和 Replication lifetime 校验暂未进入默认轻量规则层。
+- 最新离线结果：`recall=0.9355`，`precision=1.0`，`false_positive_rate=0.0`，`clean_case_accuracy=1.0`。
 
 当前离线 benchmark 不测 LLM 幻觉率，因为 LLM 调用被显式关闭。后续如果要测 live LLM，可以单独新增一个小型人工标注数据集，检查 LLM 的解释是否引入了“源码中不存在的事实”。不要把 live LLM 评测放进默认 pytest 或默认 benchmark，避免受代理、额度、模型波动影响。
 
@@ -2913,6 +2915,8 @@ Content-Type: application/json
 - `tick_hot_path`
 - `include_pollution`
 - `blueprint_surface`
+- `lifecycle_super_call`
+- `delegate_lifetime`
 
 运行命令：
 
@@ -2921,6 +2925,17 @@ Content-Type: application/json
 ```
 
 这组测试不依赖 LLM，适合作为 Code Review 规则层的长期质量门。
+
+## 2026-05-13 Code Review Rules v2
+
+本次把上一轮 benchmark 中的 4 个已知缺口升级为正式回归样例：
+
+- `ConstructorHelpers::FObjectFinder/FClassFinder` 会归类为 `sync_load_usage`。
+- `LoadClass` / `StaticLoadClass` 会归类为 `sync_load_usage`。
+- `BeginPlay`、`EndPlay`、`NativeConstruct`、`NativeDestruct`、`NativeOnInitialized`、`BeginDestroy` 等生命周期函数定义如果没有匹配的 `Super::` 调用，会返回 `lifecycle_super_call`。
+- `.AddDynamic`、`.AddUObject`、`.AddLambda`、`.AddRaw`、`.AddSP` 等委托绑定如果当前片段没有 `RemoveDynamic`、`RemoveAll`、`Clear`、`Unbind` 等清理线索，会返回 `delegate_lifetime`。
+
+为了避免 benchmark 变成“全绿但不诚实”的展示，数据集中仍保留 2 个真实已知局限：`RequestSyncLoad` 和 Replication lifetime。当前离线结果为 `recall=0.9355`、`precision=1.0`，更适合展示“可量化、可解释、持续改进”的规则边界。
 
 ## 2026-05-11 Project QA Local Grep Fallback 回归测试
 

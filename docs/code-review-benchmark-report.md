@@ -1,30 +1,30 @@
 # Code Review Benchmark Report
 
-- Generated at: `2026-05-13T13:16:19.535715+00:00`
+- Generated at: `2026-05-13T13:43:36.755305+00:00`
 - Dataset: `tests\eval\code_review_benchmark_dataset.jsonl`
-- Cases: `24`
+- Cases: `26`
 - LLM mode: `disabled/offline`
 
 ## Aggregate Metrics
 
 | Metric | Single Review | Multi-Agent Review Phase |
 | --- | ---: | ---: |
-| Recall | 0.8621 | 0.8621 |
+| Recall | 0.9355 | 0.9355 |
 | Precision | 1.0 | 1.0 |
 | False positive rate | 0.0 | 0.0 |
 | Clean-case accuracy | 1.0 | 1.0 |
 
 ## Known Limitations Included
 
-- Cases: `4`
-- Single-review missing expected rule families in known limitations: `4`
-- Multi-agent missing expected rule families in known limitations: `4`
+- Cases: `2`
+- Single-review missing expected rule families in known limitations: `2`
+- Multi-agent missing expected rule families in known limitations: `2`
 - Note: Known limitation cases are intentionally included to make the benchmark reflect current lightweight-rule boundaries.
 
 ## Chain Value
 
 - Review detection ratio: `1.0`
-- Generated draft case rate: `0.3333`
+- Generated draft case rate: `0.3077`
 - Validation issues per generated file: `1.5`
 - Note: The chain intentionally reuses the same review detector; extra value is measured by fix-draft and validation coverage.
 
@@ -32,8 +32,8 @@
 
 | Metric | Single Review | Multi-Agent Chain |
 | --- | ---: | ---: |
-| Average latency ms | 33.53 | 39.89 |
-| Max latency ms | 156.87 | 75.58 |
+| Average latency ms | 31.54 | 39.34 |
+| Max latency ms | 147.16 | 77.65 |
 
 ## LLM Hallucination
 
@@ -64,17 +64,17 @@
 | clean-data-table-row | regression | - | - | 1.0/1.0 | - | 1.0/1.0 | completed |
 | frunnable-thread-review | regression | thread_context | thread_context | 1.0/1.0 | thread_context | 1.0/1.0 | completed |
 | blueprint-callable-load-path | regression | blueprint_surface, hardcoded_asset_path, raw_pointer_ownership, sync_load_usage | blueprint_surface, hardcoded_asset_path, raw_pointer_ownership, sync_load_usage | 1.0/1.0 | blueprint_surface, hardcoded_asset_path, raw_pointer_ownership, sync_load_usage | 1.0/1.0 | completed |
-| known-gap-constructorhelpers-fobjectfinder | known_limitation | hardcoded_asset_path, sync_load_usage | hardcoded_asset_path | 0.5/1.0 | hardcoded_asset_path | 0.5/1.0 | completed |
-| known-gap-loadclass-blueprint | known_limitation | hardcoded_asset_path, raw_pointer_ownership, sync_load_usage | hardcoded_asset_path, raw_pointer_ownership | 0.6667/1.0 | hardcoded_asset_path, raw_pointer_ownership | 0.6667/1.0 | completed |
-| known-gap-missing-super-beginplay | known_limitation | lifecycle_super_call | - | 0.0/0.0 | - | 0.0/0.0 | completed |
-| known-gap-delegate-bind-without-unbind | known_limitation | delegate_lifetime | - | 0.0/0.0 | - | 0.0/0.0 | completed |
+| constructorhelpers-fobjectfinder | regression_from_known_gap | hardcoded_asset_path, sync_load_usage | hardcoded_asset_path, sync_load_usage | 1.0/1.0 | hardcoded_asset_path, sync_load_usage | 1.0/1.0 | completed |
+| loadclass-blueprint | regression_from_known_gap | hardcoded_asset_path, raw_pointer_ownership, sync_load_usage | hardcoded_asset_path, raw_pointer_ownership, sync_load_usage | 1.0/1.0 | hardcoded_asset_path, raw_pointer_ownership, sync_load_usage | 1.0/1.0 | completed |
+| missing-super-beginplay | regression_from_known_gap | lifecycle_super_call | lifecycle_super_call | 1.0/1.0 | lifecycle_super_call | 1.0/1.0 | completed |
+| delegate-bind-without-unbind | regression_from_known_gap | delegate_lifetime | delegate_lifetime | 1.0/1.0 | delegate_lifetime | 1.0/1.0 | completed |
+| known-gap-request-sync-load | known_limitation | sync_load_usage | - | 0.0/0.0 | - | 0.0/0.0 | completed |
+| known-gap-replicated-property-no-lifetime | known_limitation | replication_lifetime | - | 0.0/0.0 | - | 0.0/0.0 | completed |
 
 ## Known Limitation Case Notes
 
-- `known-gap-constructorhelpers-fobjectfinder` missing `sync_load_usage`: The current lightweight detector catches the /Game path but does not classify ConstructorHelpers as sync_load_usage yet.
-- `known-gap-loadclass-blueprint` missing `sync_load_usage`: The current detector flags the raw UClass pointer and hardcoded path, but LoadClass is not yet mapped to sync_load_usage.
-- `known-gap-missing-super-beginplay` missing `lifecycle_super_call`: Lifecycle super-call checks are intentionally not implemented in the current regex rule set.
-- `known-gap-delegate-bind-without-unbind` missing `delegate_lifetime`: Delegate lifetime analysis requires cross-function or lifecycle context and is tracked as a future rule family.
+- `known-gap-request-sync-load` missing `sync_load_usage`: The lightweight detector currently catches common LoadObject/LoadClass/TryLoad/ConstructorHelpers patterns but does not classify RequestSyncLoad yet.
+- `known-gap-replicated-property-no-lifetime` missing `replication_lifetime`: Replication lifetime validation needs class-level context and is intentionally tracked as a future rule family.
 
 ## Interpretation
 

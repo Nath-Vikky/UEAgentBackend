@@ -51,6 +51,10 @@ Changelog. Dates use `YYYY-MM-DD`.
   passing at 1.0 recall and 1.0 precision.
 - Code Review benchmark now includes known-limitation cases so the public report
   reflects both covered rule families and current lightweight-rule boundaries.
+- Code Review rule coverage now detects `ConstructorHelpers::FObjectFinder`,
+  `LoadClass`, missing lifecycle `Super::` calls, and delegate bindings without
+  visible cleanup; the offline benchmark now reports 26 cases at 0.9355 recall
+  and 1.0 precision with 2 documented known limitations.
 
 ## 0.1.0 - 2026-05-09
 

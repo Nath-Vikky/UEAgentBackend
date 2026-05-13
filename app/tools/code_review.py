@@ -11,6 +11,33 @@ FUNCTION_RE = re.compile(r"\b(?:virtual\s+)?(?:void|bool|int32|float|double|F\w+
 CLASS_RE = re.compile(r"\bclass\s+(\w+)")
 INCLUDE_RE = re.compile(r'^\s*#include\s+["<]([^">]+)[">]', re.MULTILINE)
 RAW_UOBJECT_POINTER_RE = re.compile(r"\b(?:UObject|U[A-Za-z_]\w*|A[A-Za-z_]\w*)\s*\*")
+LIFECYCLE_METHOD_RE = re.compile(
+    r"\b(?P<name>BeginPlay|EndPlay|NativeConstruct|NativeDestruct|NativeOnInitialized|BeginDestroy)\s*\([^;]*\)"
+)
+SYNC_LOAD_TOKENS = (
+    "LoadObject<",
+    "StaticLoadObject",
+    ".TryLoad(",
+    "LoadClass<",
+    "LoadClass(",
+    "StaticLoadClass",
+    "ConstructorHelpers::FObjectFinder",
+    "ConstructorHelpers::FClassFinder",
+)
+DELEGATE_BIND_TOKENS = (
+    ".AddDynamic(",
+    ".AddUObject(",
+    ".AddLambda(",
+    ".AddRaw(",
+    ".AddSP(",
+)
+DELEGATE_CLEANUP_TOKENS = (
+    ".RemoveDynamic(",
+    ".RemoveAll(",
+    ".Remove(",
+    ".Clear(",
+    ".Unbind(",
+)
 
 INLINE_SOURCE_KEYS = (
     "diff_text",
@@ -144,6 +171,10 @@ def _is_comment_only_line(line: str) -> bool:
     return stripped.startswith(("//", "/*", "*", "*/"))
 
 
+def _code_lines(lines: list[str]) -> list[str]:
+    return [line for line in lines if not _is_comment_only_line(line)]
+
+
 def _is_background_thread_line(line: str) -> bool:
     if "std::thread" in line or "FRunnable" in line:
         return True
@@ -179,6 +210,60 @@ def _raw_pointer_line_numbers(lines: list[str]) -> list[int]:
             continue
         line_numbers.append(index + 1)
     return line_numbers
+
+
+def _has_super_call(body_lines: list[str], method_name: str) -> bool:
+    return any(f"Super::{method_name}(" in line for line in _code_lines(body_lines))
+
+
+def _find_function_body(lines: list[str], signature_index: int) -> list[str]:
+    open_index: int | None = None
+    for cursor in range(signature_index, min(len(lines), signature_index + 6)):
+        stripped = lines[cursor].strip()
+        if ";" in stripped and "{" not in stripped:
+            return []
+        if "{" in stripped:
+            open_index = cursor
+            break
+    if open_index is None:
+        return []
+
+    body_lines: list[str] = []
+    depth = 0
+    for cursor in range(open_index, len(lines)):
+        line = lines[cursor]
+        body_lines.append(line)
+        depth += line.count("{")
+        depth -= line.count("}")
+        if depth <= 0:
+            break
+    return body_lines
+
+
+def _lifecycle_super_call_line_numbers(lines: list[str]) -> list[int]:
+    line_numbers: list[int] = []
+    for index, line in enumerate(lines):
+        if _is_comment_only_line(line) or "Super::" in line:
+            continue
+        match = LIFECYCLE_METHOD_RE.search(line)
+        if not match:
+            continue
+        if ";" in line and "{" not in line:
+            continue
+        method_name = match.group("name")
+        body_lines = _find_function_body(lines, index)
+        if body_lines and not _has_super_call(body_lines, method_name):
+            line_numbers.append(index + 1)
+    return line_numbers
+
+
+def _delegate_binding_line_numbers(lines: list[str]) -> list[int]:
+    code_text = "\n".join(_code_lines(lines))
+    if not any(token in code_text for token in DELEGATE_BIND_TOKENS):
+        return []
+    if any(token in code_text for token in DELEGATE_CLEANUP_TOKENS):
+        return []
+    return _line_numbers(lines, lambda line: any(token in line for token in DELEGATE_BIND_TOKENS))[:3]
 
 
 def _issue(rule_id: str, severity: str, title: str, line_no: int | None, evidence: str, suggestion: str) -> dict[str, Any]:
@@ -256,7 +341,7 @@ def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[
 
     for line_no in _line_numbers(
         lines,
-        lambda line: "LoadObject<" in line or "StaticLoadObject" in line or ".TryLoad(" in line,
+        lambda line: any(token in line for token in SYNC_LOAD_TOKENS),
     )[:3]:
         issues.append(
             _issue(
@@ -266,6 +351,32 @@ def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[
                 line_no,
                 lines[line_no - 1],
                 "Confirm this cannot be deferred or switched to soft references / async loading.",
+            )
+        )
+
+    for line_no in _lifecycle_super_call_line_numbers(lines)[:3]:
+        method_name = LIFECYCLE_METHOD_RE.search(lines[line_no - 1])
+        method_label = method_name.group("name") if method_name else "lifecycle override"
+        issues.append(
+            _issue(
+                "lifecycle_super_call",
+                "medium",
+                "Lifecycle override should call Super",
+                line_no,
+                lines[line_no - 1],
+                f"Add Super::{method_label}(...) unless this override intentionally suppresses parent behavior.",
+            )
+        )
+
+    for line_no in _delegate_binding_line_numbers(lines):
+        issues.append(
+            _issue(
+                "delegate_lifetime",
+                "medium",
+                "Delegate binding lifetime should be paired with cleanup",
+                line_no,
+                lines[line_no - 1],
+                "Pair delegate binding with RemoveDynamic/RemoveAll/Clear in the matching teardown path or document the owner lifetime.",
             )
         )
 
