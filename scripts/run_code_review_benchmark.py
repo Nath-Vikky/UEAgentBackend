@@ -225,10 +225,17 @@ def _summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     generated_count = sum(item["chain_runtime"]["generated_count"] for item in results)
     single_latency = [float(item["latency_ms"]["single"]) for item in results]
     chain_latency = [float(item["latency_ms"]["chain"]) for item in results]
+    known_limitation_cases = [item for item in results if item.get("known_limitation")]
     return {
         "cases": len(results),
         "single_review": single,
         "multi_agent_review_phase": chain,
+        "known_limitations": {
+            "case_count": len(known_limitation_cases),
+            "single_missing_rule_count": sum(int(item["single_metrics"]["fn"]) for item in known_limitation_cases),
+            "chain_missing_rule_count": sum(int(item["chain_metrics"]["fn"]) for item in known_limitation_cases),
+            "note": "Known limitation cases are intentionally included to make the benchmark reflect current lightweight-rule boundaries.",
+        },
         "multi_agent_incremental_benefit": {
             "review_detection_ratio": _safe_ratio(chain_detected, single_detected, empty_value=1.0),
             "generated_draft_case_rate": _safe_ratio(generated_cases, len(results), empty_value=0.0),
@@ -265,6 +272,13 @@ def _build_markdown(payload: dict[str, Any]) -> str:
         f"| False positive rate | {summary['single_review']['false_positive_rate']} | {summary['multi_agent_review_phase']['false_positive_rate']} |",
         f"| Clean-case accuracy | {summary['single_review']['clean_case_accuracy']} | {summary['multi_agent_review_phase']['clean_case_accuracy']} |",
         "",
+        "## Known Limitations Included",
+        "",
+        f"- Cases: `{summary['known_limitations']['case_count']}`",
+        f"- Single-review missing expected rule families in known limitations: `{summary['known_limitations']['single_missing_rule_count']}`",
+        f"- Multi-agent missing expected rule families in known limitations: `{summary['known_limitations']['chain_missing_rule_count']}`",
+        f"- Note: {summary['known_limitations']['note']}",
+        "",
         "## Chain Value",
         "",
         f"- Review detection ratio: `{summary['multi_agent_incremental_benefit']['review_detection_ratio']}`",
@@ -286,8 +300,8 @@ def _build_markdown(payload: dict[str, Any]) -> str:
         "",
         "## Per-Case Details",
         "",
-        "| Case | Expected | Single actual | Single R/P | Chain actual | Chain R/P | Chain status |",
-        "| --- | --- | --- | ---: | --- | ---: | --- |",
+        "| Case | Type | Expected | Single actual | Single R/P | Chain actual | Chain R/P | Chain status |",
+        "| --- | --- | --- | --- | ---: | --- | ---: | --- |",
     ]
     for item in payload["cases"]:
         expected = ", ".join(item["single_metrics"]["expected"]) or "-"
@@ -295,11 +309,13 @@ def _build_markdown(payload: dict[str, Any]) -> str:
         chain_actual = ", ".join(item["chain_metrics"]["actual"]) or "-"
         single_score = f"{item['single_metrics']['recall']}/{item['single_metrics']['precision']}"
         chain_score = f"{item['chain_metrics']['recall']}/{item['chain_metrics']['precision']}"
+        case_type = "known_limitation" if item.get("known_limitation") else str(item.get("case_type") or "regression")
         lines.append(
             "| "
             + " | ".join(
                 [
                     item["case_id"],
+                    case_type,
                     expected,
                     single_actual,
                     single_score,
@@ -310,6 +326,14 @@ def _build_markdown(payload: dict[str, Any]) -> str:
             )
             + " |"
         )
+    known_items = [item for item in payload["cases"] if item.get("known_limitation")]
+    if known_items:
+        lines.extend(["", "## Known Limitation Case Notes", ""])
+        for item in known_items:
+            missing = ", ".join(item["single_metrics"]["missing"]) or "-"
+            lines.append(
+                f"- `{item['case_id']}` missing `{missing}`: {item.get('notes') or item.get('description') or 'Known lightweight-rule boundary.'}"
+            )
     lines.extend(
         [
             "",
@@ -343,6 +367,9 @@ def main() -> int:
                     {
                         "case_id": case["case_id"],
                         "description": case.get("description") or "",
+                        "case_type": case.get("case_type") or "regression",
+                        "known_limitation": bool(case.get("known_limitation")),
+                        "notes": case.get("notes") or "",
                         "single_metrics": _case_metrics(expected, single_actual),
                         "chain_metrics": _case_metrics(expected, chain_actual),
                         "chain_runtime": _chain_metrics(chain_response),

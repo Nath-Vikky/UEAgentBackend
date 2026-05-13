@@ -49,6 +49,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   pitfalls and the `compact_text_retry` diagnostics path.
 - Code Review benchmark report refreshed on 2026-05-12 with 20 offline cases
   passing at 1.0 recall and 1.0 precision.
+- Code Review benchmark now includes known-limitation cases so the public report
+  reflects both covered rule families and current lightweight-rule boundaries.
 
 ## 0.1.0 - 2026-05-09
 
