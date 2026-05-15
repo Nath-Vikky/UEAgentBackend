@@ -58,6 +58,12 @@ RAG
   Ingestion, chunking, lexical/hybrid retrieval, optional vector search,
   citations, and evaluation metrics.
 
+Retrieval Pipeline
+  app/rag/pipeline.py
+  Project QA evidence orchestration: RAG -> local grep -> optional controlled
+  Web Search -> source arbitration -> quality gate. The service layer consumes
+  the stable evidence package instead of hand-wiring each fallback.
+
 Web Search
   app/services/web_search_service.py
   Optional controlled web evidence layer. Disabled by default; mock/offline
@@ -70,7 +76,8 @@ DB
 Evaluation
   app/evaluation/* and scripts/*
   Local regression metrics for RAG, task workflows, hallucination guards, and
-  code review.
+  code review. Controlled Web Search has an offline policy/safety eval that
+  never performs real network access.
 ```
 
 ## Skill vs Tool vs MCP
@@ -150,6 +157,20 @@ Web Search is lower priority than local KB, project inventory, selected files,
 and team rules. It does not write web content into the KB automatically; results
 are passed as supplemental citations plus debug trace.
 
+Project QA now goes through `app/rag/pipeline.py`:
+
+```text
+retrieve_knowledge()
+  -> local grep fallback when indexed KB has no useful evidence
+  -> controlled Web Search only when enabled and policy says it is needed
+  -> source_arbitration
+  -> retrieval_quality_gate
+  -> stable response/debug fields
+```
+
+This keeps public response fields compatible while making future retrieval
+stages easier to test in isolation.
+
 ## Controlled Agent Loop
 
 Project QA uses a controlled ReAct Lite planner:
@@ -173,6 +194,8 @@ The project keeps quality checks local and reproducible:
 - RAG eval for retrieval quality.
 - Hallucination guard eval for unsupported-answer behavior.
 - Code review benchmark for UE C++ rules.
+- Web Search eval for trigger policy, provider fallback, and safe-domain
+  filtering.
 
 CI intentionally avoids live LLM calls, UE editor dependencies, Qdrant, and
 large integration/eval jobs. Those remain local commands.

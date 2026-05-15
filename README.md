@@ -176,12 +176,19 @@ Agentic RAG A/B 对比（普通 RAG vs 最多 2 轮 query rewrite）：
 .\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md
 ```
 
+Controlled Web Search 离线评测（不联网，验证触发策略、allow-list 安全过滤和 provider fallback）：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_web_search_eval.py --min-success-rate 1 --min-safety-pass-rate 1
+```
+
 报告包含：
 
 - RAG：`recall_at_k`、`precision_at_k`、`normalized_precision_at_k`、`top1_accuracy`、`hit_at_k`、`mrr`、`citation_coverage`
 - 路由：`route_accuracy`
 - 任务：`success_rate`、`field_coverage`、`semantic_accuracy`
 - 幻觉守卫：`grounding_accuracy`、`abstention_accuracy`、`unsupported_answer_rate`
+- Web Search：`success_rate`、`trigger_accuracy`、`reason_accuracy`、`safety_pass_rate`
 - 性能：`p50_ms`、`p95_ms`
 - Code Review 专项：`recall`、`precision`、`false_positive_rate`、`clean_case_accuracy`、多阶段链路耗时
 
@@ -294,6 +301,12 @@ RAG smoke eval：
 幻觉守卫 eval：
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md
+```
+
+Controlled Web Search eval：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_web_search_eval.py --min-success-rate 1 --min-safety-pass-rate 1
 ```
 
 Code Review benchmark：

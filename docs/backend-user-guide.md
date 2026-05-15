@@ -3105,3 +3105,45 @@ mock 文件格式：
 - `data.retrieval_quality_gate.web_retrieved_count`
 
 如果前端不读取这些字段，原有 User View 和 citations 渲染仍可继续工作。
+
+## 2026-05-15 Retrieval Pipeline + Web Search Eval
+
+本轮把 Project QA 的检索增强链路收拢到 `app/rag/pipeline.py`。服务层不再直接拼接 RAG、local grep 和 Web Search 的细节，而是读取一个稳定的 evidence package，再继续生成兼容旧接口的回答结构。
+
+当前 Project QA 证据顺序：
+
+```text
+RAG / lexical retrieval
+-> local grep fallback
+-> optional controlled Web Search
+-> source_arbitration
+-> retrieval_quality_gate
+```
+
+保留的前端兼容字段：
+
+- `data.retrieval_trace`
+- `data.retrieval_quality_gate`
+- `data.local_search`
+- `data.web_search`
+- `data.source_arbitration`
+- `data.citations`
+- `debug_view.web_search`
+
+新增离线评测：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_web_search_eval.py --min-success-rate 1 --min-safety-pass-rate 1
+```
+
+该评测不联网，数据集在 `tests/eval/web_search_policy_dataset.jsonl`，主要覆盖：
+
+- 本地 KB 证据足够时不触发 Web Search。
+- 用户显式要求 official/latest/search 时触发 mock provider。
+- KB 证据不足且问题属于 UE 技术主题时触发 mock provider。
+- 普通闲聊和非 UE 问题不触发。
+- `localhost` / `127.0.0.1` 等不安全 URL 会被过滤。
+- 不在 allow-list 中的社区域名不会进入最终证据。
+- mock provider 路径缺失时任务降级但不崩溃。
+
+UE 前端本轮仍无需强制修改。若要增强 Debug View，可显示 `source_arbitration.source_counts`、`web_search.summary.skipped_domain_count` 和 `retrieval_quality_gate.web_retrieved_count`。

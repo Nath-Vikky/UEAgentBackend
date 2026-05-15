@@ -38,6 +38,10 @@ Changelog. Dates use `YYYY-MM-DD`.
   metadata, Project QA supplemental evidence wiring, and offline regression
   tests. The feature is disabled by default and does not require UE frontend
   changes.
+- Project QA retrieval pipeline facade for RAG, local grep, optional Web Search,
+  source arbitration, and retrieval quality gate composition.
+- Offline Controlled Web Search eval dataset and runner covering trigger policy,
+  safe-domain filtering, provider fallback, and no-network regression checks.
 
 ### Changed
 
@@ -59,6 +63,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   `LoadClass`, missing lifecycle `Super::` calls, and delegate bindings without
   visible cleanup; the offline benchmark now reports 26 cases at 0.9355 recall
   and 1.0 precision with 2 documented known limitations.
+- Project QA now consumes a stable retrieval evidence package from
+  `app/rag/pipeline.py` while preserving existing response/debug fields for UE
+  plugin compatibility.
 
 ## 0.1.0 - 2026-05-09
 
