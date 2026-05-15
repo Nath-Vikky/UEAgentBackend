@@ -77,6 +77,24 @@ class Settings(BaseSettings):
     rag_rerank_top_n: int = 20
     rag_fallback_mode: str = "lexical_only"
 
+    web_search_enabled: bool = False
+    web_search_provider: str = "disabled"
+    web_search_max_queries: int = 1
+    web_search_max_results: int = 5
+    web_search_timeout_ms: int = 5000
+    web_search_max_content_chars: int = 1200
+    web_search_allowed_domains: StringListSetting = Field(
+        default_factory=lambda: ["dev.epicgames.com", "docs.unrealengine.com", "unrealengine.com"]
+    )
+    web_search_domain_boosts: StringListSetting = Field(
+        default_factory=lambda: [
+            "dev.epicgames.com:0.25",
+            "docs.unrealengine.com:0.25",
+            "unrealengine.com:0.15",
+        ]
+    )
+    web_search_mock_results_path: str = ""
+
     storage_dir: str = "./storage"
     upload_dir: str = "./storage/uploads"
     artifact_dir: str = "./storage/artifacts"
@@ -120,7 +138,13 @@ class Settings(BaseSettings):
     def _parse_kb_source_paths(cls, value: Any) -> list[str]:
         return _parse_string_list(value)
 
-    @field_validator("mcp_stdio_args", "mcp_allowed_tools", mode="before")
+    @field_validator(
+        "mcp_stdio_args",
+        "mcp_allowed_tools",
+        "web_search_allowed_domains",
+        "web_search_domain_boosts",
+        mode="before",
+    )
     @classmethod
     def _parse_mcp_string_lists(cls, value: Any) -> list[str]:
         return _parse_string_list(value)

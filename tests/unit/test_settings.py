@@ -8,7 +8,12 @@ from app.core.settings import Settings
 
 
 TEST_TMP_DIR = Path(__file__).resolve().parent / ".tmp"
-LIST_ENV_KEYS = ("APP_CORS_ORIGINS", "KB_SOURCE_PATHS")
+LIST_ENV_KEYS = (
+    "APP_CORS_ORIGINS",
+    "KB_SOURCE_PATHS",
+    "WEB_SEARCH_ALLOWED_DOMAINS",
+    "WEB_SEARCH_DOMAIN_BOOSTS",
+)
 
 
 @pytest.fixture
@@ -55,3 +60,24 @@ def test_settings_default_to_lexical_first_rag() -> None:
 
     assert settings.embedding_enabled is False
     assert settings.rag_fallback_mode == "lexical_only"
+    assert settings.web_search_enabled is False
+    assert settings.web_search_provider == "disabled"
+
+
+def test_settings_accept_csv_for_web_search_list_fields(clean_list_env: None) -> None:
+    env_file = _write_env_file(
+        "web-search-lists.env",
+        "\n".join(
+            [
+                "WEB_SEARCH_ALLOWED_DOMAINS=dev.epicgames.com,docs.unrealengine.com",
+                "WEB_SEARCH_DOMAIN_BOOSTS=dev.epicgames.com:0.25,docs.unrealengine.com:0.20",
+            ]
+        ),
+    )
+    settings = Settings(_env_file=env_file)
+
+    assert settings.web_search_allowed_domains == ["dev.epicgames.com", "docs.unrealengine.com"]
+    assert settings.web_search_domain_boosts == [
+        "dev.epicgames.com:0.25",
+        "docs.unrealengine.com:0.20",
+    ]

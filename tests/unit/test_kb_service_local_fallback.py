@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import uuid
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -45,6 +46,26 @@ def _write_note(root: Path) -> None:
         "# Soft References\n\nUse TSoftObjectPtr and async loading instead of LoadObject in Tick.",
         encoding="utf-8",
     )
+
+
+def _write_web_mock(root: Path) -> Path:
+    mock_path = root / "web-results.json"
+    mock_path.write_text(
+        json.dumps(
+            {
+                "results": [
+                    {
+                        "title": "Enhanced Input in Unreal Engine",
+                        "url": "https://dev.epicgames.com/documentation/en-us/unreal-engine/enhanced-input-in-unreal-engine",
+                        "snippet": "Enhanced Input uses Input Actions, Mapping Contexts, and Enhanced Input Components.",
+                        "source_type": "official",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    return mock_path
 
 
 def test_project_qa_uses_local_grep_when_lexical_index_has_no_hits() -> None:
@@ -114,3 +135,43 @@ def test_project_qa_reports_explicit_local_search_disabled_reason() -> None:
     assert result["local_search"]["reason"] == "disabled_by_payload"
     assert result["retrieval_quality_gate"]["local_retrieved_count"] == 0
     assert "local_search_fallback_used" not in result["warnings"]
+
+
+def test_project_qa_can_use_mock_web_search_when_explicitly_requested() -> None:
+    runtime_root = _runtime_root("kb-web-search")
+    shutil.rmtree(runtime_root, ignore_errors=True)
+    try:
+        runtime_root.mkdir(parents=True)
+        mock_path = _write_web_mock(runtime_root)
+        with _memory_session() as session:
+            service = KnowledgeBaseService(
+                session,
+                Settings(
+                    openai_api_key="",
+                    kb_source_paths=[str(runtime_root / "empty-kb")],
+                    embedding_enabled=False,
+                    rag_mode="hybrid",
+                    rag_fallback_mode="lexical_only",
+                    web_search_enabled=True,
+                    web_search_provider="mock",
+                    web_search_mock_results_path=str(mock_path),
+                    web_search_allowed_domains=["dev.epicgames.com"],
+                ),
+            )
+            service.ensure_seeded = lambda: None  # type: ignore[method-assign]
+
+            result = service.project_qa(
+                query="Search official docs for UE Enhanced Input",
+                context=ContextInput(project_name="Demo"),
+                payload={"use_web_search": True, "disable_local_search": True},
+                output_language="en-US",
+            )
+    finally:
+        shutil.rmtree(runtime_root, ignore_errors=True)
+
+    assert result["web_search"]["status"] == "completed"
+    assert result["retrieval_quality_gate"]["web_retrieved_count"] == 1
+    assert result["source_arbitration"]["primary_source"] == "web_search"
+    assert result["retrieved_docs"][0]["retrieval_source"] == "web_search"
+    assert result["citations"][0]["retrieval_source"] == "web_search"
+    assert "web_search_fallback_used" in result["warnings"]

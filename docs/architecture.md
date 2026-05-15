@@ -58,6 +58,11 @@ RAG
   Ingestion, chunking, lexical/hybrid retrieval, optional vector search,
   citations, and evaluation metrics.
 
+Web Search
+  app/services/web_search_service.py
+  Optional controlled web evidence layer. Disabled by default; mock/offline
+  provider is used for tests, while real providers are reserved for local smoke.
+
 DB
   app/db/*
   SQLite + SQLAlchemy models and repositories for local persistence.
@@ -135,10 +140,15 @@ from static KB documents.
 
 ```text
 General UE knowledge -> KB/RAG/local grep
+Fresh or explicitly requested public evidence -> Controlled Web Search
 Current project facts -> Project Inventory
 Selected asset facts -> UE plugin metadata + Assets Inspect
 Source file details -> guarded project file read
 ```
+
+Web Search is lower priority than local KB, project inventory, selected files,
+and team rules. It does not write web content into the KB automatically; results
+are passed as supplemental citations plus debug trace.
 
 ## Controlled Agent Loop
 

@@ -31,6 +31,18 @@ def test_tool_capability_card_exposes_schema_and_policy() -> None:
     assert card["input_schema"]["type"] == "object"
 
 
+def test_web_search_tool_is_read_only_and_budget_gated() -> None:
+    spec = get_tool_spec("web_search_knowledge")
+
+    assert spec is not None
+    card = spec.capability_card()
+    assert card["category"] == "retrieval"
+    assert card["side_effect_level"] == "read_only"
+    assert card["allowed_in_free_chat"] is True
+    assert card["permission_gate"] == "read_only_web_budget"
+    assert card["input_schema"]["required"] == ["query"]
+
+
 def test_confirmed_write_tool_requires_permission_gate() -> None:
     spec = get_tool_spec("execute_asset_operation")
 

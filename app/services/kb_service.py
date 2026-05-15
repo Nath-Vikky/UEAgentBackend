@@ -32,6 +32,7 @@ from app.rag import retrieve_knowledge
 from app.rag.schemas import ParsedDocument
 from app.schemas.requests import ContextInput, KnowledgeBaseImportRequest
 from app.services.local_search_service import LocalSearchService
+from app.services.web_search_service import WebSearchService, should_trigger_web_search
 
 
 KNOWLEDGE_CATALOG_ZH_TRIGGERS = ("知识库", "kb", "文档")
@@ -76,6 +77,41 @@ def _display_source_path(source_path: str) -> str:
         return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
     except (OSError, ValueError):
         return source_path.replace("\\", "/")
+
+
+def _skipped_web_search_result(
+    *,
+    query: str,
+    reason: str,
+    domain_hints: list[str],
+    settings: Settings,
+) -> dict[str, Any]:
+    return {
+        "query": query,
+        "provider": settings.web_search_provider,
+        "status": "skipped",
+        "reason": reason,
+        "trigger_reason": reason,
+        "items": [],
+        "summary": {
+            "result_count": 0,
+            "candidate_count": 0,
+            "raw_result_count": 0,
+            "skipped_domain_count": 0,
+            "allowed_domains": settings.web_search_allowed_domains,
+            "domain_hints": domain_hints,
+            "terms": [],
+            "elapsed_ms": 0.0,
+            "queries_used": 0,
+        },
+        "budget": {
+            "max_queries": settings.web_search_max_queries,
+            "max_results": settings.web_search_max_results,
+            "timeout_ms": settings.web_search_timeout_ms,
+            "max_content_chars": settings.web_search_max_content_chars,
+        },
+        "warnings": [],
+    }
 
 
 class KnowledgeBaseService:
@@ -327,6 +363,80 @@ class KnowledgeBaseService:
             }
             for item in local_search["items"][:3]
         ]
+        pre_web_evidence_count = len(result.retrieved_docs) + len(local_docs)
+        explicit_web_search = bool(
+            payload.get("use_web_search")
+            or payload.get("force_web_search")
+            or payload.get("web_search")
+        )
+        if payload.get("disable_web_search"):
+            web_should_run, web_trigger_reason = False, "disabled_by_payload"
+        else:
+            web_should_run, web_trigger_reason = should_trigger_web_search(
+                query=query,
+                evidence_sufficient=pre_web_evidence_count > 0,
+                settings=self.settings,
+                explicit=explicit_web_search or None,
+            )
+        web_domain_hints = [
+            str(item)
+            for item in (
+                payload.get("web_domain_hints")
+                or payload.get("domain_hints")
+                or context.kb_domains_hint
+                or []
+            )
+            if str(item).strip()
+        ]
+        web_search = (
+            WebSearchService(self.settings).search(
+                query=selected_query,
+                domain_hints=web_domain_hints,
+                language=output_language,
+                trigger_reason=web_trigger_reason,
+                max_results=payload.get("web_search_max_results"),
+            )
+            if web_should_run
+            else _skipped_web_search_result(
+                query=selected_query,
+                reason=web_trigger_reason,
+                domain_hints=web_domain_hints,
+                settings=self.settings,
+            )
+        )
+        web_docs = [
+            {
+                "chunk_id": f"web_{item['rank']}",
+                "doc_id": item["url"],
+                "title": item["title"],
+                "source_path": item["url"],
+                "domain": item["domain"],
+                "section_path": item.get("source_type") or "web",
+                "text": item["snippet"][:800],
+                "lexical_score": item["score"],
+                "semantic_score": 0.0,
+                "final_score": item["score"],
+                "matched_terms": [],
+                "retrieval_source": "web_search",
+                "source_type": item.get("source_type") or "web",
+                "published_at": item.get("published_at"),
+            }
+            for item in web_search.get("items", [])
+        ]
+        web_citations = [
+            {
+                "title": item["title"],
+                "source": item["url"],
+                "section_path": item.get("source_type") or "web",
+                "snippet": item["snippet"][:220],
+                "score": item["score"],
+                "domain": item["domain"],
+                "retrieval_source": "web_search",
+                "source_type": item.get("source_type") or "web",
+                "published_at": item.get("published_at"),
+            }
+            for item in web_search.get("items", [])[:3]
+        ]
         answer_text = result.answer
         if not result.retrieved_docs and local_docs:
             if output_language.startswith("zh"):
@@ -336,8 +446,15 @@ class KnowledgeBaseService:
                 summaries = [f"{item['title']}: {item['text'][:90]}" for item in local_docs[:3]]
                 answer_text = "The strongest local markdown/code matches are: " + "; ".join(summaries) + "."
         if output_language.startswith("zh") and not answer_text.startswith("基于"):
-            if not local_docs:
+            if not local_docs and not web_docs:
                 answer_text = "当前未命中足够证据，建议补充文档后重试。"
+        if not result.retrieved_docs and not local_docs and web_docs:
+            if output_language.startswith("zh"):
+                summaries = [f"{item['title']}: {item['text'][:90]}" for item in web_docs[:3]]
+                answer_text = "本地知识库证据不足，本轮使用受控 Web Search 补充到的主要证据是：" + "；".join(summaries) + "。"
+            else:
+                summaries = [f"{item['title']}: {item['text'][:90]}" for item in web_docs[:3]]
+                answer_text = "Local KB evidence was insufficient. Controlled Web Search found: " + "; ".join(summaries) + "."
         retrieved_docs = [
             {
                 "chunk_id": item.chunk_id,
@@ -368,8 +485,23 @@ class KnowledgeBaseService:
             }
             for item in result.retrieved_docs
         ]
-        final_evidence_count = len(result.retrieved_docs) + len(local_docs)
+        final_evidence_count = len(result.retrieved_docs) + len(local_docs) + len(web_docs)
         evidence_sufficient = final_evidence_count > 0
+        source_arbitration = {
+            "policy": "local_kb_and_project_rules_first_web_supplemental",
+            "primary_source": (
+                "rag"
+                if result.retrieved_docs
+                else "local_grep"
+                if local_docs
+                else "web_search"
+                if web_docs
+                else "none"
+            ),
+            "web_used": bool(web_docs),
+            "web_trigger_reason": web_trigger_reason,
+            "conflicts": [],
+        }
         retrieval_quality_gate = {
             "status": "passed" if evidence_sufficient else "warning",
             "evidence_sufficient": evidence_sufficient,
@@ -384,6 +516,7 @@ class KnowledgeBaseService:
             "retrieved_count": final_evidence_count,
             "rag_retrieved_count": len(result.retrieved_docs),
             "local_retrieved_count": len(local_docs),
+            "web_retrieved_count": len(web_docs),
         }
         warnings = list(dict.fromkeys(rag_warnings or result.warnings))
         if local_docs:
@@ -393,19 +526,36 @@ class KnowledgeBaseService:
                 if item not in {"no_retrieval_hits", "evidence_insufficient"}
             ]
             warnings.append("local_search_fallback_used")
+        if web_docs:
+            warnings = [
+                item
+                for item in warnings
+                if item not in {"no_retrieval_hits", "evidence_insufficient"}
+            ]
+            warnings.append("web_search_fallback_used")
+        if web_should_run and not web_docs:
+            warnings.append(f"web_search_{web_search.get('reason') or 'no_results'}")
+        warnings.extend(str(item) for item in web_search.get("warnings", []) if item)
         warnings = list(dict.fromkeys(warnings))
         return {
             "answer": answer_text,
-            "confidence": max(result.confidence, 0.38 if local_docs else result.confidence),
+            "confidence": max(
+                result.confidence,
+                0.38 if local_docs else result.confidence,
+                0.42 if web_docs else result.confidence,
+            ),
             "sources": [
                 {"title": item.title, "source": item.source_path, "domain": item.domain}
                 for item in result.retrieved_docs
             ]
-            + [{"title": item["title"], "source": item["source_path"], "domain": item["domain"]} for item in local_docs],
-            "citations": [*result.citations, *local_citations],
-            "retrieved_docs": [*retrieved_docs, *local_docs],
+            + [{"title": item["title"], "source": item["source_path"], "domain": item["domain"]} for item in local_docs]
+            + [{"title": item["title"], "source": item["source_path"], "domain": item["domain"]} for item in web_docs],
+            "citations": [*result.citations, *local_citations, *web_citations],
+            "retrieved_docs": [*retrieved_docs, *local_docs, *web_docs],
             "filters_applied": result.filters_applied,
             "local_search": local_search,
+            "web_search": web_search,
+            "source_arbitration": source_arbitration,
             "retrieval_quality_gate": retrieval_quality_gate,
             "retrieval_trace": {
                 "mode": result.mode,
@@ -414,9 +564,11 @@ class KnowledgeBaseService:
                 "query": query,
                 "selected_query": selected_query,
                 "filters_applied": result.filters_applied,
-                "retrieved_docs": [*retrieval_trace_docs, *local_docs],
+                "retrieved_docs": [*retrieval_trace_docs, *local_docs, *web_docs],
                 "local_search": local_search,
+                "web_search": web_search,
                 "agentic_rag": agentic_rag,
+                "source_arbitration": source_arbitration,
                 "retrieval_quality_gate": retrieval_quality_gate,
             },
             "warnings": warnings,

@@ -220,6 +220,7 @@ class TaskService:
                     [
                         f"[S{index}] {item['title']}",
                         f"Source: {snippet}",
+                        f"Retrieval source: {item.get('retrieval_source') or 'knowledge_base'}",
                         f"Section: {item.get('section_path') or 'n/a'}",
                         f"Excerpt: {str(item.get('text') or '')[:350]}",
                     ]
@@ -263,7 +264,8 @@ class TaskService:
         system_prompt = (
             "You are synthesizing an answer from project knowledge-base evidence. "
             f"Reply in {self._language_label(output_language)}. "
-            "Use only the supplied knowledge-base evidence, project inventory facts, and explicitly read project file excerpts. "
+            "Use only the supplied knowledge-base evidence, controlled web evidence, project inventory facts, and explicitly read project file excerpts. "
+            "Treat local KB, project inventory, and team rules as higher priority than web search; web evidence is supplemental. "
             "If the evidence is insufficient, say so clearly instead of guessing. "
             "Prefer a short answer followed by 2-4 concrete evidence-backed points."
         )
@@ -997,6 +999,8 @@ class TaskService:
         contracts: list[dict[str, Any]] = []
         if tool_plan.get("use_knowledge"):
             contracts.append(validate_tool_result("retrieve_project_knowledge", qa_result))
+        if qa_result.get("web_search"):
+            contracts.append(validate_tool_result("web_search_knowledge", qa_result["web_search"]))
         if tool_plan.get("use_inventory"):
             contracts.append(validate_tool_result("query_project_inventory", inventory_result))
         if tool_plan.get("use_project_file"):
@@ -2538,6 +2542,8 @@ class TaskService:
             "answer_mode": qa_result.get("answer_mode", answer_generation_mode),
             "catalog": qa_result.get("catalog", {}),
             "local_search": qa_result.get("local_search", {}),
+            "web_search": qa_result.get("web_search", {}),
+            "source_arbitration": qa_result.get("source_arbitration", {}),
             "retrieval_quality_gate": qa_result.get("retrieval_quality_gate", {}),
             "inventory": inventory_result,
             "project_file": project_file_result,
@@ -2559,6 +2565,8 @@ class TaskService:
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
         base_debug["local_search"] = qa_result.get("local_search", {})
+        base_debug["web_search"] = qa_result.get("web_search", {})
+        base_debug["source_arbitration"] = qa_result.get("source_arbitration", {})
         base_debug["retrieval_quality_gate"] = qa_result.get("retrieval_quality_gate", {})
         base_debug["inventory"] = inventory_result
         base_debug["project_file"] = {
@@ -2606,6 +2614,19 @@ class TaskService:
                 ),
             },
         ]
+        web_search_result = qa_result.get("web_search") or {}
+        if web_search_result.get("status") != "skipped":
+            base_debug["tools"].append(
+                {
+                    "tool_id": "web_search_knowledge",
+                    "status": web_search_result.get("status", "skipped"),
+                    "summary": (
+                        f"Controlled Web Search returned {len(web_search_result.get('items', []))} result(s)."
+                        if web_search_result.get("status") == "completed"
+                        else f"Controlled Web Search failed or degraded ({web_search_result.get('reason', 'unknown')})."
+                    ),
+                }
+            )
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
         base_debug["tool_plan"] = tool_plan
@@ -2888,11 +2909,15 @@ class TaskService:
             "citations": qa_result["citations"],
             "warnings": qa_result["warnings"],
             "local_search": qa_result.get("local_search", {}),
+            "web_search": qa_result.get("web_search", {}),
+            "source_arbitration": qa_result.get("source_arbitration", {}),
             "retrieval_quality_gate": qa_result.get("retrieval_quality_gate", {}),
             "context_summary": build_context_summary(request),
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
         base_debug["local_search"] = qa_result.get("local_search", {})
+        base_debug["web_search"] = qa_result.get("web_search", {})
+        base_debug["source_arbitration"] = qa_result.get("source_arbitration", {})
         base_debug["retrieval_quality_gate"] = qa_result.get("retrieval_quality_gate", {})
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data

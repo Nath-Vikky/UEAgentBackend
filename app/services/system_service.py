@@ -13,6 +13,7 @@ from app.observability.telemetry import service_health_snapshot
 from app.services.kb_service import KnowledgeBaseService
 from app.services.mcp_tool_adapter import build_mcp_adapter_status, build_mcp_capability
 from app.services.runtime_profile_service import RuntimeProfileService
+from app.services.web_search_service import WebSearchService
 
 
 class SystemService:
@@ -52,6 +53,7 @@ class SystemService:
             ),
             "observability": service_health_snapshot(),
             "mcp_adapter": build_mcp_adapter_status(self.settings),
+            "web_search": WebSearchService(self.settings).status(),
         }
 
     def bootstrap(self) -> dict:
@@ -78,6 +80,7 @@ class SystemService:
         return {
             **CAPABILITIES,
             "mcp_adapter": build_mcp_capability(self.settings),
+            "web_search": WebSearchService(self.settings).status(),
         }
 
     def settings_snapshot(self) -> dict:
@@ -113,6 +116,7 @@ class SystemService:
                 "otel_mode": "local_stub",
             },
             "mcp_adapter": build_mcp_adapter_status(self.settings),
+            "web_search": WebSearchService(self.settings).status(),
             "safety": {
                 "default_task_cost_guard_usd": self.settings.default_profile_cost_guard_usd,
                 "session_cost_guard_usd": self.settings.session_cost_guard_usd,

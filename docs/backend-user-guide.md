@@ -3039,3 +3039,69 @@ N8 目标是把已经存在的 facade / workflow node / trace 组件接到主链
 ```
 
 UE 前端无需修改。只有未来要让 MCP 工具参与实际编辑器写操作时，才需要新增“操作提案 -> 用户确认 -> UE Editor API 执行”的前端链路适配。
+## 30. Controlled Web Search v1
+
+后端现在补充了受控 Web Search 证据层，用来解决“本地知识库没有覆盖，但用户明确要查官方/最新资料”这类问题。它不是通用联网聊天，也不会默认开启，更不会把网页全文自动写入知识库。
+
+### 默认边界
+
+- 默认 `WEB_SEARCH_ENABLED=false`，所有现有功能保持原行为。
+- 当前 provider 只建议使用 `mock` 做离线验证；真实联网 provider 以后只作为本地 smoke 接入，不进入默认 CI。
+- Web Search 只作为 Project QA 的补充证据。Local KB、Project Inventory、团队规则、选中文件内容优先级更高。
+- Web Search 结果不会自动污染 `knowledge/` 或向量库。
+- 所有结果都会进入 `data.web_search`、`debug_view.web_search` 和 `retrieval_trace.web_search`，方便排查为什么触发、返回了什么、为什么跳过。
+
+### 配置示例
+
+```env
+WEB_SEARCH_ENABLED=false
+WEB_SEARCH_PROVIDER=disabled
+WEB_SEARCH_MAX_QUERIES=1
+WEB_SEARCH_MAX_RESULTS=5
+WEB_SEARCH_TIMEOUT_MS=5000
+WEB_SEARCH_MAX_CONTENT_CHARS=1200
+WEB_SEARCH_ALLOWED_DOMAINS=dev.epicgames.com,docs.unrealengine.com,unrealengine.com
+WEB_SEARCH_DOMAIN_BOOSTS=dev.epicgames.com:0.25,docs.unrealengine.com:0.25,unrealengine.com:0.15
+WEB_SEARCH_MOCK_RESULTS_PATH=
+```
+
+离线 mock 示例：
+
+```env
+WEB_SEARCH_ENABLED=true
+WEB_SEARCH_PROVIDER=mock
+WEB_SEARCH_MOCK_RESULTS_PATH=./storage/artifacts/mock-web-results.json
+```
+
+mock 文件格式：
+
+```json
+{
+  "results": [
+    {
+      "title": "Enhanced Input in Unreal Engine",
+      "url": "https://dev.epicgames.com/documentation/en-us/unreal-engine/enhanced-input-in-unreal-engine",
+      "snippet": "Enhanced Input uses Input Actions and Mapping Contexts.",
+      "source_type": "official"
+    }
+  ]
+}
+```
+
+### 触发方式
+
+- 显式触发：用户问“联网查一下”“搜一下官方文档”“latest docs”等，且 `WEB_SEARCH_ENABLED=true`。
+- 隐式触发：本地 RAG/local grep 没有足够证据，且问题明显是 UE/C++/编辑器研发相关主题。
+- 跳过：本地 KB 已经有证据、普通闲聊、非 UE 技术问题、`disable_web_search=true`、provider 关闭、预算为 0。
+
+### 前端读取字段
+
+当前不强制 UE 前端修改。若前端想增强 Debug View，可以读取：
+
+- `data.web_search.status/reason/summary/items`
+- `debug_view.web_search`
+- `retrieval_trace.web_search`
+- `data.source_arbitration`
+- `data.retrieval_quality_gate.web_retrieved_count`
+
+如果前端不读取这些字段，原有 User View 和 citations 渲染仍可继续工作。

@@ -86,6 +86,17 @@ RAG_MODE=hybrid
 RAG_FALLBACK_MODE=lexical_only
 ```
 
+受控 Web Search 默认为关闭；当前只建议使用 `mock` provider 做离线验证，真实联网 provider 后续再作为本地 smoke 接入：
+
+```env
+WEB_SEARCH_ENABLED=false
+WEB_SEARCH_PROVIDER=disabled
+WEB_SEARCH_MAX_QUERIES=1
+WEB_SEARCH_MAX_RESULTS=5
+WEB_SEARCH_ALLOWED_DOMAINS=dev.epicgames.com,docs.unrealengine.com,unrealengine.com
+WEB_SEARCH_MOCK_RESULTS_PATH=
+```
+
 可选向量检索：
 
 ```env

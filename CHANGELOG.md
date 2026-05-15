@@ -34,6 +34,10 @@ Changelog. Dates use `YYYY-MM-DD`.
   synthesis fails but the chat model is still reachable.
 - Compatibility handling for selected-file and inline-content Code Review
   payload aliases from editor integrations.
+- Controlled Web Search foundation with disabled/mock providers, Tool Registry
+  metadata, Project QA supplemental evidence wiring, and offline regression
+  tests. The feature is disabled by default and does not require UE frontend
+  changes.
 
 ### Changed
 
