@@ -349,6 +349,7 @@ Compose 默认 `EMBEDDING_ENABLED=false`，优先演示本地 lexical RAG。要�
 - [docs/hallucination-guard-report.md](./docs/hallucination-guard-report.md)：证据不足与幻觉守卫评估结果。
 - [docs/code-review-benchmark-report.md](./docs/code-review-benchmark-report.md)：代码审查专项量化结果。
 - [docs/project-review-checklist.md](./docs/project-review-checklist.md)：项目收口、验证和交付检查清单。
+- [docs/release-notes/v0.1.4.md](./docs/release-notes/v0.1.4.md)：Web Evidence / Web Memory 阶段说明。
 - [docs/release-notes/v0.1.0.md](./docs/release-notes/v0.1.0.md)：`v0.1.0` 版本说明。
 - [CONTRIBUTING.md](./CONTRIBUTING.md)：贡献、测试和扩展 Skill/Tool 的约定。
 - [CHANGELOG.md](./CHANGELOG.md)：公开版本变更记录。

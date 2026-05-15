@@ -50,6 +50,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   shaping out of the pipeline orchestrator.
 - Optional Brave Web Search provider adapter and manual smoke script for local
   real-provider validation without adding network requirements to CI.
+- Public v0.1.4 release note documenting the Web Evidence, Web Memory, provider
+  smoke, verification, and UE frontend compatibility boundary.
 
 ### Changed
 
