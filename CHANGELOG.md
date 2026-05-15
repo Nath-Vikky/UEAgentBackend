@@ -5,6 +5,10 @@ Changelog. Dates use `YYYY-MM-DD`.
 
 ## Unreleased
 
+No unreleased changes.
+
+## 0.1.4 - 2026-05-16
+
 ### Added
 
 - RAG facade, reusable workflow nodes, and an in-process ingestion job queue.
