@@ -43,6 +43,18 @@ def test_web_search_tool_is_read_only_and_budget_gated() -> None:
     assert card["input_schema"]["required"] == ["query"]
 
 
+def test_web_memory_tool_is_read_only_local_recall() -> None:
+    spec = get_tool_spec("recall_web_memory")
+
+    assert spec is not None
+    card = spec.capability_card()
+    assert card["category"] == "retrieval"
+    assert card["side_effect_level"] == "read_only"
+    assert card["allowed_in_free_chat"] is True
+    assert card["permission_gate"] == "read_only_local_memory"
+    assert card["input_schema"]["required"] == ["query"]
+
+
 def test_confirmed_write_tool_requires_permission_gate() -> None:
     spec = get_tool_spec("execute_asset_operation")
 

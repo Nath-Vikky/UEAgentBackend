@@ -205,6 +205,54 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
     ),
+    "recall_web_memory": ToolSpec(
+        tool_id="recall_web_memory",
+        task_type="project_qa",
+        title="Web Memory Recall",
+        description=(
+            "Recall previously stored controlled Web Search summaries without performing a new web request. "
+            "The tool returns URL/domain/snippet metadata only and never writes to the knowledge base."
+        ),
+        side_effect_level="read_only",
+        route_preference="project_qa",
+        category="retrieval",
+        active_context_keys=("web", "memory", "kb"),
+        owned_by_skill="ProjectQASkill",
+        allowed_in_free_chat=True,
+        permission_gate="read_only_local_memory",
+        context_cost="low",
+        requires_retrieval=True,
+        trigger_keywords=(
+            "web memory",
+            "cached docs",
+            "previous web search",
+            "history docs",
+            "鍘嗗彶鎼滅储",
+            "缂撳瓨鏂囨。",
+        ),
+        required_payload_fields=("query",),
+        optional_payload_fields=("domain_hints", "limit"),
+        timeout_ms=3_000,
+        input_schema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "domain_hints": {"type": "array", "items": {"type": "string"}},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["items", "summary"],
+            "properties": {
+                "items": {"type": "array"},
+                "summary": {"type": "object"},
+                "status": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+        },
+    ),
     "query_project_inventory": ToolSpec(
         tool_id="query_project_inventory",
         task_type="project_qa",

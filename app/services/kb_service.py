@@ -245,6 +245,7 @@ class KnowledgeBaseService:
         context: ContextInput,
         payload: dict[str, Any],
         output_language: str,
+        source_task_id: str | None = None,
     ) -> dict[str, Any]:
         self.ensure_seeded()
         if _is_knowledge_catalog_query(query):
@@ -257,12 +258,17 @@ class KnowledgeBaseService:
             chunks=chunks,
             settings=self.settings,
             output_language=output_language,
+            db=self.db,
+            source_task_id=source_task_id,
         )
         result = pipeline_result["result"]
         agentic_rag = dict(pipeline_result["agentic_rag"])
         selected_query = str(pipeline_result["selected_query"])
         local_search = pipeline_result["local_search"]
         local_docs = pipeline_result["local_docs"]
+        web_memory = pipeline_result["web_memory"]
+        web_memory_docs = pipeline_result["web_memory_docs"]
+        web_memory_store = pipeline_result["web_memory_store"]
         web_search = pipeline_result["web_search"]
         web_docs = pipeline_result["web_docs"]
         answer_text = result.answer
@@ -274,9 +280,16 @@ class KnowledgeBaseService:
                 summaries = [f"{item['title']}: {item['text'][:90]}" for item in local_docs[:3]]
                 answer_text = "The strongest local markdown/code matches are: " + "; ".join(summaries) + "."
         if output_language.startswith("zh") and not answer_text.startswith("基于"):
-            if not local_docs and not web_docs:
+            if not local_docs and not web_memory_docs and not web_docs:
                 answer_text = "当前未命中足够证据，建议补充文档后重试。"
-        if not result.retrieved_docs and not local_docs and web_docs:
+        if not result.retrieved_docs and not local_docs and web_memory_docs:
+            if output_language.startswith("zh"):
+                summaries = [f"{item['title']}: {item['text'][:90]}" for item in web_memory_docs[:3]]
+                answer_text = "Web Memory 命中的历史摘要证据：" + "；".join(summaries) + "。"
+            else:
+                summaries = [f"{item['title']}: {item['text'][:90]}" for item in web_memory_docs[:3]]
+                answer_text = "Local KB evidence was insufficient. Web Memory found: " + "; ".join(summaries) + "."
+        if not result.retrieved_docs and not local_docs and not web_memory_docs and web_docs:
             if output_language.startswith("zh"):
                 summaries = [f"{item['title']}: {item['text'][:90]}" for item in web_docs[:3]]
                 answer_text = "本地知识库证据不足，本轮使用受控 Web Search 补充到的主要证据是：" + "；".join(summaries) + "。"
@@ -294,6 +307,8 @@ class KnowledgeBaseService:
             "retrieved_docs": pipeline_result["retrieved_docs"],
             "filters_applied": result.filters_applied,
             "local_search": local_search,
+            "web_memory": web_memory,
+            "web_memory_store": web_memory_store,
             "web_search": web_search,
             "source_arbitration": source_arbitration,
             "retrieval_quality_gate": retrieval_quality_gate,
@@ -306,6 +321,8 @@ class KnowledgeBaseService:
                 "filters_applied": result.filters_applied,
                 "retrieved_docs": pipeline_result["retrieval_trace_docs"],
                 "local_search": local_search,
+                "web_memory": web_memory,
+                "web_memory_store": web_memory_store,
                 "web_search": web_search,
                 "agentic_rag": agentic_rag,
                 "source_arbitration": source_arbitration,

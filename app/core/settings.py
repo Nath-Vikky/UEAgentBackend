@@ -94,6 +94,11 @@ class Settings(BaseSettings):
         ]
     )
     web_search_mock_results_path: str = ""
+    web_memory_enabled: bool = False
+    web_memory_ttl_days: int = 30
+    web_memory_max_results: int = 5
+    web_memory_max_entries: int = 200
+    web_memory_min_score: float = 0.08
 
     storage_dir: str = "./storage"
     upload_dir: str = "./storage/uploads"

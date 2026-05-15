@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.settings import Settings
 from app.db.models.kb import KBChunkModel
 from app.rag import retrieve_knowledge
 from app.schemas.requests import ContextInput
 from app.services.local_search_service import LocalSearchService
+from app.services.web_memory_service import WebMemoryService
 from app.services.web_search_service import WebSearchService, should_trigger_web_search
 
 
@@ -18,6 +21,8 @@ def run_project_qa_retrieval_pipeline(
     chunks: list[KBChunkModel],
     settings: Settings,
     output_language: str,
+    db: Session | None = None,
+    source_task_id: str | None = None,
 ) -> dict[str, Any]:
     """Run the Project QA evidence pipeline without composing the final answer.
 
@@ -50,6 +55,17 @@ def run_project_qa_retrieval_pipeline(
     local_docs = _local_docs(local_search)
     local_citations = _local_citations(local_search)
 
+    web_memory = _run_web_memory(
+        query=selected_query,
+        context=context,
+        payload=payload,
+        settings=settings,
+        db=db,
+        evidence_sufficient=bool(result.retrieved_docs or local_docs),
+    )
+    web_memory_docs = _web_memory_docs(web_memory)
+    web_memory_citations = _web_memory_citations(web_memory)
+
     web_search = _run_web_search(
         query=query,
         selected_query=selected_query,
@@ -57,17 +73,25 @@ def run_project_qa_retrieval_pipeline(
         payload=payload,
         output_language=output_language,
         settings=settings,
-        evidence_sufficient=bool(result.retrieved_docs or local_docs),
+        evidence_sufficient=bool(result.retrieved_docs or local_docs or web_memory_docs),
     )
     web_docs = _web_docs(web_search)
     web_citations = _web_citations(web_search)
+    web_memory_store = _remember_web_search(
+        query=selected_query,
+        web_search=web_search,
+        settings=settings,
+        db=db,
+        source_task_id=source_task_id,
+    )
 
     rag_docs = _rag_docs(result)
     retrieval_trace_docs = _rag_trace_docs(result)
-    final_evidence_count = len(result.retrieved_docs) + len(local_docs) + len(web_docs)
+    final_evidence_count = len(result.retrieved_docs) + len(local_docs) + len(web_memory_docs) + len(web_docs)
     source_arbitration = _source_arbitration(
         rag_count=len(result.retrieved_docs),
         local_count=len(local_docs),
+        web_memory_count=len(web_memory_docs),
         web_count=len(web_docs),
         web_search=web_search,
     )
@@ -75,6 +99,7 @@ def run_project_qa_retrieval_pipeline(
         evidence_count=final_evidence_count,
         rag_count=len(result.retrieved_docs),
         local_count=len(local_docs),
+        web_memory_count=len(web_memory_docs),
         web_count=len(web_docs),
         agentic_rag=agentic_rag,
         selected_query=selected_query,
@@ -83,7 +108,9 @@ def run_project_qa_retrieval_pipeline(
         rag_warnings=rag_warnings,
         result_warnings=list(result.warnings),
         local_docs=local_docs,
+        web_memory_docs=web_memory_docs,
         web_docs=web_docs,
+        web_memory_store=web_memory_store,
         web_search=web_search,
     )
 
@@ -96,22 +123,27 @@ def run_project_qa_retrieval_pipeline(
         "local_search": local_search,
         "local_docs": local_docs,
         "local_citations": local_citations,
+        "web_memory": web_memory,
+        "web_memory_docs": web_memory_docs,
+        "web_memory_citations": web_memory_citations,
+        "web_memory_store": web_memory_store,
         "web_search": web_search,
         "web_docs": web_docs,
         "web_citations": web_citations,
-        "retrieved_docs": [*rag_docs, *local_docs, *web_docs],
-        "retrieval_trace_docs": [*retrieval_trace_docs, *local_docs, *web_docs],
-        "citations": [*result.citations, *local_citations, *web_citations],
+        "retrieved_docs": [*rag_docs, *local_docs, *web_memory_docs, *web_docs],
+        "retrieval_trace_docs": [*retrieval_trace_docs, *local_docs, *web_memory_docs, *web_docs],
+        "citations": [*result.citations, *local_citations, *web_memory_citations, *web_citations],
         "sources": [
             {"title": item.title, "source": item.source_path, "domain": item.domain}
             for item in result.retrieved_docs
         ]
         + [{"title": item["title"], "source": item["source_path"], "domain": item["domain"]} for item in local_docs]
+        + [{"title": item["title"], "source": item["source_path"], "domain": item["domain"]} for item in web_memory_docs]
         + [{"title": item["title"], "source": item["source_path"], "domain": item["domain"]} for item in web_docs],
         "source_arbitration": source_arbitration,
         "retrieval_quality_gate": retrieval_quality_gate,
         "warnings": warnings,
-        "confidence_floor": 0.42 if web_docs else 0.38 if local_docs else 0.0,
+        "confidence_floor": 0.42 if web_docs else 0.4 if web_memory_docs else 0.38 if local_docs else 0.0,
     }
 
 
@@ -210,6 +242,59 @@ def _run_web_search(
     )
 
 
+def _run_web_memory(
+    *,
+    query: str,
+    context: ContextInput,
+    payload: dict[str, Any],
+    settings: Settings,
+    db: Session | None,
+    evidence_sufficient: bool,
+) -> dict[str, Any]:
+    domain_hints = [
+        str(item)
+        for item in (
+            payload.get("web_domain_hints")
+            or payload.get("domain_hints")
+            or context.kb_domains_hint
+            or []
+        )
+        if str(item).strip()
+    ]
+    if not settings.web_memory_enabled:
+        return _skipped_web_memory_result(query=query, reason="disabled_by_settings", domain_hints=domain_hints)
+    if not db:
+        return _skipped_web_memory_result(query=query, reason="db_session_unavailable", domain_hints=domain_hints)
+    if payload.get("disable_web_memory"):
+        return _skipped_web_memory_result(query=query, reason="disabled_by_payload", domain_hints=domain_hints)
+    if evidence_sufficient and not payload.get("use_web_memory"):
+        return _skipped_web_memory_result(query=query, reason="local_evidence_available", domain_hints=domain_hints)
+    return WebMemoryService(db, settings).recall(
+        query=query,
+        domain_hints=domain_hints,
+        limit=payload.get("web_memory_max_results"),
+    )
+
+
+def _remember_web_search(
+    *,
+    query: str,
+    web_search: dict[str, Any],
+    settings: Settings,
+    db: Session | None,
+    source_task_id: str | None,
+) -> dict[str, Any]:
+    if not settings.web_memory_enabled:
+        return WebMemoryService._skipped_result(reason="disabled_by_settings")
+    if not db:
+        return WebMemoryService._skipped_result(reason="db_session_unavailable")
+    return WebMemoryService(db, settings).remember_web_search_result(
+        query=query,
+        web_search=web_search,
+        source_task_id=source_task_id,
+    )
+
+
 def _local_docs(local_search: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         {
@@ -242,6 +327,47 @@ def _local_citations(local_search: dict[str, Any]) -> list[dict[str, Any]]:
             "retrieval_source": "local_grep",
         }
         for item in local_search["items"][:3]
+    ]
+
+
+def _web_memory_docs(web_memory: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "chunk_id": item["entry_id"],
+            "doc_id": item["url"],
+            "title": item["title"],
+            "source_path": item["url"],
+            "domain": item["domain"],
+            "section_path": item.get("source_type") or "web_memory",
+            "text": item["snippet"][:800],
+            "lexical_score": item["score"],
+            "semantic_score": 0.0,
+            "final_score": item["score"],
+            "matched_terms": [],
+            "retrieval_source": "web_memory",
+            "source_type": item.get("source_type") or "web_memory",
+            "entry_id": item["entry_id"],
+            "expires_at": item.get("expires_at"),
+        }
+        for item in web_memory.get("items", [])
+    ]
+
+
+def _web_memory_citations(web_memory: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": item["title"],
+            "source": item["url"],
+            "section_path": item.get("source_type") or "web_memory",
+            "snippet": item["snippet"][:220],
+            "score": item["score"],
+            "domain": item["domain"],
+            "retrieval_source": "web_memory",
+            "source_type": item.get("source_type") or "web_memory",
+            "entry_id": item["entry_id"],
+            "expires_at": item.get("expires_at"),
+        }
+        for item in web_memory.get("items", [])[:3]
     ]
 
 
@@ -324,6 +450,7 @@ def _source_arbitration(
     *,
     rag_count: int,
     local_count: int,
+    web_memory_count: int,
     web_count: int,
     web_search: dict[str, Any],
 ) -> dict[str, Any]:
@@ -332,15 +459,31 @@ def _source_arbitration(
         primary_source = "rag"
     elif local_count:
         primary_source = "local_grep"
+    elif web_memory_count:
+        primary_source = "web_memory"
     elif web_count:
         primary_source = "web_search"
     return {
         "policy": "local_kb_and_project_rules_first_web_supplemental",
-        "priority_order": ["project_inventory", "project_file", "team_rules", "rag", "local_grep", "web_search"],
+        "priority_order": [
+            "project_inventory",
+            "project_file",
+            "team_rules",
+            "rag",
+            "local_grep",
+            "web_memory",
+            "web_search",
+        ],
         "primary_source": primary_source,
         "web_used": bool(web_count),
+        "web_memory_used": bool(web_memory_count),
         "web_trigger_reason": web_search.get("trigger_reason") or web_search.get("reason"),
-        "source_counts": {"rag": rag_count, "local_grep": local_count, "web_search": web_count},
+        "source_counts": {
+            "rag": rag_count,
+            "local_grep": local_count,
+            "web_memory": web_memory_count,
+            "web_search": web_count,
+        },
         "conflicts": [],
     }
 
@@ -350,6 +493,7 @@ def _retrieval_quality_gate(
     evidence_count: int,
     rag_count: int,
     local_count: int,
+    web_memory_count: int,
     web_count: int,
     agentic_rag: dict[str, Any],
     selected_query: str,
@@ -369,6 +513,7 @@ def _retrieval_quality_gate(
         "retrieved_count": evidence_count,
         "rag_retrieved_count": rag_count,
         "local_retrieved_count": local_count,
+        "web_memory_retrieved_count": web_memory_count,
         "web_retrieved_count": web_count,
     }
 
@@ -378,11 +523,13 @@ def _merged_warnings(
     rag_warnings: list[str],
     result_warnings: list[str],
     local_docs: list[dict[str, Any]],
+    web_memory_docs: list[dict[str, Any]],
     web_docs: list[dict[str, Any]],
+    web_memory_store: dict[str, Any],
     web_search: dict[str, Any],
 ) -> list[str]:
     warnings = list(dict.fromkeys(rag_warnings or result_warnings))
-    if local_docs or web_docs:
+    if local_docs or web_memory_docs or web_docs:
         warnings = [
             item
             for item in warnings
@@ -390,8 +537,14 @@ def _merged_warnings(
         ]
     if local_docs:
         warnings.append("local_search_fallback_used")
+    if web_memory_docs:
+        warnings.append("web_memory_fallback_used")
     if web_docs:
         warnings.append("web_search_fallback_used")
+    if web_memory_store.get("status") == "completed" and (
+        web_memory_store.get("stored_count", 0) or web_memory_store.get("updated_count", 0)
+    ):
+        warnings.append("web_memory_updated")
     if web_search.get("status") != "skipped" and not web_docs:
         warnings.append(f"web_search_{web_search.get('reason') or 'no_results'}")
     warnings.extend(str(item) for item in web_search.get("warnings", []) if item)
@@ -430,4 +583,27 @@ def _skipped_web_search_result(
             "max_content_chars": settings.web_search_max_content_chars,
         },
         "warnings": [],
+    }
+
+
+def _skipped_web_memory_result(
+    *,
+    query: str,
+    reason: str,
+    domain_hints: list[str],
+) -> dict[str, Any]:
+    return {
+        "query": query,
+        "mode": "web_memory",
+        "status": "skipped",
+        "reason": reason,
+        "items": [],
+        "summary": {
+            "result_count": 0,
+            "candidate_count": 0,
+            "deleted_expired_count": 0,
+            "domain_hints": domain_hints,
+            "terms": [],
+            "writes_to_kb": False,
+        },
     }

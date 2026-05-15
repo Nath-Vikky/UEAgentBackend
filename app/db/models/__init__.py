@@ -4,6 +4,7 @@ from app.db.models.proposal import ProposalDecisionModel, ProposalModel
 from app.db.models.runtime_profile import RuntimeProfileModel
 from app.db.models.session import MessageModel, SessionModel
 from app.db.models.task import TaskArtifactModel, TaskEventModel, TaskModel
+from app.db.models.web_memory import WebMemoryEntryModel, WebMemoryFeedbackModel
 
 __all__ = [
     "AuditLogModel",
@@ -18,4 +19,6 @@ __all__ = [
     "TaskArtifactModel",
     "TaskEventModel",
     "TaskModel",
+    "WebMemoryEntryModel",
+    "WebMemoryFeedbackModel",
 ]

@@ -25,6 +25,8 @@ from app.db.models import (  # noqa: F401
     TaskArtifactModel,
     TaskEventModel,
     TaskModel,
+    WebMemoryEntryModel,
+    WebMemoryFeedbackModel,
 )
 from app.db.session import get_engine, get_session_factory
 from app.observability.metrics import render_prometheus_metrics

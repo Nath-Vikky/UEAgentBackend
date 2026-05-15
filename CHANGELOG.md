@@ -42,6 +42,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   source arbitration, and retrieval quality gate composition.
 - Offline Controlled Web Search eval dataset and runner covering trigger policy,
   safe-domain filtering, provider fallback, and no-network regression checks.
+- Lightweight Web Memory cache with TTL, quality score, feedback API, ToolSpec
+  metadata, and Project QA recall before issuing a new Web Search. Disabled by
+  default and stores only URL/domain/snippet metadata.
 
 ### Changed
 
@@ -66,6 +69,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Project QA now consumes a stable retrieval evidence package from
   `app/rag/pipeline.py` while preserving existing response/debug fields for UE
   plugin compatibility.
+- Controlled Web Search results can optionally update Web Memory when
+  `WEB_MEMORY_ENABLED=true`; cached evidence remains lower priority than local
+  KB/project evidence and never writes into `knowledge/`.
 
 ## 0.1.0 - 2026-05-09
 

@@ -70,6 +70,7 @@ def test_system_health_exposes_startup_checks(client: TestClient) -> None:
         for item in body["startup_checks"]["checks"]
     )
     assert body["mcp_adapter"]["status"] == "disabled"
+    assert body["web_memory"]["status"] == "disabled"
     assert any(
         item["check_id"] == "mcp_tool_adapter" and item["status"] == "ok"
         for item in body["startup_checks"]["checks"]
@@ -109,6 +110,7 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
     assert body["capabilities"]["mcp_adapter"]["mode"] == "optional_tool_transport"
     assert body["capabilities"]["mcp_adapter"]["frontend_protocol"] == "http"
     assert body["capabilities"]["mcp_adapter"]["tool_layer_only"] is True
+    assert body["capabilities"]["web_memory"]["status"] == "disabled"
     assert any(
         item["tool_id"] == "query_project_inventory"
         and "当前项目" in item["trigger_keywords"]
@@ -163,6 +165,18 @@ def test_knowledge_base_eval_reports_api(client: TestClient) -> None:
     assert detail.json()["item"]["report_id"] == "project-benchmark-latest.json"
     assert detail.json()["markdown_preview"].startswith("# Project Benchmark")
     assert missing.status_code == 404
+
+
+def test_web_memory_status_and_disabled_search_api(client: TestClient) -> None:
+    status = client.get("/api/v1/web-memory/status")
+    search = client.post("/api/v1/web-memory/search", json={"query": "Enhanced Input", "limit": 3})
+
+    assert status.status_code == 200
+    assert status.json()["summary"]["status"] == "disabled"
+    assert status.json()["summary"]["writes_to_kb"] is False
+    assert search.status_code == 200
+    assert search.json()["result"]["status"] == "skipped"
+    assert search.json()["result"]["reason"] == "disabled_by_settings"
 
 
 def test_project_inventory_snapshot_and_query(client: TestClient) -> None:

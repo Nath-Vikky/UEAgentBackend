@@ -144,3 +144,16 @@ class ProjectInventoryQueryRequest(BaseModel):
     asset_type: str | None = None
     selected_assets: list[str] = Field(default_factory=list)
     limit: int = Field(default=20, ge=1, le=200)
+
+
+class WebMemorySearchRequest(BaseModel):
+    query: str
+    domain_hints: list[str] = Field(default_factory=list)
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class WebMemoryFeedbackRequest(BaseModel):
+    rating: Literal["helpful", "unhelpful"]
+    task_id: str | None = None
+    comment: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)

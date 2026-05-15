@@ -48,6 +48,8 @@ class HealthResponse(BaseModel):
     startup_checks: dict[str, Any] = Field(default_factory=dict)
     observability: dict[str, Any] = Field(default_factory=dict)
     mcp_adapter: dict[str, Any] = Field(default_factory=dict)
+    web_search: dict[str, Any] = Field(default_factory=dict)
+    web_memory: dict[str, Any] = Field(default_factory=dict)
     errors: list[ErrorDetail] = Field(default_factory=list)
 
 
@@ -141,6 +143,24 @@ class EvalReportDetailResponse(BaseModel):
     item: dict[str, Any]
     report: dict[str, Any] = Field(default_factory=dict)
     markdown_preview: str = ""
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class WebMemoryStatusResponse(BaseModel):
+    success: bool
+    summary: dict[str, Any] = Field(default_factory=dict)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class WebMemorySearchResponse(BaseModel):
+    success: bool
+    result: dict[str, Any] = Field(default_factory=dict)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class WebMemoryFeedbackResponse(BaseModel):
+    success: bool
+    item: dict[str, Any] = Field(default_factory=dict)
     errors: list[ErrorDetail] = Field(default_factory=list)
 
 

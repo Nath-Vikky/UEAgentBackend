@@ -13,6 +13,7 @@ from app.api.routes import (
     sessions,
     settings,
     tasks,
+    web_memory,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -26,3 +27,4 @@ api_router.include_router(proposals.router)
 api_router.include_router(project_inventory.router)
 api_router.include_router(editor_operations.router)
 api_router.include_router(mcp_tools.router)
+api_router.include_router(web_memory.router)

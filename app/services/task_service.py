@@ -2168,6 +2168,7 @@ class TaskService:
                 context=request.context,
                 payload=request.payload,
                 output_language=output_language,
+                source_task_id=task_id,
             )
             if tool_plan["use_knowledge"]
             else self._empty_project_qa_result(query=query_text)
@@ -2542,6 +2543,8 @@ class TaskService:
             "answer_mode": qa_result.get("answer_mode", answer_generation_mode),
             "catalog": qa_result.get("catalog", {}),
             "local_search": qa_result.get("local_search", {}),
+            "web_memory": qa_result.get("web_memory", {}),
+            "web_memory_store": qa_result.get("web_memory_store", {}),
             "web_search": qa_result.get("web_search", {}),
             "source_arbitration": qa_result.get("source_arbitration", {}),
             "retrieval_quality_gate": qa_result.get("retrieval_quality_gate", {}),
@@ -2565,6 +2568,8 @@ class TaskService:
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
         base_debug["local_search"] = qa_result.get("local_search", {})
+        base_debug["web_memory"] = qa_result.get("web_memory", {})
+        base_debug["web_memory_store"] = qa_result.get("web_memory_store", {})
         base_debug["web_search"] = qa_result.get("web_search", {})
         base_debug["source_arbitration"] = qa_result.get("source_arbitration", {})
         base_debug["retrieval_quality_gate"] = qa_result.get("retrieval_quality_gate", {})
@@ -2909,6 +2914,8 @@ class TaskService:
             "citations": qa_result["citations"],
             "warnings": qa_result["warnings"],
             "local_search": qa_result.get("local_search", {}),
+            "web_memory": qa_result.get("web_memory", {}),
+            "web_memory_store": qa_result.get("web_memory_store", {}),
             "web_search": qa_result.get("web_search", {}),
             "source_arbitration": qa_result.get("source_arbitration", {}),
             "retrieval_quality_gate": qa_result.get("retrieval_quality_gate", {}),
@@ -2916,6 +2923,8 @@ class TaskService:
         }
         base_debug["retrieval"] = qa_result["retrieval_trace"]
         base_debug["local_search"] = qa_result.get("local_search", {})
+        base_debug["web_memory"] = qa_result.get("web_memory", {})
+        base_debug["web_memory_store"] = qa_result.get("web_memory_store", {})
         base_debug["web_search"] = qa_result.get("web_search", {})
         base_debug["source_arbitration"] = qa_result.get("source_arbitration", {})
         base_debug["retrieval_quality_gate"] = qa_result.get("retrieval_quality_gate", {})

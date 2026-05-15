@@ -3147,3 +3147,54 @@ RAG / lexical retrieval
 - mock provider 路径缺失时任务降级但不崩溃。
 
 UE 前端本轮仍无需强制修改。若要增强 Debug View，可显示 `source_arbitration.source_counts`、`web_search.summary.skipped_domain_count` 和 `retrieval_quality_gate.web_retrieved_count`。
+
+## 2026-05-15 Web Memory v1
+
+Web Memory 是 Controlled Web Search 的轻量本地缓存层，用来避免同类 UE 官方资料问题每次都重新触发 Web Search。它默认关闭，且不属于知识库主索引。
+
+边界：
+
+- 默认 `WEB_MEMORY_ENABLED=false`。
+- 只保存 `URL/domain/title/snippet/score/source_type/provider/TTL/feedback`。
+- 不保存网页全文，不爬取网页正文，不写入 `knowledge/`，不写入向量库。
+- 召回优先级低于 Local KB、Project Inventory、选中文件、团队规则。
+- 用户反馈只影响后续排序，不会把内容自动标记为“事实真理”。
+
+配置：
+
+```env
+WEB_MEMORY_ENABLED=false
+WEB_MEMORY_TTL_DAYS=30
+WEB_MEMORY_MAX_RESULTS=5
+WEB_MEMORY_MAX_ENTRIES=200
+WEB_MEMORY_MIN_SCORE=0.08
+```
+
+Project QA 证据顺序现在是：
+
+```text
+RAG / lexical retrieval
+-> local grep fallback
+-> optional Web Memory recall
+-> optional Controlled Web Search
+-> source_arbitration
+-> retrieval_quality_gate
+```
+
+调试接口：
+
+- `GET /api/v1/web-memory/status`
+- `POST /api/v1/web-memory/search`
+- `POST /api/v1/web-memory/entries/{entry_id}/feedback`
+- `POST /api/v1/web-memory/prune`
+
+前端可选字段：
+
+- `data.web_memory`
+- `data.web_memory_store`
+- `debug_view.web_memory`
+- `debug_view.web_memory_store`
+- `data.retrieval_quality_gate.web_memory_retrieved_count`
+- `data.source_arbitration.source_counts.web_memory`
+
+本轮不要求 UE 前端修改；如果不显示这些字段，原有回答和引用渲染仍可继续工作。

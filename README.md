@@ -372,3 +372,24 @@ Code Review 保留默认单阶段审查，同时支持轻量链式 Agent：
 - 仅允许调用 `MCP_ALLOWED_TOOLS` 白名单中的工具。
 - 调用入口是 `/api/v1/mcp/tools` 和 `/api/v1/mcp/tools/{tool_name}/call`。
 - MCP 仍只是后端工具 transport；UE 前端和后端之间继续使用 HTTP。
+
+## Optional Web Memory
+
+Web Memory 是 Controlled Web Search 的本地轻量缓存，默认关闭。它只保存 `URL/domain/title/snippet/score/TTL/feedback` 这类摘要元数据，不保存网页全文，也不会自动写入 `knowledge/` 或向量库。
+
+启用示例：
+
+```env
+WEB_MEMORY_ENABLED=true
+WEB_MEMORY_TTL_DAYS=30
+WEB_MEMORY_MAX_RESULTS=5
+WEB_MEMORY_MAX_ENTRIES=200
+WEB_MEMORY_MIN_SCORE=0.08
+```
+
+调试接口：
+
+- `GET /api/v1/web-memory/status`
+- `POST /api/v1/web-memory/search`
+- `POST /api/v1/web-memory/entries/{entry_id}/feedback`
+- `POST /api/v1/web-memory/prune`

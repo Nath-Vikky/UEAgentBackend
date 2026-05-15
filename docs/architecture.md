@@ -69,6 +69,11 @@ Web Search
   Optional controlled web evidence layer. Disabled by default; mock/offline
   provider is used for tests, while real providers are reserved for local smoke.
 
+Web Memory
+  app/services/web_memory_service.py
+  Optional local cache for controlled Web Search summaries. Disabled by default;
+  stores URL/domain/snippet metadata only and never writes into the KB.
+
 DB
   app/db/*
   SQLite + SQLAlchemy models and repositories for local persistence.
@@ -147,6 +152,7 @@ from static KB documents.
 
 ```text
 General UE knowledge -> KB/RAG/local grep
+Recent controlled web summaries -> Web Memory
 Fresh or explicitly requested public evidence -> Controlled Web Search
 Current project facts -> Project Inventory
 Selected asset facts -> UE plugin metadata + Assets Inspect
@@ -162,6 +168,7 @@ Project QA now goes through `app/rag/pipeline.py`:
 ```text
 retrieve_knowledge()
   -> local grep fallback when indexed KB has no useful evidence
+  -> optional Web Memory recall when local evidence is insufficient
   -> controlled Web Search only when enabled and policy says it is needed
   -> source_arbitration
   -> retrieval_quality_gate
@@ -170,6 +177,16 @@ retrieve_knowledge()
 
 This keeps public response fields compatible while making future retrieval
 stages easier to test in isolation.
+
+Web Memory has a narrower contract than the KB:
+
+- It is disabled by default.
+- It stores summaries and source metadata, not full web pages.
+- It has TTL and max-entry trimming.
+- Helpful/unhelpful feedback changes ranking only; it does not turn a source
+  into trusted project truth.
+- Local KB, project inventory, selected files, and team rules remain higher
+  priority.
 
 ## Controlled Agent Loop
 
