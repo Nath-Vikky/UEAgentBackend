@@ -3197,4 +3197,26 @@ RAG / lexical retrieval
 - `data.retrieval_quality_gate.web_memory_retrieved_count`
 - `data.source_arbitration.source_counts.web_memory`
 
+## 2026-05-15 Retrieval Pipeline W5A 小重构
+
+这一轮没有改变任何 UE 前端接口，只是把 Project QA 检索链路内部拆得更清楚：
+
+- `app/rag/pipeline.py`：继续负责按顺序调度 `RAG -> local grep -> Web Memory -> Web Search`。
+- `app/rag/evidence_normalizer.py`：负责把不同来源转成统一的 `retrieved_docs` / `citations` 形状。
+- `app/rag/source_policy.py`：负责 `source_arbitration`、`retrieval_quality_gate` 和 warning 合并。
+
+为什么这样拆：
+
+- 后续如果新增真实 Web Search provider、更多本地记忆来源或更细的 domain policy，不需要继续堆到 `pipeline.py`。
+- Debug View 字段保持稳定，前端仍读取原来的 `data.source_arbitration`、`data.retrieval_quality_gate`、`data.web_search`、`data.web_memory`。
+- 单元测试可以直接覆盖来源优先级和质量门控，不必每次构造完整 Task 请求。
+
+本轮新增验证：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_kb_service_local_fallback.py tests\unit\test_web_memory_service.py tests\unit\test_retrieval_source_policy.py -q
+```
+
+UE 前端不需要修改。
+
 本轮不要求 UE 前端修改；如果不显示这些字段，原有回答和引用渲染仍可继续工作。

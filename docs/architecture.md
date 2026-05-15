@@ -64,6 +64,13 @@ Retrieval Pipeline
   Web Search -> source arbitration -> quality gate. The service layer consumes
   the stable evidence package instead of hand-wiring each fallback.
 
+Retrieval Source Policy
+  app/rag/source_policy.py and app/rag/evidence_normalizer.py
+  Shared Project QA retrieval policy helpers. Evidence normalizers convert RAG,
+  local grep, Web Memory, and Web Search outputs into the same document/citation
+  shape. Source policy owns primary-source selection, quality-gate counters, and
+  warning merge behavior.
+
 Web Search
   app/services/web_search_service.py
   Optional controlled web evidence layer. Disabled by default; mock/offline
@@ -170,13 +177,17 @@ retrieve_knowledge()
   -> local grep fallback when indexed KB has no useful evidence
   -> optional Web Memory recall when local evidence is insufficient
   -> controlled Web Search only when enabled and policy says it is needed
-  -> source_arbitration
-  -> retrieval_quality_gate
+  -> evidence normalizers
+  -> source_policy.source_arbitration
+  -> source_policy.retrieval_quality_gate
   -> stable response/debug fields
 ```
 
 This keeps public response fields compatible while making future retrieval
-stages easier to test in isolation.
+stages easier to test in isolation. The source policy module is deliberately
+small: it does not call LLMs, does not read files, and does not mutate storage.
+That boundary lets future retrieval sources plug in without changing the UE
+frontend response contract.
 
 Web Memory has a narrower contract than the KB:
 

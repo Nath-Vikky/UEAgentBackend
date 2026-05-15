@@ -45,6 +45,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Lightweight Web Memory cache with TTL, quality score, feedback API, ToolSpec
   metadata, and Project QA recall before issuing a new Web Search. Disabled by
   default and stores only URL/domain/snippet metadata.
+- Retrieval source policy helpers and evidence normalizers for Project QA,
+  splitting source arbitration, quality gates, warning merge, and evidence
+  shaping out of the pipeline orchestrator.
 
 ### Changed
 
@@ -72,6 +75,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Controlled Web Search results can optionally update Web Memory when
   `WEB_MEMORY_ENABLED=true`; cached evidence remains lower priority than local
   KB/project evidence and never writes into `knowledge/`.
+- `app/rag/pipeline.py` now focuses on stage orchestration, while
+  `app/rag/source_policy.py` and `app/rag/evidence_normalizer.py` hold the
+  reusable retrieval policy and evidence-shaping logic.
 
 ## 0.1.0 - 2026-05-09
 
