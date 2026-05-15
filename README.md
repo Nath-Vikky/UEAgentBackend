@@ -93,9 +93,19 @@ WEB_SEARCH_ENABLED=false
 WEB_SEARCH_PROVIDER=disabled
 WEB_SEARCH_MAX_QUERIES=1
 WEB_SEARCH_MAX_RESULTS=5
+WEB_SEARCH_API_KEY=
+WEB_SEARCH_ENDPOINT=
 WEB_SEARCH_ALLOWED_DOMAINS=dev.epicgames.com,docs.unrealengine.com,unrealengine.com
 WEB_SEARCH_MOCK_RESULTS_PATH=
 ```
+
+本地真实搜索 smoke 可选使用 `WEB_SEARCH_PROVIDER=brave`，配置 `WEB_SEARCH_API_KEY` 后手动运行：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_web_search_smoke.py --query "Unreal Engine Enhanced Input official docs"
+```
+
+这个 smoke 不进入默认 CI；没有网络或没有 API Key 时保持 `WEB_SEARCH_ENABLED=false` 即可。
 
 可选向量检索：
 

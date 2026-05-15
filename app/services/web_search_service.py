@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
+
 from app.core.settings import Settings
 from app.rag.indexing.sparse import tokenize_query
 
@@ -129,15 +131,19 @@ class WebSearchService:
             reason = "provider_disabled"
         elif provider == "mock" and (not mock_path or not mock_path.exists()):
             reason = "mock_results_path_missing"
+        elif provider == "brave" and not self.settings.web_search_api_key.strip():
+            reason = "api_key_missing"
         return {
             "enabled": self.settings.web_search_enabled,
             "provider": provider,
             "status": "ready" if ready and reason == "ready" else "disabled" if not ready else "degraded",
             "reason": reason,
+            "real_provider_ready": provider == "brave" and bool(self.settings.web_search_api_key.strip()),
             "max_queries": self.settings.web_search_max_queries,
             "max_results": self.settings.web_search_max_results,
             "timeout_ms": self.settings.web_search_timeout_ms,
             "max_content_chars": self.settings.web_search_max_content_chars,
+            "endpoint": self._endpoint(provider),
             "allowed_domains": self._allowed_domains(),
             "domain_boosts": self._domain_boosts(),
             "mock_results_path": str(mock_path) if mock_path else "",
@@ -190,6 +196,15 @@ class WebSearchService:
                 budget=budget,
                 started_at=started_at,
             )
+        if provider == "brave":
+            return self._search_brave(
+                query=query,
+                domain_hints=domain_hints or [],
+                language=language,
+                trigger_reason=trigger_reason,
+                budget=budget,
+                started_at=started_at,
+            )
         return self._empty_result(
             query=query,
             provider=provider,
@@ -224,13 +239,136 @@ class WebSearchService:
                 warnings=load_warnings,
             )
 
+        ranked, skipped_domains = self._rank_raw_results(
+            raw_results=raw_results,
+            provider="mock",
+            query=query,
+            domain_hints=domain_hints,
+            budget=budget,
+        )
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 3)
+        allowed_domains = self._allowed_domains()
+        terms = _query_terms(query)
+        return {
+            "query": query,
+            "provider": "mock",
+            "status": "completed",
+            "reason": "matched" if ranked else "no_matching_mock_results",
+            "trigger_reason": trigger_reason,
+            "language": language,
+            "items": [item.to_dict(rank=index) for index, item in enumerate(ranked, start=1)],
+            "summary": {
+                "result_count": len(ranked),
+                "candidate_count": len(ranked),
+                "raw_result_count": len(raw_results),
+                "skipped_domain_count": skipped_domains,
+                "allowed_domains": allowed_domains,
+                "domain_hints": domain_hints,
+                "terms": terms,
+                "elapsed_ms": elapsed_ms,
+                "queries_used": 1,
+            },
+            "budget": budget,
+            "warnings": load_warnings,
+        }
+
+    def _search_brave(
+        self,
+        *,
+        query: str,
+        domain_hints: list[str],
+        language: str,
+        trigger_reason: str,
+        budget: dict[str, Any],
+        started_at: float,
+    ) -> dict[str, Any]:
+        api_key = self.settings.web_search_api_key.strip()
+        if not api_key:
+            return self._empty_result(
+                query=query,
+                provider="brave",
+                status="error",
+                reason="api_key_missing",
+                trigger_reason=trigger_reason,
+                budget=budget,
+                started_at=started_at,
+                warnings=["web_search_api_key_missing"],
+            )
+        try:
+            payload = self._request_json(
+                method="GET",
+                url=self._endpoint("brave"),
+                headers={
+                    "Accept": "application/json",
+                    "X-Subscription-Token": api_key,
+                },
+                params={
+                    "q": query,
+                    "count": min(budget["max_results"], 10),
+                    "search_lang": _language_code(language),
+                },
+                timeout=budget["timeout_ms"] / 1000,
+            )
+        except Exception as exc:
+            return self._empty_result(
+                query=query,
+                provider="brave",
+                status="error",
+                reason="provider_request_failed",
+                trigger_reason=trigger_reason,
+                budget=budget,
+                started_at=started_at,
+                warnings=[f"brave_request_failed:{type(exc).__name__}"],
+            )
+
+        raw_results = _brave_results(payload)
+        ranked, skipped_domains = self._rank_raw_results(
+            raw_results=raw_results,
+            provider="brave",
+            query=query,
+            domain_hints=domain_hints,
+            budget=budget,
+        )
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 3)
+        return {
+            "query": query,
+            "provider": "brave",
+            "status": "completed",
+            "reason": "matched" if ranked else "no_matching_provider_results",
+            "trigger_reason": trigger_reason,
+            "language": language,
+            "items": [item.to_dict(rank=index) for index, item in enumerate(ranked, start=1)],
+            "summary": {
+                "result_count": len(ranked),
+                "candidate_count": len(ranked),
+                "raw_result_count": len(raw_results),
+                "skipped_domain_count": skipped_domains,
+                "allowed_domains": self._allowed_domains(),
+                "domain_hints": domain_hints,
+                "terms": _query_terms(query),
+                "elapsed_ms": elapsed_ms,
+                "queries_used": 1,
+            },
+            "budget": budget,
+            "warnings": [],
+        }
+
+    def _rank_raw_results(
+        self,
+        *,
+        raw_results: list[dict[str, Any]],
+        provider: str,
+        query: str,
+        domain_hints: list[str],
+        budget: dict[str, Any],
+    ) -> tuple[list[WebSearchItem], int]:
         allowed_domains = self._allowed_domains()
         boosts = self._domain_boosts()
         terms = _query_terms(query)
         items: list[WebSearchItem] = []
         skipped_domains = 0
         for raw in raw_results:
-            item = _normalize_raw_item(raw, provider="mock", max_chars=budget["max_content_chars"])
+            item = _normalize_raw_item(raw, provider=provider, max_chars=budget["max_content_chars"])
             if not item:
                 continue
             if allowed_domains and not _domain_allowed(item.domain, allowed_domains):
@@ -254,31 +392,7 @@ class WebSearchService:
                     provider=item.provider,
                 )
             )
-
-        ranked = sorted(items, key=lambda item: item.score, reverse=True)[: budget["max_results"]]
-        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 3)
-        return {
-            "query": query,
-            "provider": "mock",
-            "status": "completed",
-            "reason": "matched" if ranked else "no_matching_mock_results",
-            "trigger_reason": trigger_reason,
-            "language": language,
-            "items": [item.to_dict(rank=index) for index, item in enumerate(ranked, start=1)],
-            "summary": {
-                "result_count": len(ranked),
-                "candidate_count": len(items),
-                "raw_result_count": len(raw_results),
-                "skipped_domain_count": skipped_domains,
-                "allowed_domains": allowed_domains,
-                "domain_hints": domain_hints,
-                "terms": terms,
-                "elapsed_ms": elapsed_ms,
-                "queries_used": 1,
-            },
-            "budget": budget,
-            "warnings": load_warnings,
-        }
+        return (sorted(items, key=lambda item: item.score, reverse=True)[: budget["max_results"]], skipped_domains)
 
     def _load_mock_results(self) -> tuple[list[dict[str, Any]], list[str]]:
         path = self._mock_results_path()
@@ -301,6 +415,14 @@ class WebSearchService:
     def _mock_results_path(self) -> Path | None:
         raw = self.settings.web_search_mock_results_path.strip()
         return Path(raw) if raw else None
+
+    def _endpoint(self, provider: str) -> str:
+        configured = self.settings.web_search_endpoint.strip()
+        if configured:
+            return configured
+        if provider == "brave":
+            return "https://api.search.brave.com/res/v1/web/search"
+        return ""
 
     def _allowed_domains(self) -> list[str]:
         return [item.lower().strip() for item in self.settings.web_search_allowed_domains if item.strip()]
@@ -328,6 +450,21 @@ class WebSearchService:
             "timeout_ms": max(self.settings.web_search_timeout_ms, 100),
             "max_content_chars": max(120, min(self.settings.web_search_max_content_chars, 5000)),
         }
+
+    def _request_json(
+        self,
+        *,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        params: dict[str, Any],
+        timeout: float,
+    ) -> dict[str, Any]:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.request(method, url, headers=headers, params=params)
+            response.raise_for_status()
+            payload = response.json()
+        return payload if isinstance(payload, dict) else {}
 
     @staticmethod
     def _empty_result(
@@ -398,6 +535,38 @@ def _normalize_raw_item(raw: dict[str, Any], *, provider: str, max_chars: int) -
         score=score,
         provider=provider,
     )
+
+
+def _brave_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    web_section = payload.get("web") if isinstance(payload, dict) else {}
+    results = web_section.get("results") if isinstance(web_section, dict) else []
+    if not isinstance(results, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "")
+        domain = urlparse(url).netloc.lower()
+        normalized.append(
+            {
+                "title": item.get("title"),
+                "url": url,
+                "snippet": item.get("description") or item.get("snippet"),
+                "published_at": item.get("age") or item.get("published_at"),
+                "source_type": _source_type_for_domain(domain),
+            }
+        )
+    return normalized
+
+
+def _language_code(language: str) -> str:
+    lowered = (language or "").lower()
+    if lowered.startswith("zh"):
+        return "zh-hans"
+    if lowered.startswith("en"):
+        return "en"
+    return "en"
 
 
 def _is_safe_public_url(url: str, domain: str) -> bool:

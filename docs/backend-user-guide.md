@@ -3219,4 +3219,41 @@ RAG / lexical retrieval
 
 UE 前端不需要修改。
 
+## 2026-05-15 Web Search Real Provider W6
+
+后端现在补充了可选真实 Web Search provider：`brave`。它默认不启用，不进入 CI，也不会影响没有 API Key 的本地启动。
+
+配置示例：
+
+```env
+WEB_SEARCH_ENABLED=true
+WEB_SEARCH_PROVIDER=brave
+WEB_SEARCH_API_KEY=your_brave_search_api_key
+WEB_SEARCH_ENDPOINT=
+WEB_SEARCH_ALLOWED_DOMAINS=dev.epicgames.com,docs.unrealengine.com,unrealengine.com
+WEB_SEARCH_MAX_RESULTS=5
+WEB_SEARCH_TIMEOUT_MS=5000
+```
+
+说明：
+
+- `WEB_SEARCH_ENDPOINT` 留空时使用 Brave Search Web API 默认端点。
+- `WEB_SEARCH_ALLOWED_DOMAINS` 仍然生效，建议继续限制在 Epic / Unreal 官方域名。
+- provider 请求失败、没有 API Key、超时或没有命中时，会返回 `status=error` 或 `reason=no_matching_provider_results`，不会让 Project QA 整体崩溃。
+- Web Search 结果仍然只是补充证据；本地 KB、Project Inventory、选中文件和团队规则优先级更高。
+
+手动 smoke：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_web_search_smoke.py --query "Unreal Engine Enhanced Input official docs"
+```
+
+如果只是确认“关闭状态下不会出错”，可运行：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_web_search_smoke.py --allow-disabled
+```
+
+UE 前端不需要修改；现有 `data.web_search` / `debug_view.web_search` 字段会继续承载 provider、status、reason、summary 和 items。
+
 本轮不要求 UE 前端修改；如果不显示这些字段，原有回答和引用渲染仍可继续工作。

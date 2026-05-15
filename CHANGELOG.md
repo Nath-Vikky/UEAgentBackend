@@ -48,6 +48,8 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Retrieval source policy helpers and evidence normalizers for Project QA,
   splitting source arbitration, quality gates, warning merge, and evidence
   shaping out of the pipeline orchestrator.
+- Optional Brave Web Search provider adapter and manual smoke script for local
+  real-provider validation without adding network requirements to CI.
 
 ### Changed
 
@@ -78,6 +80,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - `app/rag/pipeline.py` now focuses on stage orchestration, while
   `app/rag/source_policy.py` and `app/rag/evidence_normalizer.py` hold the
   reusable retrieval policy and evidence-shaping logic.
+- Web Search settings now include `WEB_SEARCH_API_KEY` and
+  `WEB_SEARCH_ENDPOINT`; they are only used when a real provider such as
+  `brave` is explicitly selected.
 
 ## 0.1.0 - 2026-05-09
 

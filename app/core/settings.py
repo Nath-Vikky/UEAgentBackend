@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     web_search_max_results: int = 5
     web_search_timeout_ms: int = 5000
     web_search_max_content_chars: int = 1200
+    web_search_api_key: str = ""
+    web_search_endpoint: str = ""
     web_search_allowed_domains: StringListSetting = Field(
         default_factory=lambda: ["dev.epicgames.com", "docs.unrealengine.com", "unrealengine.com"]
     )

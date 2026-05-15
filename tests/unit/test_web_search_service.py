@@ -121,3 +121,65 @@ def test_web_search_trigger_policy_prefers_explicit_or_low_evidence_ue_queries()
         ) == (False, "kb_evidence_sufficient")
     finally:
         shutil.rmtree(runtime_root, ignore_errors=True)
+
+
+def test_brave_web_search_requires_api_key() -> None:
+    service = WebSearchService(
+        Settings(
+            _env_file=None,
+            web_search_enabled=True,
+            web_search_provider="brave",
+        )
+    )
+
+    status = service.status()
+    result = service.search(query="Unreal Engine official docs", trigger_reason="manual_smoke")
+
+    assert status["status"] == "degraded"
+    assert status["reason"] == "api_key_missing"
+    assert result["status"] == "error"
+    assert result["reason"] == "api_key_missing"
+
+
+def test_brave_web_search_maps_api_response(monkeypatch) -> None:
+    service = WebSearchService(
+        Settings(
+            _env_file=None,
+            web_search_enabled=True,
+            web_search_provider="brave",
+            web_search_api_key="test-key",
+            web_search_allowed_domains=["dev.epicgames.com"],
+            web_search_domain_boosts=["dev.epicgames.com:0.25"],
+        )
+    )
+
+    def fake_request_json(**kwargs):
+        assert kwargs["headers"]["X-Subscription-Token"] == "test-key"
+        assert kwargs["params"]["q"] == "Enhanced Input official docs"
+        return {
+            "web": {
+                "results": [
+                    {
+                        "title": "Enhanced Input in Unreal Engine",
+                        "url": "https://dev.epicgames.com/documentation/en-us/unreal-engine/enhanced-input-in-unreal-engine",
+                        "description": "Enhanced Input uses Input Actions and Mapping Contexts.",
+                    },
+                    {
+                        "title": "Untrusted mirror",
+                        "url": "https://example.com/unreal",
+                        "description": "Should be skipped by allowed-domain policy.",
+                    },
+                ]
+            }
+        }
+
+    monkeypatch.setattr(service, "_request_json", fake_request_json)
+
+    result = service.search(query="Enhanced Input official docs", trigger_reason="manual_smoke")
+
+    assert result["status"] == "completed"
+    assert result["reason"] == "matched"
+    assert result["provider"] == "brave"
+    assert result["items"][0]["domain"] == "dev.epicgames.com"
+    assert result["items"][0]["source_type"] == "official"
+    assert result["summary"]["skipped_domain_count"] == 1

@@ -74,7 +74,8 @@ Retrieval Source Policy
 Web Search
   app/services/web_search_service.py
   Optional controlled web evidence layer. Disabled by default; mock/offline
-  provider is used for tests, while real providers are reserved for local smoke.
+  provider is used for tests, while the optional Brave provider is reserved for
+  local smoke with an explicit API key and allow-listed domains.
 
 Web Memory
   app/services/web_memory_service.py
