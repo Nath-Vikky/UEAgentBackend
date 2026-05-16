@@ -44,6 +44,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   `TaskService`.
 - Editor operation intent detection, proposal construction, and asset-inspect
   rename proposal generation moved into `EditorOperationService`.
+- Project QA deterministic tool planning, ReAct Lite planning, trace building,
+  tool-call input lookup, and result-contract validation moved into
+  `app/agent/tool_planner.py`.
 
 ### Changed
 
@@ -79,9 +82,10 @@ Changelog. Dates use `YYYY-MM-DD`.
   rename proposal safety path; only task-handler ownership changed.
 - Editor operations still use the existing confirmed-write Proposal safety
   boundary; only response ownership changed.
-- Project QA still uses the existing retrieval pipeline, tool planner helpers,
-  inventory service, and guarded file-read helpers; only task-handler ownership
-  changed.
+- Project QA still uses the existing retrieval pipeline, inventory service, and
+  guarded file-read helper; tool-planning ownership now lives in
+  `app/agent/tool_planner.py`, so `TaskService` no longer keeps those private
+  helper methods.
 
 ## 0.1.4 - 2026-05-16
 

@@ -272,6 +272,17 @@ Final: synthesize the answer or fall back to deterministic summaries
 The planner is allowed to suggest only read-only free-chat tools. Confirmed
 write tools are never executed directly from free chat.
 
+Implementation boundary:
+
+- `app/agent/tool_planner.py` owns deterministic Project QA tool selection,
+  ReAct Lite planner prompting, planner payload sanitization, tool-call input
+  lookup, trace generation, and tool result contract validation.
+- `app/services/task_handlers/project_qa.py` owns Project QA orchestration and
+  response shaping.
+- `TaskService` owns request lifecycle, persistence, runtime profile loading,
+  stream events, audit data, and route dispatch, but no longer owns Project QA
+  tool-plan helpers.
+
 ## Evaluation
 
 The project keeps quality checks local and reproducible:

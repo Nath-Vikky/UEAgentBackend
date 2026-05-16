@@ -3513,7 +3513,7 @@ What changed:
 
 - `ProjectQAHandler` owns Project QA orchestration and response shaping.
 - `TaskService` no longer keeps `_execute_project_qa_live()`.
-- `TaskService` now keeps lifecycle, persistence, routing dispatch, context helpers, tool-plan helpers, Proposal helpers, and guarded file/inventory helper methods.
+- `TaskService` now keeps lifecycle, persistence, routing dispatch, context helpers, stream events, Proposal persistence, and shared file/inventory helper methods.
 
 What did not change:
 
@@ -3534,9 +3534,36 @@ Validation:
 TaskService boundary after this migration:
 
 - Owns task/session persistence and event generation.
-- Owns common context, routing, tool-plan, and safety helper methods.
+- Owns common context, routing dispatch, stream events, persistence, and shared safety helper methods.
 - Delegates concrete task execution to `RouteExecutionDispatcher` and `app/services/task_handlers/*`.
 - No longer owns feature-specific execution methods except shared helper methods used by handlers.
+
+## 2026-05-16 Project QA Tool Planner extraction
+
+Project QA tool planning now lives in `app/agent/tool_planner.py`.
+
+What changed:
+
+- `build_project_qa_deterministic_tool_plan()` owns deterministic inventory / knowledge decisions.
+- `build_react_lite_tool_plan()` owns the bounded read-only ReAct Lite planner and planner fallback.
+- `build_react_lite_trace()` owns the Debug View `react_loop` trace.
+- `build_project_qa_result_contracts()` owns tool result contract validation for Project QA.
+- `ProjectQAHandler` calls these module functions directly instead of calling private `TaskService` helpers.
+
+What did not change:
+
+- No UE frontend request or response field changed.
+- `data.tool_plan`, `data.react_loop`, `debug_view.tool_plan`, and `debug_view.react_loop` remain compatible.
+- Confirmed-write editor operations are still Proposal-based and are not executed by ReAct Lite.
+- Project QA still uses the same KB, local grep, Project Inventory, project-file read, and LLM synthesis paths.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check app tests scripts
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_project_qa_grounding.py tests\unit\test_tool_planner_inventory_fields.py tests\unit\test_project_file_tool.py tests\integration\test_system_and_tasks.py::test_agent_chat_project_qa_can_read_current_project_file -q
+.\.venv\Scripts\python.exe -m pytest -q
+```
 
 ## 2026-05-16 Router SignalDetector S1A
 

@@ -4,6 +4,13 @@ from typing import Any
 
 from app.agent.context_builder import build_context_summary
 from app.agent.self_reflection import build_self_reflection
+from app.agent.tool_planner import (
+    build_project_qa_deterministic_tool_plan,
+    build_project_qa_result_contracts,
+    build_react_lite_tool_plan,
+    build_react_lite_trace,
+    tool_call_input,
+)
 from app.i18n.language import localized as _localized
 from app.schemas.common import QuickAction, UserViewBlock
 from app.services.task_handlers.base import TaskExecutionContext
@@ -30,13 +37,15 @@ class ProjectQAHandler:
             request.session.messages[-1].content if request.session.messages else ""
         )
         query_text = str(query)
-        deterministic_tool_plan = host._project_qa_tool_plan(query=query_text, routing=routing)
-        tool_plan = host._react_lite_tool_plan(
+        deterministic_tool_plan = build_project_qa_deterministic_tool_plan(query=query_text, routing=routing)
+        tool_plan = build_react_lite_tool_plan(
             request=request,
             query=query_text,
             deterministic_plan=deterministic_tool_plan,
             chat_config=context.chat_config,
-            output_language=output_language,
+            llm_service=host.llm_service,
+            output_language_label=_language_label(output_language),
+            rag_top_k=host.settings.rag_top_k,
         )
         if tool_plan["use_knowledge"]:
             host._emit_stream_event(
@@ -77,7 +86,7 @@ class ProjectQAHandler:
                 run_id=context.run_id,
                 task_id=context.task_id,
             )
-        inventory_tool_input = host._tool_call_input(tool_plan, "query_project_inventory")
+        inventory_tool_input = tool_call_input(tool_plan, "query_project_inventory")
         inventory_fields = inventory_tool_input.get("fields")
         if not isinstance(inventory_fields, list):
             inventory_fields = []
@@ -248,15 +257,16 @@ class ProjectQAHandler:
                 qa_result["answer"] = llm_result["text"]
                 answer_generation_mode = "llm_synthesized"
 
-        react_loop = host._build_react_lite_trace(
+        react_loop = build_react_lite_trace(
             query=query_text,
             tool_plan=tool_plan,
             qa_result=qa_result,
             inventory_result=inventory_result,
             project_file_result=project_file_result,
             answer_generation_mode=answer_generation_mode,
+            rag_top_k=host.settings.rag_top_k,
         )
-        result_contracts = host._project_qa_result_contracts(
+        result_contracts = build_project_qa_result_contracts(
             tool_plan=tool_plan,
             qa_result=qa_result,
             inventory_result=inventory_result,
@@ -545,3 +555,7 @@ class ProjectQAHandler:
             "artifacts": [],
             "usage": llm_result["usage"],
         }
+
+
+def _language_label(language: str) -> str:
+    return "Simplified Chinese" if language.startswith("zh") else "English"

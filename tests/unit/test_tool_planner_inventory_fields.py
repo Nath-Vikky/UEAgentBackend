@@ -5,8 +5,11 @@ import uuid
 from pathlib import Path
 
 from app.agent.tool_planner import (
+    build_project_qa_result_contracts,
     build_project_qa_tool_calls,
+    build_react_lite_trace,
     sanitize_react_planner_payload,
+    tool_call_input,
     tool_call_sequence,
 )
 from app.core.settings import Settings
@@ -51,6 +54,81 @@ def test_tool_planner_sanitizes_inventory_field_inputs() -> None:
     assert calls[0]["input"]["asset_path"] == "/Game/Characters/BP_Hero"
     assert calls[0]["input"]["fields"] == ["variables", "components"]
     assert tool_call_sequence(calls) == ["query_project_inventory"]
+
+
+def test_tool_planner_trace_includes_project_file_read() -> None:
+    tool_plan = {
+        "use_inventory": False,
+        "use_knowledge": False,
+        "use_project_file": True,
+        "tool_calls": [
+            {
+                "tool_id": "read_project_file",
+                "input": {
+                    "project_root": "D:/Demo",
+                    "file_path": "Source/Demo/Private/Hero.cpp",
+                    "max_bytes": 12000,
+                },
+            }
+        ],
+        "planner_decision": {"status": "skipped"},
+    }
+    project_file_result = {
+        "status": "completed",
+        "reason": "",
+        "file_path": "Source/Demo/Private/Hero.cpp",
+        "resolved_path": "D:/Demo/Source/Demo/Private/Hero.cpp",
+        "bytes_read": 2048,
+        "truncated": False,
+    }
+
+    trace = build_react_lite_trace(
+        query="Summarize the selected file",
+        tool_plan=tool_plan,
+        qa_result={"retrieved_docs": [], "sources": [], "confidence": 0.0},
+        inventory_result={"items": [], "summary": {}},
+        project_file_result=project_file_result,
+        answer_generation_mode="project_file_fallback",
+        rag_top_k=4,
+    )
+
+    assert trace["tool_call_sequence"] == ["read_project_file"]
+    assert trace["iterations_used"] == 1
+    assert tool_call_input(tool_plan, "read_project_file")["file_path"] == "Source/Demo/Private/Hero.cpp"
+    assert any(step.get("tool_id") == "read_project_file" for step in trace["steps"])
+
+
+def test_tool_planner_builds_result_contracts_for_selected_tools() -> None:
+    contracts = build_project_qa_result_contracts(
+        tool_plan={
+            "use_knowledge": True,
+            "use_inventory": True,
+            "use_project_file": True,
+        },
+        qa_result={
+            "answer": "summary",
+            "confidence": 0.6,
+            "sources": [],
+            "citations": [],
+            "retrieved_docs": [],
+            "retrieval_trace": {},
+            "filters_applied": {},
+            "warnings": [],
+        },
+        inventory_result={"items": [], "summary": {}},
+        project_file_result={
+            "status": "skipped",
+            "reason": "not_selected",
+            "file_path": "Source/Demo.cpp",
+        },
+    )
+
+    assert [item["tool_id"] for item in contracts] == [
+        "retrieve_project_knowledge",
+        "query_project_inventory",
+        "read_project_file",
+    ]
+    assert all(item["ok"] for item in contracts)
 
 
 def test_project_inventory_query_returns_requested_field_view() -> None:

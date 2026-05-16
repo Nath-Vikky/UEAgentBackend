@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.agent.tool_planner import build_project_qa_deterministic_tool_plan
 from app.services.task_service import TaskService
 
 
@@ -24,10 +25,9 @@ def test_generic_ue_knowledge_does_not_require_inventory_snapshot() -> None:
 
 
 def test_project_qa_tool_plan_prefers_inventory_for_project_asset_questions() -> None:
-    service = _service()
     routing = {"route": {"selected_tool_id": "query_project_inventory"}}
 
-    plan = service._project_qa_tool_plan(
+    plan = build_project_qa_deterministic_tool_plan(
         query="What Blueprint assets are in my current project?",
         routing=routing,
     )
@@ -39,10 +39,9 @@ def test_project_qa_tool_plan_prefers_inventory_for_project_asset_questions() ->
 
 
 def test_project_qa_tool_plan_combines_inventory_and_knowledge_for_how_questions() -> None:
-    service = _service()
     routing = {"route": {"selected_tool_id": "query_project_inventory"}}
 
-    plan = service._project_qa_tool_plan(
+    plan = build_project_qa_deterministic_tool_plan(
         query="Why is this Blueprint asset risky, and how should I fix it?",
         routing=routing,
     )
