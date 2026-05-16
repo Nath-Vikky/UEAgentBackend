@@ -8,6 +8,11 @@ from app.i18n.language import localized as _localized
 from app.schemas.common import QuickAction, UserViewBlock
 from app.services.task_handlers.base import TaskExecutionContext
 from app.services.task_handlers.view_helpers import citation_previews
+from app.tools.project_file import (
+    project_file_candidate,
+    project_file_fallback_answer,
+    read_project_file_tool,
+)
 
 
 class ProjectQAHandler:
@@ -109,18 +114,18 @@ class ProjectQAHandler:
                 "tool_call",
                 {
                     "tool_id": "read_project_file",
-                    "file_path": host._project_file_candidate(request)["file_path"],
+                    "file_path": project_file_candidate(request)["file_path"],
                 },
                 run_id=context.run_id,
                 task_id=context.task_id,
             )
         project_file_result = (
-            host._read_project_file_tool(request)
+            read_project_file_tool(request)
             if tool_plan["use_project_file"]
             else {
                 "status": "skipped",
                 "reason": "tool_plan_skipped_project_file_read",
-                "file_path": host._project_file_candidate(request)["file_path"],
+                "file_path": project_file_candidate(request)["file_path"],
             }
         )
         if tool_plan["use_project_file"]:
@@ -204,7 +209,7 @@ class ProjectQAHandler:
             and not qa_result.get("answer")
             and project_file_result.get("status") != "skipped"
         ):
-            qa_result["answer"] = host._project_file_fallback_answer(
+            qa_result["answer"] = project_file_fallback_answer(
                 project_file_result=project_file_result,
                 output_language=output_language,
             )

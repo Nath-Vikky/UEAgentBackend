@@ -343,6 +343,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         required_payload_fields=("project_root", "file_path"),
         optional_payload_fields=("current_file", "max_bytes"),
         timeout_ms=10_000,
+        executor="app.tools.project_file:read_project_file_tool",
         input_schema={
             "type": "object",
             "required": ["project_root", "file_path"],

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import time
 import uuid
@@ -63,6 +62,11 @@ from app.services.project_inventory_service import ProjectInventoryService
 from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext
 from app.skills.runtime import build_skill_runtime_descriptor
 from app.tools.contracts import validate_tool_call_input, validate_tool_result
+from app.tools.project_file import (
+    project_file_candidate,
+    project_file_candidate_from_result,
+    should_read_project_file,
+)
 from app.tools.registry import (
     TOOL_EXECUTION_POLICY,
     TOOL_ID_TO_TASK_TYPE,
@@ -596,148 +600,6 @@ class TaskService:
             },
         }
 
-    def _project_file_candidate(self, request: UnifiedTaskRequest) -> dict[str, Any]:
-        project_root = str(
-            request.payload.get("project_root")
-            or request.context.project_root
-            or ""
-        ).strip()
-        file_path = str(
-            request.payload.get("read_file_path")
-            or request.payload.get("file_path")
-            or request.payload.get("current_file")
-            or request.context.current_file
-            or ""
-        ).strip()
-        try:
-            max_bytes = int(request.payload.get("max_file_read_bytes") or 40_000)
-        except (TypeError, ValueError):
-            max_bytes = 40_000
-        return {
-            "project_root": project_root,
-            "file_path": file_path,
-            "max_bytes": max(1024, min(max_bytes, 120_000)),
-        }
-
-    def _should_read_project_file(self, *, request: UnifiedTaskRequest, query: str) -> bool:
-        candidate = self._project_file_candidate(request)
-        if not candidate["project_root"] or not candidate["file_path"]:
-            return False
-        lowered = query.lower()
-        file_reference_tokens = (
-            "this file",
-            "current file",
-            "that file",
-            "read file",
-            "open file",
-            "explain file",
-            "这个文件",
-            "当前文件",
-            "该文件",
-            "读取文件",
-            "查看文件",
-            "解释文件",
-        )
-        return any(token in lowered or token in query for token in file_reference_tokens)
-
-    def _read_project_file_tool(self, request: UnifiedTaskRequest) -> dict[str, Any]:
-        candidate = self._project_file_candidate(request)
-        project_root = candidate["project_root"]
-        file_path = candidate["file_path"]
-        max_bytes = int(candidate["max_bytes"])
-        if not project_root or not file_path:
-            return {
-                "status": "skipped",
-                "reason": "missing_project_root_or_file_path",
-                "file_path": file_path,
-            }
-
-        root = Path(project_root).resolve()
-        requested = Path(file_path)
-        resolved = requested.resolve() if requested.is_absolute() else (root / requested).resolve()
-        try:
-            is_inside_root = os.path.commonpath([str(root), str(resolved)]) == str(root)
-        except ValueError:
-            is_inside_root = False
-        if not is_inside_root:
-            return {
-                "status": "blocked",
-                "reason": "file_outside_project_root",
-                "file_path": file_path,
-                "project_root": str(root),
-                "resolved_path": str(resolved),
-            }
-
-        allowed_suffixes = {
-            ".h",
-            ".hpp",
-            ".hh",
-            ".inl",
-            ".c",
-            ".cc",
-            ".cpp",
-            ".cxx",
-            ".cs",
-            ".md",
-            ".txt",
-            ".json",
-            ".ini",
-            ".yaml",
-            ".yml",
-            ".uproject",
-            ".uplugin",
-        }
-        if resolved.suffix.lower() not in allowed_suffixes:
-            return {
-                "status": "blocked",
-                "reason": "unsupported_file_extension",
-                "file_path": file_path,
-                "resolved_path": str(resolved),
-                "allowed_suffixes": sorted(allowed_suffixes),
-            }
-        if not resolved.exists() or not resolved.is_file():
-            return {
-                "status": "error",
-                "reason": "file_not_found",
-                "file_path": file_path,
-                "resolved_path": str(resolved),
-            }
-
-        with resolved.open("rb") as handle:
-            raw = handle.read(max_bytes + 1)
-        truncated = len(raw) > max_bytes
-        text = raw[:max_bytes].decode("utf-8", errors="replace")
-        return {
-            "status": "completed",
-            "reason": "read_completed",
-            "file_path": file_path,
-            "resolved_path": str(resolved),
-            "bytes_read": min(len(raw), max_bytes),
-            "max_bytes": max_bytes,
-            "truncated": truncated,
-            "text_excerpt": text,
-        }
-
-    def _project_file_fallback_answer(
-        self,
-        *,
-        project_file_result: dict[str, Any],
-        output_language: str,
-    ) -> str:
-        if project_file_result.get("status") == "completed":
-            excerpt = str(project_file_result.get("text_excerpt") or "").strip()
-            preview = excerpt[:500] + ("..." if len(excerpt) > 500 else "")
-            return _localized(
-                output_language,
-                f"我已读取当前项目文件 `{project_file_result.get('file_path')}`。当前没有可用 LLM 综合解释，因此先返回文件片段供你确认：\n\n{preview}",
-                f"I read project file `{project_file_result.get('file_path')}`. No live LLM synthesis is available, so here is the file excerpt for confirmation:\n\n{preview}",
-            )
-        return _localized(
-            output_language,
-            f"我尝试读取当前项目文件，但未成功：{project_file_result.get('reason') or 'unknown_reason'}。",
-            f"I tried to read the current project file, but it did not succeed: {project_file_result.get('reason') or 'unknown_reason'}.",
-        )
-
     def _react_planner_messages(
         self,
         *,
@@ -782,7 +644,7 @@ class TaskService:
         }
         use_inventory = bool(deterministic_plan.get("use_inventory"))
         use_knowledge = bool(deterministic_plan.get("use_knowledge"))
-        use_project_file = self._should_read_project_file(request=request, query=query)
+        use_project_file = should_read_project_file(request=request, query=query)
         planner_inputs: dict[str, dict[str, Any]] = {}
 
         llm_available, _ = self.llm_service.availability(chat_config)
@@ -821,7 +683,7 @@ class TaskService:
                 use_knowledge = use_knowledge or "retrieve_project_knowledge" in requested_tool_ids
                 use_project_file = use_project_file or "read_project_file" in requested_tool_ids
 
-        candidate = self._project_file_candidate(request) if use_project_file else {}
+        candidate = project_file_candidate(request) if use_project_file else {}
         project_file_input = (
             {
                 "project_root": candidate["project_root"],
@@ -925,7 +787,7 @@ class TaskService:
                     {
                         "phase": "action",
                         "tool_id": "read_project_file",
-                        "input": self._project_file_candidate_from_result(project_file_result),
+                        "input": project_file_candidate_from_result(project_file_result),
                     },
                     {
                         "phase": "observation",
@@ -957,13 +819,6 @@ class TaskService:
             "planner_status": tool_plan.get("planner_decision", {}).get("status", "skipped"),
             "tool_call_sequence": tool_call_sequence(list(tool_plan.get("tool_calls") or [])),
             "steps": steps,
-        }
-
-    @staticmethod
-    def _project_file_candidate_from_result(project_file_result: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "file_path": project_file_result.get("file_path"),
-            "max_bytes": project_file_result.get("max_bytes"),
         }
 
     def _project_qa_result_contracts(

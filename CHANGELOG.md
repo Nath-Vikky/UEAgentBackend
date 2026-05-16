@@ -39,6 +39,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Knowledge curation suggestion pipeline for Project QA. It proposes
   human-reviewed KB follow-up candidates when external evidence fills a local
   KB gap, but never writes files or mutates the KB automatically.
+- Project file read helper extracted into `app/tools/project_file.py`, keeping
+  path containment, suffix allow-listing, and fallback text outside
+  `TaskService`.
 
 ### Changed
 
@@ -54,6 +57,8 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Project QA responses now include `knowledge_curation` diagnostics in
   `data` and `retrieval_trace`; this is suggestion-only metadata for backend
   maintenance/debugging.
+- Project QA now calls the standalone read-only project-file tool helper instead
+  of `TaskService` private file-read methods; response fields remain unchanged.
 - `TaskService._execute_route()` now delegates task selection to
   `RouteExecutionDispatcher` while preserving existing response contracts and
   concrete executor behavior.

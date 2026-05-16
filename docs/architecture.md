@@ -64,7 +64,8 @@ Tools
   Smaller callable operations with declared input/output schemas and side
   effect levels. `app/tools/context.py` defines the normalized `ToolContext`
   and `ToolResult` envelopes used by newly migrated executors and future MCP
-  transport adapters.
+  transport adapters. `app/tools/project_file.py` owns the read-only project
+  file access boundary used by Project QA.
 
 Services
   app/services/*

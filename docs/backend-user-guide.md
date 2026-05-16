@@ -92,7 +92,7 @@
 
 - 前端需要传 `context.project_root`。
 - 前端需要传 `context.current_file`，或 payload 中传 `file_path/read_file_path`。
-- 后端会校验文件必须位于 `project_root` 内。
+- 后端通过 `app/tools/project_file.py` 校验文件必须位于 `project_root` 内。
 - 只允许读取 `.h/.cpp/.cs/.md/.txt/.json/.ini/.uproject/.uplugin/.yaml/.yml` 等文本文件。
 - 默认最多读取约 40KB，最大 120KB。
 - 只读，不写入、不删除、不移动、不执行。
