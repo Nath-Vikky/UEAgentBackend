@@ -13,23 +13,7 @@ from app.services.task_handlers.editor_operation import EditorOperationProposalH
 from app.services.task_handlers.logs_analyze import LogsAnalyzeHandler
 from app.services.task_handlers.placeholder import PlaceholderTaskHandler
 from app.services.task_handlers.perf_analyze import PerfAnalyzeHandler
-
-
-class ProjectQAHandler:
-    handler_id = "project_qa"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_project_qa_live(
-            request=context.request,
-            routing=context.routing,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
-            chat_config=context.chat_config,
-            context_bundle=context.context_bundle,
-            stream_sink=context.stream_sink,
-            run_id=context.run_id,
-            task_id=context.task_id,
-        )
+from app.services.task_handlers.project_qa import ProjectQAHandler
 
 
 class RouteExecutionDispatcher:

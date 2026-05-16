@@ -22,6 +22,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Concrete `EditorOperationProposalHandler`, moving editor-operation proposal
   response shaping out of `TaskService`; removed unused legacy placeholder
   Project QA and Direct Answer execution methods.
+- Concrete `ProjectQAHandler`, moving the full Project QA live orchestration
+  path out of `TaskService` while preserving RAG, local grep, Web Memory, Web
+  Search, Project Inventory, project-file read, and LLM synthesis fields.
 
 ### Changed
 
@@ -40,6 +43,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   rename proposal safety path; only task-handler ownership changed.
 - Editor operations still use the existing confirmed-write Proposal safety
   boundary; only response ownership changed.
+- Project QA still uses the existing retrieval pipeline, tool planner helpers,
+  inventory service, and guarded file-read helpers; only task-handler ownership
+  changed.
 
 ## 0.1.4 - 2026-05-16
 

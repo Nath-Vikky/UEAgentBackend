@@ -3422,6 +3422,39 @@ Validation:
 .\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py tests\unit\test_task_route_dispatcher.py -q
 ```
 
+## 2026-05-16 Project QA Handler migration
+
+Project QA live execution now lives in `app/services/task_handlers/project_qa.py`.
+
+What changed:
+
+- `ProjectQAHandler` owns Project QA orchestration and response shaping.
+- `TaskService` no longer keeps `_execute_project_qa_live()`.
+- `TaskService` now keeps lifecycle, persistence, routing dispatch, context helpers, tool-plan helpers, Proposal helpers, and guarded file/inventory helper methods.
+
+What did not change:
+
+- RAG / lexical retrieval / local grep behavior is unchanged.
+- Web Memory and Controlled Web Search behavior is unchanged.
+- Project Inventory and guarded project-file read behavior is unchanged.
+- LLM answer synthesis and fallback behavior are unchanged.
+- Request and response contracts are unchanged.
+- UE frontend does not need to change.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py tests\unit\test_task_route_dispatcher.py tests\unit\test_project_qa_grounding.py tests\unit\test_kb_service_local_fallback.py tests\unit\test_web_memory_service.py tests\unit\test_retrieval_source_policy.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+TaskService boundary after this migration:
+
+- Owns task/session persistence and event generation.
+- Owns common context, routing, tool-plan, and safety helper methods.
+- Delegates concrete task execution to `RouteExecutionDispatcher` and `app/services/task_handlers/*`.
+- No longer owns feature-specific execution methods except shared helper methods used by handlers.
+
 ## 2026-05-16 Config Validate Handler migration
 
 This is another internal backend refactor. `config_validate` now runs through `app/services/task_handlers/config_validate.py`.

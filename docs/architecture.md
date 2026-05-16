@@ -64,7 +64,7 @@ Task Handlers
   `DirectAnswerHandler`, `ConfigValidateHandler`, `CodeReviewHandler`,
   `LogsAnalyzeHandler`, `CodeGenerateHandler`, `ConfigGenerateHandler`, and
   `PerfAnalyzeHandler`, `AssetsInspectHandler`, `PlaceholderTaskHandler`, and
-  `EditorOperationProposalHandler`.
+  `EditorOperationProposalHandler`, and `ProjectQAHandler`.
 
 RAG
   app/rag/*
