@@ -33,6 +33,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   executor and MCP transport migration without changing current tool behavior.
 - Optional SQLite FTS5 Web Memory recall path with automatic Python-token
   fallback for environments where FTS5 is unavailable or unsuitable.
+- Memory Provider adapter layer with `SessionLongTermMemoryProvider` and
+  `WebMemoryProvider`, giving context memory a stable provider contract without
+  changing current prompt context output.
 
 ### Changed
 
@@ -42,6 +45,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   and startup contract validation rejects blank executor strings.
 - Web Memory recall now reports `summary.search_mode` and `summary.fts5`
   diagnostics while preserving the existing API shape.
+- Context Bundle long-term memory recall now goes through
+  `SessionLongTermMemoryProvider`; the returned `long_term_memory` payload is
+  intentionally unchanged.
 - `TaskService._execute_route()` now delegates task selection to
   `RouteExecutionDispatcher` while preserving existing response contracts and
   concrete executor behavior.

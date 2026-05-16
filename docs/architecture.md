@@ -39,6 +39,13 @@ Agent
   Routing, context compression, lightweight memory, controlled tool planning,
   self-reflection, and decision trace.
 
+Memory Providers
+  app/agent/memory_providers.py
+  Framework-neutral adapters for memory recall. The Context Bundle currently
+  uses `SessionLongTermMemoryProvider` for project/session memory while
+  preserving the existing `long_term_memory` payload. `WebMemoryProvider`
+  exposes cached web evidence through the same provider contract for later use.
+
 Router Signal Detectors
   app/agent/signal_detectors.py
   Compatibility-observer layer for router signals. The existing router still

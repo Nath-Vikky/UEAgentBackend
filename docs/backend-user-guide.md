@@ -126,6 +126,27 @@
 - Debug View 统一使用 `ToolResult.to_debug_entry()`，减少每个工具自行拼接调试字段。
 - 写操作仍然必须走 Proposal confirmation，`ToolResult` 只描述结果，不绕过确认边界。
 
+### MemoryProvider 使用边界
+
+后端新增 `app/agent/memory_providers.py`，用于把不同记忆来源统一成 provider contract。当前不是新的记忆产品，也不会改变用户可见响应，只是让后续扩展更规整。
+
+当前 provider：
+
+- `SessionLongTermMemoryProvider`：包装原有 `recall_long_term_memory()`，Context Bundle 已通过它读取 `long_term_memory`。
+- `WebMemoryProvider`：包装 `WebMemoryService.recall()`，供后续把 Web Memory 纳入统一上下文或 planner 时复用。
+
+标准入参/出参：
+
+- `MemoryQuery`：包含 `query`、`project_name`、`limit`、`domain_hints` 和 metadata。
+- `MemoryProviderResult`：包含 `provider_id`、`status`、`items`、`raw` 和 `summary`。
+
+边界：
+
+- 不改变 `data.context_bundle.long_term_memory` 的字段。
+- 不改变 Web Memory API。
+- 不新增企业级用户画像或跨项目记忆同步。
+- 后续如果增加 Project Memory / Team Memory，优先实现 provider，而不是直接塞进 `context_manager.py`。
+
 ### Self-Reflection
 
 后端会在回答生成后做一次轻量自检：

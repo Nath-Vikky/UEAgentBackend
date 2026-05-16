@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.agent.active_context import build_active_context
 from app.agent.context_builder import build_context_summary
-from app.agent.memory_manager import recall_long_term_memory
+from app.agent.memory_providers import MemoryQuery, SessionLongTermMemoryProvider
 from app.db.models.session import MessageModel, SessionModel
 from app.db.repositories.sessions import list_session_tasks
 from app.schemas.requests import UnifiedTaskRequest
@@ -177,12 +177,13 @@ def build_context_bundle(
         per_message_chars=700,
     )
     latest_user_message = _latest_user_message(request)
-    long_term_memory = recall_long_term_memory(
-        db,
-        project_name=request.context.project_name,
-        query=latest_user_message,
-        limit=5,
-    )
+    long_term_memory = SessionLongTermMemoryProvider(db).recall(
+        MemoryQuery(
+            project_name=request.context.project_name,
+            query=latest_user_message,
+            limit=5,
+        )
+    ).raw
     bundle = {
         "version": "context_bundle_v1",
         "input_summary": {
