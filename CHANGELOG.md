@@ -53,6 +53,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Router SignalDetector can now run in optional `scoring_shadow` mode via
   `ROUTER_SIGNAL_MODE=scoring_shadow`, producing a scored route recommendation
   without overriding the existing heuristic route.
+- Offline Router Signal eval dataset and runner for measuring heuristic route
+  accuracy, scoring-shadow stability, recommendation accuracy, and override
+  safety.
 
 ### Changed
 
@@ -97,6 +100,7 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Router diagnostics now include `signal_router_recommendation` and
   `signal_router_override_applied=false`; default routing remains
   `compatibility_observer`.
+- Regression suite now includes `scripts/run_router_signal_eval.py`.
 
 ## 0.1.4 - 2026-05-16
 

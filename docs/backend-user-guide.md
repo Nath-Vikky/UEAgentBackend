@@ -10,6 +10,7 @@
 - `docs/integration-smoke-tests.md`：本地端到端 smoke test 请求示例。
 - `docs/benchmark-report.md`：当前量化评估结果。
 - `docs/hallucination-guard-report.md`：证据不足与幻觉守卫评估结果。
+- `docs/router-signal-eval-report.md`：Router SignalDetector shadow 评估结果。
 - `docs/project-review-checklist.md`：项目收口、验证和交付检查清单。
 - `docs/release-notes/v0.1.0.md`：稳定版本说明。
 
@@ -227,6 +228,7 @@ LLM 排查补充：
 .\.venv\Scripts\python.exe -m pytest tests/unit tests/integration tests/contract tests/eval
 .\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
 .\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md
+.\.venv\Scripts\python.exe scripts\run_router_signal_eval.py --output storage\artifacts\evals\router-signal-eval-latest.json --markdown-output docs\router-signal-eval-report.md
 ```
 
 GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行。日常验证以本地 Ruff、pytest 和 RAG eval 为准；CI 只用于需要时手动复核，不做部署。
@@ -3667,6 +3669,43 @@ Validation:
 ```
 
 UE frontend impact: no mandatory change. If Debug View wants richer routing diagnostics, display `signal_router_recommendation.status`, `route_hint`, `selected_tool_id`, and `score_margin`.
+
+## 2026-05-16 Router Signal route-diff eval
+
+The backend now includes a small offline route-diff eval for the router SignalDetector shadow layer.
+
+Command:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_router_signal_eval.py --output storage\artifacts\evals\router-signal-eval-latest.json --markdown-output docs\router-signal-eval-report.md
+```
+
+Dataset:
+
+```text
+tests/eval/router_signal_dataset.jsonl
+```
+
+Metrics:
+
+- `route_accuracy`：旧 heuristic router 是否仍命中标注 route。
+- `tool_accuracy`：旧 heuristic router 是否仍命中标注 tool。
+- `shadow_stability`：开启 `scoring_shadow` 后，最终 route/tool 是否与旧模式一致。
+- `recommendation_accuracy`：shadow recommendation 是否符合标注的推荐 route/tool。
+- `override_applied_count`：当前阶段必须为 0，表示 shadow 不接管最终路由。
+
+Latest local result:
+
+```text
+case_count=5
+route_accuracy=1.0000
+tool_accuracy=1.0000
+shadow_stability=1.0000
+recommendation_accuracy=1.0000
+override_applied_count=0
+```
+
+Boundary: this is a compact regression/evidence dataset, not a large enterprise routing benchmark. Add cases whenever a real route bug appears.
 
 ## 2026-05-16 Config Validate Handler migration
 

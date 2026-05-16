@@ -54,6 +54,10 @@ def main() -> int:
             [python, "scripts/run_task_eval.py"],
         ),
         _run_step(
+            "router_signal_eval",
+            [python, "scripts/run_router_signal_eval.py"],
+        ),
+        _run_step(
             "hallucination_eval",
             [
                 python,
