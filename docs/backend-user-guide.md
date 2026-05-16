@@ -3066,6 +3066,13 @@ N8 目标是把已经存在的 facade / workflow node / trace 组件接到主链
 - `free_chat_auto_execute = false`，自由聊天不会自动执行 MCP 工具。
 - `write_tools_require_proposal = true`，写入类工具未来即使来自 MCP，也必须先转成 Proposal。
 
+2026-05-16 更新：
+
+- 编辑器操作意图检测已经迁入 `EditorOperationService.detect_request()`。
+- Proposal 构建统一走 `EditorOperationService.build_action_proposal()` / `try_build_action_proposal()`。
+- 资产检查生成的重命名 Proposal 统一走 `EditorOperationService.build_asset_inspect_rename_proposal()`。
+- `TaskService` 不再保存编辑器操作检测和 Proposal 拼接私有 helper。
+
 运行命令：
 
 ```powershell

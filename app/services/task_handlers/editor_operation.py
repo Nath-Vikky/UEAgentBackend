@@ -6,6 +6,7 @@ from app.agent.context_builder import build_context_summary
 from app.i18n.language import localized as _localized
 from app.schemas.common import QuickAction, UserViewBlock
 from app.schemas.requests import EditorOperationProposalRequest
+from app.services.editor_operation_service import EditorOperationService
 from app.services.task_handlers.base import TaskExecutionContext
 
 
@@ -28,10 +29,7 @@ class EditorOperationProposalHandler:
             trace_id=context.trace_id,
             context_bundle=context.context_bundle,
         )
-        proposal = host._build_editor_operation_action_proposal(
-            request=self.editor_operation_request,
-            output_language=output_language,
-        )
+        proposal = EditorOperationService(host.db).try_build_action_proposal(self.editor_operation_request)
         if not proposal:
             text = _localized(
                 output_language,

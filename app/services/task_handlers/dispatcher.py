@@ -14,6 +14,7 @@ from app.services.task_handlers.logs_analyze import LogsAnalyzeHandler
 from app.services.task_handlers.placeholder import PlaceholderTaskHandler
 from app.services.task_handlers.perf_analyze import PerfAnalyzeHandler
 from app.services.task_handlers.project_qa import ProjectQAHandler
+from app.services.editor_operation_service import EditorOperationService
 
 
 class RouteExecutionDispatcher:
@@ -44,7 +45,7 @@ class RouteExecutionDispatcher:
         return result
 
     def select_handler(self, host: Any, context: TaskExecutionContext) -> TaskHandler:
-        editor_operation_request = host._detect_editor_operation_request(context.request)
+        editor_operation_request = EditorOperationService.detect_request(context.request)
         if editor_operation_request:
             return EditorOperationProposalHandler(editor_operation_request)
 

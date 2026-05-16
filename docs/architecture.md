@@ -71,6 +71,8 @@ Services
   app/services/*
   Business orchestration for KB, LLM, Project Inventory, proposals, editor
   operations, sessions, runtime profiles, and MCP transport.
+  `EditorOperationService` owns editor-operation intent detection, payload
+  normalization, proposal construction, confirmation, and result recording.
 
 Task Handlers
   app/services/task_handlers/*

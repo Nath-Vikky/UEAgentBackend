@@ -12,7 +12,11 @@ from app.db.repositories.audit_logs import create_audit_log
 from app.db.repositories.proposals import create_proposal, get_proposal, save_proposal
 from app.db.repositories.tasks import get_task, save_task
 from app.observability.audit import build_audit_entry
-from app.schemas.requests import EditorOperationProposalRequest, EditorOperationResultRequest
+from app.schemas.requests import (
+    EditorOperationProposalRequest,
+    EditorOperationResultRequest,
+    UnifiedTaskRequest,
+)
 from app.utils.time import now_utc
 
 EDITOR_OPERATION_PROTOCOL_VERSION = "editor_operation_bridge_v1"
@@ -201,6 +205,143 @@ class EditorOperationService:
     def _clean_text(value: Any, *, max_length: int = 1024) -> str:
         text = str(value or "").strip()
         return text[:max_length]
+
+    @staticmethod
+    def _query_text(request: UnifiedTaskRequest) -> str:
+        return str(
+            request.payload.get("user_query")
+            or request.payload.get("requirement_description")
+            or (request.session.messages[-1].content if request.session.messages else "")
+            or ""
+        ).strip()
+
+    @staticmethod
+    def _extract_asset_name_from_text(text: str, default_name: str) -> str:
+        for pattern in (
+            r"\b(BP_[A-Za-z][A-Za-z0-9_]{1,63})\b",
+            r"\b(SM_[A-Za-z][A-Za-z0-9_]{1,63})\b",
+            r"\b(L_[A-Za-z][A-Za-z0-9_]{1,63})\b",
+            r"(?:命名为|改成|改为|叫做|叫|named|name it|rename to|to)\s*([A-Za-z][A-Za-z0-9_]{1,63})",
+        ):
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return default_name
+
+    @staticmethod
+    def _selected_asset_path(request: UnifiedTaskRequest) -> str | None:
+        selected_assets = list(request.context.selected_assets or [])
+        if selected_assets:
+            return str(selected_assets[0])
+        asset_items = request.payload.get("asset_items") or request.payload.get("assets") or []
+        if isinstance(asset_items, list) and asset_items:
+            first = asset_items[0]
+            if isinstance(first, dict):
+                return str(first.get("asset_path") or first.get("package_path") or "")
+            return str(first)
+        return None
+
+    @staticmethod
+    def detect_request(request: UnifiedTaskRequest) -> EditorOperationProposalRequest | None:
+        explicit_operation = request.payload.get("operation_type")
+        if explicit_operation in OPERATION_SPECS:
+            payload = request.payload.get("operation_payload")
+            if not isinstance(payload, dict):
+                payload = request.payload.get("payload") if isinstance(request.payload.get("payload"), dict) else request.payload
+            return EditorOperationProposalRequest(
+                operation_type=explicit_operation,
+                payload=dict(payload or {}),
+                reason=str(request.payload.get("reason") or request.payload.get("user_query") or ""),
+                source_task_id=request.payload.get("source_task_id"),
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        query_text = EditorOperationService._query_text(request)
+        if not query_text:
+            return None
+        query_lower = query_text.lower()
+
+        wants_blueprint = (
+            ("蓝图" in query_text or "blueprint" in query_lower or "bp_" in query_lower)
+            and any(token in query_lower or token in query_text for token in ("创建", "新建", "生成", "create", "make"))
+        )
+        if wants_blueprint:
+            parent_class = "/Script/Engine.Actor"
+            if "character" in query_lower or "角色" in query_text:
+                parent_class = "/Script/Engine.Character"
+            elif "pawn" in query_lower:
+                parent_class = "/Script/Engine.Pawn"
+            asset_name = EditorOperationService._extract_asset_name_from_text(query_text, "BP_AgentCreatedActor")
+            if not asset_name.startswith("BP_"):
+                asset_name = f"BP_{asset_name}"
+            return EditorOperationProposalRequest(
+                operation_type="create_blueprint_asset",
+                payload={
+                    "parent_class": request.payload.get("parent_class") or parent_class,
+                    "target_folder": request.payload.get("target_folder") or "/Game/Blueprints",
+                    "asset_name": request.payload.get("asset_name") or asset_name,
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        selected_asset = EditorOperationService._selected_asset_path(request)
+        wants_rename = selected_asset and any(
+            token in query_lower or token in query_text
+            for token in ("rename", "重命名", "改名", "改成", "改为")
+        )
+        if wants_rename:
+            default_name = str(selected_asset).rstrip("/").rsplit("/", 1)[-1].split(".")[-1]
+            new_name = request.payload.get("new_name") or EditorOperationService._extract_asset_name_from_text(
+                query_text,
+                default_name,
+            )
+            return EditorOperationProposalRequest(
+                operation_type="rename_selected_asset",
+                payload={"asset_path": selected_asset, "new_name": new_name},
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_static_mesh_settings = selected_asset and (
+            "nanite" in query_lower
+            or "碰撞" in query_text
+            or "collision" in query_lower
+            or "lightmap" in query_lower
+            or "lod" in query_lower
+        )
+        if wants_static_mesh_settings:
+            settings: dict[str, Any] = {}
+            if "nanite" in query_lower:
+                settings["nanite_enabled"] = not any(
+                    token in query_lower or token in query_text for token in ("disable", "off", "关闭", "禁用")
+                )
+            if "use_complex_as_simple" in query_lower or "复杂碰撞作为简单" in query_text:
+                settings["collision_complexity"] = "use_complex_as_simple"
+            elif "use_simple_as_complex" in query_lower or "简单碰撞作为复杂" in query_text:
+                settings["collision_complexity"] = "use_simple_as_complex"
+            elif "simple_and_complex" in query_lower or "简单和复杂" in query_text:
+                settings["collision_complexity"] = "simple_and_complex"
+            lightmap_match = re.search(
+                r"lightmap(?:\s+resolution)?\s*(\d{1,4})|光照贴图(?:分辨率)?\s*(\d{1,4})",
+                query_text,
+                flags=re.IGNORECASE,
+            )
+            if lightmap_match:
+                settings["lightmap_resolution"] = int(lightmap_match.group(1) or lightmap_match.group(2))
+            if not settings:
+                return None
+            return EditorOperationProposalRequest(
+                operation_type="apply_static_mesh_basic_settings",
+                payload={"asset_path": selected_asset, "settings": settings},
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+        return None
 
     @staticmethod
     def _normalize_asset_path(value: Any, *, require_game_root: bool = True) -> str:
@@ -519,6 +660,51 @@ class EditorOperationService:
                 "decision_endpoint": f"/api/v1/proposals/{resolved_proposal_id}/decision",
             },
         }
+
+    def try_build_action_proposal(
+        self,
+        request: EditorOperationProposalRequest,
+        *,
+        proposal_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        try:
+            return self.build_action_proposal(request, proposal_id=proposal_id)
+        except EditorOperationValidationError:
+            return None
+
+    def build_asset_inspect_rename_proposal(
+        self,
+        *,
+        execution: dict[str, Any],
+        request: UnifiedTaskRequest,
+    ) -> dict[str, Any] | None:
+        data = dict(execution.get("data") or {})
+        summary = dict(data.get("summary") or {})
+        if int(summary.get("asset_count") or 0) != 1:
+            return None
+        suggestions = list(data.get("rename_suggestions") or [])
+        if not suggestions:
+            suggestions = list(dict(data.get("localized_asset_view") or {}).get("rename_suggestions") or [])
+        if not suggestions:
+            return None
+        for raw_suggestion in suggestions:
+            suggestion = dict(raw_suggestion)
+            asset_path = str(suggestion.get("asset_path") or "").strip()
+            new_name = str(suggestion.get("suggested_name") or "").strip()
+            if not asset_path or not new_name:
+                continue
+            proposal = self.try_build_action_proposal(
+                EditorOperationProposalRequest(
+                    operation_type="rename_selected_asset",
+                    payload={"asset_path": asset_path, "new_name": new_name},
+                    reason=str(suggestion.get("reason") or "Asset inspection generated a rename suggestion."),
+                    requested_by="assets_inspect",
+                    context=request.context.model_dump(mode="json"),
+                )
+            )
+            if proposal:
+                return proposal
+        return None
 
     def create_operation_proposal(self, request: EditorOperationProposalRequest) -> dict[str, Any]:
         action_proposal = self.build_action_proposal(request)

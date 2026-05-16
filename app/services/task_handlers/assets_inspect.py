@@ -4,6 +4,7 @@ from typing import Any
 
 from app.i18n.language import localized as _localized
 from app.schemas.common import UserViewBlock
+from app.services.editor_operation_service import EditorOperationService
 from app.services.task_handlers.base import TaskExecutionContext
 from app.skills.executors import AssetsInspectSkillExecutor
 
@@ -26,10 +27,9 @@ class AssetsInspectHandler:
             output_language=context.output_language,
             chat_config=context.chat_config,
         )
-        proposal = host._asset_inspect_rename_operation_proposal(
+        proposal = EditorOperationService(host.db).build_asset_inspect_rename_proposal(
             execution=execution,
             request=context.request,
-            output_language=context.output_language,
         )
         if proposal:
             execution["action_proposals"] = list(execution.get("action_proposals") or []) + [proposal]

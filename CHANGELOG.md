@@ -42,6 +42,8 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Project file read helper extracted into `app/tools/project_file.py`, keeping
   path containment, suffix allow-listing, and fallback text outside
   `TaskService`.
+- Editor operation intent detection, proposal construction, and asset-inspect
+  rename proposal generation moved into `EditorOperationService`.
 
 ### Changed
 
@@ -59,6 +61,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   maintenance/debugging.
 - Project QA now calls the standalone read-only project-file tool helper instead
   of `TaskService` private file-read methods; response fields remain unchanged.
+- Route dispatch and task handlers now use `EditorOperationService` directly
+  for editor-operation proposals, reducing `TaskService` host callbacks while
+  preserving the Proposal confirmation contract.
 - `TaskService._execute_route()` now delegates task selection to
   `RouteExecutionDispatcher` while preserving existing response contracts and
   concrete executor behavior.

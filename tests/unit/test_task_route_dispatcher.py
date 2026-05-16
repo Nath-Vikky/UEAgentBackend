@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
-
 from app.schemas.requests import UnifiedTaskRequest
 from app.services.llm_service import ChatRuntimeConfig
 from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext
 
 
-def _request(task_type: str = "agent_chat") -> UnifiedTaskRequest:
+def _request(task_type: str = "agent_chat", payload: dict | None = None) -> UnifiedTaskRequest:
     return UnifiedTaskRequest(
         task_type=task_type,
         session={
@@ -15,7 +13,7 @@ def _request(task_type: str = "agent_chat") -> UnifiedTaskRequest:
             "messages": [{"role": "user", "content": "hello", "language": "auto"}],
         },
         context={"active_panel": "AgentChat"},
-        payload={"user_query": "hello"},
+        payload=payload or {"user_query": "hello"},
         ui_state={"active_view": "user", "selected_panel": "AgentChat"},
         runtime_options={"profile_id": "default", "stream": False, "debug": True},
     )
@@ -25,9 +23,10 @@ def _context(
     *,
     route_type: str = "direct_answer",
     actual_task_type: str = "agent_chat",
+    request: UnifiedTaskRequest | None = None,
 ) -> TaskExecutionContext:
     return TaskExecutionContext(
-        request=_request(actual_task_type if actual_task_type != "project_qa" else "agent_chat"),
+        request=request or _request(actual_task_type if actual_task_type != "project_qa" else "agent_chat"),
         routing={
             "intent": {"route_type": route_type},
             "locale": {"final_output_language": "en-US"},
@@ -51,11 +50,7 @@ def _context(
 
 
 class _FakeHost:
-    def __init__(self, editor_operation_request: Any | None = None) -> None:
-        self.editor_operation_request = editor_operation_request
-
-    def _detect_editor_operation_request(self, request: UnifiedTaskRequest) -> Any | None:
-        return self.editor_operation_request
+    pass
 
 
 def test_route_dispatcher_selects_project_qa_by_route_type() -> None:
@@ -89,8 +84,20 @@ def test_route_dispatcher_editor_operation_overrides_route_type() -> None:
     dispatcher = RouteExecutionDispatcher()
 
     handler = dispatcher.select_handler(
-        _FakeHost(editor_operation_request={"operation_type": "rename_selected_asset"}),
-        _context(route_type="project_qa", actual_task_type="project_qa"),
+        _FakeHost(),
+        _context(
+            route_type="project_qa",
+            actual_task_type="project_qa",
+            request=_request(
+                payload={
+                    "operation_type": "rename_selected_asset",
+                    "operation_payload": {
+                        "asset_path": "/Game/Maps/NewMap",
+                        "new_name": "L_TestMap",
+                    },
+                }
+            ),
+        ),
     )
 
     assert handler.handler_id == "editor_operation_proposal"
