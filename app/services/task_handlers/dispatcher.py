@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.task_handlers.assets_inspect import AssetsInspectHandler
 from app.services.task_handlers.base import TaskExecutionContext, TaskHandler
 from app.services.task_handlers.code_generate import CodeGenerateHandler
 from app.services.task_handlers.code_review import CodeReviewHandler
@@ -9,6 +10,7 @@ from app.services.task_handlers.config_generate import ConfigGenerateHandler
 from app.services.task_handlers.config_validate import ConfigValidateHandler
 from app.services.task_handlers.direct_answer import DirectAnswerHandler
 from app.services.task_handlers.logs_analyze import LogsAnalyzeHandler
+from app.services.task_handlers.placeholder import PlaceholderTaskHandler
 from app.services.task_handlers.perf_analyze import PerfAnalyzeHandler
 
 
@@ -43,31 +45,6 @@ class ProjectQAHandler:
             stream_sink=context.stream_sink,
             run_id=context.run_id,
             task_id=context.task_id,
-        )
-
-
-class AssetsInspectHandler:
-    handler_id = "assets_inspect"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_assets_inspect(
-            request=context.request,
-            routing=context.routing,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
-            chat_config=context.chat_config,
-        )
-
-
-class PlaceholderTaskHandler:
-    handler_id = "task_placeholder"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_task_placeholder(
-            request=context.request,
-            routing=context.routing,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
         )
 
 

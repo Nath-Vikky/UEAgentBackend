@@ -63,7 +63,7 @@ Task Handlers
   handler in later migrations. Concrete migrated handlers now include
   `DirectAnswerHandler`, `ConfigValidateHandler`, `CodeReviewHandler`,
   `LogsAnalyzeHandler`, `CodeGenerateHandler`, `ConfigGenerateHandler`, and
-  `PerfAnalyzeHandler`.
+  `PerfAnalyzeHandler`, `AssetsInspectHandler`, and `PlaceholderTaskHandler`.
 
 RAG
   app/rag/*

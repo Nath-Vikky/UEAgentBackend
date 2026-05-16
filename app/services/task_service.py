@@ -62,9 +62,6 @@ from app.services.editor_operation_service import (
 from app.services.mcp_tool_adapter import build_mcp_adapter_status
 from app.services.project_inventory_service import ProjectInventoryService
 from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext
-from app.skills.executors import (
-    AssetsInspectSkillExecutor,
-)
 from app.skills.runtime import build_skill_runtime_descriptor
 from app.tools.contracts import validate_tool_call_input, validate_tool_result
 from app.tools.registry import (
@@ -2752,60 +2749,6 @@ class TaskService:
             "artifacts": [],
         }
 
-    def _execute_assets_inspect(
-        self,
-        *,
-        request: UnifiedTaskRequest,
-        routing: dict[str, Any],
-        trace_id: str,
-        output_language: str,
-        chat_config: ChatRuntimeConfig,
-    ) -> dict[str, Any]:
-        executor = AssetsInspectSkillExecutor(
-            kb_service=self.kb_service,
-            llm_service=self.llm_service,
-            base_debug_builder=self._base_debug,
-        )
-        execution = executor.execute(
-            request=request,
-            routing=routing,
-            trace_id=trace_id,
-            output_language=output_language,
-            chat_config=chat_config,
-        )
-        proposal = self._asset_inspect_rename_operation_proposal(
-            execution=execution,
-            request=request,
-            output_language=output_language,
-        )
-        if proposal:
-            execution["action_proposals"] = list(execution.get("action_proposals") or []) + [proposal]
-            execution["data"]["editor_operation_proposals"] = [proposal]
-            execution["user_view"]["blocks"] = list(execution["user_view"].get("blocks") or []) + [
-                UserViewBlock(
-                    block_type="editor_operation_proposal",
-                    title=_localized(output_language, "可确认的编辑器操作", "Confirmable Editor Operation"),
-                    text=_localized(
-                        output_language,
-                        "已根据资产检查结果生成重命名提案。确认后由 UE 插件执行，后端不会直接修改编辑器资产。",
-                        "A rename proposal was generated from the asset inspection result. The UE plugin executes it after confirmation; the backend does not directly modify editor assets.",
-                    ),
-                    data={"proposal": proposal},
-                ).model_dump(mode="json")
-            ]
-            execution["debug_view"]["side_effects"] = list(execution["debug_view"].get("side_effects") or []) + [
-                {
-                    "proposal_id": proposal["proposal_id"],
-                    "proposal_type": "editor_operation",
-                    "operation_type": "rename_selected_asset",
-                    "tool_id": "editor_rename_asset",
-                    "side_effect_level": "confirmed_write",
-                    "execution_state": "not_executed_without_confirmation",
-                    "written_by_backend": False,
-                }
-            ]
-        return execution
-
     def _asset_inspect_rename_operation_proposal(
         self,
         *,
@@ -2843,79 +2786,6 @@ class TaskService:
             if proposal:
                 return proposal
         return None
-
-    def _execute_task_placeholder(
-        self,
-        *,
-        request: UnifiedTaskRequest,
-        routing: dict[str, Any],
-        trace_id: str,
-        output_language: str,
-    ) -> dict[str, Any]:
-        base_debug = self._base_debug(request=request, routing=routing, trace_id=trace_id)
-        placeholder_text = _localized(
-            output_language,
-            "系统已经识别到这是工程任务请求，但当前任务类型还未接入具体执行器，因此先返回任务路由和调试诊断。",
-            "The system recognized this as an engineering task request, but this task type does not have a concrete executor yet, so it is returning routing diagnostics for now.",
-        )
-        step_results = [
-            {
-                "step_id": "classify_intent",
-                "title": "Intent Classification",
-                "status": "completed",
-                "summary": routing["intent"]["reason"],
-                "details": routing["intent"],
-            }
-        ]
-        user_view = {
-            "title": _localized(output_language, "任务路由结果", "Task Routing Result"),
-            "text": placeholder_text,
-            "blocks": [
-                UserViewBlock(
-                    block_type="summary",
-                    title=_localized(output_language, "候选工具", "Candidate Tools"),
-                    text=", ".join(routing["route"]["candidate_tool_ids"]) or "tool_registry_pending",
-                ).model_dump(mode="json")
-            ],
-            "citations_preview": [],
-            "quick_actions": [
-                QuickAction(
-                    action_id="open_debug_view",
-                    label=_localized(output_language, "查看调试信息", "Open debug view"),
-                ).model_dump(mode="json")
-            ],
-            "status_hint": "tool_placeholder",
-        }
-        retrieval_trace = {
-            "mode": "not_used",
-            "degraded_mode": False,
-            "reason": "route_task_placeholder",
-            "filters_applied": {},
-            "retrieved_docs": [],
-        }
-        data = {
-            "answer": placeholder_text,
-            "sources": [],
-            "citations": [],
-            "confidence": 0.0,
-            "context_summary": build_context_summary(request),
-            "warnings": [],
-        }
-        base_debug["retrieval"] = retrieval_trace
-        base_debug["step_results"] = step_results
-        base_debug["raw_result"] = data
-        return {
-            "user_view": user_view,
-            "debug_view": base_debug,
-            "data": data,
-            "retrieval_trace": retrieval_trace,
-            "planner_diagnostics": routing["route"],
-            "step_results": step_results,
-            "action_proposals": [],
-            "errors": [],
-            "assistant_message": placeholder_text,
-            "artifacts": [],
-        }
 
     def _materialize_artifacts(
         self,

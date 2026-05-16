@@ -3372,6 +3372,32 @@ Validation:
 .\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py tests\unit\test_task_route_dispatcher.py -q
 ```
 
+## 2026-05-16 Assets Inspect / Placeholder Handler migration
+
+Assets Inspect and the generic task placeholder now have concrete task handlers:
+
+- `app/services/task_handlers/assets_inspect.py`
+- `app/services/task_handlers/placeholder.py`
+
+What changed:
+
+- `AssetsInspectHandler` owns asset-inspection skill executor construction and attaches safe rename editor-operation proposals when available.
+- `PlaceholderTaskHandler` owns stable diagnostics for recognized tasks without concrete executors.
+- `TaskService` no longer keeps `_execute_assets_inspect()` or `_execute_task_placeholder()`.
+
+What did not change:
+
+- The asset inspection skill executor is unchanged.
+- Rename proposals still require confirmed-write user approval and UE plugin execution.
+- Request and response contracts are unchanged.
+- UE frontend does not need to change.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py::test_assets_inspect_returns_violations tests\integration\test_system_and_tasks.py::test_assets_inspect_can_summarize_types_and_relationships tests\integration\test_system_and_tasks.py::test_assets_inspect_live_llm_uses_compact_timeout_config tests\integration\test_system_and_tasks.py::test_assets_inspect_flags_default_world_asset_name tests\integration\test_editor_operations.py::test_assets_inspect_emits_rename_editor_operation_proposal tests\unit\test_task_route_dispatcher.py -q
+```
+
 ## 2026-05-16 Config Validate Handler migration
 
 This is another internal backend refactor. `config_validate` now runs through `app/services/task_handlers/config_validate.py`.

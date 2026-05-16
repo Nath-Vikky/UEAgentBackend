@@ -17,6 +17,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   Generate, moving thin skill orchestration wrappers out of `TaskService`.
 - Concrete workflow-backed handlers for Config Generate and Performance
   Analyze, plus shared task-handler citation preview helpers.
+- Concrete `AssetsInspectHandler` and `PlaceholderTaskHandler`, moving asset
+  inspection orchestration and fallback diagnostics out of `TaskService`.
 
 ### Changed
 
@@ -31,6 +33,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   executors and multi-agent chain; only the task-handler ownership changed.
 - Config Generate and Performance Analyze still use the existing workflow graph
   functions; only task-handler ownership changed.
+- Assets Inspect still uses the existing skill executor and confirmed-write
+  rename proposal safety path; only task-handler ownership changed.
 
 ## 0.1.4 - 2026-05-16
 
