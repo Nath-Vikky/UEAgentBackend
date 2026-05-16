@@ -3244,6 +3244,35 @@ RAG / lexical retrieval
 - `data.web_memory.summary.fts5` 会显示是否启用、是否命中、同步/搜索诊断。
 - UE 前端不需要修改；这些字段主要给 Debug View 和后端调试使用。
 
+### Knowledge Curation 建议
+
+Project QA 现在会返回 `knowledge_curation` 诊断字段，用于提示“哪些问答暴露了本地知识库缺口”。它只做建议，不会自动写入 `knowledge/`、SQLite 文档表或向量库。
+
+触发场景：
+
+- 本地 KB / local grep 没有足够证据。
+- Web Memory 或 Controlled Web Search 找到了可参考证据。
+- 或 retrieval quality gate 判断证据不足，需要人工补文档。
+
+返回位置：
+
+- `data.knowledge_curation`
+- `retrieval_trace.knowledge_curation`
+- `debug_view.knowledge_curation`
+
+字段含义：
+
+- `status`：`suggested` 或 `not_needed`。
+- `writes_to_kb=false`：不会自动写知识库。
+- `auto_apply=false`：必须人工审核、蒸馏、改写。
+- `candidates[]`：候选标题、来源、建议 domain、证据摘要和安全说明。
+
+推荐用法：
+
+- 后端开发者定期查看 Debug View 中的 `knowledge_curation.candidates`。
+- 只把确认正确、适配本项目边界的内容手动写入 `knowledge/`。
+- 写入后重启或调用 reindex，让 KB / lexical retrieval / vector retrieval 重新索引。
+
 ## 2026-05-15 Retrieval Pipeline W5A 小重构
 
 这一轮没有改变任何 UE 前端接口，只是把 Project QA 检索链路内部拆得更清楚：

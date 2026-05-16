@@ -101,6 +101,13 @@ Retrieval Source Policy
   shape. Source policy owns primary-source selection, quality-gate counters, and
   warning merge behavior.
 
+Knowledge Curation
+  app/rag/curation.py
+  Suggestion-only KB maintenance helper. When local KB evidence is weak but Web
+  Memory or controlled Web Search supplies useful evidence, it emits
+  human-review candidates. It never writes to `knowledge/`, storage, or vector
+  indexes automatically.
+
 Web Search
   app/services/web_search_service.py
   Optional controlled web evidence layer. Disabled by default; mock/offline

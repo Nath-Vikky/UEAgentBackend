@@ -174,4 +174,6 @@ def test_project_qa_can_use_mock_web_search_when_explicitly_requested() -> None:
     assert result["source_arbitration"]["primary_source"] == "web_search"
     assert result["retrieved_docs"][0]["retrieval_source"] == "web_search"
     assert result["citations"][0]["retrieval_source"] == "web_search"
+    assert result["knowledge_curation"]["status"] == "suggested"
+    assert result["knowledge_curation"]["writes_to_kb"] is False
     assert "web_search_fallback_used" in result["warnings"]

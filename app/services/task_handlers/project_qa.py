@@ -429,6 +429,7 @@ class ProjectQAHandler:
             "web_search": qa_result.get("web_search", {}),
             "source_arbitration": qa_result.get("source_arbitration", {}),
             "retrieval_quality_gate": qa_result.get("retrieval_quality_gate", {}),
+            "knowledge_curation": qa_result.get("knowledge_curation", {}),
             "inventory": inventory_result,
             "project_file": project_file_result,
             "answer_generation": {
@@ -454,6 +455,7 @@ class ProjectQAHandler:
         base_debug["web_search"] = qa_result.get("web_search", {})
         base_debug["source_arbitration"] = qa_result.get("source_arbitration", {})
         base_debug["retrieval_quality_gate"] = qa_result.get("retrieval_quality_gate", {})
+        base_debug["knowledge_curation"] = qa_result.get("knowledge_curation", {})
         base_debug["inventory"] = inventory_result
         base_debug["project_file"] = {
             key: value for key, value in project_file_result.items() if key != "text_excerpt"

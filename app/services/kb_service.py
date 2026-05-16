@@ -29,6 +29,7 @@ from app.rag.ingestion.jobs import utc_now
 from app.rag.ingestion.loaders import discover_source_paths
 from app.rag.ingestion.parsers import parse_path
 from app.rag.pipeline import run_project_qa_retrieval_pipeline
+from app.rag.curation import build_knowledge_curation_suggestions
 from app.rag.schemas import ParsedDocument
 from app.schemas.requests import ContextInput, KnowledgeBaseImportRequest
 from app.services.local_search_service import LocalSearchService
@@ -298,6 +299,14 @@ class KnowledgeBaseService:
                 answer_text = "Local KB evidence was insufficient. Controlled Web Search found: " + "; ".join(summaries) + "."
         source_arbitration = pipeline_result["source_arbitration"]
         retrieval_quality_gate = pipeline_result["retrieval_quality_gate"]
+        knowledge_curation = build_knowledge_curation_suggestions(
+            query=query,
+            retrieved_docs=pipeline_result["retrieved_docs"],
+            local_docs=local_docs,
+            web_memory_docs=web_memory_docs,
+            web_docs=web_docs,
+            retrieval_quality_gate=retrieval_quality_gate,
+        )
         warnings = pipeline_result["warnings"]
         return {
             "answer": answer_text,
@@ -312,6 +321,7 @@ class KnowledgeBaseService:
             "web_search": web_search,
             "source_arbitration": source_arbitration,
             "retrieval_quality_gate": retrieval_quality_gate,
+            "knowledge_curation": knowledge_curation,
             "retrieval_trace": {
                 "mode": result.mode,
                 "degraded_mode": result.degraded_mode,
@@ -327,6 +337,7 @@ class KnowledgeBaseService:
                 "agentic_rag": agentic_rag,
                 "source_arbitration": source_arbitration,
                 "retrieval_quality_gate": retrieval_quality_gate,
+                "knowledge_curation": knowledge_curation,
             },
             "warnings": warnings,
         }

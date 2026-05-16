@@ -36,6 +36,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Memory Provider adapter layer with `SessionLongTermMemoryProvider` and
   `WebMemoryProvider`, giving context memory a stable provider contract without
   changing current prompt context output.
+- Knowledge curation suggestion pipeline for Project QA. It proposes
+  human-reviewed KB follow-up candidates when external evidence fills a local
+  KB gap, but never writes files or mutates the KB automatically.
 
 ### Changed
 
@@ -48,6 +51,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Context Bundle long-term memory recall now goes through
   `SessionLongTermMemoryProvider`; the returned `long_term_memory` payload is
   intentionally unchanged.
+- Project QA responses now include `knowledge_curation` diagnostics in
+  `data` and `retrieval_trace`; this is suggestion-only metadata for backend
+  maintenance/debugging.
 - `TaskService._execute_route()` now delegates task selection to
   `RouteExecutionDispatcher` while preserving existing response contracts and
   concrete executor behavior.
