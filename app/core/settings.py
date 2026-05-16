@@ -101,6 +101,7 @@ class Settings(BaseSettings):
     web_memory_max_results: int = 5
     web_memory_max_entries: int = 200
     web_memory_min_score: float = 0.08
+    web_memory_fts_enabled: bool = True
 
     storage_dir: str = "./storage"
     upload_dir: str = "./storage/uploads"

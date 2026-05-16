@@ -96,6 +96,47 @@ def test_web_memory_stores_recalls_and_accepts_feedback() -> None:
     assert recalled_after_feedback["items"][0]["helpful_count"] == 1
 
 
+def test_web_memory_recall_uses_fts5_or_safe_fallback() -> None:
+    with _memory_session() as session:
+        service = WebMemoryService(
+            session,
+            Settings(_env_file=None, web_memory_enabled=True, web_memory_ttl_days=7),
+        )
+
+        service.remember_web_search_result(query="UE Enhanced Input", web_search=_web_search_result())
+        recalled = service.recall(query="Enhanced Input Mapping Context")
+
+    assert recalled["status"] == "completed"
+    assert recalled["items"]
+    assert recalled["summary"]["search_mode"] in {"sqlite_fts5", "python_token_fallback"}
+    assert recalled["summary"]["fts5"]["enabled"] is True
+
+
+def test_web_memory_recall_can_disable_fts5() -> None:
+    with _memory_session() as session:
+        service = WebMemoryService(
+            session,
+            Settings(
+                _env_file=None,
+                web_memory_enabled=True,
+                web_memory_ttl_days=7,
+                web_memory_fts_enabled=False,
+            ),
+        )
+
+        service.remember_web_search_result(query="UE Enhanced Input", web_search=_web_search_result())
+        recalled = service.recall(query="Enhanced Input Mapping Context")
+
+    assert recalled["status"] == "completed"
+    assert recalled["items"]
+    assert recalled["summary"]["search_mode"] == "python_token"
+    assert recalled["summary"]["fts5"] == {
+        "enabled": False,
+        "used": False,
+        "reason": "disabled_by_settings",
+    }
+
+
 def test_project_qa_reuses_web_memory_before_new_web_search() -> None:
     runtime_root = _runtime_root("web-memory-project-qa")
     shutil.rmtree(runtime_root, ignore_errors=True)

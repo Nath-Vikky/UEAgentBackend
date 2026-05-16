@@ -3181,6 +3181,7 @@ WEB_MEMORY_TTL_DAYS=30
 WEB_MEMORY_MAX_RESULTS=5
 WEB_MEMORY_MAX_ENTRIES=200
 WEB_MEMORY_MIN_SCORE=0.08
+WEB_MEMORY_FTS_ENABLED=true
 ```
 
 Project QA 证据顺序现在是：
@@ -3209,6 +3210,18 @@ RAG / lexical retrieval
 - `debug_view.web_memory_store`
 - `data.retrieval_quality_gate.web_memory_retrieved_count`
 - `data.source_arbitration.source_counts.web_memory`
+
+### Web Memory FTS5 召回
+
+`WEB_MEMORY_FTS_ENABLED=true` 时，SQLite 环境会尝试创建本地 FTS5 虚拟表，用于对已缓存的 Web Search 摘要做全文召回。它只索引 `entry_id/title/domain/snippet`，不保存网页全文，也不会写入正式知识库。
+
+兼容边界：
+
+- 如果当前 SQLite 不支持 FTS5，后端自动回退到原来的 Python token 召回。
+- 如果 FTS5 对中文或特殊查询没有命中，后端也会回退到 Python token 召回。
+- `data.web_memory.summary.search_mode` 会显示 `sqlite_fts5`、`python_token_fallback` 或 `python_token`。
+- `data.web_memory.summary.fts5` 会显示是否启用、是否命中、同步/搜索诊断。
+- UE 前端不需要修改；这些字段主要给 Debug View 和后端调试使用。
 
 ## 2026-05-15 Retrieval Pipeline W5A 小重构
 

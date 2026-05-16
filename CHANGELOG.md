@@ -31,6 +31,8 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Tool execution context contracts: `ToolContext`, `ToolResult`, and
   `CompositeToolResult` define a stable input/output envelope for future
   executor and MCP transport migration without changing current tool behavior.
+- Optional SQLite FTS5 Web Memory recall path with automatic Python-token
+  fallback for environments where FTS5 is unavailable or unsuitable.
 
 ### Changed
 
@@ -38,6 +40,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   observations for future scoring-router migration and regression analysis.
 - Tool Registry capability/debug cards now expose optional `executor` metadata,
   and startup contract validation rejects blank executor strings.
+- Web Memory recall now reports `summary.search_mode` and `summary.fts5`
+  diagnostics while preserving the existing API shape.
 - `TaskService._execute_route()` now delegates task selection to
   `RouteExecutionDispatcher` while preserving existing response contracts and
   concrete executor behavior.

@@ -20,6 +20,10 @@ from app.db.repositories.web_memory import (
     save_web_memory_entry,
     trim_web_memory_entries,
 )
+from app.db.repositories.web_memory_fts import (
+    search_web_memory_fts_entries,
+    sync_web_memory_fts_entries,
+)
 from app.rag.indexing.sparse import tokenize_query
 from app.utils.time import now_utc
 
@@ -45,6 +49,7 @@ class WebMemoryService:
             "max_results": self.settings.web_memory_max_results,
             "max_entries": self.settings.web_memory_max_entries,
             "min_score": self.settings.web_memory_min_score,
+            "fts_enabled": self.settings.web_memory_fts_enabled,
             "stores_full_web_pages": False,
             "writes_to_kb": False,
         }
@@ -72,6 +77,7 @@ class WebMemoryService:
         now = now_utc()
         expires_at = now + timedelta(days=max(self.settings.web_memory_ttl_days, 1))
         query_terms = _query_terms(query)
+        changed_entries: list[WebMemoryEntryModel] = []
         for item in items:
             score = _coerce_score(item.get("score"))
             if score < self.settings.web_memory_min_score:
@@ -110,7 +116,11 @@ class WebMemoryService:
             entry.expires_at = expires_at
             entry.updated_at = now
             save_web_memory_entry(self.db, entry)
+            changed_entries.append(entry)
 
+        fts_sync = {"available": False, "reason": "disabled_by_settings", "synced_count": 0}
+        if self.settings.web_memory_fts_enabled and changed_entries:
+            fts_sync = sync_web_memory_fts_entries(self.db, changed_entries)
         trimmed = trim_web_memory_entries(self.db, max_entries=self.settings.web_memory_max_entries)
         return {
             "status": "completed",
@@ -120,6 +130,7 @@ class WebMemoryService:
             "skipped_low_score_count": skipped_low_score,
             "deleted_expired_count": deleted_expired,
             "trimmed_count": trimmed,
+            "fts_sync": fts_sync,
             "writes_to_kb": False,
         }
 
@@ -143,15 +154,48 @@ class WebMemoryService:
             domain_hints=domain_hints or [],
             limit=max_candidates,
         )
-        scored = [
-            (entry, _recall_score(entry, terms))
-            for entry in entries
-        ]
-        ranked = [
-            (entry, score)
-            for entry, score in sorted(scored, key=lambda item: item[1], reverse=True)
-            if score > 0
-        ][: max(1, min(limit or self.settings.web_memory_max_results, 10))]
+        result_limit = max(1, min(limit or self.settings.web_memory_max_results, 10))
+        ranked: list[tuple[WebMemoryEntryModel, float]] = []
+        search_mode = "python_token"
+        fts5 = {
+            "enabled": self.settings.web_memory_fts_enabled,
+            "used": False,
+            "reason": "disabled_by_settings" if not self.settings.web_memory_fts_enabled else "not_attempted",
+        }
+        if self.settings.web_memory_fts_enabled:
+            fts_sync = sync_web_memory_fts_entries(self.db, entries)
+            fts_result = search_web_memory_fts_entries(
+                self.db,
+                terms=terms,
+                domain_hints=domain_hints or [],
+                limit=result_limit,
+            )
+            fts5 = {
+                "enabled": True,
+                "used": bool(fts_result.items),
+                "reason": fts_result.reason,
+                "sync": fts_sync,
+                "search": fts_result.diagnostics,
+            }
+            if fts_result.items:
+                ranked = [
+                    (
+                        entry,
+                        max(_recall_score(entry, terms), min(1.0, fts_score * 0.85 + entry.quality_score * 0.15)),
+                    )
+                    for entry, fts_score in fts_result.items
+                ][:result_limit]
+                search_mode = "sqlite_fts5"
+
+        if not ranked:
+            scored = [(entry, _recall_score(entry, terms)) for entry in entries]
+            ranked = [
+                (entry, score)
+                for entry, score in sorted(scored, key=lambda item: item[1], reverse=True)
+                if score > 0
+            ][:result_limit]
+            if self.settings.web_memory_fts_enabled:
+                search_mode = "python_token_fallback"
         now = now_utc()
         for entry, _score in ranked:
             entry.last_accessed_at = now
@@ -171,6 +215,8 @@ class WebMemoryService:
                 "deleted_expired_count": deleted_expired,
                 "domain_hints": domain_hints or [],
                 "terms": terms,
+                "search_mode": search_mode,
+                "fts5": fts5,
                 "writes_to_kb": False,
             },
         }
@@ -253,6 +299,8 @@ class WebMemoryService:
                 "deleted_expired_count": 0,
                 "domain_hints": [],
                 "terms": _query_terms(query),
+                "search_mode": "none",
+                "fts5": {"enabled": False, "used": False, "reason": reason},
                 "writes_to_kb": False,
             },
         }

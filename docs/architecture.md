@@ -103,7 +103,9 @@ Web Search
 Web Memory
   app/services/web_memory_service.py
   Optional local cache for controlled Web Search summaries. Disabled by default;
-  stores URL/domain/snippet metadata only and never writes into the KB.
+  stores URL/domain/snippet metadata only and never writes into the KB. SQLite
+  FTS5 is used as an optional recall accelerator when available; the Python
+  token scorer remains the compatibility fallback.
 
 DB
   app/db/*
