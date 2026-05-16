@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.task_handlers.base import TaskExecutionContext, TaskHandler
+from app.services.task_handlers.config_validate import ConfigValidateHandler
 from app.services.task_handlers.direct_answer import DirectAnswerHandler
 
 
@@ -105,18 +106,6 @@ class PerfAnalyzeHandler:
             routing=context.routing,
             task_id=context.task_id,
             run_id=context.run_id,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
-        )
-
-
-class ConfigValidateHandler:
-    handler_id = "config_validate"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_config_validate(
-            request=context.request,
-            routing=context.routing,
             trace_id=context.trace_id,
             output_language=context.output_language,
         )

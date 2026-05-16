@@ -11,6 +11,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   the first low-risk step toward splitting `TaskService` into strategy handlers.
 - Concrete `DirectAnswerHandler`, moving live direct-chat execution out of
   `TaskService` while keeping the existing `agent_chat` response contract.
+- Concrete `ConfigValidateHandler`, moving deterministic config validation out
+  of `TaskService` while preserving report artifacts and debug output.
 
 ### Changed
 
@@ -19,6 +21,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   concrete executor behavior.
 - Direct free-chat execution is now owned by the task handler layer; RAG,
   Project Inventory, and tool-calling paths are still unchanged.
+- Config validation execution is now owned by the task handler layer; it still
+  uses the same deterministic `validate_design_config` tool and response shape.
 
 ## 0.1.4 - 2026-05-16
 

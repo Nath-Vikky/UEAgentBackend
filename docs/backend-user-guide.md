@@ -3315,3 +3315,22 @@ Validation:
 ```
 
 UE frontend impact: no mandatory change.
+
+## 2026-05-16 Config Validate Handler migration
+
+This is another internal backend refactor. `config_validate` now runs through `app/services/task_handlers/config_validate.py`.
+
+What changed:
+
+- `ConfigValidateHandler` owns deterministic schema validation, user-facing summary, debug retrieval trace, and report artifact metadata.
+- The handler still calls the same `validate_design_config` tool.
+- `TaskService` no longer keeps a dedicated `_execute_config_validate()` method.
+- UE frontend request and response contracts are unchanged.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py::test_config_validate_returns_report_and_artifact tests\unit\test_task_route_dispatcher.py -q
+```
+
+UE frontend impact: no mandatory change.
