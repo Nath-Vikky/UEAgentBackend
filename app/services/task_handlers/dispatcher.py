@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.task_handlers.base import TaskExecutionContext, TaskHandler
+from app.services.task_handlers.direct_answer import DirectAnswerHandler
 
 
 class EditorOperationProposalHandler:
@@ -27,23 +28,6 @@ class ProjectQAHandler:
 
     def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
         return host._execute_project_qa_live(
-            request=context.request,
-            routing=context.routing,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
-            chat_config=context.chat_config,
-            context_bundle=context.context_bundle,
-            stream_sink=context.stream_sink,
-            run_id=context.run_id,
-            task_id=context.task_id,
-        )
-
-
-class DirectAnswerHandler:
-    handler_id = "direct_answer"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_direct_answer_live(
             request=context.request,
             routing=context.routing,
             trace_id=context.trace_id,

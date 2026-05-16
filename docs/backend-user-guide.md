@@ -3288,3 +3288,30 @@ UE 前端不需要修改；现有 `data.web_search` / `debug_view.web_search` �
 ```
 
 本轮不要求 UE 前端修改；如果不显示这些字段，原有回答和引用渲染仍可继续工作。
+
+## 2026-05-16 Direct Answer Handler migration
+
+This is an internal backend refactor only. The `direct_answer` free-chat path now runs through `app/services/task_handlers/direct_answer.py` instead of a large method inside `TaskService`.
+
+What changed:
+
+- `RouteExecutionDispatcher` still selects the route handler.
+- `DirectAnswerHandler` now owns live LLM direct-chat execution, fallback text, self-reflection, `retrieval_trace.mode=not_used`, and `llm_direct_answer` debug tool output.
+- `TaskService` still owns task lifecycle, persistence, events, context helpers, runtime profile loading, and response composition.
+- UE frontend request and response contracts are unchanged.
+
+Why this matters:
+
+- Free chat is now a real extracted handler rather than only an adapter call.
+- Future handlers can be migrated one by one without a large risky rewrite.
+- Debug View can continue to read `debug_view.task_handler.handler_id=direct_answer`.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check app tests scripts
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_task_route_dispatcher.py tests\integration\test_system_and_tasks.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+UE frontend impact: no mandatory change.

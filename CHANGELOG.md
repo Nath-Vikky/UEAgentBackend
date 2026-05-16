@@ -9,12 +9,16 @@ Changelog. Dates use `YYYY-MM-DD`.
 
 - Task handler adapter layer with a route execution dispatcher, establishing
   the first low-risk step toward splitting `TaskService` into strategy handlers.
+- Concrete `DirectAnswerHandler`, moving live direct-chat execution out of
+  `TaskService` while keeping the existing `agent_chat` response contract.
 
 ### Changed
 
 - `TaskService._execute_route()` now delegates task selection to
   `RouteExecutionDispatcher` while preserving existing response contracts and
   concrete executor behavior.
+- Direct free-chat execution is now owned by the task handler layer; RAG,
+  Project Inventory, and tool-calling paths are still unchanged.
 
 ## 0.1.4 - 2026-05-16
 
