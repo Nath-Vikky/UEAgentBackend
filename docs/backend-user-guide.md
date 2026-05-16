@@ -3344,6 +3344,34 @@ Validation:
 .\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py tests\integration\test_multi_agent_chain.py tests\unit\test_task_route_dispatcher.py -q
 ```
 
+## 2026-05-16 Workflow-backed Handler migration
+
+Config Generate and Performance Analyze now have concrete task handlers:
+
+- `app/services/task_handlers/config_generate.py`
+- `app/services/task_handlers/perf_analyze.py`
+- `app/services/task_handlers/view_helpers.py`
+
+What changed:
+
+- `ConfigGenerateHandler` owns config-generation workflow response shaping.
+- `PerfAnalyzeHandler` owns performance-analysis workflow response shaping.
+- Both handlers still call the existing workflow graph functions.
+- Shared citation preview shaping for task handlers lives in `view_helpers.py`.
+- `TaskService` no longer keeps `_execute_config_generate()` or `_execute_perf_analyze()`.
+
+What did not change:
+
+- Request and response contracts are unchanged.
+- Workflow graph implementations are unchanged.
+- UE frontend does not need to change.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py tests\unit\test_task_route_dispatcher.py -q
+```
+
 ## 2026-05-16 Config Validate Handler migration
 
 This is another internal backend refactor. `config_validate` now runs through `app/services/task_handlers/config_validate.py`.

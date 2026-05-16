@@ -62,7 +62,8 @@ Task Handlers
   call the existing execution methods first; concrete logic can move into each
   handler in later migrations. Concrete migrated handlers now include
   `DirectAnswerHandler`, `ConfigValidateHandler`, `CodeReviewHandler`,
-  `LogsAnalyzeHandler`, and `CodeGenerateHandler`.
+  `LogsAnalyzeHandler`, `CodeGenerateHandler`, `ConfigGenerateHandler`, and
+  `PerfAnalyzeHandler`.
 
 RAG
   app/rag/*

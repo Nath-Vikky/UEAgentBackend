@@ -5,9 +5,11 @@ from typing import Any
 from app.services.task_handlers.base import TaskExecutionContext, TaskHandler
 from app.services.task_handlers.code_generate import CodeGenerateHandler
 from app.services.task_handlers.code_review import CodeReviewHandler
+from app.services.task_handlers.config_generate import ConfigGenerateHandler
 from app.services.task_handlers.config_validate import ConfigValidateHandler
 from app.services.task_handlers.direct_answer import DirectAnswerHandler
 from app.services.task_handlers.logs_analyze import LogsAnalyzeHandler
+from app.services.task_handlers.perf_analyze import PerfAnalyzeHandler
 
 
 class EditorOperationProposalHandler:
@@ -41,34 +43,6 @@ class ProjectQAHandler:
             stream_sink=context.stream_sink,
             run_id=context.run_id,
             task_id=context.task_id,
-        )
-
-
-class ConfigGenerateHandler:
-    handler_id = "config_generate"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_config_generate(
-            request=context.request,
-            routing=context.routing,
-            task_id=context.task_id,
-            run_id=context.run_id,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
-        )
-
-
-class PerfAnalyzeHandler:
-    handler_id = "perf_analyze"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_perf_analyze(
-            request=context.request,
-            routing=context.routing,
-            task_id=context.task_id,
-            run_id=context.run_id,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
         )
 
 

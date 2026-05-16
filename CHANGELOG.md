@@ -15,6 +15,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   of `TaskService` while preserving report artifacts and debug output.
 - Concrete executor-backed handlers for Code Review, Logs Analyze, and Code
   Generate, moving thin skill orchestration wrappers out of `TaskService`.
+- Concrete workflow-backed handlers for Config Generate and Performance
+  Analyze, plus shared task-handler citation preview helpers.
 
 ### Changed
 
@@ -27,6 +29,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   uses the same deterministic `validate_design_config` tool and response shape.
 - Code Review, Logs Analyze, and Code Generate still use their existing skill
   executors and multi-agent chain; only the task-handler ownership changed.
+- Config Generate and Performance Analyze still use the existing workflow graph
+  functions; only task-handler ownership changed.
 
 ## 0.1.4 - 2026-05-16
 
