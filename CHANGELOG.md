@@ -56,6 +56,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Offline Router Signal eval dataset and runner for measuring heuristic route
   accuracy, scoring-shadow stability, recommendation accuracy, and override
   safety.
+- Web Memory recall ranking diagnostics, including per-item ranking breakdown
+  and summary ranking policy for lexical, quality, feedback, and FTS5 blend
+  scoring.
 
 ### Changed
 
@@ -101,6 +104,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   `signal_router_override_applied=false`; default routing remains
   `compatibility_observer`.
 - Regression suite now includes `scripts/run_router_signal_eval.py`.
+- Web Memory response shape is backward compatible; `items[].ranking` and
+  `summary.ranking_policy` are additive diagnostics.
 
 ## 0.1.4 - 2026-05-16
 

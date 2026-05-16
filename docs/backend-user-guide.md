@@ -3251,7 +3251,41 @@ RAG / lexical retrieval
 - 如果 FTS5 对中文或特殊查询没有命中，后端也会回退到 Python token 召回。
 - `data.web_memory.summary.search_mode` 会显示 `sqlite_fts5`、`python_token_fallback` 或 `python_token`。
 - `data.web_memory.summary.fts5` 会显示是否启用、是否命中、同步/搜索诊断。
+- `data.web_memory.summary.ranking_policy` 会显示 Web Memory 排序公式。
+- `data.web_memory.items[].ranking` 会显示每条缓存证据的排序解释，例如 `matched_terms`、`lexical_score`、`quality_score`、`feedback_boost`、`fts_score`、`score_source`。
 - UE 前端不需要修改；这些字段主要给 Debug View 和后端调试使用。
+
+### Web Memory Ranking Diagnostics
+
+Web Memory recall now returns additive ranking diagnostics.
+
+New fields:
+
+- `data.web_memory.summary.ranking_policy`
+- `data.web_memory.items[].ranking`
+
+Ranking breakdown includes:
+
+- `score`：最终用于排序的分数。
+- `score_source`：`python_token` 或 `fts5_blend`。
+- `matched_terms` / `matched_term_count`：query 中哪些 token 命中标题、摘要或域名。
+- `lexical_score`：词法命中比例。
+- `quality_score` / `source_score`：来源质量与原始搜索分数。
+- `helpful_count` / `unhelpful_count` / `feedback_boost`：用户反馈对排序的影响。
+- `fts_score` / `fts_blended_score`：FTS5 命中时的辅助分数。
+
+Boundary:
+
+- 不写入正式知识库。
+- 不抓取网页全文。
+- 不改变 Web Memory API 旧字段。
+- 不要求 UE 前端修改；Debug View 可选展示 ranking breakdown。
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_web_memory_service.py tests\unit\test_memory_providers.py -q
+```
 
 ### Knowledge Curation 建议
 

@@ -61,6 +61,37 @@ def _web_search_result() -> dict:
     }
 
 
+def _multi_web_search_result() -> dict:
+    return {
+        "provider": "mock",
+        "status": "completed",
+        "reason": "matched",
+        "trigger_reason": "explicit_user_request",
+        "items": [
+            {
+                "rank": 1,
+                "title": "Official Enhanced Input",
+                "url": "https://dev.epicgames.com/enhanced-input",
+                "domain": "dev.epicgames.com",
+                "snippet": "Enhanced Input uses Input Actions and Mapping Contexts.",
+                "source_type": "official",
+                "score": 0.82,
+                "provider": "mock",
+            },
+            {
+                "rank": 2,
+                "title": "Community Enhanced Input Note",
+                "url": "https://example.com/enhanced-input-note",
+                "domain": "example.com",
+                "snippet": "Enhanced Input Mapping Context setup with Input Actions.",
+                "source_type": "community",
+                "score": 0.4,
+                "provider": "mock",
+            },
+        ],
+    }
+
+
 def test_web_memory_disabled_does_not_store_or_recall() -> None:
     with _memory_session() as session:
         service = WebMemoryService(session, Settings(_env_file=None, web_memory_enabled=False))
@@ -135,6 +166,36 @@ def test_web_memory_recall_can_disable_fts5() -> None:
         "used": False,
         "reason": "disabled_by_settings",
     }
+    assert "ranking_policy" in recalled["summary"]
+    assert "ranking" in recalled["items"][0]
+
+
+def test_web_memory_ranking_diagnostics_explain_feedback_boost() -> None:
+    with _memory_session() as session:
+        service = WebMemoryService(
+            session,
+            Settings(
+                _env_file=None,
+                web_memory_enabled=True,
+                web_memory_ttl_days=7,
+                web_memory_fts_enabled=False,
+            ),
+        )
+
+        service.remember_web_search_result(query="UE Enhanced Input", web_search=_multi_web_search_result())
+        first_recall = service.recall(query="Enhanced Input Mapping Context", limit=2)
+        community_entry = next(
+            item for item in first_recall["items"] if item["title"] == "Community Enhanced Input Note"
+        )
+        for _ in range(3):
+            service.record_feedback(entry_id=community_entry["entry_id"], rating="helpful", task_id="task_1")
+        recalled = service.recall(query="Enhanced Input Mapping Context", limit=2)
+
+    top = recalled["items"][0]
+    assert top["title"] == "Community Enhanced Input Note"
+    assert top["ranking"]["score_source"] == "python_token"
+    assert top["ranking"]["feedback_boost"] > 0
+    assert top["ranking"]["matched_term_count"] >= 3
 
 
 def test_project_qa_reuses_web_memory_before_new_web_search() -> None:

@@ -155,7 +155,7 @@ class WebMemoryService:
             limit=max_candidates,
         )
         result_limit = max(1, min(limit or self.settings.web_memory_max_results, 10))
-        ranked: list[tuple[WebMemoryEntryModel, float]] = []
+        ranked: list[tuple[WebMemoryEntryModel, dict[str, Any]]] = []
         search_mode = "python_token"
         fts5 = {
             "enabled": self.settings.web_memory_fts_enabled,
@@ -181,23 +181,23 @@ class WebMemoryService:
                 ranked = [
                     (
                         entry,
-                        max(_recall_score(entry, terms), min(1.0, fts_score * 0.85 + entry.quality_score * 0.15)),
+                        _recall_ranking(entry, terms, fts_score=fts_score),
                     )
                     for entry, fts_score in fts_result.items
                 ][:result_limit]
                 search_mode = "sqlite_fts5"
 
         if not ranked:
-            scored = [(entry, _recall_score(entry, terms)) for entry in entries]
+            scored = [(entry, _recall_ranking(entry, terms)) for entry in entries]
             ranked = [
-                (entry, score)
-                for entry, score in sorted(scored, key=lambda item: item[1], reverse=True)
-                if score > 0
+                (entry, ranking)
+                for entry, ranking in sorted(scored, key=lambda item: float(item[1]["score"]), reverse=True)
+                if ranking["score"] > 0
             ][:result_limit]
             if self.settings.web_memory_fts_enabled:
                 search_mode = "python_token_fallback"
         now = now_utc()
-        for entry, _score in ranked:
+        for entry, _ranking in ranked:
             entry.last_accessed_at = now
             self.db.add(entry)
         if ranked:
@@ -208,7 +208,10 @@ class WebMemoryService:
             "mode": "web_memory",
             "status": "completed",
             "reason": "matched" if ranked else "no_matching_memory",
-            "items": [_entry_to_item(entry, score=score, rank=index) for index, (entry, score) in enumerate(ranked, 1)],
+            "items": [
+                _entry_to_item(entry, score=ranking["score"], rank=index, ranking=ranking)
+                for index, (entry, ranking) in enumerate(ranked, 1)
+            ],
             "summary": {
                 "result_count": len(ranked),
                 "candidate_count": len(entries),
@@ -217,6 +220,7 @@ class WebMemoryService:
                 "terms": terms,
                 "search_mode": search_mode,
                 "fts5": fts5,
+                "ranking_policy": _ranking_policy(),
                 "writes_to_kb": False,
             },
         }
@@ -301,6 +305,7 @@ class WebMemoryService:
                 "terms": _query_terms(query),
                 "search_mode": "none",
                 "fts5": {"enabled": False, "used": False, "reason": reason},
+                "ranking_policy": _ranking_policy(),
                 "writes_to_kb": False,
             },
         }
@@ -310,8 +315,14 @@ def build_web_memory_status(db: Session, settings: Settings) -> dict[str, Any]:
     return WebMemoryService(db, settings).status()
 
 
-def _entry_to_item(entry: WebMemoryEntryModel, *, score: float, rank: int) -> dict[str, Any]:
-    return {
+def _entry_to_item(
+    entry: WebMemoryEntryModel,
+    *,
+    score: float,
+    rank: int,
+    ranking: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    item = {
         "rank": rank,
         "entry_id": entry.entry_id,
         "title": entry.title,
@@ -328,6 +339,9 @@ def _entry_to_item(entry: WebMemoryEntryModel, *, score: float, rank: int) -> di
         "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
         "retrieval_source": "web_memory",
     }
+    if ranking:
+        item["ranking"] = ranking
+    return item
 
 
 def _query_terms(query: str) -> list[str]:
@@ -341,16 +355,81 @@ def _query_terms(query: str) -> list[str]:
     return terms
 
 
-def _recall_score(entry: WebMemoryEntryModel, terms: list[str]) -> float:
+def _recall_ranking(
+    entry: WebMemoryEntryModel,
+    terms: list[str],
+    *,
+    fts_score: float | None = None,
+) -> dict[str, Any]:
     if not terms:
-        return 0.0
+        return {
+            "score": 0.0,
+            "score_source": "empty_query",
+            "matched_terms": [],
+            "lexical_score": 0.0,
+            "quality_score": entry.quality_score,
+            "source_score": entry.source_score,
+            "feedback_boost": 0.0,
+            "fts_score": fts_score,
+        }
     text = f"{entry.title}\n{entry.snippet}\n{entry.domain}".lower()
-    matched = sum(1 for term in terms if re.search(re.escape(term), text))
-    lexical = matched / max(len(terms), 1)
+    matched_terms = [term for term in terms if re.search(re.escape(term), text)]
+    lexical = len(matched_terms) / max(len(terms), 1)
     if lexical <= 0:
-        return 0.0
-    feedback_boost = min((entry.helpful_count or 0) * 0.03, 0.15) - min((entry.unhelpful_count or 0) * 0.05, 0.25)
-    return max(0.0, min(1.0, lexical * 0.7 + entry.quality_score * 0.25 + feedback_boost))
+        python_score = 0.0
+    else:
+        feedback_boost = min((entry.helpful_count or 0) * 0.03, 0.15) - min(
+            (entry.unhelpful_count or 0) * 0.05,
+            0.25,
+        )
+        python_score = max(0.0, min(1.0, lexical * 0.7 + entry.quality_score * 0.25 + feedback_boost))
+    feedback_boost = min((entry.helpful_count or 0) * 0.03, 0.15) - min(
+        (entry.unhelpful_count or 0) * 0.05,
+        0.25,
+    )
+    fts_blended = None
+    if fts_score is not None:
+        fts_blended = min(1.0, max(0.0, fts_score) * 0.85 + entry.quality_score * 0.15)
+    final_score = max(python_score, fts_blended or 0.0)
+    score_source = "fts5_blend" if fts_blended is not None and fts_blended >= python_score else "python_token"
+    return {
+        "score": round(final_score, 4),
+        "score_source": score_source,
+        "matched_terms": matched_terms[:12],
+        "matched_term_count": len(matched_terms),
+        "query_term_count": len(terms),
+        "lexical_score": round(lexical, 4),
+        "quality_score": entry.quality_score,
+        "source_score": entry.source_score,
+        "feedback_boost": round(feedback_boost, 4),
+        "helpful_count": entry.helpful_count or 0,
+        "unhelpful_count": entry.unhelpful_count or 0,
+        "fts_score": round(fts_score, 4) if fts_score is not None else None,
+        "fts_blended_score": round(fts_blended, 4) if fts_blended is not None else None,
+    }
+
+
+def _ranking_policy() -> dict[str, Any]:
+    return {
+        "python_token": {
+            "lexical_weight": 0.7,
+            "quality_weight": 0.25,
+            "helpful_boost_per_vote": 0.03,
+            "helpful_boost_max": 0.15,
+            "unhelpful_penalty_per_vote": 0.05,
+            "unhelpful_penalty_max": 0.25,
+        },
+        "fts5_blend": {
+            "fts_weight": 0.85,
+            "quality_weight": 0.15,
+            "final_score": "max(python_token_score, fts5_blended_score)",
+        },
+    }
+
+
+def _recall_score(entry: WebMemoryEntryModel, terms: list[str]) -> float:
+    """Compatibility helper for tests or callers that only need the score."""
+    return float(_recall_ranking(entry, terms)["score"])
 
 
 def _quality_score(source_score: float, helpful_count: int, unhelpful_count: int) -> float:
