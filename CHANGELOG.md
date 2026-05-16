@@ -50,6 +50,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Task stream/persisted event envelope helpers extracted into
   `app/services/task_events.py`, keeping SSE and stored task-event sequence
   construction out of `TaskService`.
+- Router SignalDetector can now run in optional `scoring_shadow` mode via
+  `ROUTER_SIGNAL_MODE=scoring_shadow`, producing a scored route recommendation
+  without overriding the existing heuristic route.
 
 ### Changed
 
@@ -91,6 +94,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   helper methods.
 - SSE stream events and persisted task events keep the same response shape, but
   their envelope construction is now owned by `app/services/task_events.py`.
+- Router diagnostics now include `signal_router_recommendation` and
+  `signal_router_override_applied=false`; default routing remains
+  `compatibility_observer`.
 
 ## 0.1.4 - 2026-05-16
 

@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     rag_rerank_top_n: int = 20
     rag_fallback_mode: str = "lexical_only"
 
+    router_signal_mode: Literal["compatibility_observer", "scoring_shadow"] = "compatibility_observer"
+    router_signal_min_confidence: float = 0.72
+    router_signal_min_margin: float = 8.0
+
     web_search_enabled: bool = False
     web_search_provider: str = "disabled"
     web_search_max_queries: int = 1

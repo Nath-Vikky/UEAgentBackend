@@ -53,3 +53,20 @@ def test_signal_detectors_can_observe_ue_knowledge_question() -> None:
     detectors = [item["detector"] for item in result["items"]]
     assert "ue_knowledge" in detectors
     assert result["top"]["route_hint"] == "project_qa"
+
+
+def test_signal_detectors_build_scoring_shadow_recommendation() -> None:
+    request = _request("List current project Blueprint assets")
+
+    result = evaluate_signal_detectors(
+        "List current project Blueprint assets",
+        request,
+        legacy_signals={"project_inventory_query": True},
+        mode="scoring_shadow",
+    )
+
+    assert result["mode"] == "scoring_shadow"
+    assert result["recommendation"]["status"] == "eligible"
+    assert result["recommendation"]["route_hint"] == "project_qa"
+    assert result["recommendation"]["selected_tool_id"] == "query_project_inventory"
+    assert result["recommendation"]["override_applied"] is False

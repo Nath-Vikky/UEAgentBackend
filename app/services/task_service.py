@@ -720,7 +720,13 @@ class TaskService:
             profile_id=request.runtime_options.profile_id,
         )
         chat_config = self._resolve_chat_config(request)
-        routing = classify_request(request, session_preference=session_model.preferred_output_language)
+        routing = classify_request(
+            request,
+            session_preference=session_model.preferred_output_language,
+            signal_mode=self.settings.router_signal_mode,
+            signal_min_confidence=self.settings.router_signal_min_confidence,
+            signal_min_margin=self.settings.router_signal_min_margin,
+        )
         routing = self._refine_agent_chat_route(request=request, routing=routing, chat_config=chat_config)
         preferred_language_to_store = (
             None

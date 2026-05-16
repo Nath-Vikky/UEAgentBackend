@@ -151,6 +151,24 @@ def test_router_keeps_existing_decision_while_exposing_signal_trace() -> None:
     assert routing["route"]["signal_detector_trace"]
 
 
+def test_router_can_emit_scoring_shadow_recommendation_without_overriding_route() -> None:
+    request = _request(
+        content="List current project Blueprint assets",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request, signal_mode="scoring_shadow")
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["signal_detector_mode"] == "scoring_shadow"
+    assert routing["route"]["signal_router_recommendation"]["status"] == "eligible"
+    assert routing["route"]["signal_router_recommendation"]["route_hint"] == "project_qa"
+    assert routing["route"]["signal_router_override_applied"] is False
+
+
 def test_auto_language_defaults_to_chinese_even_for_english_question() -> None:
     request = _request(content="Explain dependency injection in simple terms.")
 

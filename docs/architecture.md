@@ -283,6 +283,19 @@ Implementation boundary:
   stream events, audit data, and route dispatch, but no longer owns Project QA
   tool-plan helpers.
 
+## Router Signal Scoring
+
+`app/agent/signal_detectors.py` remains a safe shadow layer by default:
+
+- `compatibility_observer`: existing heuristic router decides; detectors only
+  record trace diagnostics.
+- `scoring_shadow`: detectors also produce `signal_router_recommendation`, but
+  still do not override the existing route.
+
+The backend intentionally does not enable route override yet. This keeps the
+stable router path intact while giving us route-diff/eval data for future
+scoring migration.
+
 ## Task Events
 
 `app/services/task_events.py` owns the shared task-event envelope:

@@ -333,6 +333,9 @@ def evaluate_signal_detectors(
     *,
     legacy_signals: DetectorPayload | None = None,
     selected_tool_id: str | None = None,
+    mode: str = "compatibility_observer",
+    min_confidence: float = 0.72,
+    min_margin: float = 8.0,
 ) -> DetectorPayload:
     context = {
         "legacy_signals": legacy_signals or {},
@@ -349,9 +352,63 @@ def evaluate_signal_detectors(
         if result:
             items.append(result)
     items.sort(key=lambda item: (float(item["score"]), int(item["priority"])), reverse=True)
+    recommendation = _signal_router_recommendation(
+        items,
+        mode=mode,
+        min_confidence=min_confidence,
+        min_margin=min_margin,
+    )
     return {
         "items": items,
         "top": items[0] if items else None,
         "errors": errors,
-        "mode": "compatibility_observer",
+        "mode": mode,
+        "recommendation": recommendation,
+    }
+
+
+def _signal_router_recommendation(
+    items: list[DetectorPayload],
+    *,
+    mode: str,
+    min_confidence: float,
+    min_margin: float,
+) -> DetectorPayload:
+    if not items:
+        return {
+            "status": "no_signal",
+            "mode": mode,
+            "route_hint": None,
+            "selected_tool_id": None,
+            "confidence": 0.0,
+            "score_margin": 0.0,
+            "override_eligible": False,
+            "override_applied": False,
+            "thresholds": {
+                "min_confidence": min_confidence,
+                "min_margin": min_margin,
+            },
+        }
+    top = items[0]
+    runner_up = items[1] if len(items) > 1 else None
+    runner_up_score = float(runner_up.get("score") or 0.0) if runner_up else 0.0
+    margin = float(top.get("score") or 0.0) - runner_up_score
+    confidence = float(top.get("confidence") or 0.0)
+    route_hint = top.get("route_hint")
+    override_eligible = bool(route_hint) and confidence >= min_confidence and margin >= min_margin
+    return {
+        "status": "eligible" if override_eligible else "shadow_only",
+        "mode": mode,
+        "route_hint": route_hint,
+        "selected_tool_id": top.get("selected_tool_id"),
+        "detector": top.get("detector"),
+        "confidence": round(confidence, 4),
+        "score": top.get("score"),
+        "score_margin": round(margin, 4),
+        "override_eligible": override_eligible,
+        "override_applied": False,
+        "thresholds": {
+            "min_confidence": min_confidence,
+            "min_margin": min_margin,
+        },
     }

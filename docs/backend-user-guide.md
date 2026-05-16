@@ -3627,6 +3627,47 @@ Validation:
 
 UE frontend impact: no mandatory change. Debug View may optionally display `top_signal_detector.detector` and the detector trace list.
 
+## 2026-05-16 Router SignalDetector S1B scoring shadow
+
+Router SignalDetector now supports an optional scoring shadow mode.
+
+Configuration:
+
+```env
+ROUTER_SIGNAL_MODE=scoring_shadow
+ROUTER_SIGNAL_MIN_CONFIDENCE=0.72
+ROUTER_SIGNAL_MIN_MARGIN=8.0
+```
+
+Default:
+
+```env
+ROUTER_SIGNAL_MODE=compatibility_observer
+```
+
+Behavior:
+
+- `compatibility_observer` keeps the previous behavior: detectors only expose `signal_detector_trace` and `top_signal_detector`.
+- `scoring_shadow` also exposes `signal_router_recommendation`.
+- Shadow recommendation does not override the existing heuristic router.
+- `signal_router_override_applied` is always `false` in this stage.
+
+Debug fields:
+
+- `route.signal_detector_mode`
+- `route.signal_detector_trace`
+- `route.top_signal_detector`
+- `route.signal_router_recommendation`
+- `route.signal_router_override_applied`
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_router.py tests\unit\test_signal_detectors.py tests\unit\test_settings.py -q
+```
+
+UE frontend impact: no mandatory change. If Debug View wants richer routing diagnostics, display `signal_router_recommendation.status`, `route_hint`, `selected_tool_id`, and `score_margin`.
+
 ## 2026-05-16 Config Validate Handler migration
 
 This is another internal backend refactor. `config_validate` now runs through `app/services/task_handlers/config_validate.py`.

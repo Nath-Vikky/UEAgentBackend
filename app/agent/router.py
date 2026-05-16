@@ -621,12 +621,18 @@ def _with_signal_detector_trace(
     latest_text: str,
     signals: dict[str, Any],
     selected_tool_id: str | None = None,
+    signal_mode: str = "compatibility_observer",
+    signal_min_confidence: float = 0.72,
+    signal_min_margin: float = 8.0,
 ) -> dict[str, Any]:
     detection = evaluate_signal_detectors(
         latest_text,
         request,
         legacy_signals=signals,
         selected_tool_id=selected_tool_id,
+        mode=signal_mode,
+        min_confidence=signal_min_confidence,
+        min_margin=signal_min_margin,
     )
     return {
         **signals,
@@ -634,6 +640,22 @@ def _with_signal_detector_trace(
         "top_signal_detector": detection["top"],
         "signal_detector_errors": detection["errors"],
         "signal_detector_mode": detection["mode"],
+        "signal_router_recommendation": detection["recommendation"],
+    }
+
+
+def _signal_router_debug(signals: dict[str, Any]) -> dict[str, Any]:
+    recommendation = signals.get("signal_router_recommendation") or {
+        "status": "not_evaluated",
+        "mode": signals.get("signal_detector_mode", "not_evaluated"),
+        "override_applied": False,
+    }
+    return {
+        "signal_detector_trace": signals.get("signal_detector_trace", []),
+        "top_signal_detector": signals.get("top_signal_detector"),
+        "signal_detector_mode": signals.get("signal_detector_mode", "not_evaluated"),
+        "signal_router_recommendation": recommendation,
+        "signal_router_override_applied": bool(recommendation.get("override_applied")),
     }
 
 
@@ -674,9 +696,7 @@ def _project_qa_response(
             "project_inventory_query": signals.get("project_inventory_query", False),
             "ue_knowledge_query": signals.get("ue_knowledge_query", False),
             "ue_knowledge_hint_count": signals.get("ue_knowledge_hint_count", 0),
-            "signal_detector_trace": signals.get("signal_detector_trace", []),
-            "top_signal_detector": signals.get("top_signal_detector"),
-            "signal_detector_mode": signals.get("signal_detector_mode", "not_evaluated"),
+            **_signal_router_debug(signals),
         },
     }
 
@@ -716,9 +736,7 @@ def _direct_answer_response(
             "project_inventory_query": signals.get("project_inventory_query", False),
             "ue_knowledge_query": signals.get("ue_knowledge_query", False),
             "ue_knowledge_hint_count": signals.get("ue_knowledge_hint_count", 0),
-            "signal_detector_trace": signals.get("signal_detector_trace", []),
-            "top_signal_detector": signals.get("top_signal_detector"),
-            "signal_detector_mode": signals.get("signal_detector_mode", "not_evaluated"),
+            **_signal_router_debug(signals),
         },
     }
 
@@ -727,6 +745,9 @@ def classify_request(
     request: UnifiedTaskRequest,
     *,
     session_preference: str | None = None,
+    signal_mode: str = "compatibility_observer",
+    signal_min_confidence: float = 0.72,
+    signal_min_margin: float = 8.0,
 ) -> dict[str, Any]:
     messages = request.session.messages
     latest_text = messages[-1].content if messages else str(request.payload.get("user_query") or "")
@@ -748,6 +769,9 @@ def classify_request(
             selected_tool_id="query_project_inventory"
             if signals["project_inventory_query"]
             else "retrieve_project_knowledge",
+            signal_mode=signal_mode,
+            signal_min_confidence=signal_min_confidence,
+            signal_min_margin=signal_min_margin,
         )
         if signals["project_inventory_query"]:
             reason = _localized(
@@ -802,6 +826,9 @@ def classify_request(
         latest_text=latest_text,
         signals=signals,
         selected_tool_id=selected_tool_id,
+        signal_mode=signal_mode,
+        signal_min_confidence=signal_min_confidence,
+        signal_min_margin=signal_min_margin,
     )
 
     if signals["project_inventory_query"]:
@@ -864,9 +891,7 @@ def classify_request(
                 "project_hint_count": signals["project_hint_count"],
                 "context_reference_present": signals["context_reference_present"],
                 "explicit_kb_scope": signals["explicit_kb_scope"],
-                "signal_detector_trace": signals.get("signal_detector_trace", []),
-                "top_signal_detector": signals.get("top_signal_detector"),
-                "signal_detector_mode": signals.get("signal_detector_mode", "not_evaluated"),
+                **_signal_router_debug(signals),
             },
         }
 
