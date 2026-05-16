@@ -14,6 +14,7 @@ UE Editor Plugin
   -> TaskService
   -> Router
   -> Context Bundle / Memory / Active Context
+  -> RouteExecutionDispatcher
   -> Skill Executor or Project QA path
   -> Tool Registry
   -> Tool / RAG / Project Inventory / LLM / Proposal
@@ -52,6 +53,14 @@ Services
   app/services/*
   Business orchestration for KB, LLM, Project Inventory, proposals, editor
   operations, sessions, runtime profiles, and MCP transport.
+
+Task Handlers
+  app/services/task_handlers/*
+  A low-risk adapter layer for route execution. `TaskService` still owns task
+  lifecycle, persistence, events, and response composition, while
+  `RouteExecutionDispatcher` chooses the correct task handler. Current handlers
+  call the existing execution methods first; concrete logic can move into each
+  handler in later migrations.
 
 RAG
   app/rag/*

@@ -3256,4 +3256,35 @@ WEB_SEARCH_TIMEOUT_MS=5000
 
 UE 前端不需要修改；现有 `data.web_search` / `debug_view.web_search` 字段会继续承载 provider、status、reason、summary 和 items。
 
+## 2026-05-16 Task Handler Adapter v1
+
+后端开始推进 Improv1 中的 `TaskService Strategy 拆分`，但采用低风险分阶段迁移，不做一次性大爆炸重构。
+
+当前完成的是第一阶段：
+
+- 新增 `app/services/task_handlers/` 包。
+- 新增 `TaskExecutionContext`，统一描述任务执行所需的 request、routing、task_id、run_id、trace_id、chat_config、context_bundle。
+- 新增 `RouteExecutionDispatcher`，把 `_execute_route()` 中的任务分发逻辑移出 `TaskService`。
+- 当前 handler 是 adapter：先调用现有 `TaskService._execute_*()` 方法，不改变具体业务输出。
+- `debug_view.task_handler` 会记录 `handler_id` 和 `strategy=task_handler_adapter_v1`，方便 Debug View 或复盘时确认本轮由哪个 handler 处理。
+
+为什么先这样做：
+
+- 保持 UE 前端响应契约不变。
+- 保持现有 5 个核心 Skill 行为不变。
+- 先把“选择哪个执行器”的职责从 `TaskService` 拆走，再逐步把 Project QA、Direct Answer、Config Validate 等具体逻辑迁移到独立 handler。
+
+当前不会做：
+
+- 不把 `TaskService` 立刻缩到 200 行。
+- 不改 Router 为 signal detector。
+- 不把 ToolSpec 立即改成全量可执行接口。
+- 不要求 UE 前端修改。
+
+验证命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_task_route_dispatcher.py -q
+```
+
 本轮不要求 UE 前端修改；如果不显示这些字段，原有回答和引用渲染仍可继续工作。

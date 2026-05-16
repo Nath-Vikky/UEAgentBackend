@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+from typing import Any
+
+from app.services.task_handlers.base import TaskExecutionContext, TaskHandler
+
+
+class EditorOperationProposalHandler:
+    handler_id = "editor_operation_proposal"
+
+    def __init__(self, editor_operation_request: Any):
+        self.editor_operation_request = editor_operation_request
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_editor_operation_proposal(
+            request=context.request,
+            routing=context.routing,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+            editor_operation_request=self.editor_operation_request,
+            context_bundle=context.context_bundle,
+        )
+
+
+class ProjectQAHandler:
+    handler_id = "project_qa"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_project_qa_live(
+            request=context.request,
+            routing=context.routing,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+            chat_config=context.chat_config,
+            context_bundle=context.context_bundle,
+            stream_sink=context.stream_sink,
+            run_id=context.run_id,
+            task_id=context.task_id,
+        )
+
+
+class DirectAnswerHandler:
+    handler_id = "direct_answer"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_direct_answer_live(
+            request=context.request,
+            routing=context.routing,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+            chat_config=context.chat_config,
+            context_bundle=context.context_bundle,
+            stream_sink=context.stream_sink,
+            run_id=context.run_id,
+            task_id=context.task_id,
+        )
+
+
+class CodeReviewHandler:
+    handler_id = "code_review"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        if host._multi_agent_requested(request=context.request, routing=context.routing):
+            return host._execute_code_review_multi_agent(
+                request=context.request,
+                routing=context.routing,
+                task_id=context.task_id,
+                run_id=context.run_id,
+                trace_id=context.trace_id,
+                output_language=context.output_language,
+                chat_config=context.chat_config,
+                context_bundle=context.context_bundle,
+            )
+        return host._execute_code_review(
+            request=context.request,
+            routing=context.routing,
+            task_id=context.task_id,
+            run_id=context.run_id,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+            chat_config=context.chat_config,
+            context_bundle=context.context_bundle,
+        )
+
+
+class LogsAnalyzeHandler:
+    handler_id = "logs_analyze"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_logs_analyze(
+            request=context.request,
+            routing=context.routing,
+            task_id=context.task_id,
+            run_id=context.run_id,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+            chat_config=context.chat_config,
+        )
+
+
+class ConfigGenerateHandler:
+    handler_id = "config_generate"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_config_generate(
+            request=context.request,
+            routing=context.routing,
+            task_id=context.task_id,
+            run_id=context.run_id,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+        )
+
+
+class PerfAnalyzeHandler:
+    handler_id = "perf_analyze"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_perf_analyze(
+            request=context.request,
+            routing=context.routing,
+            task_id=context.task_id,
+            run_id=context.run_id,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+        )
+
+
+class ConfigValidateHandler:
+    handler_id = "config_validate"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_config_validate(
+            request=context.request,
+            routing=context.routing,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+        )
+
+
+class AssetsInspectHandler:
+    handler_id = "assets_inspect"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_assets_inspect(
+            request=context.request,
+            routing=context.routing,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+            chat_config=context.chat_config,
+        )
+
+
+class CodeGenerateHandler:
+    handler_id = "code_generate"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_code_generate_v2(
+            request=context.request,
+            routing=context.routing,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+            chat_config=context.chat_config,
+            context_bundle=context.context_bundle,
+        )
+
+
+class PlaceholderTaskHandler:
+    handler_id = "task_placeholder"
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        return host._execute_task_placeholder(
+            request=context.request,
+            routing=context.routing,
+            trace_id=context.trace_id,
+            output_language=context.output_language,
+        )
+
+
+class RouteExecutionDispatcher:
+    """Selects task handlers while preserving the existing TaskService contract.
+
+    This is intentionally an adapter layer first. Concrete execution logic can
+    move from TaskService into each handler in later, smaller migrations.
+    """
+
+    def __init__(self) -> None:
+        self._task_handlers: dict[str, TaskHandler] = {
+            "code_review": CodeReviewHandler(),
+            "logs_analyze": LogsAnalyzeHandler(),
+            "config_generate": ConfigGenerateHandler(),
+            "perf_analyze": PerfAnalyzeHandler(),
+            "config_validate": ConfigValidateHandler(),
+            "assets_inspect": AssetsInspectHandler(),
+            "code_generate": CodeGenerateHandler(),
+        }
+        self._project_qa_handler = ProjectQAHandler()
+        self._direct_answer_handler = DirectAnswerHandler()
+        self._placeholder_handler = PlaceholderTaskHandler()
+
+    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
+        handler = self.select_handler(host, context)
+        result = handler.execute(host, context)
+        self._annotate_handler(result, handler.handler_id)
+        return result
+
+    def select_handler(self, host: Any, context: TaskExecutionContext) -> TaskHandler:
+        editor_operation_request = host._detect_editor_operation_request(context.request)
+        if editor_operation_request:
+            return EditorOperationProposalHandler(editor_operation_request)
+
+        route_type = str(context.routing.get("intent", {}).get("route_type") or "")
+        if route_type == "project_qa":
+            return self._project_qa_handler
+        if route_type == "direct_answer":
+            return self._direct_answer_handler
+        return self._task_handlers.get(context.actual_task_type, self._placeholder_handler)
+
+    @staticmethod
+    def _annotate_handler(result: dict[str, Any], handler_id: str) -> None:
+        debug_view = result.get("debug_view")
+        if isinstance(debug_view, dict):
+            debug_view["task_handler"] = {
+                "handler_id": handler_id,
+                "strategy": "task_handler_adapter_v1",
+            }

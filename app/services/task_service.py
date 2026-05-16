@@ -62,6 +62,7 @@ from app.services.editor_operation_service import (
 )
 from app.services.mcp_tool_adapter import build_mcp_adapter_status
 from app.services.project_inventory_service import ProjectInventoryService
+from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext
 from app.skills.executors import (
     AssetsInspectSkillExecutor,
     CodeGenerateSkillExecutor,
@@ -113,6 +114,7 @@ class TaskService:
         self.kb_service = KnowledgeBaseService(db, settings)
         self.llm_service = LLMService(settings)
         self.inventory_service = ProjectInventoryService(settings)
+        self.route_dispatcher = RouteExecutionDispatcher()
         self._stream_sequence = 0
 
     def _emit_stream_event(
@@ -1662,121 +1664,20 @@ class TaskService:
         context_bundle: dict[str, Any],
         stream_sink: StreamEventSink | None = None,
     ) -> dict[str, Any]:
-        route_type = routing["intent"]["route_type"]
-        output_language = routing["locale"]["final_output_language"]
-        editor_operation_request = self._detect_editor_operation_request(request)
-        if editor_operation_request:
-            return self._execute_editor_operation_proposal(
+        return self.route_dispatcher.execute(
+            self,
+            TaskExecutionContext(
                 request=request,
                 routing=routing,
+                task_id=task_id,
+                run_id=run_id,
                 trace_id=trace_id,
-                output_language=output_language,
-                editor_operation_request=editor_operation_request,
-                context_bundle=context_bundle,
-            )
-        if route_type == "project_qa":
-            return self._execute_project_qa_live(
-                request=request,
-                routing=routing,
-                trace_id=trace_id,
-                output_language=output_language,
+                actual_task_type=actual_task_type,
+                output_language=routing["locale"]["final_output_language"],
                 chat_config=chat_config,
                 context_bundle=context_bundle,
                 stream_sink=stream_sink,
-                run_id=run_id,
-                task_id=task_id,
-            )
-        if route_type == "direct_answer":
-            return self._execute_direct_answer_live(
-                request=request,
-                routing=routing,
-                trace_id=trace_id,
-                output_language=output_language,
-                chat_config=chat_config,
-                context_bundle=context_bundle,
-                stream_sink=stream_sink,
-                run_id=run_id,
-                task_id=task_id,
-            )
-        if actual_task_type == "code_review":
-            if self._multi_agent_requested(request=request, routing=routing):
-                return self._execute_code_review_multi_agent(
-                    request=request,
-                    routing=routing,
-                    task_id=task_id,
-                    run_id=run_id,
-                    trace_id=trace_id,
-                    output_language=output_language,
-                    chat_config=chat_config,
-                    context_bundle=context_bundle,
-                )
-            return self._execute_code_review(
-                request=request,
-                routing=routing,
-                task_id=task_id,
-                run_id=run_id,
-                trace_id=trace_id,
-                output_language=output_language,
-                chat_config=chat_config,
-                context_bundle=context_bundle,
-            )
-        if actual_task_type == "logs_analyze":
-            return self._execute_logs_analyze(
-                request=request,
-                routing=routing,
-                task_id=task_id,
-                run_id=run_id,
-                trace_id=trace_id,
-                output_language=output_language,
-                chat_config=chat_config,
-            )
-        if actual_task_type == "config_generate":
-            return self._execute_config_generate(
-                request=request,
-                routing=routing,
-                task_id=task_id,
-                run_id=run_id,
-                trace_id=trace_id,
-                output_language=output_language,
-            )
-        if actual_task_type == "perf_analyze":
-            return self._execute_perf_analyze(
-                request=request,
-                routing=routing,
-                task_id=task_id,
-                run_id=run_id,
-                trace_id=trace_id,
-                output_language=output_language,
-            )
-        if actual_task_type == "config_validate":
-            return self._execute_config_validate(
-                request=request,
-                routing=routing,
-                trace_id=trace_id,
-                output_language=output_language,
-            )
-        if actual_task_type == "assets_inspect":
-            return self._execute_assets_inspect(
-                request=request,
-                routing=routing,
-                trace_id=trace_id,
-                output_language=output_language,
-                chat_config=chat_config,
-            )
-        if actual_task_type == "code_generate":
-            return self._execute_code_generate_v2(
-                request=request,
-                routing=routing,
-                trace_id=trace_id,
-                output_language=output_language,
-                chat_config=chat_config,
-                context_bundle=context_bundle,
-            )
-        return self._execute_task_placeholder(
-            request=request,
-            routing=routing,
-            trace_id=trace_id,
-            output_language=output_language,
+            ),
         )
 
     def _query_text(self, request: UnifiedTaskRequest) -> str:

@@ -5,7 +5,16 @@ Changelog. Dates use `YYYY-MM-DD`.
 
 ## Unreleased
 
-No unreleased changes.
+### Added
+
+- Task handler adapter layer with a route execution dispatcher, establishing
+  the first low-risk step toward splitting `TaskService` into strategy handlers.
+
+### Changed
+
+- `TaskService._execute_route()` now delegates task selection to
+  `RouteExecutionDispatcher` while preserving existing response contracts and
+  concrete executor behavior.
 
 ## 0.1.4 - 2026-05-16
 
