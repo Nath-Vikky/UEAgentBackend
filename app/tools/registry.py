@@ -52,6 +52,7 @@ class ToolSpec:
     required_payload_fields: tuple[str, ...] = ()
     optional_payload_fields: tuple[str, ...] = ()
     timeout_ms: int = 30_000
+    executor: str | None = None
     input_schema: dict[str, Any] = field(default_factory=dict)
     output_schema: dict[str, Any] = field(default_factory=dict)
 
@@ -78,6 +79,7 @@ class ToolSpec:
             "required_payload_fields": list(self.required_payload_fields),
             "optional_payload_fields": list(self.optional_payload_fields),
             "timeout_ms": self.timeout_ms,
+            "executor": self.executor,
             "input_schema": self.input_schema,
             "output_schema": self.output_schema,
         }
@@ -98,6 +100,7 @@ class ToolSpec:
             "owned_by_skill": self.owned_by_skill,
             "allowed_in_free_chat": self.allowed_in_free_chat,
             "permission_gate": self.permission_gate,
+            "executor": self.executor,
         }
 
 

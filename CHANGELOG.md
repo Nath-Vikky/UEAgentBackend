@@ -28,11 +28,16 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Concrete `ProjectQAHandler`, moving the full Project QA live orchestration
   path out of `TaskService` while preserving RAG, local grep, Web Memory, Web
   Search, Project Inventory, project-file read, and LLM synthesis fields.
+- Tool execution context contracts: `ToolContext`, `ToolResult`, and
+  `CompositeToolResult` define a stable input/output envelope for future
+  executor and MCP transport migration without changing current tool behavior.
 
 ### Changed
 
 - Agent Chat and Project QA route diagnostics now include signal-detector
   observations for future scoring-router migration and regression analysis.
+- Tool Registry capability/debug cards now expose optional `executor` metadata,
+  and startup contract validation rejects blank executor strings.
 - `TaskService._execute_route()` now delegates task selection to
   `RouteExecutionDispatcher` while preserving existing response contracts and
   concrete executor behavior.

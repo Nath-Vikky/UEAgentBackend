@@ -55,7 +55,9 @@ Skills
 Tools
   app/tools/*
   Smaller callable operations with declared input/output schemas and side
-  effect levels.
+  effect levels. `app/tools/context.py` defines the normalized `ToolContext`
+  and `ToolResult` envelopes used by newly migrated executors and future MCP
+  transport adapters.
 
 Services
   app/services/*
@@ -124,6 +126,22 @@ Evaluation
 
 Skills compose tools. Tools declare side effects. MCP does not replace the
 backend; it can become one transport under the Tool Registry.
+
+## Tool Execution Contract
+
+The current stable runtime still calls existing skill executors and services,
+but new tool migrations should use the normalized contract in
+`app/tools/context.py`:
+
+```text
+ToolSpec -> ToolContext -> executor/service -> ToolResult -> debug entry
+```
+
+`ToolContext` carries the selected `tool_id`, request payload, active context,
+runtime options, trace ids, and timeout. `ToolResult` carries status, summary,
+structured output, citations, artifacts, warnings, latency, and approval state.
+This keeps the future executor layer framework-neutral: a tool can run through
+local Python, HTTP, or MCP transport while preserving the same debug envelope.
 
 ## Optional Function Calling Adapter
 

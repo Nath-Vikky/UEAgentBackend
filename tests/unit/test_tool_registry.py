@@ -27,6 +27,7 @@ def test_tool_capability_card_exposes_schema_and_policy() -> None:
     assert card["requires_confirmation"] is False
     assert "log" in card["active_context_keys"]
     assert card["owned_by_skill"] == "LogsAnalyzeSkill"
+    assert card["executor"] is None
     assert "log_file_path" in card["optional_payload_fields"]
     assert card["input_schema"]["type"] == "object"
 
@@ -95,6 +96,15 @@ def test_tool_registry_contracts_are_valid() -> None:
 
     assert report["ok"] is True
     assert report["issue_count"] == 0
+
+
+def test_tool_debug_policy_card_exposes_executor_metadata() -> None:
+    spec = get_tool_spec("analyze_ue_log")
+
+    assert spec is not None
+    card = spec.debug_policy_card()
+    assert "executor" in card
+    assert card["executor"] is None
 
 
 def test_tool_call_contract_reports_missing_required_input() -> None:

@@ -171,6 +171,14 @@ def _validate_spec(tool_id: str, spec: ToolSpec) -> list[dict[str, Any]]:
                 "message": "MCP transport tools must define mcp_tool_name.",
             }
         )
+    if spec.executor is not None and not spec.executor.strip():
+        issues.append(
+            {
+                "tool_id": tool_id,
+                "field": "executor",
+                "message": "Tool executor metadata must not be blank when provided.",
+            }
+        )
     for schema_name, schema in (("input_schema", spec.input_schema), ("output_schema", spec.output_schema)):
         if not schema:
             continue

@@ -77,7 +77,7 @@
 ### Tool Registry 与 ReAct Lite
 
 - 工具能力统一登记在 `app/tools/registry.py`。
-- 每个工具都有 capability card：`tool_id`、`task_type`、描述、触发词、输入字段、副作用级别、超时、`input_schema` 和 `output_schema`。
+- 每个工具都有 capability card：`tool_id`、`task_type`、描述、触发词、输入字段、副作用级别、超时、可选 `executor`、`input_schema` 和 `output_schema`。
 - `/api/v1/system/capabilities` 会返回 `capabilities.tool_registry.tools`，方便前端和调试页面查看当前后端支持哪些工具。
 - `Agent Chat / Project QA` 会在 Debug View 输出 `react_loop`，展示轻量版 `thought -> action -> observation -> final` 轨迹。
 - 当前 ReAct Lite 只用于可解释工具决策，不会让 LLM 自动写入工程或执行危险操作。
@@ -104,6 +104,7 @@
 - `validate_tool_registry()`：启动时检查工具注册表。
 - `validate_tool_call_input()`：检查 ReAct 工具调用输入是否满足 required/type。
 - `validate_tool_result()`：检查工具结果是否满足 required/type。
+- `app/tools/context.py`：提供 `ToolContext`、`ToolResult`、`CompositeToolResult`，作为后续新工具 executor / MCP transport 的标准入参和出参 envelope。
 
 查看位置：
 
@@ -112,6 +113,18 @@
 - `Debug View` 的 `debug_view.tool_contracts`
 
 这层校验不引入重依赖，只用于本地稳定性和 Debug 透明度，不会替代完整企业级 schema 平台。
+
+### ToolContext / ToolResult 使用边界
+
+当前稳定路径仍然是 `TaskService -> RouteExecutionDispatcher -> TaskHandler -> SkillExecutor/Service`。`ToolContext` 和 `ToolResult` 是后端内部契约，不要求 UE 前端修改，也不会改变现有 HTTP 响应结构。
+
+后续新增或迁移工具时建议遵循：
+
+- 从 `ToolSpec` 读取 `tool_id`、`timeout_ms`、side effect 和 schema。
+- 用 `ToolContext.from_request()` 收集 payload、active context、runtime options 和 trace id。
+- executor 返回 `ToolResult.completed()`、`ToolResult.failed()` 或普通 `ToolResult(status="degraded"/"blocked"/"skipped")`。
+- Debug View 统一使用 `ToolResult.to_debug_entry()`，减少每个工具自行拼接调试字段。
+- 写操作仍然必须走 Proposal confirmation，`ToolResult` 只描述结果，不绕过确认边界。
 
 ### Self-Reflection
 
