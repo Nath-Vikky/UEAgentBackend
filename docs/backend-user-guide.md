@@ -3398,6 +3398,30 @@ Validation:
 .\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py::test_assets_inspect_returns_violations tests\integration\test_system_and_tasks.py::test_assets_inspect_can_summarize_types_and_relationships tests\integration\test_system_and_tasks.py::test_assets_inspect_live_llm_uses_compact_timeout_config tests\integration\test_system_and_tasks.py::test_assets_inspect_flags_default_world_asset_name tests\integration\test_editor_operations.py::test_assets_inspect_emits_rename_editor_operation_proposal tests\unit\test_task_route_dispatcher.py -q
 ```
 
+## 2026-05-16 Editor Operation Handler migration
+
+Editor-operation proposal response shaping now lives in `app/services/task_handlers/editor_operation.py`.
+
+What changed:
+
+- `EditorOperationProposalHandler` owns the user/debug response for editor-operation proposals.
+- The confirmed-write safety boundary is unchanged.
+- `TaskService` still owns detection and proposal normalization helpers for now.
+- Unused legacy placeholder methods `_execute_project_qa()` and `_execute_direct_answer()` were removed.
+
+What did not change:
+
+- The backend still does not directly execute UE editor writes.
+- UE plugin confirmation and execution are still required.
+- Request and response contracts are unchanged.
+- UE frontend does not need to change.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py tests\unit\test_task_route_dispatcher.py -q
+```
+
 ## 2026-05-16 Config Validate Handler migration
 
 This is another internal backend refactor. `config_validate` now runs through `app/services/task_handlers/config_validate.py`.

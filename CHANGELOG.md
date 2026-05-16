@@ -19,6 +19,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   Analyze, plus shared task-handler citation preview helpers.
 - Concrete `AssetsInspectHandler` and `PlaceholderTaskHandler`, moving asset
   inspection orchestration and fallback diagnostics out of `TaskService`.
+- Concrete `EditorOperationProposalHandler`, moving editor-operation proposal
+  response shaping out of `TaskService`; removed unused legacy placeholder
+  Project QA and Direct Answer execution methods.
 
 ### Changed
 
@@ -35,6 +38,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   functions; only task-handler ownership changed.
 - Assets Inspect still uses the existing skill executor and confirmed-write
   rename proposal safety path; only task-handler ownership changed.
+- Editor operations still use the existing confirmed-write Proposal safety
+  boundary; only response ownership changed.
 
 ## 0.1.4 - 2026-05-16
 

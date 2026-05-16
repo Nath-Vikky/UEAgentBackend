@@ -9,26 +9,10 @@ from app.services.task_handlers.code_review import CodeReviewHandler
 from app.services.task_handlers.config_generate import ConfigGenerateHandler
 from app.services.task_handlers.config_validate import ConfigValidateHandler
 from app.services.task_handlers.direct_answer import DirectAnswerHandler
+from app.services.task_handlers.editor_operation import EditorOperationProposalHandler
 from app.services.task_handlers.logs_analyze import LogsAnalyzeHandler
 from app.services.task_handlers.placeholder import PlaceholderTaskHandler
 from app.services.task_handlers.perf_analyze import PerfAnalyzeHandler
-
-
-class EditorOperationProposalHandler:
-    handler_id = "editor_operation_proposal"
-
-    def __init__(self, editor_operation_request: Any):
-        self.editor_operation_request = editor_operation_request
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_editor_operation_proposal(
-            request=context.request,
-            routing=context.routing,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
-            editor_operation_request=self.editor_operation_request,
-            context_bundle=context.context_bundle,
-        )
 
 
 class ProjectQAHandler:
