@@ -13,6 +13,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   `TaskService` while keeping the existing `agent_chat` response contract.
 - Concrete `ConfigValidateHandler`, moving deterministic config validation out
   of `TaskService` while preserving report artifacts and debug output.
+- Concrete executor-backed handlers for Code Review, Logs Analyze, and Code
+  Generate, moving thin skill orchestration wrappers out of `TaskService`.
 
 ### Changed
 
@@ -23,6 +25,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   Project Inventory, and tool-calling paths are still unchanged.
 - Config validation execution is now owned by the task handler layer; it still
   uses the same deterministic `validate_design_config` tool and response shape.
+- Code Review, Logs Analyze, and Code Generate still use their existing skill
+  executors and multi-agent chain; only the task-handler ownership changed.
 
 ## 0.1.4 - 2026-05-16
 

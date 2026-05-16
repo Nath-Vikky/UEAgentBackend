@@ -3,8 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.task_handlers.base import TaskExecutionContext, TaskHandler
+from app.services.task_handlers.code_generate import CodeGenerateHandler
+from app.services.task_handlers.code_review import CodeReviewHandler
 from app.services.task_handlers.config_validate import ConfigValidateHandler
 from app.services.task_handlers.direct_answer import DirectAnswerHandler
+from app.services.task_handlers.logs_analyze import LogsAnalyzeHandler
 
 
 class EditorOperationProposalHandler:
@@ -38,48 +41,6 @@ class ProjectQAHandler:
             stream_sink=context.stream_sink,
             run_id=context.run_id,
             task_id=context.task_id,
-        )
-
-
-class CodeReviewHandler:
-    handler_id = "code_review"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        if host._multi_agent_requested(request=context.request, routing=context.routing):
-            return host._execute_code_review_multi_agent(
-                request=context.request,
-                routing=context.routing,
-                task_id=context.task_id,
-                run_id=context.run_id,
-                trace_id=context.trace_id,
-                output_language=context.output_language,
-                chat_config=context.chat_config,
-                context_bundle=context.context_bundle,
-            )
-        return host._execute_code_review(
-            request=context.request,
-            routing=context.routing,
-            task_id=context.task_id,
-            run_id=context.run_id,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
-            chat_config=context.chat_config,
-            context_bundle=context.context_bundle,
-        )
-
-
-class LogsAnalyzeHandler:
-    handler_id = "logs_analyze"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_logs_analyze(
-            request=context.request,
-            routing=context.routing,
-            task_id=context.task_id,
-            run_id=context.run_id,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
-            chat_config=context.chat_config,
         )
 
 
@@ -121,20 +82,6 @@ class AssetsInspectHandler:
             trace_id=context.trace_id,
             output_language=context.output_language,
             chat_config=context.chat_config,
-        )
-
-
-class CodeGenerateHandler:
-    handler_id = "code_generate"
-
-    def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
-        return host._execute_code_generate_v2(
-            request=context.request,
-            routing=context.routing,
-            trace_id=context.trace_id,
-            output_language=context.output_language,
-            chat_config=context.chat_config,
-            context_bundle=context.context_bundle,
         )
 
 

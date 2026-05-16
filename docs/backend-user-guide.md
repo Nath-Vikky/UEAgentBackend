@@ -3316,6 +3316,34 @@ Validation:
 
 UE frontend impact: no mandatory change.
 
+## 2026-05-16 Executor-backed Handler migration
+
+Code Review, Logs Analyze, and Code Generate now have concrete task handlers:
+
+- `app/services/task_handlers/code_review.py`
+- `app/services/task_handlers/logs_analyze.py`
+- `app/services/task_handlers/code_generate.py`
+
+What changed:
+
+- `CodeReviewHandler` owns the decision between the normal code-review skill executor and the `ReviewFixValidateChain` multi-agent workflow.
+- `LogsAnalyzeHandler` owns log-analysis skill executor construction.
+- `CodeGenerateHandler` owns code-generation skill executor construction.
+- `TaskService` no longer keeps thin wrapper methods for these three paths.
+
+What did not change:
+
+- Existing skill executors still do the actual work.
+- Multi-agent Code Review still uses the existing `Review -> FixDraft -> Validate` chain.
+- Request and response contracts are unchanged.
+- UE frontend does not need to change.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py tests\integration\test_multi_agent_chain.py tests\unit\test_task_route_dispatcher.py -q
+```
+
 ## 2026-05-16 Config Validate Handler migration
 
 This is another internal backend refactor. `config_validate` now runs through `app/services/task_handlers/config_validate.py`.

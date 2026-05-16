@@ -14,7 +14,6 @@ from app.agent.context_builder import build_context_summary
 from app.agent.context_manager import build_context_bundle, context_bundle_prompt_excerpt
 from app.agent.decision_trace import build_agent_decision_trace
 from app.agent.memory_manager import update_session_memory
-from app.agent.multi_agent import ReviewFixValidateChain
 from app.agent.response_composer import compose_unified_response
 from app.agent.router import classify_request
 from app.agent.self_reflection import build_self_reflection
@@ -65,9 +64,6 @@ from app.services.project_inventory_service import ProjectInventoryService
 from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext
 from app.skills.executors import (
     AssetsInspectSkillExecutor,
-    CodeGenerateSkillExecutor,
-    CodeReviewSkillExecutor,
-    LogsAnalyzeSkillExecutor,
 )
 from app.skills.runtime import build_skill_runtime_descriptor
 from app.tools.contracts import validate_tool_call_input, validate_tool_result
@@ -2760,88 +2756,6 @@ class TaskService:
             "artifacts": [],
         }
 
-    def _execute_code_review(
-        self,
-        *,
-        request: UnifiedTaskRequest,
-        routing: dict[str, Any],
-        task_id: str,
-        run_id: str,
-        trace_id: str,
-        output_language: str,
-        chat_config: ChatRuntimeConfig,
-        context_bundle: dict[str, Any],
-    ) -> dict[str, Any]:
-        executor = CodeReviewSkillExecutor(
-            kb_service=self.kb_service,
-            llm_service=self.llm_service,
-            base_debug_builder=self._base_debug,
-        )
-        return executor.execute(
-            request=request,
-            routing=routing,
-            task_id=task_id,
-            run_id=run_id,
-            trace_id=trace_id,
-            output_language=output_language,
-            chat_config=chat_config,
-            context_bundle=context_bundle,
-        )
-
-    def _execute_code_review_multi_agent(
-        self,
-        *,
-        request: UnifiedTaskRequest,
-        routing: dict[str, Any],
-        task_id: str,
-        run_id: str,
-        trace_id: str,
-        output_language: str,
-        chat_config: ChatRuntimeConfig,
-        context_bundle: dict[str, Any],
-    ) -> dict[str, Any]:
-        chain = ReviewFixValidateChain(
-            kb_service=self.kb_service,
-            llm_service=self.llm_service,
-            base_debug_builder=self._base_debug,
-        )
-        return chain.run(
-            request=request,
-            routing=routing,
-            task_id=task_id,
-            run_id=run_id,
-            trace_id=trace_id,
-            output_language=output_language,
-            chat_config=chat_config,
-            context_bundle=context_bundle,
-        )
-
-    def _execute_logs_analyze(
-        self,
-        *,
-        request: UnifiedTaskRequest,
-        routing: dict[str, Any],
-        task_id: str,
-        run_id: str,
-        trace_id: str,
-        output_language: str,
-        chat_config: ChatRuntimeConfig,
-    ) -> dict[str, Any]:
-        executor = LogsAnalyzeSkillExecutor(
-            kb_service=self.kb_service,
-            llm_service=self.llm_service,
-            base_debug_builder=self._base_debug,
-        )
-        return executor.execute(
-            request=request,
-            routing=routing,
-            task_id=task_id,
-            run_id=run_id,
-            trace_id=trace_id,
-            output_language=output_language,
-            chat_config=chat_config,
-        )
-
     def _execute_config_generate(
         self,
         *,
@@ -2996,30 +2910,6 @@ class TaskService:
             "assistant_message": user_text,
             "artifacts": workflow["artifacts"],
         }
-
-    def _execute_code_generate_v2(
-        self,
-        *,
-        request: UnifiedTaskRequest,
-        routing: dict[str, Any],
-        trace_id: str,
-        output_language: str,
-        chat_config: ChatRuntimeConfig,
-        context_bundle: dict[str, Any],
-    ) -> dict[str, Any]:
-        executor = CodeGenerateSkillExecutor(
-            kb_service=self.kb_service,
-            llm_service=self.llm_service,
-            base_debug_builder=self._base_debug,
-        )
-        return executor.execute(
-            request=request,
-            routing=routing,
-            trace_id=trace_id,
-            output_language=output_language,
-            chat_config=chat_config,
-            context_bundle=context_bundle,
-        )
 
     def _execute_assets_inspect(
         self,

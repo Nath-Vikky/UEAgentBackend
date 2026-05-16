@@ -60,9 +60,9 @@ Task Handlers
   lifecycle, persistence, events, and response composition, while
   `RouteExecutionDispatcher` chooses the correct task handler. Current handlers
   call the existing execution methods first; concrete logic can move into each
-  handler in later migrations. `DirectAnswerHandler` and
-  `ConfigValidateHandler` are the first concrete migrated handlers, covering
-  normal free-chat execution and deterministic config validation.
+  handler in later migrations. Concrete migrated handlers now include
+  `DirectAnswerHandler`, `ConfigValidateHandler`, `CodeReviewHandler`,
+  `LogsAnalyzeHandler`, and `CodeGenerateHandler`.
 
 RAG
   app/rag/*
