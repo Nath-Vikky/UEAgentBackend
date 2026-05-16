@@ -3455,6 +3455,43 @@ TaskService boundary after this migration:
 - Delegates concrete task execution to `RouteExecutionDispatcher` and `app/services/task_handlers/*`.
 - No longer owns feature-specific execution methods except shared helper methods used by handlers.
 
+## 2026-05-16 Router SignalDetector S1A
+
+The backend now has a lightweight signal-detector registry at `app/agent/signal_detectors.py`.
+
+Current mode: compatibility observer.
+
+What changed:
+
+- Router decisions are still made by the existing deterministic/heuristic logic.
+- Signal detectors run beside the existing router and record scored observations.
+- Agent Chat / Project QA route diagnostics can include:
+  - `route.signal_detector_trace`
+  - `route.top_signal_detector`
+  - `route.signal_detector_mode=compatibility_observer`
+
+What did not change:
+
+- No route decision changed in this stage.
+- No frontend request field changed.
+- No LLM route judge behavior changed.
+- No ToolSpec execution behavior changed.
+
+Why this exists:
+
+- It creates a safe regression baseline before replacing router if/elif logic with a scoring router.
+- It makes future detector additions easier to test without immediately affecting production routing.
+- It helps Debug View explain why Project Inventory, Project QA, or direct chat looked plausible.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_router.py tests\unit\test_signal_detectors.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+UE frontend impact: no mandatory change. Debug View may optionally display `top_signal_detector.detector` and the detector trace list.
+
 ## 2026-05-16 Config Validate Handler migration
 
 This is another internal backend refactor. `config_validate` now runs through `app/services/task_handlers/config_validate.py`.

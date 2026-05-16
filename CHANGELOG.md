@@ -7,6 +7,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 
 ### Added
 
+- Router SignalDetector registry in compatibility-observer mode, exposing
+  `signal_detector_trace` and `top_signal_detector` without changing existing
+  routing decisions.
 - Task handler adapter layer with a route execution dispatcher, establishing
   the first low-risk step toward splitting `TaskService` into strategy handlers.
 - Concrete `DirectAnswerHandler`, moving live direct-chat execution out of
@@ -28,6 +31,8 @@ Changelog. Dates use `YYYY-MM-DD`.
 
 ### Changed
 
+- Agent Chat and Project QA route diagnostics now include signal-detector
+  observations for future scoring-router migration and regression analysis.
 - `TaskService._execute_route()` now delegates task selection to
   `RouteExecutionDispatcher` while preserving existing response contracts and
   concrete executor behavior.

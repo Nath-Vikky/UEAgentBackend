@@ -11,6 +11,7 @@ from app.i18n.language import (
     localized as _localized,
     normalize_output_language,
 )
+from app.agent.signal_detectors import evaluate_signal_detectors
 from app.schemas.requests import UnifiedTaskRequest
 from app.tools.registry import (
     TASK_TYPE_TO_TOOL_ID,
@@ -614,6 +615,28 @@ def _agent_chat_signals(
     }
 
 
+def _with_signal_detector_trace(
+    request: UnifiedTaskRequest,
+    *,
+    latest_text: str,
+    signals: dict[str, Any],
+    selected_tool_id: str | None = None,
+) -> dict[str, Any]:
+    detection = evaluate_signal_detectors(
+        latest_text,
+        request,
+        legacy_signals=signals,
+        selected_tool_id=selected_tool_id,
+    )
+    return {
+        **signals,
+        "signal_detector_trace": detection["items"],
+        "top_signal_detector": detection["top"],
+        "signal_detector_errors": detection["errors"],
+        "signal_detector_mode": detection["mode"],
+    }
+
+
 def _project_qa_response(
     *,
     language: str,
@@ -651,6 +674,9 @@ def _project_qa_response(
             "project_inventory_query": signals.get("project_inventory_query", False),
             "ue_knowledge_query": signals.get("ue_knowledge_query", False),
             "ue_knowledge_hint_count": signals.get("ue_knowledge_hint_count", 0),
+            "signal_detector_trace": signals.get("signal_detector_trace", []),
+            "top_signal_detector": signals.get("top_signal_detector"),
+            "signal_detector_mode": signals.get("signal_detector_mode", "not_evaluated"),
         },
     }
 
@@ -690,6 +716,9 @@ def _direct_answer_response(
             "project_inventory_query": signals.get("project_inventory_query", False),
             "ue_knowledge_query": signals.get("ue_knowledge_query", False),
             "ue_knowledge_hint_count": signals.get("ue_knowledge_hint_count", 0),
+            "signal_detector_trace": signals.get("signal_detector_trace", []),
+            "top_signal_detector": signals.get("top_signal_detector"),
+            "signal_detector_mode": signals.get("signal_detector_mode", "not_evaluated"),
         },
     }
 
@@ -712,6 +741,14 @@ def classify_request(
 
     if request.task_type == "project_qa":
         signals = _agent_chat_signals(request, latest_text=latest_text, text_lower=text_lower)
+        signals = _with_signal_detector_trace(
+            request,
+            latest_text=latest_text,
+            signals=signals,
+            selected_tool_id="query_project_inventory"
+            if signals["project_inventory_query"]
+            else "retrieve_project_knowledge",
+        )
         if signals["project_inventory_query"]:
             reason = _localized(
                 language,
@@ -759,6 +796,12 @@ def classify_request(
         selected_tool_id
         if selected_tool_spec and selected_tool_spec.task_type != "project_qa"
         else None
+    )
+    signals = _with_signal_detector_trace(
+        request,
+        latest_text=latest_text,
+        signals=signals,
+        selected_tool_id=selected_tool_id,
     )
 
     if signals["project_inventory_query"]:
@@ -821,6 +864,9 @@ def classify_request(
                 "project_hint_count": signals["project_hint_count"],
                 "context_reference_present": signals["context_reference_present"],
                 "explicit_kb_scope": signals["explicit_kb_scope"],
+                "signal_detector_trace": signals.get("signal_detector_trace", []),
+                "top_signal_detector": signals.get("top_signal_detector"),
+                "signal_detector_mode": signals.get("signal_detector_mode", "not_evaluated"),
             },
         }
 

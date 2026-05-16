@@ -129,6 +129,26 @@ def test_agent_chat_with_current_project_asset_list_routes_to_inventory() -> Non
     assert routing["route"]["selected_tool_id"] == "query_project_inventory"
     assert routing["route"]["decision_source"] == "heuristic_project_inventory_signal"
     assert routing["route"]["project_inventory_query"] is True
+    assert routing["route"]["signal_detector_mode"] == "compatibility_observer"
+    assert routing["route"]["top_signal_detector"]["detector"] == "inventory_query"
+
+
+def test_router_keeps_existing_decision_while_exposing_signal_trace() -> None:
+    request = _request(
+        content="Explain how this file initializes the subsystem.",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "current_file": "Source/Demo/Subsystem.cpp",
+            "current_module": "Demo",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["route"]["decision_source"] == "heuristic_strong_project_signal"
+    assert routing["route"]["signal_detector_mode"] == "compatibility_observer"
+    assert routing["route"]["signal_detector_trace"]
 
 
 def test_auto_language_defaults_to_chinese_even_for_english_question() -> None:

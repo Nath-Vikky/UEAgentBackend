@@ -39,6 +39,14 @@ Agent
   Routing, context compression, lightweight memory, controlled tool planning,
   self-reflection, and decision trace.
 
+Router Signal Detectors
+  app/agent/signal_detectors.py
+  Compatibility-observer layer for router signals. The existing router still
+  makes final decisions, but each Agent Chat / Project QA route now records
+  scored detector observations such as inventory, tool keyword, UE knowledge,
+  direct command, and project context signals. This provides a safe baseline
+  before any future scoring-router migration.
+
 Skills
   app/skills/*
   User-facing capabilities: Project QA, Code Review, Code Generate,
