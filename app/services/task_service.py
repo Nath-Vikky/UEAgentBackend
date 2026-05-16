@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +45,12 @@ from app.services.kb_service import KnowledgeBaseService
 from app.services.llm_service import ChatRuntimeConfig, LLMService, chat_runtime_config
 from app.services.mcp_tool_adapter import build_mcp_adapter_status
 from app.services.project_inventory_service import ProjectInventoryService
+from app.services.task_events import (
+    StreamEventEmitter,
+    StreamEventSink,
+    build_persisted_event_payloads,
+    build_run_cancelled_event_payload,
+)
 from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext
 from app.skills.runtime import build_skill_runtime_descriptor
 from app.tools.registry import (
@@ -59,7 +64,6 @@ from app.utils.paths import task_artifact_dir
 from app.utils.time import now_utc
 
 CHAT_HISTORY_TASK_TYPES = {"agent_chat", "project_qa"}
-StreamEventSink = Callable[[dict[str, Any]], None]
 
 
 def _localized(language: str, zh_text: str, en_text: str) -> str:
@@ -74,7 +78,7 @@ class TaskService:
         self.llm_service = LLMService(settings)
         self.inventory_service = ProjectInventoryService(settings)
         self.route_dispatcher = RouteExecutionDispatcher()
-        self._stream_sequence = 0
+        self.stream_events = StreamEventEmitter()
 
     def _emit_stream_event(
         self,
@@ -85,18 +89,12 @@ class TaskService:
         run_id: str | None = None,
         task_id: str | None = None,
     ) -> None:
-        if not sink:
-            return
-        self._stream_sequence += 1
-        sink(
-            {
-                "event": event,
-                "seq": self._stream_sequence,
-                "timestamp": now_utc().isoformat(),
-                "run_id": run_id,
-                "task_id": task_id,
-                "payload": payload,
-            }
+        self.stream_events.emit(
+            sink,
+            event,
+            payload,
+            run_id=run_id,
+            task_id=task_id,
         )
 
     def _resolve_chat_config(self, request: UnifiedTaskRequest) -> ChatRuntimeConfig:
@@ -914,7 +912,11 @@ class TaskService:
             assistant_message=execution["assistant_message"],
         )
         snapshot_path = self._write_snapshot(task_id, response.model_dump(mode="json"))
-        event_payloads = self._build_event_payloads(task_id, run_id, response)
+        event_payloads = build_persisted_event_payloads(
+            task_id=task_id,
+            run_id=run_id,
+            response=response,
+        )
         self._persist_task(
             task_id=task_id,
             run_id=run_id,
@@ -1013,14 +1015,12 @@ class TaskService:
         task.debug_view_json = raw_response["debug_view"]
         save_task(self.db, task)
 
-        event_payload = {
-            "event": "run_cancelled",
-            "run_id": run_id,
-            "task_id": task.task_id,
-            "seq": len(list_task_events(self.db, task.task_id)) + 1,
-            "timestamp": now_utc().isoformat(),
-            "payload": {"status": "cancelled", "finish_reason": task.finish_reason},
-        }
+        event_payload = build_run_cancelled_event_payload(
+            run_id=run_id,
+            task_id=task.task_id,
+            finish_reason=task.finish_reason,
+            seq=len(list_task_events(self.db, task.task_id)) + 1,
+        )
         add_task_event(
             self.db,
             TaskEventModel(
@@ -1225,59 +1225,6 @@ class TaskService:
                 }
             )
         return materialized
-
-    def _build_event_payloads(
-        self,
-        task_id: str,
-        run_id: str,
-        response: UnifiedTaskResponse,
-    ) -> list[dict[str, Any]]:
-        payloads: list[dict[str, Any]] = []
-
-        def append(event: str, payload: dict[str, Any]) -> None:
-            payloads.append(
-                {
-                    "event": event,
-                    "run_id": run_id,
-                    "task_id": task_id,
-                    "seq": len(payloads) + 1,
-                    "timestamp": now_utc().isoformat(),
-                    "payload": payload,
-                }
-            )
-
-        append("run_started", {"task_type": response.task.task_type})
-        append("route_selected", response.planner_diagnostics)
-
-        if response.retrieval_trace.get("mode") not in {None, "", "not_used"}:
-            append("retrieval_started", {"mode": response.retrieval_trace.get("mode")})
-            append(
-                "retrieval_completed",
-                {
-                    "mode": response.retrieval_trace.get("mode"),
-                    "retrieved_docs": response.retrieval_trace.get("retrieved_docs", []),
-                },
-            )
-
-        for step in response.step_results:
-            step_payload = step.model_dump(mode="json")
-            append("step_started", {"step_id": step.step_id, "title": step.title})
-            append("step_completed", step_payload)
-
-        if response.assistant_message:
-            append("text_delta", {"text": response.assistant_message})
-
-        for proposal in response.action_proposals:
-            append("proposal_emitted", proposal.model_dump(mode="json"))
-
-        append(
-            "run_completed",
-            {
-                "status": response.task.status,
-                "finish_reason": response.task.finish_reason,
-            },
-        )
-        return payloads
 
     def _persist_task(
         self,

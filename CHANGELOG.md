@@ -47,6 +47,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Project QA deterministic tool planning, ReAct Lite planning, trace building,
   tool-call input lookup, and result-contract validation moved into
   `app/agent/tool_planner.py`.
+- Task stream/persisted event envelope helpers extracted into
+  `app/services/task_events.py`, keeping SSE and stored task-event sequence
+  construction out of `TaskService`.
 
 ### Changed
 
@@ -86,6 +89,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   guarded file-read helper; tool-planning ownership now lives in
   `app/agent/tool_planner.py`, so `TaskService` no longer keeps those private
   helper methods.
+- SSE stream events and persisted task events keep the same response shape, but
+  their envelope construction is now owned by `app/services/task_events.py`.
 
 ## 0.1.4 - 2026-05-16
 

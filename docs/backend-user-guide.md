@@ -3565,6 +3565,31 @@ Validation:
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
+## 2026-05-16 Task Event helper extraction
+
+Task stream and persisted event envelope construction now lives in `app/services/task_events.py`.
+
+What changed:
+
+- `StreamEventEmitter` owns live SSE event sequencing.
+- `build_persisted_event_payloads()` owns the stored task event list used by trace/event APIs.
+- `build_run_cancelled_event_payload()` owns cancellation event envelope construction.
+- `TaskService` still decides when events happen, but no longer hand-builds every event envelope inline.
+
+What did not change:
+
+- SSE event shape is unchanged.
+- Stored task event shape is unchanged.
+- `GET /api/v1/chat/runs/{run_id}/events/stream` behavior is unchanged.
+- `GET /api/v1/tasks/{task_id}/trace` / run trace event behavior is unchanged.
+- UE frontend does not need to change.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_task_events.py tests\integration\test_system_and_tasks.py::test_code_review_workflow_persists_artifacts_and_events tests\integration\test_system_and_tasks.py::test_logs_analyze_workflow_returns_structured_events tests\integration\test_system_and_tasks.py::test_cancel_waiting_confirmation_run_updates_status_and_stream -q
+```
+
 ## 2026-05-16 Router SignalDetector S1A
 
 The backend now has a lightweight signal-detector registry at `app/agent/signal_detectors.py`.

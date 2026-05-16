@@ -283,6 +283,19 @@ Implementation boundary:
   stream events, audit data, and route dispatch, but no longer owns Project QA
   tool-plan helpers.
 
+## Task Events
+
+`app/services/task_events.py` owns the shared task-event envelope:
+
+- `StreamEventEmitter` builds ordered SSE events for live streaming.
+- `build_persisted_event_payloads()` builds the stored task event sequence used
+  by trace/event endpoints.
+- `build_run_cancelled_event_payload()` keeps cancellation events aligned with
+  the same envelope.
+
+The JSON shape is intentionally unchanged: `event`, `seq`, `timestamp`,
+`run_id`, `task_id`, and `payload`.
+
 ## Evaluation
 
 The project keeps quality checks local and reproducible:
