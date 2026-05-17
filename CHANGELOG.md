@@ -66,6 +66,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   `scripts/export_knowledge_curation.py` can turn Project QA curation payloads
   or high-value Web Memory entries into suggestion-only Markdown/JSON review
   files under `storage/curation`.
+- I2-F6 validation records for the Improv2 architecture cleanup stage,
+  including regression suite, Web Search offline eval, and Code Review
+  benchmark results.
 
 ### Changed
 

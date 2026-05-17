@@ -1,6 +1,6 @@
 # Router Signal Eval Report
 
-- Generated at: `2026-05-16T16:13:24.561829+00:00`
+- Generated at: `2026-05-17T04:22:02.782817+00:00`
 - Dataset: `D:\Projects\agent-infra-study\UEAgentBackend\backend\tests\eval\router_signal_dataset.jsonl`
 - Cases: `5`
 - Route accuracy: `1.0000`

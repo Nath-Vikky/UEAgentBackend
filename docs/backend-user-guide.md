@@ -3504,6 +3504,34 @@ Review workflow:
 
 UE frontend impact: no mandatory change. The existing Debug View can keep showing `knowledge_curation`; this exporter is a backend maintenance tool.
 
+## 2026-05-17 I2-F6 Backend Validation Snapshot
+
+This snapshot closes the Improv2 cleanup round. It does not add new frontend requirements; it records the backend checks used before handing the project back for optional UE plugin smoke testing.
+
+Commands run locally:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_regression_suite.py --output storage\artifacts\regression\i2-f6-regression-latest.json
+.\.venv\Scripts\python.exe scripts\run_web_search_eval.py --min-success-rate 1 --min-safety-pass-rate 1
+.\.venv\Scripts\python.exe scripts\run_code_review_benchmark.py --output storage\artifacts\evals\code-review-benchmark-latest.json --markdown-output docs\code-review-benchmark-report.md
+```
+
+Observed results:
+
+- Regression suite: `overall_ok=true`.
+- Full pytest inside regression suite: passed.
+- Ruff inside regression suite: passed.
+- Router Signal eval: route/tool/shadow/recommendation accuracy all `1.0000`, override count `0`.
+- Web Search offline eval: success/safety pass rate `1.0000`.
+- Code Review benchmark: single-review recall `0.9355`, precision `1.0000`.
+
+Remaining manual validation:
+
+- UE frontend real-editor smoke still needs a human run: Agent Chat, Code Review, Code Generate, Logs Analyze, Assets Inspect, and Editor Operation Proposal.
+- Live LLM behavior depends on the local runtime profile and network/proxy state, so offline tests intentionally keep deterministic fallback coverage.
+
+UE frontend impact: no mandatory change. Optional debug-only fields added during I2-F1 to I2-F5 remain backward compatible.
+
 ## 2026-05-16 Executor-backed Handler migration
 
 Code Review, Logs Analyze, and Code Generate now have concrete task handlers:
