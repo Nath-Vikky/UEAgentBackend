@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from app.core.settings import Settings
-from app.services.mcp_client import MCPClientError, MCPStdioClient, MCPTimeoutError
+from app.services.mcp_client import MCPClientError, MCPStdioClient, MCPTcpClient, MCPTimeoutError
 
 MCP_ADAPTER_PROTOCOL_VERSION = "mcp_tool_adapter_v1"
-MCP_SUPPORTED_TRANSPORTS = ["mcp_stdio", "mcp_http"]
+MCP_SUPPORTED_TRANSPORTS = ["mcp_stdio", "mcp_tcp", "mcp_http"]
 
 
 def _command_exists(command: str) -> bool:
@@ -20,22 +20,39 @@ def _command_exists(command: str) -> bool:
     return shutil.which(text) is not None
 
 
+def _transport_name(settings: Settings) -> str:
+    configured = str(settings.mcp_transport or "stdio").strip().lower()
+    if configured in {"tcp", "mcp_tcp"}:
+        return "mcp_tcp"
+    return "mcp_stdio"
+
+
 def build_mcp_adapter_status(settings: Settings) -> dict[str, Any]:
     enabled = bool(settings.mcp_tool_adapter_enabled)
+    transport = _transport_name(settings)
     command = settings.mcp_stdio_command.strip()
-    command_available = _command_exists(command)
+    command_available = _command_exists(command) if transport == "mcp_stdio" else False
     if not enabled:
         status = "disabled"
         reason = "mcp_tool_adapter_disabled"
-    elif not command:
+    elif transport == "mcp_stdio" and not command:
         status = "misconfigured"
         reason = "mcp_stdio_command_missing"
-    elif not command_available:
+    elif transport == "mcp_stdio" and not command_available:
         status = "warning"
         reason = "mcp_stdio_command_not_found_in_current_environment"
+    elif transport == "mcp_tcp" and not settings.mcp_tcp_host.strip():
+        status = "misconfigured"
+        reason = "mcp_tcp_host_missing"
+    elif transport == "mcp_tcp" and settings.mcp_tcp_port <= 0:
+        status = "misconfigured"
+        reason = "mcp_tcp_port_invalid"
     elif not settings.mcp_allowed_tools:
         status = "misconfigured"
         reason = "mcp_allowed_tools_missing"
+    elif transport == "mcp_tcp":
+        status = "ready"
+        reason = "mcp_tcp_endpoint_configured"
     else:
         status = "ready"
         reason = "mcp_stdio_command_configured"
@@ -45,7 +62,7 @@ def build_mcp_adapter_status(settings: Settings) -> dict[str, Any]:
         "enabled": enabled,
         "status": status,
         "reason": reason,
-        "transport": "mcp_stdio",
+        "transport": transport,
         "supported_transports": MCP_SUPPORTED_TRANSPORTS,
         "stdio": {
             "command": command,
@@ -53,6 +70,11 @@ def build_mcp_adapter_status(settings: Settings) -> dict[str, Any]:
             "command_available": command_available,
             "timeout_ms": settings.mcp_stdio_timeout_ms,
             "auto_discover_on_startup": settings.mcp_auto_discover_on_startup,
+        },
+        "tcp": {
+            "host": settings.mcp_tcp_host.strip(),
+            "port": settings.mcp_tcp_port,
+            "timeout_ms": settings.mcp_tcp_timeout_ms,
         },
         "allowed_tools": list(settings.mcp_allowed_tools),
         "discovery": {
@@ -83,6 +105,7 @@ def build_mcp_capability(settings: Settings) -> dict[str, Any]:
         "frontend_protocol": "http",
         "tool_layer_only": True,
         "configured_allowed_tools": status["allowed_tools"],
+        "configured_transport": status["transport"],
         "discovery": status["discovery"],
         "debug_endpoints": {
             "list_tools": "/api/v1/mcp/tools",
@@ -199,6 +222,7 @@ class MCPToolAdapter:
             "status": "completed",
             "reason": "mcp_readonly_tool_completed",
             "tool_name": validation["tool_name"],
+            "transport": validation["transport"],
             "result": result,
             "debug": {
                 "adapter": self.status(),
@@ -209,7 +233,13 @@ class MCPToolAdapter:
             },
         }
 
-    def _client(self) -> MCPStdioClient:
+    def _client(self) -> MCPStdioClient | MCPTcpClient:
+        if _transport_name(self.settings) == "mcp_tcp":
+            return MCPTcpClient(
+                host=self.settings.mcp_tcp_host.strip(),
+                port=self.settings.mcp_tcp_port,
+                timeout_ms=self.settings.mcp_tcp_timeout_ms,
+            )
         return MCPStdioClient(
             command=self.settings.mcp_stdio_command.strip(),
             args=list(self.settings.mcp_stdio_args),

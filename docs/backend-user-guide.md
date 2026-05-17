@@ -2188,7 +2188,7 @@ GET /api/v1/system/capabilities
 
 - `capabilities.tool_registry.protocol_version = "tool_protocol_v2"`
 - `capabilities.tool_registry.protocol.categories`：`context / sensing / retrieval / analysis / generation / write`
-- `capabilities.tool_registry.protocol.transports`：`local_python / http / mcp_stdio / mcp_http`
+- `capabilities.tool_registry.protocol.transports`：`local_python / http / mcp_stdio / mcp_tcp / mcp_http`
 - `capabilities.tool_registry.protocol.side_effect_levels`：`read_only / plan_only / confirmed_write / reversible_write / destructive_write`
 - `capabilities.tool_registry.protocol.execution_policy`：自由聊天、草稿工具和确认写入工具的统一执行边界。
 - `capabilities.tool_registry.tools[].category`：工具类别。
@@ -2411,10 +2411,14 @@ POST /api/v1/proposals/{proposal_id}/decision
 
 ```env
 MCP_TOOL_ADAPTER_ENABLED=false
+MCP_TRANSPORT=stdio
 MCP_STDIO_COMMAND=
 MCP_STDIO_ARGS=
+MCP_TCP_HOST=127.0.0.1
+MCP_TCP_PORT=8765
 MCP_ALLOWED_TOOLS=
 MCP_STDIO_TIMEOUT_MS=3000
+MCP_TCP_TIMEOUT_MS=3000
 ```
 
 设计边界：
@@ -2455,9 +2459,20 @@ GET /api/v1/system/capabilities
 
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
+MCP_TRANSPORT=stdio
 MCP_STDIO_COMMAND=uv
 MCP_STDIO_ARGS=run,--directory,D:/Path/To/McpServer,Server.py
 MCP_ALLOWED_TOOLS=get_target_umg_asset,get_widget_tree
+```
+
+如果要试配 UEAgentTool 内置 TCP 工具服务，则改用：
+
+```env
+MCP_TOOL_ADAPTER_ENABLED=true
+MCP_TRANSPORT=tcp
+MCP_TCP_HOST=127.0.0.1
+MCP_TCP_PORT=8765
+MCP_ALLOWED_TOOLS=ue_agent_tools_list
 ```
 
 当前阶段后端只做 readiness、allow-list 和 Debug/Health 契约，不把 MCP 工具自动注册进 Agent Chat，也不把 UMG-MCP 项目作为依赖提交。后续如果要接真实 MCP 工具，会从 `MCPToolAdapter` 继续扩展。
@@ -2860,21 +2875,24 @@ storage/artifacts/evals/code-review-benchmark-latest.json
 - 数据集使用原创短代码片段，不依赖外部项目源码。
 - Multi-Agent 的 review phase 复用同一套规则检测，因此检出率预期与单阶段 Code Review 一致；多阶段价值主要体现在修复草稿和验证阶段是否被正确触发、是否保持 no-write guarantee。
 
-## 29. Optional MCP Stdio Client v1
+## 29. Optional MCP Tool Client v2
 
-后端现在有最小 MCP stdio client。它仍是可选工具层，不是 UE 前端主通信协议，也不会替代现有 HTTP API。
+后端现在有最小 MCP tool client，支持 `stdio` 和 `tcp` 两种本地 transport。它仍是可选工具层，不是 UE 前端主通信协议，也不会替代现有 HTTP API。
 
 ### 默认行为
 
 - `MCP_TOOL_ADAPTER_ENABLED=false` 时完全关闭。
-- 后端启动和健康检查不会自动拉起外部 MCP server。
+- 后端启动和健康检查不会自动拉起外部 MCP server，也不会主动连接 UE 插件 TCP 服务。
 - `MCP_AUTO_DISCOVER_ON_STARTUP=false` 默认关闭，避免启动时产生不可控外部进程。
-- 只有显式调用 `/api/v1/mcp/tools` 或 `/api/v1/mcp/tools/{tool_name}/call` 时才会尝试启动配置的 stdio server。
+- 只有显式调用 `/api/v1/mcp/tools` 或 `/api/v1/mcp/tools/{tool_name}/call` 时才会尝试连接配置的 transport。
 
 ### 配置
 
+连接 stdio server：
+
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
+MCP_TRANSPORT=stdio
 MCP_STDIO_COMMAND=python
 MCP_STDIO_ARGS=D:/Path/To/your_mcp_server.py
 MCP_ALLOWED_TOOLS=get_widget_tree,get_target_umg_asset
@@ -2882,7 +2900,29 @@ MCP_STDIO_TIMEOUT_MS=5000
 MCP_AUTO_DISCOVER_ON_STARTUP=false
 ```
 
+连接 UEAgentTool 可选 TCP 工具服务：
+
+```env
+MCP_TOOL_ADAPTER_ENABLED=true
+MCP_TRANSPORT=tcp
+MCP_TCP_HOST=127.0.0.1
+MCP_TCP_PORT=8765
+MCP_ALLOWED_TOOLS=ue_agent_tools_list
+MCP_TCP_TIMEOUT_MS=3000
+```
+
 `MCP_ALLOWED_TOOLS` 是强制安全边界。未在白名单内的工具会在后端调用 MCP server 前被拦截。
+
+UEAgentTool 的 TCP 服务默认关闭，需要在 UE 项目的 `Config/DefaultEngine.ini` 中显式开启：
+
+```ini
+[UEAgentTool.EditorToolServer]
+bEnabled=true
+Host=127.0.0.1
+Port=8765
+```
+
+当前 TCP 服务只用于工具发现和只读诊断。`tools/list` 会列出 UE 插件已声明的编辑器工具；`tools/call` 只允许 `ue_agent_tools_list` 返回工具目录。资产改名、Static Mesh 设置、创建 Blueprint、添加变量/组件/事件等 confirmed-write 工具即使出现在 tools/list 中，也不能通过 raw TCP 执行，仍必须走 Editor Operation Proposal。
 
 ### 调试接口
 
@@ -2915,7 +2955,7 @@ Content-Type: application/json
 
 ### 当前边界
 
-- 不实现 MCP server。
+- 后端不实现 MCP server；UE 插件可选暴露本地 TCP JSON-RPC 工具服务。
 - 不打包或依赖 UMG-MCP。
 - 不把 MCP 工具自动注册进 Agent Chat。
 - 不允许 LLM 自动调用未知 MCP 写入工具。

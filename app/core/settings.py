@@ -119,10 +119,14 @@ class Settings(BaseSettings):
     kb_chunk_overlap: int = 100
 
     mcp_tool_adapter_enabled: bool = False
+    mcp_transport: Literal["stdio", "tcp"] = "stdio"
     mcp_stdio_command: str = ""
     mcp_stdio_args: StringListSetting = Field(default_factory=list)
     mcp_allowed_tools: StringListSetting = Field(default_factory=list)
     mcp_stdio_timeout_ms: int = 3000
+    mcp_tcp_host: str = "127.0.0.1"
+    mcp_tcp_port: int = 8765
+    mcp_tcp_timeout_ms: int = 3000
     mcp_auto_discover_on_startup: bool = False
 
     default_profile_id: str = "default"

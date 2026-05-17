@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import queue
+import socket
 import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TextIO
 
 
 class MCPClientError(RuntimeError):
@@ -193,3 +194,158 @@ class MCPStdioClient:
             self._stderr_lines.append(line.rstrip("\r\n"))
             if len(self._stderr_lines) > 50:
                 del self._stderr_lines[: len(self._stderr_lines) - 50]
+
+
+@dataclass(slots=True)
+class MCPTcpClient:
+    host: str = "127.0.0.1"
+    port: int = 8765
+    timeout_ms: int = 3000
+    protocol_version: str = "2024-11-05"
+
+    _socket: socket.socket | None = field(default=None, init=False, repr=False)
+    _reader: TextIO | None = field(default=None, init=False, repr=False)
+    _request_id: int = field(default=0, init=False, repr=False)
+
+    def __enter__(self) -> MCPTcpClient:
+        self.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+    def start(self) -> None:
+        if self._socket:
+            return
+        timeout_seconds = max(self.timeout_ms / 1000, 0.1)
+        try:
+            self._socket = socket.create_connection((self.host, self.port), timeout=timeout_seconds)
+            self._socket.settimeout(timeout_seconds)
+            self._reader = self._socket.makefile("r", encoding="utf-8", newline="\n")
+        except OSError as exc:
+            self.close()
+            raise MCPClientError(
+                "mcp_tcp_connect_failed",
+                f"Failed to connect to MCP TCP endpoint {self.host}:{self.port}: {exc}",
+                {"host": self.host, "port": self.port},
+            ) from exc
+
+    def initialize(self) -> dict[str, Any]:
+        result = self.request(
+            "initialize",
+            {
+                "protocolVersion": self.protocol_version,
+                "capabilities": {},
+                "clientInfo": {"name": "UEAgentBackend", "version": "0.1.0"},
+            },
+        )
+        self.notify("notifications/initialized", {})
+        return result
+
+    def list_tools(self) -> dict[str, Any]:
+        return self.request("tools/list", {})
+
+    def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self.request("tools/call", {"name": name, "arguments": arguments or {}})
+
+    def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        request_id = self._next_request_id()
+        self._send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}})
+        response = self._read_response(request_id)
+        if "error" in response:
+            error = response.get("error") if isinstance(response.get("error"), dict) else {}
+            raise MCPClientError(
+                "mcp_jsonrpc_error",
+                str(error.get("message") or "MCP JSON-RPC error."),
+                {"code": error.get("code"), "data": error.get("data"), "method": method},
+            )
+        result = response.get("result")
+        return result if isinstance(result, dict) else {"value": result}
+
+    def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
+        self._send({"jsonrpc": "2.0", "method": method, "params": params or {}})
+
+    def close(self) -> None:
+        reader = self._reader
+        self._reader = None
+        if reader:
+            try:
+                reader.close()
+            except OSError:
+                pass
+        connection = self._socket
+        self._socket = None
+        if connection:
+            try:
+                connection.close()
+            except OSError:
+                pass
+
+    def _next_request_id(self) -> int:
+        self._request_id += 1
+        return self._request_id
+
+    def _send(self, payload: dict[str, Any]) -> None:
+        connection = self._require_socket()
+        line = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+        try:
+            connection.sendall(line.encode("utf-8"))
+        except OSError as exc:
+            raise MCPClientError(
+                "mcp_tcp_write_failed",
+                f"Failed to write MCP TCP request: {exc}",
+                {"host": self.host, "port": self.port},
+            ) from exc
+
+    def _read_response(self, request_id: int) -> dict[str, Any]:
+        reader = self._require_reader()
+        deadline = time.monotonic() + max(self.timeout_ms / 1000, 0.1)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise MCPTimeoutError(
+                    "mcp_tcp_timeout",
+                    "Timed out waiting for MCP TCP response.",
+                    {"request_id": request_id, "host": self.host, "port": self.port},
+                )
+            self._require_socket().settimeout(max(remaining, 0.1))
+            try:
+                line = reader.readline()
+            except TimeoutError as exc:
+                raise MCPTimeoutError(
+                    "mcp_tcp_timeout",
+                    "Timed out waiting for MCP TCP response.",
+                    {"request_id": request_id, "host": self.host, "port": self.port},
+                ) from exc
+            except OSError as exc:
+                raise MCPClientError(
+                    "mcp_tcp_read_failed",
+                    f"Failed to read MCP TCP response: {exc}",
+                    {"request_id": request_id, "host": self.host, "port": self.port},
+                ) from exc
+            if not line:
+                raise MCPClientError(
+                    "mcp_tcp_closed",
+                    "MCP TCP endpoint closed the connection before completing the request.",
+                    {"request_id": request_id, "host": self.host, "port": self.port},
+                )
+            if not line.strip():
+                continue
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if message.get("id") == request_id:
+                return message
+
+    def _require_socket(self) -> socket.socket:
+        if not self._socket:
+            self.start()
+        assert self._socket is not None
+        return self._socket
+
+    def _require_reader(self) -> TextIO:
+        if not self._reader:
+            self.start()
+        assert self._reader is not None
+        return self._reader

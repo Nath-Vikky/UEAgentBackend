@@ -120,8 +120,11 @@ QDRANT_COLLECTION=ue_agent_default
 
 ```env
 MCP_TOOL_ADAPTER_ENABLED=false
+MCP_TRANSPORT=stdio
 MCP_STDIO_COMMAND=
 MCP_STDIO_ARGS=
+MCP_TCP_HOST=127.0.0.1
+MCP_TCP_PORT=8765
 MCP_ALLOWED_TOOLS=
 MCP_AUTO_DISCOVER_ON_STARTUP=false
 ```
@@ -375,14 +378,17 @@ Code Review 保留默认单阶段审查，同时支持轻量链式 Agent：
 - 返回字段：`data.multi_agent`、`debug_view.multi_agent`、`user_view.blocks[block_type="phase_result"]`。
 - 默认行为：不传触发字段时，原 Code Review 接口和前端展示方式不变。
 
-## Optional MCP Stdio Client
+## Optional MCP Tool Client
 
-后端提供最小 MCP stdio client，用于本地连接只读 MCP server：
+后端提供最小 MCP tool client，用于本地连接只读 MCP server 或 UE 插件内置 TCP 工具服务：
 
 - 默认关闭，不会随启动拉起外部进程。
+- `MCP_TRANSPORT=stdio` 时通过 `MCP_STDIO_COMMAND/MCP_STDIO_ARGS` 连接本地 stdio server。
+- `MCP_TRANSPORT=tcp` 时通过 `MCP_TCP_HOST/MCP_TCP_PORT` 连接 UEAgentTool 可选 TCP JSON-RPC 服务。
 - 仅允许调用 `MCP_ALLOWED_TOOLS` 白名单中的工具。
 - 调用入口是 `/api/v1/mcp/tools` 和 `/api/v1/mcp/tools/{tool_name}/call`。
 - MCP 仍只是后端工具 transport；UE 前端和后端之间继续使用 HTTP。
+- 当前 UE TCP 服务只建议允许 `ue_agent_tools_list` 这类 read-only 工具；写操作仍必须走 Editor Operation Proposal。
 
 ## Optional Web Memory
 

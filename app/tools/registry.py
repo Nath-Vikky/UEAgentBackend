@@ -9,7 +9,7 @@ from app.tools.config_loader import load_tool_config_overlay, reload_tool_config
 
 TOOL_PROTOCOL_VERSION = "tool_protocol_v2"
 TOOL_CATEGORIES = {"context", "sensing", "retrieval", "analysis", "generation", "write"}
-TOOL_TRANSPORTS = {"local_python", "http", "mcp_stdio", "mcp_http"}
+TOOL_TRANSPORTS = {"local_python", "http", "mcp_stdio", "mcp_tcp", "mcp_http"}
 SIDE_EFFECT_LEVELS = {"read_only", "plan_only", "confirmed_write", "reversible_write", "destructive_write"}
 CONFIRMATION_SIDE_EFFECT_LEVELS = {"confirmed_write", "reversible_write", "destructive_write"}
 ROUTE_PREFERENCES = {"project_qa", "single_tool", "workflow", "proposal_wait"}

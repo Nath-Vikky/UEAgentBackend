@@ -15,13 +15,14 @@ class MCPToolExecutor:
 
     def call_readonly_tool(self, tool_name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         result = self.adapter.call_readonly_tool(tool_name, arguments or {})
+        transport = self._transport_from_result(result)
         if not result.get("ok"):
             return {
                 "ok": False,
                 "status": result.get("status") or "error",
                 "reason": result.get("reason") or "mcp_call_failed",
                 "tool_name": tool_name,
-                "transport": "mcp_stdio",
+                "transport": transport,
                 "result": {},
                 "errors": [result],
             }
@@ -30,8 +31,14 @@ class MCPToolExecutor:
             "status": "completed",
             "reason": "mcp_tool_call_completed",
             "tool_name": tool_name,
-            "transport": "mcp_stdio",
+            "transport": transport,
             "result": result.get("result") or {},
             "errors": [],
             "debug": result.get("debug") or {},
         }
+
+    @staticmethod
+    def _transport_from_result(result: dict[str, Any]) -> str:
+        debug = result.get("debug") if isinstance(result.get("debug"), dict) else {}
+        adapter = debug.get("adapter") if isinstance(debug.get("adapter"), dict) else {}
+        return str(result.get("transport") or adapter.get("transport") or "mcp_stdio")

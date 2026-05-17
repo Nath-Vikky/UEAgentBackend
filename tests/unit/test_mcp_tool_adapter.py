@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+import socketserver
 from concurrent.futures import ThreadPoolExecutor
 import sys
+import threading
 from pathlib import Path
 
 from app.core.settings import Settings
@@ -12,6 +15,72 @@ FIXTURE_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "weather_mcp
 CRASHING_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "crashing_mcp_server.py"
 STDERR_SPAM_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "stderr_spam_mcp_server.py"
 TIMEOUT_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "timeout_mcp_server.py"
+
+
+class _JsonRpcTcpHandler(socketserver.StreamRequestHandler):
+    def handle(self) -> None:
+        for raw_line in self.rfile:
+            request = json.loads(raw_line.decode("utf-8"))
+            request_id = request.get("id")
+            method = request.get("method")
+            if request_id is None:
+                continue
+            if method == "initialize":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "ue-editor-fixture"},
+                    },
+                }
+            elif method == "tools/list":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "tools": [
+                            {
+                                "name": "ue_agent_tools_list",
+                                "description": "Return UE editor tool metadata.",
+                                "inputSchema": {"type": "object", "properties": {}},
+                            }
+                        ]
+                    },
+                }
+            elif method == "tools/call":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"content": [{"type": "text", "text": "tool catalog"}]},
+                }
+            else:
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32601, "message": "Method not found"},
+                }
+            self.wfile.write(json.dumps(response).encode("utf-8") + b"\n")
+            self.wfile.flush()
+
+
+class _TcpFixture:
+    def __enter__(self) -> _TcpFixture:
+        self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _JsonRpcTcpHandler)
+        self.server.daemon_threads = True
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+
+    @property
+    def port(self) -> int:
+        return int(self.server.server_address[1])
 
 
 def test_mcp_adapter_is_disabled_by_default() -> None:
@@ -117,6 +186,43 @@ def test_mcp_adapter_calls_allowed_fixture_tool() -> None:
 
     assert result["ok"] is True
     assert result["result"]["content"][0]["text"] == "Shanghai: sunny, 24C"
+
+
+def test_mcp_adapter_discovers_allowed_tcp_tools() -> None:
+    with _TcpFixture() as fixture:
+        settings = Settings(
+            mcp_tool_adapter_enabled=True,
+            mcp_transport="tcp",
+            mcp_tcp_host="127.0.0.1",
+            mcp_tcp_port=fixture.port,
+            mcp_tcp_timeout_ms=1000,
+            mcp_allowed_tools=["ue_agent_tools_list"],
+        )
+
+        result = MCPToolAdapter(settings).discover_tools()
+
+    assert result["ok"] is True
+    assert result["tool_count"] == 1
+    assert result["tools"][0]["name"] == "ue_agent_tools_list"
+    assert result["debug"]["adapter"]["transport"] == "mcp_tcp"
+
+
+def test_mcp_adapter_calls_allowed_tcp_tool() -> None:
+    with _TcpFixture() as fixture:
+        settings = Settings(
+            mcp_tool_adapter_enabled=True,
+            mcp_transport="tcp",
+            mcp_tcp_host="127.0.0.1",
+            mcp_tcp_port=fixture.port,
+            mcp_tcp_timeout_ms=1000,
+            mcp_allowed_tools=["ue_agent_tools_list"],
+        )
+
+        result = MCPToolAdapter(settings).call_readonly_tool("ue_agent_tools_list", {})
+
+    assert result["ok"] is True
+    assert result["transport"] == "mcp_tcp"
+    assert result["result"]["content"][0]["text"] == "tool catalog"
 
 
 def test_mcp_adapter_blocks_unlisted_fixture_tool_before_process_call() -> None:
