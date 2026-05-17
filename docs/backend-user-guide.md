@@ -3471,6 +3471,39 @@ Validation:
 
 UE frontend impact: no mandatory change. Existing response fields are preserved.
 
+## 2026-05-17 Knowledge Curation Artifact Export
+
+Project QA already returns `knowledge_curation` diagnostics when local KB evidence is weak but controlled Web Search or Web Memory finds useful evidence. This stage adds a manual export path so backend maintainers can review those suggestions as files instead of digging through Debug View every time.
+
+Command:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_knowledge_curation.py --output-dir storage\curation
+```
+
+What it does:
+
+- Reads high-value Web Memory entries by default.
+- Scores candidates using confidence, source score, quality score, helpful feedback, recall count, and official-domain boost.
+- Writes a Markdown review file and a JSON payload under `storage/curation`.
+- Never writes into `knowledge/`, SQLite KB documents, or Qdrant automatically.
+
+Export from a saved task/debug payload:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_knowledge_curation.py --input path\to\task-response.json --output-dir storage\curation
+```
+
+Review workflow:
+
+- Open the generated Markdown file.
+- Keep only candidates that are clearly useful for UE or the current project.
+- Rewrite the evidence into a short local note instead of copying web text verbatim.
+- Place the distilled note in the correct `knowledge/` domain folder.
+- Run `POST /api/v1/knowledge-base/reindex` or restart the backend if you rely on startup seeding.
+
+UE frontend impact: no mandatory change. The existing Debug View can keep showing `knowledge_curation`; this exporter is a backend maintenance tool.
+
 ## 2026-05-16 Executor-backed Handler migration
 
 Code Review, Logs Analyze, and Code Generate now have concrete task handlers:

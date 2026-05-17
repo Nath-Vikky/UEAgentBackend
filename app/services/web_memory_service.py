@@ -198,6 +198,11 @@ class WebMemoryService:
                 search_mode = "python_token_fallback"
         now = now_utc()
         for entry, _ranking in ranked:
+            metadata = dict(entry.metadata_json or {})
+            metadata["recall_count"] = int(metadata.get("recall_count") or 0) + 1
+            metadata["last_recalled_query"] = query[:240]
+            metadata["last_recalled_at"] = now.isoformat()
+            entry.metadata_json = metadata
             entry.last_accessed_at = now
             self.db.add(entry)
         if ranked:
@@ -322,6 +327,7 @@ def _entry_to_item(
     rank: int,
     ranking: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    metadata = dict(entry.metadata_json or {})
     item = {
         "rank": rank,
         "entry_id": entry.entry_id,
@@ -336,6 +342,7 @@ def _entry_to_item(
         "quality_score": entry.quality_score,
         "helpful_count": entry.helpful_count or 0,
         "unhelpful_count": entry.unhelpful_count or 0,
+        "recall_count": _safe_int(metadata.get("recall_count")),
         "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
         "retrieval_source": "web_memory",
     }
@@ -442,3 +449,10 @@ def _coerce_score(value: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return max(0.0, min(score, 1.0))
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0

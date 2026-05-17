@@ -122,9 +122,11 @@ def test_web_memory_stores_recalls_and_accepts_feedback() -> None:
     assert recalled["status"] == "completed"
     assert recalled["reason"] == "matched"
     assert recalled["items"][0]["retrieval_source"] == "web_memory"
+    assert recalled["items"][0]["recall_count"] == 1
     assert feedback is not None
     assert feedback["entry"]["helpful_count"] == 1
     assert recalled_after_feedback["items"][0]["helpful_count"] == 1
+    assert recalled_after_feedback["items"][0]["recall_count"] == 2
 
 
 def test_web_memory_recall_uses_fts5_or_safe_fallback() -> None:

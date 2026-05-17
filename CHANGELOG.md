@@ -62,6 +62,10 @@ Changelog. Dates use `YYYY-MM-DD`.
 - ToolContext executor runtime for migrated read-only tools, with
   `read_project_file` and `validate_design_config` now using
   `ToolContext -> executor -> ToolResult` in production paths.
+- Knowledge curation artifact exporter:
+  `scripts/export_knowledge_curation.py` can turn Project QA curation payloads
+  or high-value Web Memory entries into suggestion-only Markdown/JSON review
+  files under `storage/curation`.
 
 ### Changed
 
@@ -111,6 +115,8 @@ Changelog. Dates use `YYYY-MM-DD`.
   `summary.ranking_policy` are additive diagnostics.
 - `read_project_file` and `validate_design_config` ToolSpecs now expose concrete
   executor metadata while preserving existing HTTP response contracts.
+- Web Memory recall entries now include lightweight `recall_count` diagnostics
+  so curation scoring can prioritize repeatedly reused evidence.
 
 ## 0.1.4 - 2026-05-16
 

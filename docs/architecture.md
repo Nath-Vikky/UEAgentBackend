@@ -108,8 +108,9 @@ Knowledge Curation
   app/rag/curation.py
   Suggestion-only KB maintenance helper. When local KB evidence is weak but Web
   Memory or controlled Web Search supplies useful evidence, it emits
-  human-review candidates. It never writes to `knowledge/`, storage, or vector
-  indexes automatically.
+  human-review candidates. It can also render those candidates into
+  suggestion-only Markdown/JSON artifacts under `storage/curation` for manual
+  review. It never writes to `knowledge/` or vector indexes automatically.
 
 Web Search
   app/services/web_search_service.py
