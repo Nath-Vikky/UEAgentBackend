@@ -107,6 +107,16 @@ def test_tool_debug_policy_card_exposes_executor_metadata() -> None:
     assert card["executor"] is None
 
 
+def test_migrated_read_only_tools_expose_context_executors() -> None:
+    read_file = get_tool_spec("read_project_file")
+    config_validate = get_tool_spec("validate_design_config")
+
+    assert read_file is not None
+    assert config_validate is not None
+    assert read_file.executor == "app.tools.project_file:read_project_file_executor"
+    assert config_validate.executor == "app.tools.config_validate:validate_design_config_executor"
+
+
 def test_tool_call_contract_reports_missing_required_input() -> None:
     result = validate_tool_call_input("read_project_file", {"file_path": "Source/Demo.cpp"})
 

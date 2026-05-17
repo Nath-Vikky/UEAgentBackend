@@ -59,6 +59,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Web Memory recall ranking diagnostics, including per-item ranking breakdown
   and summary ranking policy for lexical, quality, feedback, and FTS5 blend
   scoring.
+- ToolContext executor runtime for migrated read-only tools, with
+  `read_project_file` and `validate_design_config` now using
+  `ToolContext -> executor -> ToolResult` in production paths.
 
 ### Changed
 
@@ -106,6 +109,8 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Regression suite now includes `scripts/run_router_signal_eval.py`.
 - Web Memory response shape is backward compatible; `items[].ranking` and
   `summary.ranking_policy` are additive diagnostics.
+- `read_project_file` and `validate_design_config` ToolSpecs now expose concrete
+  executor metadata while preserving existing HTTP response contracts.
 
 ## 0.1.4 - 2026-05-16
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.tools.context import ToolContext, ToolResult
+
 
 def _type_name(value: Any) -> str:
     if isinstance(value, bool):
@@ -158,3 +160,16 @@ def validate_design_config(payload: dict[str, Any]) -> dict[str, Any]:
             "checked_fields": checked_fields,
         },
     }
+
+
+def validate_design_config_executor(context: ToolContext) -> ToolResult:
+    output = validate_design_config(context.payload)
+    summary = (
+        f"Found {len(output['errors'])} error(s) and "
+        f"{len(output['warnings'])} warning(s)."
+    )
+    return ToolResult.completed(
+        tool_id=context.tool_id,
+        output=output,
+        summary=summary,
+    )

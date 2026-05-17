@@ -343,7 +343,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         required_payload_fields=("project_root", "file_path"),
         optional_payload_fields=("current_file", "max_bytes"),
         timeout_ms=10_000,
-        executor="app.tools.project_file:read_project_file_tool",
+        executor="app.tools.project_file:read_project_file_executor",
         input_schema={
             "type": "object",
             "required": ["project_root", "file_path"],
@@ -625,6 +625,27 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         requires_retrieval=False,
         trigger_keywords=("validate config", "config validate", "校验配置"),
         required_payload_fields=("schema", "config_json"),
+        executor="app.tools.config_validate:validate_design_config_executor",
+        input_schema={
+            "type": "object",
+            "required": ["schema", "config_json"],
+            "properties": {
+                "schema": {"type": "object"},
+                "config_json": {"type": "object"},
+                "schema_body": {"type": "object"},
+                "draft_config": {"type": "object"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["validation_summary", "errors", "warnings"],
+            "properties": {
+                "validation_summary": {"type": "object"},
+                "errors": {"type": "array"},
+                "warnings": {"type": "array"},
+                "suggestions": {"type": "array"},
+            },
+        },
     ),
     "inspect_asset_metadata": ToolSpec(
         tool_id="inspect_asset_metadata",

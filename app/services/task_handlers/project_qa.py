@@ -15,11 +15,13 @@ from app.i18n.language import localized as _localized
 from app.schemas.common import QuickAction, UserViewBlock
 from app.services.task_handlers.base import TaskExecutionContext
 from app.services.task_handlers.view_helpers import citation_previews
+from app.tools.context import ToolContext
+from app.tools.executor_runtime import execute_tool_with_context
 from app.tools.project_file import (
     project_file_candidate,
     project_file_fallback_answer,
-    read_project_file_tool,
 )
+from app.tools.registry import get_tool_spec
 
 
 class ProjectQAHandler:
@@ -128,15 +130,31 @@ class ProjectQAHandler:
                 run_id=context.run_id,
                 task_id=context.task_id,
             )
-        project_file_result = (
-            read_project_file_tool(request)
-            if tool_plan["use_project_file"]
-            else {
+        if tool_plan["use_project_file"]:
+            project_file_spec = get_tool_spec("read_project_file")
+            assert project_file_spec is not None
+            project_file_context = ToolContext(
+                tool_id="read_project_file",
+                task_id=context.task_id,
+                run_id=context.run_id,
+                trace_id=context.trace_id,
+                user_query=query_text,
+                payload=tool_call_input(tool_plan, "read_project_file") or project_file_candidate(request),
+                active_context=request.context.model_dump(mode="json"),
+                runtime_options=request.runtime_options.model_dump(mode="json"),
+                timeout_ms=project_file_spec.timeout_ms,
+                metadata={"source": "project_qa"},
+            )
+            project_file_tool_result = execute_tool_with_context(project_file_context)
+            project_file_result = project_file_tool_result.output
+        else:
+            project_file_context = None
+            project_file_tool_result = None
+            project_file_result = {
                 "status": "skipped",
                 "reason": "tool_plan_skipped_project_file_read",
                 "file_path": project_file_candidate(request)["file_path"],
             }
-        )
         if tool_plan["use_project_file"]:
             host._emit_stream_event(
                 stream_sink,
@@ -475,6 +493,10 @@ class ProjectQAHandler:
         base_debug["project_file"] = {
             key: value for key, value in project_file_result.items() if key != "text_excerpt"
         }
+        if project_file_tool_result is not None:
+            base_debug["project_file_tool_result"] = project_file_tool_result.to_debug_entry(
+                context=project_file_context
+            )
         base_debug["tools"] = [
             {
                 "tool_id": "retrieve_project_knowledge",

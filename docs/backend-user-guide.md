@@ -127,6 +127,18 @@
 - Debug View 统一使用 `ToolResult.to_debug_entry()`，减少每个工具自行拼接调试字段。
 - 写操作仍然必须走 Proposal confirmation，`ToolResult` 只描述结果，不绕过确认边界。
 
+当前已迁移的 read-only executor 试点：
+
+- `read_project_file`：`app.tools.project_file:read_project_file_executor`
+- `validate_design_config`：`app.tools.config_validate:validate_design_config_executor`
+
+试点边界：
+
+- 只迁移 read-only 工具。
+- 不迁移 confirmed-write 工具。
+- 不改变 UE 前端请求 / 响应。
+- Debug View 新增的 `tool_result_v1` 结构是内部诊断字段。
+
 ### MemoryProvider 使用边界
 
 后端新增 `app/agent/memory_providers.py`，用于把不同记忆来源统一成 provider contract。当前不是新的记忆产品，也不会改变用户可见响应，只是让后续扩展更规整。
@@ -3434,6 +3446,30 @@ Validation:
 ```
 
 UE frontend impact: no mandatory change.
+
+## 2026-05-17 ToolContext Executor Runtime Trial
+
+The backend now has a small executor runtime at `app/tools/executor_runtime.py`.
+
+Purpose:
+
+- Load the executor path declared by `ToolSpec.executor`.
+- Execute the tool through `ToolContext`.
+- Return a normalized `ToolResult`.
+- Keep latency, error, and debug envelope generation consistent.
+
+Migrated production paths:
+
+- `ProjectQAHandler` uses `read_project_file` through `ToolContext -> executor -> ToolResult`.
+- `ConfigValidateHandler` uses `validate_design_config` through `ToolContext -> executor -> ToolResult`.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_executor_runtime.py tests\unit\test_tool_registry.py tests\integration\test_system_and_tasks.py::test_agent_chat_project_qa_can_read_current_project_file tests\integration\test_system_and_tasks.py::test_config_validate_returns_report_and_artifact -q
+```
+
+UE frontend impact: no mandatory change. Existing response fields are preserved.
 
 ## 2026-05-16 Executor-backed Handler migration
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from app.schemas.requests import UnifiedTaskRequest
+from app.tools.context import ToolContext, ToolResult
 
 
 ALLOWED_PROJECT_FILE_SUFFIXES = {
@@ -81,6 +82,29 @@ def read_project_file_tool(request: UnifiedTaskRequest) -> dict[str, Any]:
         project_root=str(candidate["project_root"]),
         file_path=str(candidate["file_path"]),
         max_bytes=int(candidate["max_bytes"]),
+    )
+
+
+def read_project_file_executor(context: ToolContext) -> ToolResult:
+    output = read_project_file(
+        project_root=str(context.payload.get("project_root") or ""),
+        file_path=str(context.payload.get("file_path") or ""),
+        max_bytes=int(context.payload.get("max_bytes") or 40_000),
+    )
+    status = str(output.get("status") or "failed")
+    if status == "completed":
+        return ToolResult.completed(
+            tool_id=context.tool_id,
+            output=output,
+            summary=f"Read project file {output.get('file_path')}.",
+        )
+    return ToolResult(
+        tool_id=context.tool_id,
+        status="blocked" if status == "blocked" else "skipped" if status == "skipped" else "failed",
+        output=output,
+        summary=str(output.get("reason") or "read_project_file_failed"),
+        error_code=str(output.get("reason") or status),
+        error_message=str(output.get("reason") or status),
     )
 
 

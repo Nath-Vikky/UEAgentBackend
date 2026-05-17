@@ -6,7 +6,9 @@ from app.agent.context_builder import build_context_summary
 from app.i18n.language import localized as _localized
 from app.schemas.common import UserViewBlock
 from app.services.task_handlers.base import TaskExecutionContext
-from app.tools.config_validate import validate_design_config
+from app.tools.context import ToolContext
+from app.tools.executor_runtime import execute_tool_with_context
+from app.tools.registry import get_tool_spec
 
 
 class ConfigValidateHandler:
@@ -24,7 +26,17 @@ class ConfigValidateHandler:
             routing=routing,
             trace_id=context.trace_id,
         )
-        result = validate_design_config(request.payload)
+        spec = get_tool_spec("validate_design_config")
+        assert spec is not None
+        tool_context = ToolContext.from_request(
+            spec=spec,
+            request=request,
+            task_id=context.task_id,
+            run_id=context.run_id,
+            trace_id=context.trace_id,
+        )
+        tool_result = execute_tool_with_context(tool_context)
+        result = tool_result.output
         step_results = [
             {
                 "step_id": "validate_config",
@@ -78,9 +90,7 @@ class ConfigValidateHandler:
             "filters_applied": {},
             "retrieved_docs": [],
         }
-        base_debug["tools"] = [
-            {"tool_id": "validate_design_config", "status": "completed", "summary": user_text}
-        ]
+        base_debug["tools"] = [tool_result.to_debug_entry(context=tool_context)]
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
         base_debug["warnings"] = [item["message"] for item in result["warnings"]]
