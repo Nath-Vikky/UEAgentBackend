@@ -106,6 +106,7 @@
 - `validate_tool_call_input()`：检查 ReAct 工具调用输入是否满足 required/type。
 - `validate_tool_result()`：检查工具结果是否满足 required/type。
 - `app/tools/context.py`：提供 `ToolContext`、`ToolResult`、`CompositeToolResult`，作为后续新工具 executor / MCP transport 的标准入参和出参 envelope。
+- `app/tools/executor_runtime.py`：执行已迁移的本地 executor 前，会先运行工具输入 preflight；缺少必填字段、类型错误、enum 错误会返回 `ToolResult(status="blocked", error_code="tool_preflight_failed")`，不会进入 executor。
 
 查看位置：
 
@@ -126,6 +127,7 @@
 - executor 返回 `ToolResult.completed()`、`ToolResult.failed()` 或普通 `ToolResult(status="degraded"/"blocked"/"skipped")`。
 - Debug View 统一使用 `ToolResult.to_debug_entry()`，减少每个工具自行拼接调试字段。
 - 写操作仍然必须走 Proposal confirmation，`ToolResult` 只描述结果，不绕过确认边界。
+- `ToolResult.metadata.preflight` 会记录本次工具输入校验结果，包含 `missing_fields`、`type_errors`、`enum_errors`、`unknown_fields` 和 `unknown_field_suggestions`。
 
 当前已迁移的 read-only executor 试点：
 
@@ -138,6 +140,7 @@
 - 不迁移 confirmed-write 工具。
 - 不改变 UE 前端请求 / 响应。
 - Debug View 新增的 `tool_result_v1` 结构是内部诊断字段。
+- 参数预检失败时工具会被 `blocked`，这属于安全阻断，不是 UE 前端执行失败。
 
 ### MemoryProvider 使用边界
 
@@ -146,7 +149,7 @@
 当前 provider：
 
 - `SessionLongTermMemoryProvider`：包装原有 `recall_long_term_memory()`，Context Bundle 已通过它读取 `long_term_memory`。
-- `WebMemoryProvider`：包装 `WebMemoryService.recall()`，供后续把 Web Memory 纳入统一上下文或 planner 时复用。
+- `WebMemoryProvider`：包装 `WebMemoryService.recall()`，Context Bundle 现在会在 `WEB_MEMORY_ENABLED=true` 时读取最近的高质量 Web Memory。
 
 标准入参/出参：
 
@@ -157,6 +160,8 @@
 
 - 不改变 `data.context_bundle.long_term_memory` 的字段。
 - 不改变 Web Memory API。
+- Web Memory 会单独出现在 `data.context_bundle.web_memory` 和 `data.context_bundle.memory.sources`，不会混入正式 `long_term_memory`。
+- Web Memory 仍然只是可追溯的网页摘要缓存，不会写入 `knowledge/`，也不会替代本地 KB/RAG。
 - 不新增企业级用户画像或跨项目记忆同步。
 - 后续如果增加 Project Memory / Team Memory，优先实现 provider，而不是直接塞进 `context_manager.py`。
 
@@ -1597,6 +1602,9 @@ POST /api/v1/sessions
 - `debug_view.context_bundle.editor_context`：当前 UE project、panel、file、module、selected assets 等摘要。
 - `debug_view.context_bundle.tool_context`：最近工具型任务摘要，例如 Code Review，不会污染聊天历史。
 - `debug_view.context_bundle.session_summary`：阶段 B 之前主要读取 session metadata 中已有摘要；没有则显示 `not_available`。
+- `debug_view.context_bundle.long_term_memory`：项目/会话长期记忆，字段保持旧版本兼容。
+- `debug_view.context_bundle.web_memory`：当 `WEB_MEMORY_ENABLED=true` 时注入的 Web Search 摘要缓存，用于复用近期高质量外部资料。
+- `debug_view.context_bundle.memory.sources`：统一记忆来源诊断，当前包含 `session_long_term_memory` 和可选 `web_memory`。
 - `debug_view.context_bundle.budget`：字符预算、估算字符数、裁剪策略和 warnings。
 - `debug_view.memory_summary.context_budget`：Debug View 中更短的预算摘要，方便快速判断是否接近上下文限制。
 
@@ -1604,6 +1612,7 @@ POST /api/v1/sessions
 
 - 工具型任务不会写入 `/sessions/{session_id}/history`，只写入 task 列表和 tool context 摘要。
 - 第一版不做自动长期记忆总结，不做复杂 graph，也不做多 agent 上下文共享。
+- Web Memory 注入上下文时仍保持独立来源，不视为正式知识库证据；如果回答需要严格引用项目文档，仍优先看 RAG/local grep/project inventory。
 - 如果需要看某次请求到底带了哪些上下文，优先打开 `debug_view.context_bundle`，不要从 raw prompt 反推。
 
 ### 18.10 Memory Summary v1
@@ -2180,18 +2189,90 @@ GET /api/v1/system/capabilities
 - `capabilities.tool_registry.protocol_version = "tool_protocol_v2"`
 - `capabilities.tool_registry.protocol.categories`：`context / sensing / retrieval / analysis / generation / write`
 - `capabilities.tool_registry.protocol.transports`：`local_python / http / mcp_stdio / mcp_http`
+- `capabilities.tool_registry.protocol.side_effect_levels`：`read_only / plan_only / confirmed_write / reversible_write / destructive_write`
 - `capabilities.tool_registry.protocol.execution_policy`：自由聊天、草稿工具和确认写入工具的统一执行边界。
 - `capabilities.tool_registry.tools[].category`：工具类别。
 - `capabilities.tool_registry.tools[].transport`：当前工具执行通道。
 - `capabilities.tool_registry.tools[].requires_confirmation`：是否必须用户确认。
 - `capabilities.tool_registry.tools[].active_context_keys`：工具依赖哪些上下文。
 - `capabilities.tool_registry.tools[].allowed_in_free_chat`：是否允许 Agent Chat 自动选择。
+- `capabilities.tool_registry.tools[].enabled`：运行时配置后该工具是否启用。
+- `capabilities.tool_registry.tools[].tier`：工具分层，当前支持 `core / extended / experimental`。
+- `capabilities.tool_registry.tools[].config_source`：`builtin` 或 `tool_config_overlay`。
+- `capabilities.tool_registry.tools[].config_warnings`：配置覆盖时被忽略的字段，例如危险权限降级字段。
+
+### Tool Registry JSON Overlay
+
+后端支持一个轻量工具配置覆盖层，用来借鉴 UMGMCP 的 `prompts.json` 控制平面。它不是新的插件系统，也不会改变工具真实能力边界，只允许覆盖低风险展示/选择字段。
+
+默认读取路径：
+
+```text
+storage/tools_config.json
+```
+
+也可以用环境变量指定：
+
+```env
+TOOL_CONFIG_PATH=D:/path/to/tools_config.json
+```
+
+示例文件：
+
+```text
+config/tools_config.example.json
+```
+
+允许覆盖的字段：
+
+- `enabled`
+- `title`
+- `description`
+- `category`
+- `trigger_keywords`
+- `allowed_in_free_chat`
+- `context_cost`
+- `tier`
+
+明确不允许覆盖的字段：
+
+- `side_effect_level`
+- `permission_gate`
+- `requires_confirmation`
+- `transport`
+- `executor`
+- `input_schema`
+- `output_schema`
+- `required_payload_fields`
+- `optional_payload_fields`
+
+原因很简单：JSON 配置可以让工具临时下线、调整描述或触发词，但不能把写操作伪装成只读工具，也不能绕过 Proposal 确认。
+
+热重载接口：
+
+```http
+POST /api/v1/system/tool-registry/reload
+```
+
+返回中会包含：
+
+- `tool_config_overlay.status`
+- `tool_config_overlay.path`
+- `tool_config_overlay.warnings`
+- `capabilities.tools[]`
+
+常见用法：
+
+- 暂时关闭 `web_search_knowledge`，避免自由聊天误触发联网检索。
+- 调整 `query_project_inventory` 的描述，让 Debug View 更容易看懂。
+- 给某些工具标记 `tier=experimental`，前端 Debug View 可选展示。
 
 当前执行策略：
 
 - Agent Chat 只能自动调用 `read_only` 且 `allowed_in_free_chat=true` 的工具。
 - `plan_only` 工具只生成草稿、建议、计划或 preview，不写入项目。
 - `confirmed_write` 工具必须经过前端确认和后端安全校验。
+- `reversible_write` / `destructive_write` 是未来扩展的危险等级标签，仍然必须经过前端确认和后端安全校验；当前不会让后端直接写 UE 项目。
 - 显式功能面板仍优先使用固定 Skill 流程，避免 LLM 自由选错工具。
 
 Debug View 新增：
@@ -2203,6 +2284,7 @@ Debug View 新增：
 - `debug_view.tools[].transport`
 - `debug_view.tools[].side_effect_level`
 - `debug_view.tools[].approval_state`
+- `debug_view.tools[].metadata.preflight`：如果工具走 `ToolContext executor`，这里会显示参数预检结果。
 
 `ActiveContext` 用于解释本轮 Agent 到底看到了什么上下文：
 
@@ -3250,10 +3332,21 @@ RAG / lexical retrieval
 
 - `data.web_memory`
 - `data.web_memory_store`
+- `data.context_bundle.web_memory`
+- `data.context_bundle.memory.sources`
 - `debug_view.web_memory`
 - `debug_view.web_memory_store`
+- `debug_view.context_bundle.web_memory`
+- `debug_view.context_bundle.memory.sources`
 - `data.retrieval_quality_gate.web_memory_retrieved_count`
 - `data.source_arbitration.source_counts.web_memory`
+
+Context Bundle 行为：
+
+- `WEB_MEMORY_ENABLED=true` 时，每次任务构建 `context_bundle_v1` 会额外尝试召回最多 3 条 Web Memory。
+- 命中内容会进入 `context_bundle_prompt_excerpt()`，让 Direct Answer / Project QA 的 LLM 合成可以复用缓存网页证据。
+- `context_bundle.memory.sources` 会解释本轮有哪些记忆 provider 参与、状态是什么、命中几条。
+- 这仍然是缓存证据，不是正式 KB；需要长期沉淀时，应走人工 curation，再写入 `knowledge/` 后 reindex。
 
 ### Web Memory FTS5 召回
 
@@ -3814,6 +3907,7 @@ Behavior:
 - `scoring_shadow` also exposes `signal_router_recommendation`.
 - Shadow recommendation does not override the existing heuristic router.
 - `signal_router_override_applied` is always `false` in this stage.
+- `scoring_active` is available as a guarded mode. It only overrides when the recommendation is eligible, above confidence/margin thresholds, and different from the heuristic result. The default remains `compatibility_observer`.
 
 Debug fields:
 
@@ -3830,6 +3924,14 @@ Validation:
 ```
 
 UE frontend impact: no mandatory change. If Debug View wants richer routing diagnostics, display `signal_router_recommendation.status`, `route_hint`, `selected_tool_id`, and `score_margin`.
+
+Active mode note:
+
+```env
+ROUTER_SIGNAL_MODE=scoring_active
+```
+
+建议只在本地调试或评测通过后启用。当前 route-diff eval 仍以 shadow 稳定性为主，不建议把 active mode 作为默认配置。
 
 ## 2026-05-16 Router Signal route-diff eval
 
@@ -3886,3 +3988,98 @@ Validation:
 ```
 
 UE frontend impact: no mandatory change.
+
+## 2026-05-17 Handler Dependencies v1
+
+This is an internal architecture cleanup for the Improv3 Bridge/MCP absorption stage.
+
+What changed:
+
+- `app/services/task_handlers/base.py` now defines `TaskHandlerDependencies`.
+- `TaskExecutionContext` can carry explicit dependencies such as `db`, `settings`, `kb_service`, `llm_service`, `inventory_service`, `base_debug_builder`, and `stream_event_emitter`.
+- `TaskService._execute_route()` injects this dependency object when dispatching handlers.
+- `ConfigValidateHandler` and `EditorOperationProposalHandler` now use the explicit dependency entry point for low-risk host cleanup.
+
+Why it matters:
+
+- New handlers can be tested without constructing a full `TaskService`.
+- Future MCP/Bridge-style transports can reuse the same handler boundary.
+- Existing UE frontend request/response contracts are unchanged.
+
+Boundary:
+
+- This does not introduce a new UE Editor operation.
+- This does not make MCP the default execution path.
+- Existing handlers may still read the legacy `host` object until they are migrated safely.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_task_route_dispatcher.py tests\unit\test_tool_registry.py tests\unit\test_tool_executor_runtime.py -q
+.\.venv\Scripts\python.exe -m ruff check app\services\task_handlers\base.py app\services\task_handlers\__init__.py app\services\task_handlers\config_validate.py app\services\task_handlers\editor_operation.py app\services\task_service.py tests\unit\test_task_route_dispatcher.py
+```
+
+## 2026-05-17 Improv3 P2 Completion
+
+This stage finishes the reasonable P2 items from Improv3 without changing UE frontend contracts.
+
+### WorkflowCursor
+
+`app/tools/workflow_cursor.py` adds a small `WorkflowCursor` object for multi-step workflows.
+
+It records:
+
+- `workflow_id`
+- `step_index`
+- `active_target`
+- `active_asset`
+- `active_graph`
+- `last_tool_id`
+- `last_result_ref`
+- `confirmed_until_step`
+
+It is carried by `ToolContext.workflow_cursor` and appears in `ToolContext.input_summary()`. It is only a planning/debug hint. It does not authorize writes and does not replace Proposal confirmation.
+
+### Read-only ToolSpec Executor Migration
+
+These read-only tools now expose local executors:
+
+- `preflight_generated_code -> app.tools.code_preflight:preflight_generated_code_executor`
+- `analyze_ue_log -> app.tools.log_analysis:analyze_ue_log_executor`
+- `inspect_asset_metadata -> app.tools.asset_inspect:inspect_asset_metadata_executor`
+- `review_ue_cpp_files -> app.tools.code_review:review_ue_cpp_files_executor`
+
+The existing skill/task handler paths are unchanged. This migration gives future callers a consistent `ToolContext -> executor -> ToolResult` path and keeps preflight diagnostics in one place.
+
+### Curation Review API
+
+New endpoints:
+
+```text
+GET  /api/v1/curation/candidates
+GET  /api/v1/curation/candidates/{candidate_id}
+POST /api/v1/curation/candidates/{candidate_id}/approve
+POST /api/v1/curation/candidates/{candidate_id}/reject
+```
+
+Safety boundary:
+
+- `approve` exports a suggestion-only Markdown/JSON artifact under `storage/curation`.
+- `reject` writes a local rejection marker under `storage/curation/rejected`.
+- Neither endpoint writes to `knowledge/`, SQLite KB documents, or Qdrant.
+- Neither endpoint triggers reindex automatically.
+
+Example:
+
+```powershell
+Invoke-RestMethod -Method Get http://127.0.0.1:8000/api/v1/curation/candidates
+```
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_context.py tests\unit\test_tool_executor_runtime.py tests\unit\test_tool_registry.py tests\integration\test_system_and_tasks.py::test_curation_candidates_can_be_exported_for_manual_review -q
+.\.venv\Scripts\python.exe -m ruff check app tests docs config
+```
+
+UE frontend impact: no mandatory change. If a future frontend wants a KB maintenance panel, it can read these curation endpoints, but this is optional.

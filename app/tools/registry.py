@@ -1,21 +1,56 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from app.skills.registry import PRIMARY_TOOL_ID_BY_TASK_TYPE
+from app.tools.config_loader import load_tool_config_overlay, reload_tool_config_overlay
 
 TOOL_PROTOCOL_VERSION = "tool_protocol_v2"
 TOOL_CATEGORIES = {"context", "sensing", "retrieval", "analysis", "generation", "write"}
 TOOL_TRANSPORTS = {"local_python", "http", "mcp_stdio", "mcp_http"}
-SIDE_EFFECT_LEVELS = {"read_only", "plan_only", "confirmed_write"}
+SIDE_EFFECT_LEVELS = {"read_only", "plan_only", "confirmed_write", "reversible_write", "destructive_write"}
+CONFIRMATION_SIDE_EFFECT_LEVELS = {"confirmed_write", "reversible_write", "destructive_write"}
 ROUTE_PREFERENCES = {"project_qa", "single_tool", "workflow", "proposal_wait"}
+CONTEXT_COST_LEVELS = {"low", "medium", "high"}
+TOOL_TIERS = {"core", "extended", "experimental"}
+SAFE_OVERLAY_FIELDS = {
+    "enabled",
+    "title",
+    "description",
+    "category",
+    "trigger_keywords",
+    "allowed_in_free_chat",
+    "context_cost",
+    "tier",
+}
+UNSAFE_OVERLAY_FIELDS = {
+    "tool_id",
+    "task_type",
+    "side_effect_level",
+    "route_preference",
+    "transport",
+    "requires_confirmation",
+    "active_context_keys",
+    "owned_by_skill",
+    "permission_gate",
+    "mcp_tool_name",
+    "requires_retrieval",
+    "required_payload_fields",
+    "optional_payload_fields",
+    "timeout_ms",
+    "executor",
+    "input_schema",
+    "output_schema",
+}
 
 TOOL_EXECUTION_POLICY = {
     "free_chat_auto_execute": "read_only_only",
     "plan_only_behavior": "return_proposal_or_draft_without_side_effects",
     "confirmed_write_behavior": "requires_frontend_confirmation_and_backend_safety_check",
+    "reversible_write_behavior": "requires_frontend_confirmation; expected to provide undo or rollback hint",
+    "destructive_write_behavior": "requires_explicit_frontend_confirmation and should expose strongest warning copy",
     "explicit_panel_behavior": "use_skill_owned_tools_before_llm_free_tool_selection",
     "debug_contract": [
         "tool_id",
@@ -55,6 +90,10 @@ class ToolSpec:
     executor: str | None = None
     input_schema: dict[str, Any] = field(default_factory=dict)
     output_schema: dict[str, Any] = field(default_factory=dict)
+    enabled: bool = True
+    tier: str = "core"
+    config_source: str = "builtin"
+    config_warnings: tuple[str, ...] = ()
 
     def capability_card(self) -> dict[str, Any]:
         return {
@@ -82,11 +121,15 @@ class ToolSpec:
             "executor": self.executor,
             "input_schema": self.input_schema,
             "output_schema": self.output_schema,
+            "enabled": self.enabled,
+            "tier": self.tier,
+            "config_source": self.config_source,
+            "config_warnings": list(self.config_warnings),
         }
 
     @property
     def effective_requires_confirmation(self) -> bool:
-        return self.requires_confirmation or self.side_effect_level == "confirmed_write"
+        return self.requires_confirmation or self.side_effect_level in CONFIRMATION_SIDE_EFFECT_LEVELS
 
     def debug_policy_card(self) -> dict[str, Any]:
         return {
@@ -101,6 +144,10 @@ class ToolSpec:
             "allowed_in_free_chat": self.allowed_in_free_chat,
             "permission_gate": self.permission_gate,
             "executor": self.executor,
+            "enabled": self.enabled,
+            "tier": self.tier,
+            "config_source": self.config_source,
+            "config_warnings": list(self.config_warnings),
         }
 
 
@@ -445,6 +492,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         trigger_keywords=("code review", "review", "审查", "代码审查"),
         required_payload_fields=("user_query",),
         optional_payload_fields=("files", "file_paths", "diff_text", "code_text", "project_root"),
+        executor="app.tools.code_review:review_ue_cpp_files_executor",
         input_schema={
             "type": "object",
             "required": ["user_query"],
@@ -508,6 +556,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         requires_retrieval=False,
         trigger_keywords=("preflight code", "validate generated code", "check generated code"),
         required_payload_fields=("generated_items",),
+        executor="app.tools.code_preflight:preflight_generated_code_executor",
         input_schema={
             "type": "object",
             "required": ["generated_items"],
@@ -580,6 +629,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "log_file_path",
             "attachment_paths",
         ),
+        executor="app.tools.log_analysis:analyze_ue_log_executor",
         input_schema={
             "type": "object",
             "properties": {
@@ -670,6 +720,17 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "检查选中资产",
         ),
         optional_payload_fields=("assets", "selected_assets", "asset_metadata"),
+        executor="app.tools.asset_inspect:inspect_asset_metadata_executor",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "asset_items": {"type": "array", "items": {"type": "object"}},
+                "asset_paths": {"type": "array", "items": {"type": "string"}},
+                "assets": {"type": "array", "items": {"type": "object"}},
+                "selected_assets": {"type": "array", "items": {"type": "string"}},
+                "asset_metadata": {"type": "object"},
+            },
+        },
     ),
     "plan_asset_operation": ToolSpec(
         tool_id="plan_asset_operation",
@@ -985,10 +1046,94 @@ TASK_TYPE_TO_TOOL_ID = {
 TOOL_ID_TO_TASK_TYPE = {tool_id: spec.task_type for tool_id, spec in TOOL_REGISTRY.items()}
 
 
+def _string_tuple(value: Any) -> tuple[str, ...] | None:
+    if isinstance(value, str):
+        values = [item.strip() for item in value.split(",")]
+    elif isinstance(value, list | tuple):
+        values = [str(item).strip() for item in value]
+    else:
+        return None
+    return tuple(item for item in values if item)
+
+
+def _apply_tool_overlay(tool_id: str, spec: ToolSpec) -> ToolSpec:
+    overlay = load_tool_config_overlay()
+    raw = overlay.tools.get(tool_id)
+    if not raw:
+        return spec
+    updates: dict[str, Any] = {"config_source": "tool_config_overlay"}
+    warnings: list[str] = []
+    for field_name in sorted(set(raw) & UNSAFE_OVERLAY_FIELDS):
+        warnings.append(f"Ignored unsafe overlay field `{field_name}`.")
+    for field_name, value in raw.items():
+        if field_name not in SAFE_OVERLAY_FIELDS:
+            if field_name not in UNSAFE_OVERLAY_FIELDS:
+                warnings.append(f"Ignored unknown overlay field `{field_name}`.")
+            continue
+        if field_name == "enabled":
+            updates["enabled"] = bool(value)
+            continue
+        if field_name in {"title", "description"}:
+            text = str(value or "").strip()
+            if text:
+                updates[field_name] = text
+            else:
+                warnings.append(f"Ignored blank `{field_name}` override.")
+            continue
+        if field_name == "category":
+            category = str(value or "").strip()
+            if category in TOOL_CATEGORIES:
+                updates["category"] = category
+            else:
+                warnings.append(f"Ignored unsupported category `{category}`.")
+            continue
+        if field_name == "trigger_keywords":
+            keywords = _string_tuple(value)
+            if keywords:
+                updates["trigger_keywords"] = keywords
+            else:
+                warnings.append("Ignored empty or invalid `trigger_keywords` override.")
+            continue
+        if field_name == "allowed_in_free_chat":
+            allowed = bool(value)
+            if allowed and spec.side_effect_level != "read_only":
+                warnings.append("Ignored unsafe `allowed_in_free_chat=true` for non-read-only tool.")
+            else:
+                updates["allowed_in_free_chat"] = allowed
+            continue
+        if field_name == "context_cost":
+            context_cost = str(value or "").strip()
+            if context_cost in CONTEXT_COST_LEVELS:
+                updates["context_cost"] = context_cost
+            else:
+                warnings.append(f"Ignored unsupported context_cost `{context_cost}`.")
+            continue
+        if field_name == "tier":
+            tier = str(value or "").strip()
+            if tier in TOOL_TIERS:
+                updates["tier"] = tier
+            else:
+                warnings.append(f"Ignored unsupported tier `{tier}`.")
+    updates["config_warnings"] = tuple([*spec.config_warnings, *warnings])
+    return replace(spec, **updates)
+
+
+def _effective_tool_registry() -> dict[str, ToolSpec]:
+    return {tool_id: _apply_tool_overlay(tool_id, spec) for tool_id, spec in TOOL_REGISTRY.items()}
+
+
+def iter_tool_specs(*, include_disabled: bool = True) -> list[ToolSpec]:
+    specs = list(_effective_tool_registry().values())
+    if include_disabled:
+        return specs
+    return [spec for spec in specs if spec.enabled]
+
+
 def get_tool_spec(tool_id: str | None) -> ToolSpec | None:
     if not tool_id:
         return None
-    return TOOL_REGISTRY.get(tool_id)
+    spec = TOOL_REGISTRY.get(tool_id)
+    return _apply_tool_overlay(tool_id, spec) if spec else None
 
 
 def task_route_for_task_type(task_type: str) -> str:
@@ -1006,7 +1151,9 @@ def _keyword_matches(text: str, token: str) -> bool:
 
 def candidate_tools_for_text(text: str) -> list[str]:
     candidates: list[str] = []
-    for tool_id, spec in TOOL_REGISTRY.items():
+    for tool_id, spec in _effective_tool_registry().items():
+        if not spec.enabled:
+            continue
         if any(_keyword_matches(text, token) for token in spec.trigger_keywords):
             candidates.append(tool_id)
     return candidates
@@ -1018,10 +1165,11 @@ def detect_tool_for_text(text: str) -> str | None:
 
 
 def tool_capability_cards() -> list[dict[str, Any]]:
-    return [spec.capability_card() for spec in TOOL_REGISTRY.values()]
+    return [spec.capability_card() for spec in iter_tool_specs()]
 
 
 def tool_protocol_summary() -> dict[str, Any]:
+    overlay = load_tool_config_overlay()
     return {
         "protocol_version": TOOL_PROTOCOL_VERSION,
         "categories": sorted(TOOL_CATEGORIES),
@@ -1029,15 +1177,20 @@ def tool_protocol_summary() -> dict[str, Any]:
         "side_effect_levels": sorted(SIDE_EFFECT_LEVELS),
         "route_preferences": sorted(ROUTE_PREFERENCES),
         "execution_policy": TOOL_EXECUTION_POLICY,
+        "tool_config_overlay": overlay.model_dump(),
     }
 
 
 def free_chat_tool_ids() -> set[str]:
     return {
         tool_id
-        for tool_id, spec in TOOL_REGISTRY.items()
-        if spec.allowed_in_free_chat and spec.side_effect_level == "read_only"
+        for tool_id, spec in _effective_tool_registry().items()
+        if spec.enabled and spec.allowed_in_free_chat and spec.side_effect_level == "read_only"
     }
+
+
+def reload_tool_registry_config() -> dict[str, Any]:
+    return reload_tool_config_overlay().model_dump()
 
 
 def enrich_tool_debug_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1056,6 +1209,10 @@ def enrich_tool_debug_entries(entries: list[dict[str, Any]]) -> list[dict[str, A
             item.setdefault("owned_by_skill", spec.owned_by_skill)
             item.setdefault("permission_gate", spec.permission_gate)
             item.setdefault("allowed_in_free_chat", spec.allowed_in_free_chat)
+            item.setdefault("enabled", spec.enabled)
+            item.setdefault("tier", spec.tier)
+            item.setdefault("config_source", spec.config_source)
+            item.setdefault("config_warnings", list(spec.config_warnings))
             item.setdefault("approval_state", "not_required" if not spec.effective_requires_confirmation else "required")
         else:
             item.setdefault("registered", False)

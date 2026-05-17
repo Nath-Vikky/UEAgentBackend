@@ -20,8 +20,10 @@ class ConfigValidateHandler:
         request = context.request
         routing = context.routing
         output_language = context.output_language
+        deps = context.dependencies
+        base_debug_builder = deps.base_debug_builder if deps else host._base_debug
 
-        base_debug = host._base_debug(
+        base_debug = base_debug_builder(
             request=request,
             routing=routing,
             trace_id=context.trace_id,

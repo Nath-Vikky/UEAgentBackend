@@ -59,7 +59,93 @@ def test_execute_validate_design_config_with_tool_context() -> None:
 
 
 def test_execute_missing_executor_returns_failed_result() -> None:
-    result = execute_tool_with_context(ToolContext(tool_id="analyze_ue_log"))
+    result = execute_tool_with_context(ToolContext(tool_id="generate_code_draft"))
 
     assert result.ok is False
     assert result.error_code == "executor_not_configured"
+
+
+def test_executor_runtime_blocks_invalid_input_before_dispatch() -> None:
+    result = execute_tool_with_context(
+        ToolContext(
+            tool_id="read_project_file",
+            payload={"file_path": "Source/Demo/Hero.cpp"},
+        )
+    )
+
+    assert result.ok is False
+    assert result.status == "blocked"
+    assert result.error_code == "tool_preflight_failed"
+    assert result.metadata["preflight"]["missing_fields"] == ["project_root"]
+
+
+def test_execute_preflight_generated_code_with_tool_context() -> None:
+    result = execute_tool_with_context(
+        ToolContext(
+            tool_id="preflight_generated_code",
+            payload={
+                "generated_items": [
+                    {
+                        "file_path": "Source/Demo/Public/Hero.h",
+                        "code": "#pragma once\nUCLASS()\nclass AHero : public ACharacter { GENERATED_BODY() };",
+                    }
+                ],
+                "requirement": "Generate an Enhanced Input character.",
+            },
+        )
+    )
+
+    assert result.ok is True
+    assert result.output["preflight_report"]["summary"]["checked_item_count"] == 1
+    assert result.metadata["preflight"]["ok"] is True
+
+
+def test_execute_analyze_ue_log_with_tool_context() -> None:
+    result = execute_tool_with_context(
+        ToolContext(
+            tool_id="analyze_ue_log",
+            payload={"log_text": "LogTemp: Error: Failed to load /Game/MissingAsset"},
+        )
+    )
+
+    assert result.ok is True
+    assert result.output["log_summary"]["error_count"] == 1
+    assert "asset_load_failure" in result.output["issue_families"]
+
+
+def test_execute_inspect_asset_metadata_with_tool_context() -> None:
+    result = execute_tool_with_context(
+        ToolContext(
+            tool_id="inspect_asset_metadata",
+            active_context={"project_name": "Demo"},
+            payload={
+                "asset_items": [
+                    {
+                        "asset_path": "/Game/NewBlueprint",
+                        "asset_name": "NewBlueprint",
+                        "asset_type": "Blueprint",
+                    }
+                ]
+            },
+        )
+    )
+
+    assert result.ok is True
+    assert result.output["summary"]["asset_count"] == 1
+    assert result.output["rename_suggestions"]
+
+
+def test_execute_review_ue_cpp_files_with_tool_context() -> None:
+    result = execute_tool_with_context(
+        ToolContext(
+            tool_id="review_ue_cpp_files",
+            payload={
+                "user_query": "review this file",
+                "code": "void AHero::Tick(float DeltaSeconds) { UObject* Obj = nullptr; }",
+            },
+        )
+    )
+
+    assert result.ok is True
+    assert result.output["severity_summary"]["medium"] >= 1
+    assert "tick_hot_path" in result.output["rule_hits"]

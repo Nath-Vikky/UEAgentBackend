@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.tools.context import ToolContext, ToolResult
+
 CPP_SUFFIXES = (".h", ".hpp", ".hh", ".inl", ".c", ".cc", ".cpp", ".cxx")
 HEADER_SUFFIXES = (".h", ".hpp", ".hh", ".inl")
 SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".cxx")
@@ -445,3 +447,17 @@ def build_code_generation_preflight(
             "or the UE editor compiler."
         ),
     }
+
+
+def preflight_generated_code_executor(context: ToolContext) -> ToolResult:
+    report = build_code_generation_preflight(
+        result={"generated_items": list(context.payload.get("generated_items") or [])},
+        requirement=str(context.payload.get("requirement") or context.user_query or ""),
+        target_module=str(context.payload.get("target_module") or context.payload.get("module_name") or ""),
+    )
+    finding_count = int(report.get("summary", {}).get("finding_count") or 0)
+    return ToolResult.completed(
+        tool_id=context.tool_id,
+        output={"preflight_report": report},
+        summary=f"Generated code preflight completed with {finding_count} finding(s).",
+    )

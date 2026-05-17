@@ -5,6 +5,7 @@ from typing import Any
 
 from app.schemas.requests import UnifiedTaskRequest
 from app.tools.registry import ToolSpec
+from app.tools.workflow_cursor import WorkflowCursor
 
 
 TOOL_RESULT_PROTOCOL_VERSION = "tool_result_v1"
@@ -29,6 +30,7 @@ class ToolContext:
     runtime_options: dict[str, Any] = field(default_factory=dict)
     timeout_ms: int = 30_000
     metadata: dict[str, Any] = field(default_factory=dict)
+    workflow_cursor: WorkflowCursor | None = None
 
     @classmethod
     def from_request(
@@ -70,6 +72,7 @@ class ToolContext:
             "payload_keys": sorted(self.payload.keys()),
             "active_context_keys": sorted(key for key, value in self.active_context.items() if value),
             "timeout_ms": self.timeout_ms,
+            "workflow_cursor": self.workflow_cursor.summary() if self.workflow_cursor else None,
         }
 
 

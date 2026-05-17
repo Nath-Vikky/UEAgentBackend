@@ -9,6 +9,25 @@ from app.services.llm_service import ChatRuntimeConfig
 
 
 StreamEventSink = Callable[[dict[str, Any]], None]
+BaseDebugBuilder = Callable[..., dict[str, Any]]
+StreamEventEmitterFn = Callable[..., None]
+
+
+@dataclass(slots=True)
+class TaskHandlerDependencies:
+    """Explicit service dependencies available to route handlers.
+
+    Older handlers may still use the TaskService host directly. New handlers should prefer
+    this dependency object so they are easier to unit test and migrate to alternate hosts.
+    """
+
+    db: Any
+    settings: Any
+    kb_service: Any
+    llm_service: Any
+    inventory_service: Any
+    base_debug_builder: BaseDebugBuilder
+    stream_event_emitter: StreamEventEmitterFn
 
 
 @dataclass(slots=True)
@@ -23,6 +42,7 @@ class TaskExecutionContext:
     chat_config: ChatRuntimeConfig
     context_bundle: dict[str, Any]
     stream_sink: StreamEventSink | None = None
+    dependencies: TaskHandlerDependencies | None = None
 
 
 class TaskHandler(Protocol):

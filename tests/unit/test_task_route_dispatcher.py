@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.schemas.requests import UnifiedTaskRequest
 from app.services.llm_service import ChatRuntimeConfig
-from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext
+from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext, TaskHandlerDependencies
 
 
 def _request(task_type: str = "agent_chat", payload: dict | None = None) -> UnifiedTaskRequest:
@@ -51,6 +51,23 @@ def _context(
 
 class _FakeHost:
     pass
+
+
+def test_task_execution_context_accepts_explicit_handler_dependencies() -> None:
+    dependencies = TaskHandlerDependencies(
+        db=object(),
+        settings=object(),
+        kb_service=object(),
+        llm_service=object(),
+        inventory_service=object(),
+        base_debug_builder=lambda **_: {},
+        stream_event_emitter=lambda *_, **__: None,
+    )
+
+    context = _context()
+    context.dependencies = dependencies
+
+    assert context.dependencies is dependencies
 
 
 def test_route_dispatcher_selects_project_qa_by_route_type() -> None:

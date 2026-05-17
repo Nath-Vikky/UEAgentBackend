@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import difflib
 from typing import Any
 
 from app.tools.registry import (
     ROUTE_PREFERENCES,
+    CONFIRMATION_SIDE_EFFECT_LEVELS,
     SIDE_EFFECT_LEVELS,
     TOOL_CATEGORIES,
     TOOL_REGISTRY,
     TOOL_TRANSPORTS,
     ToolSpec,
     get_tool_spec,
+    iter_tool_specs,
 )
 
 _TYPE_MAP = {
@@ -31,6 +34,12 @@ def _validate_schema_payload(schema: dict[str, Any], payload: dict[str, Any]) ->
     ]
     type_errors: list[dict[str, str]] = []
     properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    unknown_fields = sorted(set(payload) - set(properties))
+    unknown_field_suggestions = {
+        field: difflib.get_close_matches(field, list(properties), n=1)
+        for field in unknown_fields
+    }
+    enum_errors: list[dict[str, Any]] = []
     for field, rules in properties.items():
         if field not in payload or payload.get(field) is None:
             continue
@@ -54,11 +63,26 @@ def _validate_schema_payload(schema: dict[str, Any], payload: dict[str, Any]) ->
             type_errors.append(
                 {"field": str(field), "expected": "number", "actual": "bool"}
             )
+            continue
+        allowed_values = rules.get("enum") if isinstance(rules, dict) else None
+        if isinstance(allowed_values, list) and payload[field] not in allowed_values:
+            enum_errors.append(
+                {
+                    "field": str(field),
+                    "allowed": allowed_values,
+                    "actual": payload[field],
+                }
+            )
 
+    unknown_fields_blocking = schema.get("additionalProperties") is False
     return {
-        "ok": not missing_fields and not type_errors,
+        "ok": not missing_fields and not type_errors and not enum_errors and not (unknown_fields_blocking and unknown_fields),
         "missing_fields": missing_fields,
         "type_errors": type_errors,
+        "enum_errors": enum_errors,
+        "unknown_fields": unknown_fields,
+        "unknown_field_suggestions": unknown_field_suggestions,
+        "unknown_fields_blocking": unknown_fields_blocking,
     }
 
 
@@ -139,20 +163,20 @@ def _validate_spec(tool_id: str, spec: ToolSpec) -> list[dict[str, Any]]:
                 "message": f"Unsupported tool transport: {spec.transport}",
             }
         )
-    if spec.side_effect_level == "confirmed_write" and not spec.effective_requires_confirmation:
+    if spec.side_effect_level in CONFIRMATION_SIDE_EFFECT_LEVELS and not spec.effective_requires_confirmation:
         issues.append(
             {
                 "tool_id": tool_id,
                 "field": "requires_confirmation",
-                "message": "confirmed_write tools must require confirmation.",
+                "message": "Write-like side-effect tools must require confirmation.",
             }
         )
-    if spec.side_effect_level == "confirmed_write" and spec.permission_gate in {"", "none"}:
+    if spec.side_effect_level in CONFIRMATION_SIDE_EFFECT_LEVELS and spec.permission_gate in {"", "none"}:
         issues.append(
             {
                 "tool_id": tool_id,
                 "field": "permission_gate",
-                "message": "confirmed_write tools must define a permission gate.",
+                "message": "Write-like side-effect tools must define a permission gate.",
             }
         )
     if spec.allowed_in_free_chat and spec.side_effect_level != "read_only":
@@ -216,11 +240,12 @@ def _validate_spec(tool_id: str, spec: ToolSpec) -> list[dict[str, Any]]:
 
 def validate_tool_registry() -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
-    for tool_id, spec in TOOL_REGISTRY.items():
-        issues.extend(_validate_spec(tool_id, spec))
+    for spec in iter_tool_specs(include_disabled=True):
+        issues.extend(_validate_spec(spec.tool_id, spec))
     return {
         "ok": not issues,
         "tool_count": len(TOOL_REGISTRY),
+        "enabled_tool_count": len(iter_tool_specs(include_disabled=False)),
         "issue_count": len(issues),
         "issues": issues,
     }

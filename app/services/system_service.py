@@ -15,6 +15,7 @@ from app.services.mcp_tool_adapter import build_mcp_adapter_status, build_mcp_ca
 from app.services.runtime_profile_service import RuntimeProfileService
 from app.services.web_memory_service import WebMemoryService
 from app.services.web_search_service import WebSearchService
+from app.tools.registry import tool_capability_cards, tool_protocol_summary
 
 
 class SystemService:
@@ -79,8 +80,21 @@ class SystemService:
         }
 
     def capabilities(self) -> dict:
-        return {
+        capabilities = {
             **CAPABILITIES,
+            "tool_registry": {
+                **dict(CAPABILITIES.get("tool_registry") or {}),
+                "protocol": tool_protocol_summary(),
+                "tools": tool_capability_cards(),
+                "runtime_hot_reload": True,
+                "extension_policy": (
+                    "Define safe defaults in app/tools/registry.py; optionally override "
+                    "enabled/title/description/category/tier/free-chat/keywords via storage/tools_config.json."
+                ),
+            },
+        }
+        return {
+            **capabilities,
             "mcp_adapter": build_mcp_capability(self.settings),
             "web_search": WebSearchService(self.settings).status(),
             "web_memory": WebMemoryService(self.db, self.settings).status(),

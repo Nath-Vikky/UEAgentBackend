@@ -169,6 +169,24 @@ def test_router_can_emit_scoring_shadow_recommendation_without_overriding_route(
     assert routing["route"]["signal_router_override_applied"] is False
 
 
+def test_router_accepts_scoring_active_mode_with_guarded_override() -> None:
+    request = _request(
+        content="当前项目有哪些蓝图资产？",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request, signal_mode="scoring_active")
+
+    assert routing["route"]["signal_detector_mode"] == "scoring_active"
+    assert routing["route"]["signal_router_recommendation"]["status"] == "eligible"
+    assert routing["route"]["signal_router_recommendation"]["route_hint"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["signal_router_override_applied"] is False
+
+
 def test_auto_language_defaults_to_chinese_even_for_english_question() -> None:
     request = _request(content="Explain dependency injection in simple terms.")
 

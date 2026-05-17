@@ -51,7 +51,7 @@ from app.services.task_events import (
     build_persisted_event_payloads,
     build_run_cancelled_event_payload,
 )
-from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext
+from app.services.task_handlers import RouteExecutionDispatcher, TaskExecutionContext, TaskHandlerDependencies
 from app.skills.runtime import build_skill_runtime_descriptor
 from app.tools.registry import (
     TOOL_EXECUTION_POLICY,
@@ -679,6 +679,7 @@ class TaskService:
             db=self.db,
             request=request,
             routing=routing,
+            settings=self.settings,
             actual_task_type=actual_task_type,
         )
         active_context = dict(bundle.get("active_context") or {})
@@ -842,6 +843,8 @@ class TaskService:
                     "step_count": len(execution["step_results"]),
                     "session_memory": context_bundle.get("session_summary", {}),
                     "long_term_memory": context_bundle.get("long_term_memory", {}),
+                    "web_memory": context_bundle.get("web_memory", {}),
+                    "memory": context_bundle.get("memory", {}),
                     "context_budget": context_bundle.get("budget", {}),
                 },
                 "output_complete": output_complete,
@@ -1143,6 +1146,17 @@ class TaskService:
             "warnings": [],
         }
 
+    def _handler_dependencies(self) -> TaskHandlerDependencies:
+        return TaskHandlerDependencies(
+            db=self.db,
+            settings=self.settings,
+            kb_service=self.kb_service,
+            llm_service=self.llm_service,
+            inventory_service=self.inventory_service,
+            base_debug_builder=self._base_debug,
+            stream_event_emitter=self._emit_stream_event,
+        )
+
     def _execute_route(
         self,
         *,
@@ -1169,6 +1183,7 @@ class TaskService:
                 chat_config=chat_config,
                 context_bundle=context_bundle,
                 stream_sink=stream_sink,
+                dependencies=self._handler_dependencies(),
             ),
         )
 

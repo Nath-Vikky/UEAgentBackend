@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.db.models  # noqa: F401
+from app.agent.context_manager import build_context_bundle, context_bundle_prompt_excerpt
 from app.agent.memory_providers import (
     MemoryQuery,
     SessionLongTermMemoryProvider,
@@ -16,6 +17,8 @@ from app.agent.memory_providers import (
 from app.core.settings import Settings
 from app.db.base import Base
 from app.db.models.session import SessionModel
+from app.schemas.requests import UnifiedTaskRequest
+from app.services.web_memory_service import WebMemoryService
 
 
 @contextmanager
@@ -77,3 +80,81 @@ def test_web_memory_provider_preserves_disabled_contract() -> None:
     assert result.status == "skipped"
     assert result.items == []
     assert result.raw["reason"] == "disabled_by_settings"
+
+
+def test_context_bundle_injects_web_memory_as_separate_source() -> None:
+    with _memory_session() as session:
+        settings = Settings(
+            _env_file=None,
+            web_memory_enabled=True,
+            web_memory_ttl_days=7,
+            web_memory_fts_enabled=False,
+        )
+        WebMemoryService(session, settings).remember_web_search_result(
+            query="UE Enhanced Input",
+            web_search={
+                "provider": "mock",
+                "status": "completed",
+                "reason": "matched",
+                "items": [
+                    {
+                        "rank": 1,
+                        "title": "Enhanced Input in Unreal Engine",
+                        "url": "https://dev.epicgames.com/documentation/en-us/unreal-engine/enhanced-input",
+                        "domain": "dev.epicgames.com",
+                        "snippet": "Enhanced Input uses Input Actions and Mapping Contexts.",
+                        "source_type": "official",
+                        "score": 0.82,
+                        "provider": "mock",
+                    }
+                ],
+            },
+        )
+        request = UnifiedTaskRequest.model_validate(
+            {
+                "task_type": "agent_chat",
+                "session": {
+                    "session_id": "web_memory_context_session",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Enhanced Input Mapping Context 怎么用？",
+                            "language": "auto",
+                        }
+                    ],
+                },
+                "context": {
+                    "project_name": "DemoProject",
+                    "kb_domains_hint": ["dev.epicgames.com"],
+                },
+                "payload": {"user_query": "Enhanced Input Mapping Context 怎么用？"},
+            }
+        )
+        routing = {
+            "intent": {"route_type": "direct_answer"},
+            "route": {"selected_tool_id": None},
+            "locale": {"final_output_language": "zh-CN"},
+        }
+
+        bundle = build_context_bundle(
+            db=session,
+            request=request,
+            routing=routing,
+            settings=settings,
+            actual_task_type="direct_answer",
+        )
+
+    assert bundle["long_term_memory"]["status"] == "not_found"
+    assert bundle["web_memory"]["status"] == "completed"
+    assert bundle["web_memory"]["items"][0]["retrieval_source"] == "web_memory"
+    assert bundle["memory"]["version"] == "memory_context_v1"
+    assert {
+        source["provider_id"]: source["status"]
+        for source in bundle["memory"]["sources"]
+    } == {
+        "session_long_term_memory": "not_found",
+        "web_memory": "completed",
+    }
+    assert any(item["provider_id"] == "web_memory" for item in bundle["memory"]["items"])
+    assert bundle["memory"]["policy"]["web_memory"].startswith("Cached web-search summaries")
+    assert "Web memory" in context_bundle_prompt_excerpt(bundle)

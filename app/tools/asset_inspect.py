@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import Any
 
 from app.schemas.requests import ContextInput
+from app.tools.context import ToolContext, ToolResult
 
 PLACEHOLDER_ASSET_NAMES = {
     "newmap",
@@ -300,3 +301,17 @@ def inspect_asset_metadata(payload: dict[str, Any], context: ContextInput) -> di
             "referencer_edge_count": total_referencer_edges,
         },
     }
+
+
+def inspect_asset_metadata_executor(context: ToolContext) -> ToolResult:
+    active_context = ContextInput.model_validate(context.active_context or {})
+    output = inspect_asset_metadata(context.payload, active_context)
+    summary = output.get("summary", {})
+    return ToolResult.completed(
+        tool_id=context.tool_id,
+        output=output,
+        summary=(
+            f"Inspected {summary.get('asset_count', 0)} asset(s), "
+            f"violations={summary.get('violation_count', 0)}."
+        ),
+    )

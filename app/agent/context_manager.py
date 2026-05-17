@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.agent.active_context import build_active_context
 from app.agent.context_builder import build_context_summary
-from app.agent.memory_providers import MemoryQuery, SessionLongTermMemoryProvider
+from app.agent.memory_providers import (
+    MemoryProviderResult,
+    MemoryQuery,
+    SessionLongTermMemoryProvider,
+    WebMemoryProvider,
+)
+from app.core.settings import Settings
 from app.db.models.session import MessageModel, SessionModel
 from app.db.repositories.sessions import list_session_tasks
 from app.schemas.requests import UnifiedTaskRequest
@@ -16,6 +22,7 @@ CHAT_HISTORY_TASK_TYPES = {"agent_chat", "project_qa"}
 DEFAULT_CHAR_BUDGET = 6000
 DEFAULT_RECENT_MESSAGES = 8
 DEFAULT_TOOL_TASKS = 3
+DEFAULT_WEB_MEMORY_ITEMS = 3
 
 
 def _clip(value: str, limit: int) -> str:
@@ -144,6 +151,85 @@ def _session_summary(db: Session, session_id: str) -> dict[str, Any]:
     }
 
 
+def _domain_hints(request: UnifiedTaskRequest) -> list[str]:
+    raw_hints = [
+        *list(request.context.kb_domains_hint or []),
+        *list(request.payload.get("domain_filters") or []),
+        *list(request.payload.get("domain_hints") or []),
+    ]
+    hints: list[str] = []
+    seen: set[str] = set()
+    for item in raw_hints:
+        text = str(item or "").strip()
+        key = text.lower()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        hints.append(text)
+    return hints
+
+
+def _provider_source(result: MemoryProviderResult) -> dict[str, Any]:
+    return {
+        "provider_id": result.provider_id,
+        "status": result.status,
+        "item_count": len(result.items),
+        "summary": result.summary,
+    }
+
+
+def _memory_item(provider_id: str, item: dict[str, Any]) -> dict[str, Any]:
+    if provider_id == "web_memory":
+        return {
+            "provider_id": provider_id,
+            "entry_id": item.get("entry_id"),
+            "title": item.get("title"),
+            "url": item.get("url"),
+            "domain": item.get("domain"),
+            "source_type": item.get("source_type"),
+            "provider": item.get("provider"),
+            "score": item.get("score"),
+            "ranking": item.get("ranking"),
+            "text": _clip(str(item.get("snippet") or ""), 520),
+            "retrieval_source": "web_memory",
+        }
+    return {
+        "provider_id": provider_id,
+        "memory_id": item.get("memory_id"),
+        "category": item.get("category"),
+        "score": item.get("score"),
+        "project_name": item.get("project_name"),
+        "text": _clip(str(item.get("text") or ""), 520),
+        "retrieval_source": provider_id,
+    }
+
+
+def _build_memory_context(
+    *,
+    query: str,
+    long_term_result: MemoryProviderResult,
+    web_memory_result: MemoryProviderResult | None,
+) -> dict[str, Any]:
+    providers = [long_term_result]
+    if web_memory_result is not None:
+        providers.append(web_memory_result)
+    items: list[dict[str, Any]] = []
+    for result in providers:
+        for item in result.items:
+            items.append(_memory_item(result.provider_id, item))
+    return {
+        "version": "memory_context_v1",
+        "query": _clip(query, 240),
+        "sources": [_provider_source(result) for result in providers],
+        "items": items,
+        "policy": {
+            "session_long_term_memory": "Project/session-scoped compact memory from chat history.",
+            "web_memory": "Cached web-search summaries only; never treated as formal KB and never writes to knowledge/.",
+            "dedupe": "Providers remain separate so local project memory is not mixed with cached web evidence.",
+        },
+    }
+
+
 def _estimate_chars(bundle: dict[str, Any]) -> int:
     total = 0
     for section in ("recent_messages", "tool_context"):
@@ -152,6 +238,9 @@ def _estimate_chars(bundle: dict[str, Any]) -> int:
     total += len(str(bundle.get("session_summary", {}).get("summary_text") or ""))
     for item in bundle.get("long_term_memory", {}).get("items", []):
         total += len(str(item.get("text") or ""))
+    for item in bundle.get("memory", {}).get("items", []):
+        if item.get("provider_id") == "web_memory":
+            total += len(str(item.get("text") or ""))
     total += len(str(bundle.get("active_context") or ""))
     total += len(str(bundle.get("editor_context") or ""))
     return total
@@ -162,6 +251,7 @@ def build_context_bundle(
     db: Session,
     request: UnifiedTaskRequest,
     routing: dict[str, Any],
+    settings: Settings | None = None,
     actual_task_type: str | None = None,
     char_budget: int = DEFAULT_CHAR_BUDGET,
     recent_message_limit: int = DEFAULT_RECENT_MESSAGES,
@@ -177,13 +267,28 @@ def build_context_bundle(
         per_message_chars=700,
     )
     latest_user_message = _latest_user_message(request)
-    long_term_memory = SessionLongTermMemoryProvider(db).recall(
+    long_term_memory_result = SessionLongTermMemoryProvider(db).recall(
         MemoryQuery(
             project_name=request.context.project_name,
             query=latest_user_message,
             limit=5,
         )
-    ).raw
+    )
+    web_memory_result: MemoryProviderResult | None = None
+    if settings is not None:
+        web_memory_result = WebMemoryProvider(db, settings).recall(
+            MemoryQuery(
+                project_name=request.context.project_name,
+                query=latest_user_message,
+                limit=DEFAULT_WEB_MEMORY_ITEMS,
+                domain_hints=_domain_hints(request),
+            )
+        )
+    memory_context = _build_memory_context(
+        query=latest_user_message,
+        long_term_result=long_term_memory_result,
+        web_memory_result=web_memory_result,
+    )
     bundle = {
         "version": "context_bundle_v1",
         "input_summary": {
@@ -199,7 +304,16 @@ def build_context_bundle(
         "language_context": dict(routing.get("locale") or {}),
         "recent_messages": recent_messages,
         "session_summary": _session_summary(db, session_id),
-        "long_term_memory": long_term_memory,
+        "long_term_memory": long_term_memory_result.raw,
+        "web_memory": web_memory_result.raw
+        if web_memory_result
+        else {
+            "status": "skipped",
+            "reason": "settings_not_provided",
+            "items": [],
+            "summary": {"writes_to_kb": False},
+        },
+        "memory": memory_context,
         "project_inventory_context": {
             "status": "pending_execution",
             "note": "Project Inventory query results are attached after tool execution when selected.",
@@ -276,4 +390,11 @@ def context_bundle_prompt_excerpt(context_bundle: dict[str, Any]) -> str:
             lines.append(
                 f"  - {item.get('category')}[{item.get('score', 0)}]: {item.get('text')}"
             )
+    web_memory = context_bundle.get("web_memory") or {}
+    if web_memory.get("items"):
+        lines.append("- Web memory (cached web evidence, not formal KB):")
+        for item in web_memory.get("items", [])[:3]:
+            title = item.get("title") or item.get("url") or "web memory"
+            snippet = item.get("snippet") or item.get("text") or ""
+            lines.append(f"  - {title}[{item.get('score', 0)}]: {_clip(str(snippet), 300)}")
     return "\n".join(lines)

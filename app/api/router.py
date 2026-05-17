@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     agent_runs,
+    curation,
     editor_operations,
     health,
     kb_admin,
@@ -28,3 +29,4 @@ api_router.include_router(project_inventory.router)
 api_router.include_router(editor_operations.router)
 api_router.include_router(mcp_tools.router)
 api_router.include_router(web_memory.router)
+api_router.include_router(curation.router)

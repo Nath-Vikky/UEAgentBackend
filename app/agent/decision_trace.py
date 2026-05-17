@@ -52,10 +52,22 @@ def build_agent_decision_trace(
     active_context = dict(context_bundle.get("active_context") or {})
     session_summary = dict(context_bundle.get("session_summary") or {})
     long_term_memory = dict(context_bundle.get("long_term_memory") or {})
+    web_memory = dict(context_bundle.get("web_memory") or {})
+    memory_context = dict(context_bundle.get("memory") or {})
     tool_plan = dict(data.get("tool_plan") or debug_view.get("tool_plan") or {})
     self_reflection = dict(data.get("self_reflection") or debug_view.get("self_reflection") or {})
     memory_summary = dict(debug_view.get("memory_summary") or {})
     updated_memory = dict(memory_summary.get("updated_session_memory") or {})
+    available_memory_sources = [
+        source
+        for source in memory_context.get("sources", [])
+        if source.get("status") in {"available", "completed"} and int(source.get("item_count") or 0) > 0
+    ]
+    memory_status = (
+        "available"
+        if available_memory_sources
+        else str(updated_memory.get("status") or session_summary.get("status") or "not_available")
+    )
     retrieval_mode = str(retrieval_trace.get("mode") or "not_used")
     retrieved_docs = list(retrieval_trace.get("retrieved_docs") or [])
     warnings = list(debug_view.get("warnings") or [])
@@ -137,8 +149,8 @@ def build_agent_decision_trace(
             details=skill_runtime,
         ),
         "memory_decision": _decision(
-            decision=str(long_term_memory.get("status") or updated_memory.get("status") or session_summary.get("status") or "not_available"),
-            reason="Session summary and project-scoped long-term memory are injected as compact context when available.",
+            decision=memory_status,
+            reason="Session summary, project-scoped long-term memory, and cached web memory are injected as compact context when available.",
             source="memory_manager",
             confidence=1.0,
             details={
@@ -146,6 +158,10 @@ def build_agent_decision_trace(
                 "long_term_memory_status": long_term_memory.get("status"),
                 "long_term_memory_count": long_term_memory.get("count", 0),
                 "long_term_memory_items": long_term_memory.get("items", []),
+                "web_memory_status": web_memory.get("status"),
+                "web_memory_count": len(web_memory.get("items") or []),
+                "web_memory_reason": web_memory.get("reason"),
+                "memory_sources": memory_context.get("sources", []),
                 "updated_session_memory": updated_memory,
             },
         ),

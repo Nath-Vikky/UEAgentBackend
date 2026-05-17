@@ -22,14 +22,17 @@ class EditorOperationProposalHandler:
         request = context.request
         routing = context.routing
         output_language = context.output_language
+        deps = context.dependencies
+        base_debug_builder = deps.base_debug_builder if deps else host._base_debug
+        db = deps.db if deps else host.db
 
-        base_debug = host._base_debug(
+        base_debug = base_debug_builder(
             request=request,
             routing=routing,
             trace_id=context.trace_id,
             context_bundle=context.context_bundle,
         )
-        proposal = EditorOperationService(host.db).try_build_action_proposal(self.editor_operation_request)
+        proposal = EditorOperationService(db).try_build_action_proposal(self.editor_operation_request)
         if not proposal:
             text = _localized(
                 output_language,

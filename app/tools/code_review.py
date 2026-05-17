@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from app.schemas.requests import ContextInput
+from app.tools.context import ToolContext, ToolResult
 from app.utils.project_files import ProjectFileAccessError, read_project_code_file
 
 DIFF_HUNK_RE = re.compile(r"^@@", re.MULTILINE)
@@ -493,3 +494,17 @@ def review_ue_cpp_files(payload: dict[str, Any], context: ContextInput) -> dict[
             "source_excerpt_truncated": len(source_text) > 12000,
         },
     }
+
+
+def review_ue_cpp_files_executor(context: ToolContext) -> ToolResult:
+    active_context = ContextInput.model_validate(context.active_context or {})
+    output = review_ue_cpp_files(context.payload, active_context)
+    severity = output.get("severity_summary", {})
+    return ToolResult.completed(
+        tool_id=context.tool_id,
+        output=output,
+        summary=(
+            "UE C++ review completed: "
+            f"high={severity.get('high', 0)}, medium={severity.get('medium', 0)}, low={severity.get('low', 0)}."
+        ),
+    )

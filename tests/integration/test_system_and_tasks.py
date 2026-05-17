@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.settings import get_settings
+from app.core.settings import Settings, get_settings
 from app.db.session import get_engine, get_session_factory
 from app.main import create_app
+from app.services.web_memory_service import WebMemoryService
 
 
 @pytest.fixture()
@@ -78,11 +79,57 @@ def test_system_health_exposes_startup_checks(client: TestClient) -> None:
     assert body["startup_checks"]["blocking"] is False
 
 
+def test_curation_candidates_can_be_exported_for_manual_review(client: TestClient) -> None:
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        test_settings = Settings(
+            _env_file=None,
+            web_memory_enabled=True,
+            storage_dir=get_settings().storage_dir,
+        )
+        WebMemoryService(db, test_settings).remember_web_search_result(
+            query="Enhanced Input",
+            web_search={
+                "provider": "mock",
+                "status": "completed",
+                "reason": "matched",
+                "items": [
+                    {
+                        "rank": 1,
+                        "title": "Enhanced Input in Unreal Engine",
+                        "url": "https://dev.epicgames.com/documentation/en-us/unreal-engine/enhanced-input-in-unreal-engine",
+                        "domain": "dev.epicgames.com",
+                        "snippet": "Enhanced Input uses Input Actions and Mapping Contexts.",
+                        "source_type": "official",
+                        "score": 0.82,
+                    }
+                ],
+            },
+        )
+
+    response = client.get("/api/v1/curation/candidates?min_score=0.0")
+
+    assert response.status_code == 200
+    candidate = response.json()["result"]["candidates"][0]
+    approve = client.post(
+        f"/api/v1/curation/candidates/{candidate['candidate_id']}/approve",
+        json={"reviewer": "test", "comment": "looks useful"},
+    )
+
+    assert approve.status_code == 200
+    body = approve.json()
+    assert body["writes_to_kb"] is False
+    assert body["decision_state"] == "approved_for_manual_distillation"
+    assert Path(body["artifact"]["markdown_path"]).exists()
+
+
 def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) -> None:
     response = client.get("/api/v1/system/capabilities")
+    reload_response = client.post("/api/v1/system/tool-registry/reload")
     body = response.json()
 
     assert response.status_code == 200
+    assert reload_response.status_code == 200
     assert body["capabilities"]["supported_task_types"] == [
         "agent_chat",
         "project_qa",
@@ -107,6 +154,9 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
     assert body["capabilities"]["tool_registry"]["mode"] == "declarative_static_registry"
     assert body["capabilities"]["tool_registry"]["protocol_version"] == "tool_protocol_v2"
     assert "mcp_stdio" in body["capabilities"]["tool_registry"]["protocol"]["transports"]
+    assert body["capabilities"]["tool_registry"]["runtime_hot_reload"] is True
+    assert "tool_config_overlay" in body["capabilities"]["tool_registry"]["protocol"]
+    assert reload_response.json()["tool_config_overlay"]["status"] in {"not_configured", "loaded"}
     assert body["capabilities"]["mcp_adapter"]["mode"] == "optional_tool_transport"
     assert body["capabilities"]["mcp_adapter"]["frontend_protocol"] == "http"
     assert body["capabilities"]["mcp_adapter"]["tool_layer_only"] is True

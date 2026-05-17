@@ -16,6 +16,7 @@ from app.schemas.responses import (
 from app.services.monitoring_service import MonitoringService
 from app.services.runtime_profile_service import RuntimeProfileService
 from app.services.system_service import SystemService
+from app.tools.registry import reload_tool_registry_config
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -34,6 +35,18 @@ def capabilities(
     settings: Settings = Depends(get_app_settings),
 ) -> CapabilitiesResponse:
     return CapabilitiesResponse(success=True, capabilities=SystemService(db, settings).capabilities())
+
+
+@router.post("/tool-registry/reload")
+def reload_tool_registry(
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+) -> dict:
+    return {
+        "success": True,
+        "tool_config_overlay": reload_tool_registry_config(),
+        "capabilities": SystemService(db, settings).capabilities()["tool_registry"],
+    }
 
 
 @router.get("/settings", response_model=SettingsSnapshotResponse)

@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from app.tools.contracts import validate_tool_call_input
 from app.tools.context import ToolContext, ToolResult
 from app.tools.registry import get_tool_spec
 
@@ -23,6 +24,22 @@ def execute_tool_with_context(context: ToolContext) -> ToolResult:
             error_message=f"Tool `{context.tool_id}` does not define a local executor.",
             latency_ms=_elapsed_ms(started),
         )
+    preflight = validate_tool_call_input(context.tool_id, context.payload)
+    if not preflight.get("ok"):
+        return ToolResult(
+            tool_id=context.tool_id,
+            status="blocked",
+            output={},
+            summary="Tool input preflight failed before executor dispatch.",
+            latency_ms=_elapsed_ms(started),
+            error_code="tool_preflight_failed",
+            error_message=_preflight_error_message(preflight),
+            metadata={
+                "preflight": preflight,
+                "side_effect_level": spec.side_effect_level,
+                "requires_confirmation": spec.effective_requires_confirmation,
+            },
+        )
     try:
         raw_result = _load_executor(spec.executor)(context)
     except Exception as exc:  # pragma: no cover - defensive tool isolation
@@ -40,6 +57,12 @@ def execute_tool_with_context(context: ToolContext) -> ToolResult:
     )
     if result.latency_ms is None:
         result.latency_ms = _elapsed_ms(started)
+    result.metadata = {
+        **dict(result.metadata or {}),
+        "preflight": preflight,
+        "side_effect_level": spec.side_effect_level,
+        "requires_confirmation": spec.effective_requires_confirmation,
+    }
     return result
 
 
@@ -56,3 +79,16 @@ def _load_executor(path: str) -> ToolExecutor:
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _preflight_error_message(preflight: dict[str, Any]) -> str:
+    parts: list[str] = []
+    if preflight.get("missing_fields"):
+        parts.append(f"missing={', '.join(preflight['missing_fields'])}")
+    if preflight.get("type_errors"):
+        parts.append(f"type_errors={len(preflight['type_errors'])}")
+    if preflight.get("enum_errors"):
+        parts.append(f"enum_errors={len(preflight['enum_errors'])}")
+    if preflight.get("unknown_fields_blocking") and preflight.get("unknown_fields"):
+        parts.append(f"unknown={', '.join(preflight['unknown_fields'])}")
+    return "; ".join(parts) or "invalid_tool_input"

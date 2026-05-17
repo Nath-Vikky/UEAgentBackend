@@ -4,6 +4,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from app.tools.context import ToolContext, ToolResult
+
 TIMESTAMP_RE = re.compile(r"\[\d{4}\.\d{2}\.\d{2}[-:.\d]*\]")
 CALLSTACK_RE = re.compile(r"(?:0x[0-9A-Fa-f]+|!|Callstack)")
 MODULE_RE = re.compile(r"\bLog([A-Za-z0-9_]+):")
@@ -376,3 +378,22 @@ def analyze_ue_log(
             **collected_input["input_context"],
         },
     }
+
+
+def analyze_ue_log_executor(context: ToolContext) -> ToolResult:
+    project_root = str(context.payload.get("project_root") or context.active_context.get("project_root") or "").strip()
+    current_file = str(context.payload.get("current_file") or context.active_context.get("current_file") or "").strip()
+    output = analyze_ue_log(
+        context.payload,
+        project_root=project_root or None,
+        context_current_file=current_file or None,
+    )
+    log_summary = output.get("log_summary", {})
+    return ToolResult.completed(
+        tool_id=context.tool_id,
+        output=output,
+        summary=(
+            f"Parsed {log_summary.get('line_count', 0)} log line(s), "
+            f"errors={log_summary.get('error_count', 0)}, warnings={log_summary.get('warning_count', 0)}."
+        ),
+    )

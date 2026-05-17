@@ -5,6 +5,7 @@ import pytest
 from app.schemas.requests import UnifiedTaskRequest
 from app.tools.context import CompositeToolResult, ToolContext, ToolResult
 from app.tools.registry import get_tool_spec
+from app.tools.workflow_cursor import WorkflowCursor
 
 
 def _request() -> UnifiedTaskRequest:
@@ -44,6 +45,26 @@ def test_tool_context_can_be_built_from_request_and_spec() -> None:
     assert context.timeout_ms == spec.timeout_ms
     assert summary["payload_keys"] == ["user_query"]
     assert "project_name" in summary["active_context_keys"]
+    assert summary["workflow_cursor"] is None
+
+
+def test_tool_context_can_carry_workflow_cursor_summary() -> None:
+    cursor = WorkflowCursor(workflow_id="wf_1", active_asset="/Game/UI/WBP_Menu")
+    cursor.advance(
+        tool_id="editor_add_blueprint_variable",
+        action="plan_variable",
+        result_ref="proposal_1",
+        active_graph="EventGraph",
+    )
+    context = ToolContext(tool_id="editor_add_blueprint_variable", workflow_cursor=cursor)
+
+    summary = context.input_summary()["workflow_cursor"]
+
+    assert summary["workflow_id"] == "wf_1"
+    assert summary["step_index"] == 1
+    assert summary["active_asset"] == "/Game/UI/WBP_Menu"
+    assert summary["active_graph"] == "EventGraph"
+    assert "Last tool: editor_add_blueprint_variable" in cursor.prompt_excerpt()
 
 
 def test_tool_result_exports_debug_entry() -> None:

@@ -659,6 +659,98 @@ def _signal_router_debug(signals: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _apply_signal_router_override(
+    routing: dict[str, Any],
+    *,
+    language: str,
+    signal_mode: str,
+) -> dict[str, Any]:
+    if signal_mode != "scoring_active":
+        return routing
+    route = dict(routing.get("route") or {})
+    recommendation = dict(route.get("signal_router_recommendation") or {})
+    if not recommendation.get("override_eligible"):
+        return routing
+    route_hint = str(recommendation.get("route_hint") or "")
+    if route_hint not in {"direct_answer", "project_qa", "single_tool", "workflow"}:
+        return routing
+    selected_tool_id = recommendation.get("selected_tool_id")
+    previous_route_type = route.get("route_type")
+    previous_tool_id = route.get("selected_tool_id")
+    if previous_route_type == route_hint and previous_tool_id == selected_tool_id:
+        return routing
+
+    updated = {
+        "locale": dict(routing.get("locale") or {}),
+        "intent": dict(routing.get("intent") or {}),
+        "route": route,
+    }
+    recommendation["override_applied"] = True
+    recommendation["previous_route_type"] = previous_route_type
+    recommendation["previous_tool_id"] = previous_tool_id
+    reason = _localized(
+        language,
+        "Signal Router active 模式命中高置信信号，因此覆盖启发式路由。",
+        "Signal Router active mode found a high-confidence signal and overrode the heuristic route.",
+    )
+    route.update(
+        {
+            "route_type": route_hint,
+            "route_reason": reason,
+            "selected_tool_id": selected_tool_id,
+            "candidate_tool_ids": [selected_tool_id] if selected_tool_id else [],
+            "planner_confidence": max(
+                float(route.get("planner_confidence") or 0.0),
+                float(recommendation.get("confidence") or 0.0),
+            ),
+            "decision_source": "signal_router_active",
+            "routing_mode": "scoring_active",
+            "signal_router_recommendation": recommendation,
+            "signal_router_override_applied": True,
+        }
+    )
+    if route_hint == "direct_answer":
+        updated["intent"].update(
+            {
+                "intent_type": "casual_chat",
+                "knowledge_relevance": "none",
+                "requires_rag": False,
+                "requires_tool": False,
+                "route_type": "direct_answer",
+                "reason": reason,
+            }
+        )
+        route["selected_tool_id"] = None
+        route["candidate_tool_ids"] = []
+    elif route_hint == "project_qa":
+        tool_id = str(selected_tool_id or "retrieve_project_knowledge")
+        updated["intent"].update(
+            {
+                "intent_type": "project_qa",
+                "knowledge_relevance": "strong",
+                "requires_rag": tool_id != "query_project_inventory",
+                "requires_tool": tool_id == "query_project_inventory",
+                "route_type": "project_qa",
+                "reason": reason,
+            }
+        )
+        route["selected_tool_id"] = tool_id
+        route["candidate_tool_ids"] = [tool_id]
+    else:
+        spec = get_tool_spec(str(selected_tool_id or ""))
+        updated["intent"].update(
+            {
+                "intent_type": "task_request",
+                "knowledge_relevance": "possible",
+                "requires_rag": bool(spec and spec.requires_retrieval),
+                "requires_tool": True,
+                "route_type": route_hint,
+                "reason": reason,
+            }
+        )
+    return updated
+
+
 def _project_qa_response(
     *,
     language: str,
@@ -837,7 +929,7 @@ def classify_request(
             "用户在自由聊天中询问当前项目的资产、代码或元数据事实，因此后端选择查询 Project Inventory。",
             "The user asked for current-project asset, code, or metadata facts in chat, so the backend selected Project Inventory query.",
         )
-        return {
+        routing_result = {
             "locale": locale,
             **_project_qa_response(
                 language=language,
@@ -850,6 +942,7 @@ def classify_request(
                 candidate_tool_ids=["query_project_inventory", "retrieve_project_knowledge"],
             ),
         }
+        return _apply_signal_router_override(routing_result, language=language, signal_mode=signal_mode)
 
     if signals["deterministic_panel"] or signals["task_hint_count"] > 0 or selected_engineering_tool_id:
         spec = get_tool_spec(selected_engineering_tool_id)
@@ -868,7 +961,7 @@ def classify_request(
             "检测到明确的工程动作词或确定性功能面板，优先按工程任务路径处理。",
             "Detected explicit engineering action signals or a deterministic panel, so the request is routed as an engineering task.",
         )
-        return {
+        routing_result = {
             "intent": {
                 "intent_type": "task_request",
                 "knowledge_relevance": "strong" if signals["context_present"] or signals["project_hint_count"] else "possible",
@@ -894,6 +987,7 @@ def classify_request(
                 **_signal_router_debug(signals),
             },
         }
+        return _apply_signal_router_override(routing_result, language=language, signal_mode=signal_mode)
 
     if signals["strong_project_signal"]:
         reason = _localized(
@@ -901,7 +995,7 @@ def classify_request(
             "请求明确指向当前项目、文件、模块或知识库内容，因此优先进入项目问答路径。",
             "The request clearly points to the current project, file, module, or knowledge-base scope, so it is routed into project QA.",
         )
-        return {
+        routing_result = {
             "locale": locale,
             **_project_qa_response(
                 language=language,
@@ -912,6 +1006,7 @@ def classify_request(
                 signals=signals,
             ),
         }
+        return _apply_signal_router_override(routing_result, language=language, signal_mode=signal_mode)
 
     if signals["ue_knowledge_query"]:
         reason = _localized(
@@ -919,7 +1014,7 @@ def classify_request(
             "用户在自由聊天中询问 UE/C++ 技术知识，后端将先检索本地知识库，再由 LLM 综合回答。",
             "The user asked a UE/C++ technical knowledge question in chat, so the backend will retrieve local knowledge first and let the LLM synthesize the answer.",
         )
-        return {
+        routing_result = {
             "locale": locale,
             **_project_qa_response(
                 language=language,
@@ -932,6 +1027,7 @@ def classify_request(
                 candidate_tool_ids=["retrieve_project_knowledge"],
             ),
         }
+        return _apply_signal_router_override(routing_result, language=language, signal_mode=signal_mode)
 
     if signals["weak_project_signal"]:
         reason = _localized(
@@ -939,7 +1035,7 @@ def classify_request(
             "虽然当前带有工程上下文，但用户消息没有明确请求项目知识检索，因此先按自由聊天处理。",
             "Project context is present, but the message does not clearly request project-specific retrieval, so it stays in direct chat first.",
         )
-        return {
+        routing_result = {
             "locale": locale,
             **_direct_answer_response(
                 language=language,
@@ -951,13 +1047,14 @@ def classify_request(
                 signals=signals,
             ),
         }
+        return _apply_signal_router_override(routing_result, language=language, signal_mode=signal_mode)
 
     reason = _localized(
         language,
         "当前请求没有足够的工程上下文或项目知识信号，因此按普通对话处理。",
         "The request does not contain enough engineering context or project-knowledge signals, so it is treated as direct chat.",
     )
-    return {
+    routing_result = {
         "locale": locale,
         **_direct_answer_response(
             language=language,
@@ -969,3 +1066,4 @@ def classify_request(
             signals=signals,
         ),
     }
+    return _apply_signal_router_override(routing_result, language=language, signal_mode=signal_mode)

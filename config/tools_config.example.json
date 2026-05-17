@@ -1,0 +1,23 @@
+{
+  "version": "tool_config_overlay_v1",
+  "tools": {
+    "web_search_knowledge": {
+      "enabled": false,
+      "tier": "extended",
+      "description": "Controlled Web Search is disabled in this local profile.",
+      "trigger_keywords": [
+        "web search",
+        "official docs",
+        "联网查",
+        "官方文档"
+      ],
+      "allowed_in_free_chat": false
+    },
+    "query_project_inventory": {
+      "enabled": true,
+      "tier": "core",
+      "category": "sensing",
+      "description": "Query the latest UE project inventory snapshot for assets, code files, and editor metadata."
+    }
+  }
+}

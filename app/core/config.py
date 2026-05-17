@@ -132,7 +132,7 @@ CAPABILITIES = {
         "audit_logs",
         "alerts_snapshot",
     ],
-    "approval_policies": ["read_only", "plan_only", "confirmed_write"],
+    "approval_policies": ["read_only", "plan_only", "confirmed_write", "reversible_write", "destructive_write"],
     "proposal_states": ["pending", "confirmed", "rejected"],
     "run_controls": ["cancel", "agent_chat_sse_stream_optional"],
 }

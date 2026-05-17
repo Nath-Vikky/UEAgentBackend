@@ -4,7 +4,13 @@ import json
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from app.tools.registry import TOOL_REGISTRY, ToolSpec, free_chat_tool_ids, get_tool_spec
+from app.tools.registry import (
+    TOOL_REGISTRY,
+    ToolSpec,
+    free_chat_tool_ids,
+    get_tool_spec,
+    iter_tool_specs,
+)
 
 
 def build_function_calling_tools(
@@ -25,10 +31,11 @@ def build_function_calling_tools(
         allowed &= free_chat_tool_ids()
 
     tools: list[dict[str, Any]] = []
-    for tool_id, spec in TOOL_REGISTRY.items():
+    for spec in iter_tool_specs(include_disabled=False):
+        tool_id = spec.tool_id
         if tool_id not in allowed:
             continue
-        if spec.side_effect_level == "confirmed_write" and not include_confirmed_write:
+        if spec.effective_requires_confirmation and not include_confirmed_write:
             continue
         tools.append(_tool_spec_to_function_tool(spec))
     return tools
@@ -50,7 +57,7 @@ def normalize_function_tool_calls(
         if not tool_id or tool_id not in allowed or tool_id in requested_tool_ids:
             continue
         spec = get_tool_spec(tool_id)
-        if not spec or spec.side_effect_level == "confirmed_write":
+        if not spec or spec.effective_requires_confirmation:
             continue
         requested_tool_ids.append(tool_id)
         tool_inputs_by_id[tool_id] = _sanitize_arguments(spec, arguments)

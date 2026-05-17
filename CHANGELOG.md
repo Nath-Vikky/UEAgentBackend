@@ -75,6 +75,25 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Live no-UE smoke modes: `--live-llm`, `--live-web-search`, and `--live-all`
   read `.env` provider settings and report whether live LLM synthesis and
   non-mock Web Search actually ran.
+- Context Bundle Web Memory injection: when `WEB_MEMORY_ENABLED=true`, cached
+  Web Search summaries are recalled through `WebMemoryProvider` and exposed as
+  `context_bundle.web_memory` plus `context_bundle.memory.sources`.
+- Tool Registry JSON overlay with safe runtime fields, config status diagnostics,
+  an example config file, and `POST /api/v1/system/tool-registry/reload`.
+- Tool executor input preflight blocks invalid `ToolContext` calls before local
+  executor dispatch and records missing/type/enum/unknown-field diagnostics.
+- Guarded `ROUTER_SIGNAL_MODE=scoring_active` mode for SignalDetector routing;
+  default behavior remains `compatibility_observer`.
+- `TaskHandlerDependencies` container for route handlers, giving migrated
+  handlers an explicit dependency entry point instead of relying only on the
+  `TaskService` host object.
+- `WorkflowCursor` for lightweight multi-step workflow state summaries carried
+  through `ToolContext` debug/input envelopes.
+- Read-only executor migration for generated-code preflight, UE log analysis,
+  asset metadata inspection, and UE C++ code review.
+- Knowledge curation review API under `/api/v1/curation/*` for listing
+  candidates, exporting approved candidates as suggestion-only artifacts, and
+  recording rejection markers.
 
 ### Changed
 
@@ -90,6 +109,14 @@ Changelog. Dates use `YYYY-MM-DD`.
 - Context Bundle long-term memory recall now goes through
   `SessionLongTermMemoryProvider`; the returned `long_term_memory` payload is
   intentionally unchanged.
+- Web Memory remains separate from formal long-term memory and local KB
+  evidence; it is injected as cached external evidence only, preserving
+  backward compatibility for `context_bundle.long_term_memory`.
+- Tool Registry capabilities are now generated dynamically so safe
+  `storage/tools_config.json` changes can affect selection/debug output without
+  changing Python code.
+- Tool side-effect levels now include future-facing `reversible_write` and
+  `destructive_write` danger labels; both still require confirmation.
 - Project QA responses now include `knowledge_curation` diagnostics in
   `data` and `retrieval_trace`; this is suggestion-only metadata for backend
   maintenance/debugging.
@@ -129,6 +156,11 @@ Changelog. Dates use `YYYY-MM-DD`.
   executor metadata while preserving existing HTTP response contracts.
 - Web Memory recall entries now include lightweight `recall_count` diagnostics
   so curation scoring can prioritize repeatedly reused evidence.
+- `ConfigValidateHandler` and `EditorOperationProposalHandler` now use
+  explicit handler dependencies for low-risk host cleanup; HTTP contracts and
+  UE frontend payloads are unchanged.
+- Curation approval still never writes to formal KB, never reindexes, and only
+  produces human-review Markdown/JSON files under `storage/curation`.
 
 ## 0.1.4 - 2026-05-16
 
