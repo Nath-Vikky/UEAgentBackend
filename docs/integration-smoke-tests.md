@@ -40,7 +40,27 @@ Optional live LLM check:
 .\.venv\Scripts\python.exe scripts\run_no_ue_live_smoke.py --live-llm --output storage\artifacts\smoke\no-ue-live-smoke-live-llm.json
 ```
 
-The default mode is better for regression because it proves backend tool routing and deterministic fallbacks without depending on proxy/API-key state.
+Live Web Search check using your `.env` `WEB_SEARCH_*` settings:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_no_ue_live_smoke.py --live-web-search --output storage\artifacts\smoke\no-ue-live-smoke-live-web.json
+```
+
+Full live check using both `.env` LLM and `.env` Web Search settings:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_no_ue_live_smoke.py --live-all --output storage\artifacts\smoke\no-ue-live-smoke-live-all.json
+```
+
+Live-mode report fields:
+
+- `settings.llm.api_key_configured` shows whether the script saw an LLM key, without printing the key.
+- `checks[].llm_status=accepted` means the live LLM code draft was accepted.
+- `checks[].llm_status=rejected_fallback` means live LLM was called, but the Enhanced Input quality gate rejected an incomplete draft and used the deterministic template.
+- `agent_chat_web_search_tool.llm_answer_synthesis_status=completed` means Project QA final answer synthesis used live LLM.
+- `agent_chat_web_search_tool.live_web_search_provider_used=true` means the Web Search provider was not mock/disabled.
+
+The default mode is better for regression because it proves backend tool routing and deterministic fallbacks without depending on proxy/API-key state. Use `--live-all` only when you intentionally want real network/API usage.
 
 PowerShell 注意：如果使用反引号换行，反引号后面不能有空格。否则后续
 `-Method Post` 可能不会被解析，`Invoke-RestMethod` 会按默认 GET 请求发送，

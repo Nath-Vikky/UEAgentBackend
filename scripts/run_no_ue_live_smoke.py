@@ -10,9 +10,11 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi.testclient import TestClient
 
+from app.core.settings import Settings
 from app.core.settings import get_settings
 from app.db.session import get_engine, get_session_factory
 from app.main import create_app
@@ -42,11 +44,21 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Keep the configured OPENAI_API_KEY/runtime profile instead of forcing deterministic fallback.",
     )
+    parser.add_argument(
+        "--live-web-search",
+        action="store_true",
+        help="Use WEB_SEARCH_* from .env instead of the built-in mock web search result.",
+    )
+    parser.add_argument(
+        "--live-all",
+        action="store_true",
+        help="Shortcut for --live-llm --live-web-search.",
+    )
     return parser.parse_args()
 
 
 @contextmanager
-def _isolated_runtime(*, live_llm: bool) -> Iterator[Path]:
+def _isolated_runtime(*, live_llm: bool, live_web_search: bool) -> Iterator[Path]:
     runtime_root = Path(".smoke-runtime") / f"no-ue-{uuid.uuid4().hex}"
     storage_dir = runtime_root / "storage"
     mock_path = runtime_root / "web-results.json"
@@ -85,15 +97,20 @@ def _isolated_runtime(*, live_llm: bool) -> Iterator[Path]:
         "KB_SOURCE_PATHS": "./knowledge",
         "EMBEDDING_ENABLED": "false",
         "RAG_MODE": "lexical",
-        "WEB_SEARCH_ENABLED": "true",
-        "WEB_SEARCH_PROVIDER": "mock",
-        "WEB_SEARCH_MOCK_RESULTS_PATH": str(mock_path.resolve()),
-        "WEB_SEARCH_ALLOWED_DOMAINS": "dev.epicgames.com",
-        "WEB_SEARCH_DOMAIN_BOOSTS": "dev.epicgames.com:0.25",
         "WEB_MEMORY_ENABLED": "false",
     }
     if not live_llm:
         overrides["OPENAI_API_KEY"] = ""
+    if not live_web_search:
+        overrides.update(
+            {
+                "WEB_SEARCH_ENABLED": "true",
+                "WEB_SEARCH_PROVIDER": "mock",
+                "WEB_SEARCH_MOCK_RESULTS_PATH": str(mock_path.resolve()),
+                "WEB_SEARCH_ALLOWED_DOMAINS": "dev.epicgames.com",
+                "WEB_SEARCH_DOMAIN_BOOSTS": "dev.epicgames.com:0.25",
+            }
+        )
 
     previous = {key: os.environ.get(key) for key in overrides}
     for key, value in overrides.items():
@@ -115,7 +132,46 @@ def _isolated_runtime(*, live_llm: bool) -> Iterator[Path]:
         shutil.rmtree(runtime_root, ignore_errors=True)
 
 
-def _post_code_generate(client: TestClient, *, query: str, index: int) -> dict[str, Any]:
+def _settings_snapshot() -> dict[str, Any]:
+    settings = Settings()
+    base_url = settings.openai_base_url.strip()
+    parsed_base_url = urlparse(base_url) if base_url else None
+    return {
+        "llm": {
+            "api_key_configured": bool(settings.openai_api_key.strip()),
+            "chat_model": settings.chat_model,
+            "base_url_host": parsed_base_url.netloc if parsed_base_url else "api.openai.com",
+        },
+        "web_search": {
+            "enabled": settings.web_search_enabled,
+            "provider": settings.web_search_provider,
+            "api_key_configured": bool(settings.web_search_api_key.strip()),
+            "allowed_domains": settings.web_search_allowed_domains,
+            "mock_results_path_configured": bool(settings.web_search_mock_results_path.strip()),
+        },
+    }
+
+
+def _llm_codegen_status(*, generation_mode: str, warnings: list[Any]) -> str:
+    clean_warnings = [str(item) for item in warnings]
+    if generation_mode.startswith("live_llm_"):
+        return "accepted"
+    if any(item.startswith("llm_generation_rejected:") for item in clean_warnings):
+        return "rejected_fallback"
+    if any("request_failed" in item or "json_parse_failed" in item for item in clean_warnings):
+        return "failed_fallback"
+    if any("missing_openai_api_key" in item or "missing_chat_model" in item for item in clean_warnings):
+        return "not_configured"
+    return "not_attempted_or_template_fallback"
+
+
+def _post_code_generate(
+    client: TestClient,
+    *,
+    query: str,
+    index: int,
+    expect_live_llm: bool,
+) -> dict[str, Any]:
     response = client.post(
         "/api/v1/tasks/code-generate",
         json={
@@ -150,20 +206,32 @@ def _post_code_generate(client: TestClient, *, query: str, index: int) -> dict[s
     code_blob = "\n".join(str(item.get("code") or "") for item in generated_items if isinstance(item, dict))
     paths = [str(item.get("file_path") or "") for item in generated_items if isinstance(item, dict)]
     marker_hits = {marker: marker in code_blob for marker in ENHANCED_INPUT_MARKERS}
+    warnings = data.get("warnings") or body.get("warnings") if isinstance(body, dict) else []
+    generation_mode = str(data.get("generation_mode") or "")
+    llm_status = _llm_codegen_status(generation_mode=generation_mode, warnings=list(warnings or []))
+    markers_ok = response.status_code == 200 and all(marker_hits.values())
+    llm_ok = not expect_live_llm or llm_status in {"accepted", "rejected_fallback"}
     return {
         "name": f"code_generate_enhanced_input_{index}",
-        "ok": response.status_code == 200 and all(marker_hits.values()),
+        "ok": markers_ok and llm_ok,
         "status_code": response.status_code,
         "query": query,
-        "generation_mode": data.get("generation_mode"),
+        "generation_mode": generation_mode,
         "preflight_status": (data.get("preflight_report") or {}).get("status"),
         "paths": paths,
         "marker_hits": marker_hits,
-        "warnings": data.get("warnings") or body.get("warnings") if isinstance(body, dict) else [],
+        "llm_status": llm_status,
+        "llm_required": expect_live_llm,
+        "warnings": warnings,
     }
 
 
-def _post_web_search_chat(client: TestClient) -> dict[str, Any]:
+def _post_web_search_chat(
+    client: TestClient,
+    *,
+    expect_live_llm: bool,
+    expect_live_web_search: bool,
+) -> dict[str, Any]:
     query = "请联网查一下 UE Enhanced Input 官方文档"
     response = client.post(
         "/api/v1/chat/runs",
@@ -199,51 +267,86 @@ def _post_web_search_chat(client: TestClient) -> dict[str, Any]:
     web_search = data.get("web_search") or debug_view.get("web_search") or {}
     tools = debug_view.get("tools") if isinstance(debug_view.get("tools"), list) else []
     tool_called = any(item.get("tool_id") == "web_search_knowledge" for item in tools if isinstance(item, dict))
+    llm_tool = next(
+        (
+            item
+            for item in tools
+            if isinstance(item, dict) and item.get("tool_id") == "llm_answer_synthesis"
+        ),
+        {},
+    )
+    web_provider = str(web_search.get("provider") or "")
+    live_provider_used = web_provider not in {"", "mock", "disabled", "none", "off"}
+    web_search_ok = web_search.get("status") == "completed" and bool(web_search.get("items")) and tool_called
+    live_web_ok = not expect_live_web_search or live_provider_used
+    live_llm_ok = not expect_live_llm or llm_tool.get("status") == "completed"
     return {
         "name": "agent_chat_web_search_tool",
-        "ok": (
-            response.status_code == 200
-            and web_search.get("status") == "completed"
-            and bool(web_search.get("items"))
-            and tool_called
-        ),
+        "ok": response.status_code == 200 and web_search_ok and live_web_ok and live_llm_ok,
         "status_code": response.status_code,
         "route_type": (body.get("intent") or {}).get("route_type") if isinstance(body, dict) else None,
+        "llm_answer_synthesis_status": llm_tool.get("status"),
+        "llm_answer_synthesis_summary": llm_tool.get("summary"),
+        "llm_required": expect_live_llm,
+        "web_search_provider": web_provider,
         "web_search_status": web_search.get("status"),
         "web_search_reason": web_search.get("reason"),
         "web_search_trigger_reason": web_search.get("trigger_reason"),
         "web_search_item_count": len(web_search.get("items") or []),
         "web_search_tool_called": tool_called,
+        "live_web_search_required": expect_live_web_search,
+        "live_web_search_provider_used": live_provider_used,
         "assistant_excerpt": str((body.get("assistant_message") or "") if isinstance(body, dict) else "")[:240],
     }
 
 
 def main() -> int:
     args = _parse_args()
-    with _isolated_runtime(live_llm=args.live_llm):
+    live_llm = bool(args.live_llm or args.live_all)
+    live_web_search = bool(args.live_web_search or args.live_all)
+    with _isolated_runtime(live_llm=live_llm, live_web_search=live_web_search):
+        settings_snapshot = _settings_snapshot()
         with TestClient(create_app()) as client:
             checks = [
                 _post_code_generate(
                     client,
                     query="角色增强输入代码怎么写",
                     index=1,
+                    expect_live_llm=live_llm,
                 ),
                 _post_code_generate(
                     client,
                     query="角色输入增强的代码怎么写",
                     index=2,
+                    expect_live_llm=live_llm,
                 ),
-                _post_web_search_chat(client),
+                _post_web_search_chat(
+                    client,
+                    expect_live_llm=live_llm,
+                    expect_live_web_search=live_web_search,
+                ),
             ]
 
     report = {
         "generated_at": datetime.now(UTC).isoformat(),
-        "mode": "live_llm" if args.live_llm else "deterministic_fallback_with_mock_web_search",
+        "mode": (
+            "live_llm_and_live_web_search"
+            if live_llm and live_web_search
+            else "live_llm_with_mock_web_search"
+            if live_llm
+            else "deterministic_fallback_with_live_web_search"
+            if live_web_search
+            else "deterministic_fallback_with_mock_web_search"
+        ),
+        "settings": settings_snapshot,
         "overall_ok": all(item["ok"] for item in checks),
         "checks": checks,
         "notes": [
             "This smoke test does not launch Unreal Editor.",
             "Default mode disables live LLM and uses a mock controlled Web Search provider.",
+            "--live-llm keeps your .env LLM settings and requires an LLM call to complete or be rejected by the Enhanced Input quality gate.",
+            "--live-web-search keeps your .env WEB_SEARCH_* settings and requires a non-mock provider result.",
+            "--live-all enables both live LLM and live Web Search checks.",
             "web_search_tool_called=true means the backend Project QA path invoked the Web Search tool trace.",
         ],
     }

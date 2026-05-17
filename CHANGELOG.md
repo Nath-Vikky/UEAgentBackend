@@ -72,6 +72,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - No-UE backend smoke script:
   `scripts/run_no_ue_live_smoke.py` checks Enhanced Input code generation and
   controlled Web Search tool invocation without launching Unreal Editor.
+- Live no-UE smoke modes: `--live-llm`, `--live-web-search`, and `--live-all`
+  read `.env` provider settings and report whether live LLM synthesis and
+  non-mock Web Search actually ran.
 
 ### Changed
 

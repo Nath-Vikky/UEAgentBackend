@@ -3534,6 +3534,34 @@ Remaining manual validation:
 
 UE frontend impact: no mandatory change. Optional debug-only fields added during I2-F1 to I2-F5 remain backward compatible.
 
+## 2026-05-17 No-UE Live Smoke Modes
+
+`scripts/run_no_ue_live_smoke.py` can now run in four modes:
+
+```powershell
+# Deterministic fallback + mock Web Search, best for regression.
+.\.venv\Scripts\python.exe scripts\run_no_ue_live_smoke.py
+
+# Real LLM from .env + mock Web Search.
+.\.venv\Scripts\python.exe scripts\run_no_ue_live_smoke.py --live-llm --output storage\artifacts\smoke\no-ue-live-smoke-live-llm.json
+
+# Deterministic LLM fallback + real Web Search from .env WEB_SEARCH_*.
+.\.venv\Scripts\python.exe scripts\run_no_ue_live_smoke.py --live-web-search --output storage\artifacts\smoke\no-ue-live-smoke-live-web.json
+
+# Real LLM + real Web Search from .env.
+.\.venv\Scripts\python.exe scripts\run_no_ue_live_smoke.py --live-all --output storage\artifacts\smoke\no-ue-live-smoke-live-all.json
+```
+
+How to read the live report:
+
+- `settings.llm.api_key_configured` only shows whether an LLM key was detected; it never prints the key.
+- `checks[].llm_status=accepted` means the live LLM generated code and the backend accepted it.
+- `checks[].llm_status=rejected_fallback` means the live LLM was called, but its Enhanced Input draft was incomplete, so the backend used the deterministic `ACharacter` fallback.
+- `agent_chat_web_search_tool.llm_answer_synthesis_status=completed` means Project QA final answer synthesis used live LLM.
+- `agent_chat_web_search_tool.live_web_search_provider_used=true` means Web Search used a non-mock provider.
+
+Boundary: `--live-all` can consume paid API quota and depends on proxy/network state. Keep the default mode for repeatable regression; use live modes for manual local verification.
+
 ## 2026-05-16 Executor-backed Handler migration
 
 Code Review, Logs Analyze, and Code Generate now have concrete task handlers:
