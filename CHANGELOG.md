@@ -69,6 +69,9 @@ Changelog. Dates use `YYYY-MM-DD`.
 - I2-F6 validation records for the Improv2 architecture cleanup stage,
   including regression suite, Web Search offline eval, and Code Review
   benchmark results.
+- No-UE backend smoke script:
+  `scripts/run_no_ue_live_smoke.py` checks Enhanced Input code generation and
+  controlled Web Search tool invocation without launching Unreal Editor.
 
 ### Changed
 
@@ -78,6 +81,9 @@ Changelog. Dates use `YYYY-MM-DD`.
   and startup contract validation rejects blank executor strings.
 - Web Memory recall now reports `summary.search_mode` and `summary.fts5`
   diagnostics while preserving the existing API shape.
+- Code Generate recognizes both Chinese word orders, `角色增强输入` and
+  `角色输入增强`, and rejects incomplete live-LLM Enhanced Input skeletons so
+  the deterministic `ACharacter` template can safely take over.
 - Context Bundle long-term memory recall now goes through
   `SessionLongTermMemoryProvider`; the returned `long_term_memory` payload is
   intentionally unchanged.

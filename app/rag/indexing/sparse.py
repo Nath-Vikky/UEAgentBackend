@@ -11,7 +11,7 @@ QUERY_EXPANSIONS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ("lifecycle", "constructor", "beginplay", "tick", "endplay", "destroy", "garbage", "collection"),
     ),
     (
-        ("增强输入", "enhanced input"),
+        ("增强输入", "输入增强", "增强输入系统", "enhanced input"),
         ("enhanced", "input", "inputmappingcontext", "inputaction", "enhancedinputcomponent", "addmappingcontext", "bindaction"),
     ),
     (

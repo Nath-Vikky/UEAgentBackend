@@ -426,7 +426,9 @@ make docker-down
 
 注意：`generated_items[].file_path` 是建议放置路径或虚拟草稿路径，不代表后端已经创建了这个文件。前端应把它渲染为“生成结果按钮 / Tab”，点击后展示 `generated_items[].code`，不要把它显示成“已生成到磁盘的文件路径”。
 
-当前 Code Generate 已补充第一批常用 UE 场景模板：当需求包含“角色增强输入 / Enhanced Input Character / Input Mapping Context / Input Action”等信号时，即使没有配置 LLM，也会返回 `ACharacter` 版本的 Enhanced Input 草稿，建议路径为 `Source/<Module>/Public/<Class>.h` 和 `Source/<Module>/Private/<Class>.cpp`，并在 `patch_plan` 中提示添加 `EnhancedInput` 模块依赖。交互组件、射线交互组件、GameInstanceSubsystem 也有基础兜底草稿。
+当前 Code Generate 已补充第一批常用 UE 场景模板：当需求包含“角色增强输入 / 角色输入增强 / Enhanced Input Character / Input Mapping Context / Input Action”等信号时，即使没有配置 LLM，也会返回 `ACharacter` 版本的 Enhanced Input 草稿，建议路径为 `Source/<Module>/Public/<Class>.h` 和 `Source/<Module>/Private/<Class>.cpp`，并在 `patch_plan` 中提示添加 `EnhancedInput` 模块依赖。交互组件、射线交互组件、GameInstanceSubsystem 也有基础兜底草稿。
+
+如果 live LLM 返回的 Enhanced Input 代码只是普通 `AActor` / `BeginPlay` / `Tick` 骨架，后端会把这次 LLM 结果标记为 `llm_generation_rejected:enhanced_input_incomplete`，然后回退到确定性的 Enhanced Input Character 模板，避免前端拿到看似成功但内容不匹配的代码。
 
 `preflight_report` 会检查 3-5 类常见生成问题：不安全路径、`.h/.cpp` 配对、UE `UCLASS / GENERATED_BODY / .generated.h` 反射结构、`.cpp` 是否包含同名头文件、Enhanced Input 是否包含 `InputAction / MappingContext / BindAction / AddMappingContext / Build.cs` 提示等。它会返回 `status=passed/warning/failed`、`quality_score`、`summary` 和 `findings[]`。如果出现 warning/error，仍然不会自动改工程，前端可把它作为“复制进工程前请复查”的提示。
 

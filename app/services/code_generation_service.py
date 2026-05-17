@@ -113,6 +113,74 @@ def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _is_enhanced_input_character_request(query: str, request: UnifiedTaskRequest) -> bool:
+    text = " ".join(
+        [
+            query,
+            str(request.payload.get("user_query") or ""),
+            str(request.payload.get("requirement_description") or ""),
+            str(request.payload.get("target_type") or ""),
+        ]
+    ).lower()
+    enhanced_terms = (
+        "enhanced input",
+        "enhancedinput",
+        "input action",
+        "input mapping",
+        "mapping context",
+        "uinputaction",
+        "uinputmappingcontext",
+        "uenhancedinputcomponent",
+        "增强输入",
+        "输入增强",
+        "增强输入系统",
+        "输入动作",
+        "映射上下文",
+    )
+    character_terms = ("character", "player", "pawn", "角色", "玩家", "玩家角色")
+    target_type = str(request.payload.get("target_type") or "").lower()
+    return any(term in text for term in enhanced_terms) and (
+        any(term in text for term in character_terms)
+        or target_type in {"character", "player_character", "ue_character", "ue_cpp_character"}
+    )
+
+
+def _missing_enhanced_input_markers(generated_items: list[dict[str, Any]]) -> list[str]:
+    joined = "\n".join(
+        [
+            *(str(item.get("file_path") or "") for item in generated_items),
+            *(str(item.get("code") or "") for item in generated_items),
+        ]
+    ).lower()
+    required_terms = {
+        "character_base": ("acharacter", "gameframework/character.h"),
+        "input_action": ("uinputaction", "inputaction"),
+        "mapping_context": ("uinputmappingcontext", "inputmappingcontext"),
+        "enhanced_input_component": ("uenhancedinputcomponent", "enhancedinputcomponent"),
+        "bind_action": ("bindaction",),
+        "add_mapping_context": ("addmappingcontext",),
+    }
+    return [
+        marker
+        for marker, terms in required_terms.items()
+        if not any(term in joined for term in terms)
+    ]
+
+
+def _llm_generation_rejection_reason(
+    *,
+    request: UnifiedTaskRequest,
+    query: str,
+    generated_items: list[dict[str, Any]],
+) -> str:
+    if not _is_enhanced_input_character_request(query, request):
+        return ""
+    missing = _missing_enhanced_input_markers(generated_items)
+    if missing:
+        return "enhanced_input_incomplete:" + ",".join(missing)
+    return ""
+
+
 class CodeGenerationService:
     def __init__(
         self,
@@ -205,7 +273,17 @@ class CodeGenerationService:
             }
         )
 
+        llm_rejection_reason = ""
         if llm_attempt["ok"] and llm_attempt["generated_items"]:
+            llm_rejection_reason = _llm_generation_rejection_reason(
+                request=request,
+                query=query,
+                generated_items=llm_attempt["generated_items"],
+            )
+            if llm_rejection_reason:
+                llm_attempt["warnings"].append(f"llm_generation_rejected:{llm_rejection_reason}")
+
+        if llm_attempt["ok"] and llm_attempt["generated_items"] and not llm_rejection_reason:
             generated_items = llm_attempt["generated_items"]
             generation_mode = (
                 "live_llm_reference_augmented"

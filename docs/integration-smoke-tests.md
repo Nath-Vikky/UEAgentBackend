@@ -16,6 +16,32 @@ Set a base URL:
 $BaseUrl = "http://127.0.0.1:8000/api/v1"
 ```
 
+## 0. No-UE Backend Smoke
+
+If you want to verify the backend without launching Unreal Editor, run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_no_ue_live_smoke.py --output storage\artifacts\smoke\no-ue-live-smoke-latest.json
+```
+
+This script uses FastAPI `TestClient`, an isolated in-memory database, local `knowledge/`, deterministic LLM fallback, and a mock controlled Web Search result.
+
+Pass criteria:
+
+- `overall_ok` is `true`.
+- `code_generate_enhanced_input_1` returns Enhanced Input Character code for `角色增强输入代码怎么写`.
+- `code_generate_enhanced_input_2` returns Enhanced Input Character code for `角色输入增强的代码怎么写`.
+- `agent_chat_web_search_tool.web_search_tool_called` is `true`.
+- `agent_chat_web_search_tool.web_search_status` is `completed`.
+
+Optional live LLM check:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_no_ue_live_smoke.py --live-llm --output storage\artifacts\smoke\no-ue-live-smoke-live-llm.json
+```
+
+The default mode is better for regression because it proves backend tool routing and deterministic fallbacks without depending on proxy/API-key state.
+
 PowerShell 注意：如果使用反引号换行，反引号后面不能有空格。否则后续
 `-Method Post` 可能不会被解析，`Invoke-RestMethod` 会按默认 GET 请求发送，
 后端就会返回 `{"detail":"Method Not Allowed"}`。排查时优先使用本文的单行

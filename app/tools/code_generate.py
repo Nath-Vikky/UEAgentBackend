@@ -121,10 +121,12 @@ def _is_enhanced_input_character_request(requirement: str, target_type: str) -> 
         "uinputmappingcontext",
         "uenhancedinputcomponent",
         "增强输入",
+        "输入增强",
+        "增强输入系统",
         "输入动作",
         "映射上下文",
     )
-    character_terms = ("character", "player", "pawn", "角色", "玩家")
+    character_terms = ("character", "player", "pawn", "角色", "玩家", "玩家角色")
     return any(term in lowered for term in enhanced_terms) and (
         target_type == "ue_character" or any(term in lowered for term in character_terms)
     )
