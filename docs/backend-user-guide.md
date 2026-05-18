@@ -3848,6 +3848,30 @@ Validation:
 
 UE frontend impact: no mandatory change. Existing response fields are preserved.
 
+## 2026-05-18 Active Context for editor operations
+
+The backend now keeps a lightweight reference to recent confirmed Unreal Editor operations in the per-request Context Bundle. This is meant for follow-up instructions such as "set that material roughness to 0.55" after the user has already confirmed and executed a Material Instance proposal.
+
+Where to inspect it:
+
+- `debug_view.active_context.editor_operation.status`
+- `debug_view.active_context.editor_operation.last_successful`
+- `debug_view.active_context.editor_operation.recent_count`
+- `debug_view.context_bundle.recent_editor_operations`
+
+Current behavior:
+
+- Only UE plugin execution results reported through `POST /api/v1/editor-operations/results` are reused.
+- The stored summary is compact: proposal id, operation type, tool id, execution state, target asset/class/parameter, result summary, and undo hint.
+- Agent Chat can reuse the recent target for low-risk follow-up proposal generation, for example a second Material Instance parameter change without requiring the frontend to resend `selected_assets`.
+- The backend still only creates an Editor Operation Proposal. The UE frontend must still ask the user to confirm, execute with Editor API, and report the result.
+
+Frontend impact:
+
+- No mandatory UI/API change.
+- Existing proposal rendering and confirmation flow remain valid.
+- Debug View may optionally display `active_context.editor_operation.last_successful` to help users understand why "that material" or "previous actor" was resolved.
+
 ## 2026-05-17 Knowledge Curation Artifact Export
 
 Project QA already returns `knowledge_curation` diagnostics when local KB evidence is weak but controlled Web Search or Web Memory finds useful evidence. This stage adds a manual export path so backend maintainers can review those suggestions as files instead of digging through Debug View every time.

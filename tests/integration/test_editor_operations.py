@@ -709,3 +709,104 @@ def test_agent_chat_can_set_selected_material_instance_parameter(client: TestCli
     assert payload["parameter_name"] == "Roughness"
     assert payload["parameter_type"] == "scalar"
     assert payload["value"] == 0.35
+
+
+def test_agent_chat_reuses_recent_material_operation_context(client: TestClient) -> None:
+    session_id = "chat_material_active_context_session"
+    first = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": session_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Set selected material MI_Player Roughness to 0.35",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Materials/MI_Player"],
+            },
+            "payload": {"user_query": "Set selected material MI_Player Roughness to 0.35"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    proposal = first_body["action_proposals"][0]
+    proposal_id = proposal["proposal_id"]
+
+    confirmed = client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm")
+    assert confirmed.status_code == 200
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "set_material_instance_parameter",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "transaction_id": f"ue_transaction_{proposal_id}",
+            "undo_hint": "Use editor undo.",
+            "result": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "Roughness",
+                "parameter_type": "scalar",
+                "value": 0.35,
+            },
+        },
+    )
+    assert result.status_code == 200
+
+    followup = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": session_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Set that material Roughness to 0.55",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Set that material Roughness to 0.55"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    assert followup.status_code == 200
+    followup_body = followup.json()
+    assert followup_body["task"]["status"] == "waiting_confirmation"
+    payload = followup_body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "Roughness"
+    assert payload["value"] == 0.55
+    active_context = followup_body["debug_view"]["active_context"]
+    last_operation = active_context["editor_operation"]["last_successful"]
+    assert last_operation["target"]["material_instance_path"] == "/Game/Materials/MI_Player"

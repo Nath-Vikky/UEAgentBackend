@@ -45,7 +45,10 @@ class RouteExecutionDispatcher:
         return result
 
     def select_handler(self, host: Any, context: TaskExecutionContext) -> TaskHandler:
-        editor_operation_request = EditorOperationService.detect_request(context.request)
+        editor_operation_request = EditorOperationService.detect_request(
+            context.request,
+            context.context_bundle,
+        )
         if editor_operation_request:
             return EditorOperationProposalHandler(editor_operation_request)
 

@@ -23,6 +23,7 @@ DEFAULT_CHAR_BUDGET = 6000
 DEFAULT_RECENT_MESSAGES = 8
 DEFAULT_TOOL_TASKS = 3
 DEFAULT_WEB_MEMORY_ITEMS = 3
+DEFAULT_EDITOR_OPERATION_TASKS = 3
 
 
 def _clip(value: str, limit: int) -> str:
@@ -130,6 +131,100 @@ def _tool_context(db: Session, session_id: str, limit: int) -> list[dict[str, An
         if len(items) >= limit:
             break
     return items
+
+
+def _proposal_preview_by_id(task: Any) -> dict[str, dict[str, Any]]:
+    previews: dict[str, dict[str, Any]] = {}
+    for proposal in list(task.action_proposals_json or []):
+        if not isinstance(proposal, dict):
+            continue
+        proposal_id = str(proposal.get("proposal_id") or "")
+        preview = proposal.get("dry_run_preview")
+        if proposal_id and isinstance(preview, dict):
+            previews[proposal_id] = dict(preview)
+    return previews
+
+
+def _compact_operation_target(
+    *,
+    operation_type: str,
+    payload: dict[str, Any],
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    target: dict[str, Any] = {}
+    for key in (
+        "asset_path",
+        "final_asset_path",
+        "blueprint_path",
+        "material_instance_path",
+        "actor_class",
+        "actor_label",
+        "parameter_name",
+        "parameter_type",
+    ):
+        value = result.get(key)
+        if value in (None, "", [], {}):
+            value = payload.get(key)
+        if value not in (None, "", [], {}):
+            target[key] = value
+    if operation_type == "place_actor_in_level" and "actor_class" not in target:
+        actor_class = payload.get("actor_class") or result.get("actor_class")
+        if actor_class:
+            target["actor_class"] = actor_class
+    if operation_type == "set_material_instance_parameter" and "material_instance_path" not in target:
+        material_path = payload.get("material_instance_path") or result.get("material_instance_path")
+        if material_path:
+            target["material_instance_path"] = material_path
+    return target
+
+
+def _recent_editor_operations(db: Session, session_id: str, limit: int) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for task in list_session_tasks(db, session_id, limit=30):
+        previews = _proposal_preview_by_id(task)
+        data = dict(task.data_json or {})
+        operation_results = list(data.get("editor_operation_results") or [])
+        for operation_result in reversed(operation_results):
+            if not isinstance(operation_result, dict):
+                continue
+            proposal_id = str(operation_result.get("proposal_id") or "")
+            preview = previews.get(proposal_id, {})
+            payload = dict(preview.get("operation_payload") or {})
+            result = dict(operation_result.get("result") or {})
+            operation_type = str(operation_result.get("operation_type") or preview.get("operation_type") or "")
+            item = {
+                "task_id": task.task_id,
+                "run_id": task.run_id,
+                "proposal_id": proposal_id or None,
+                "operation_type": operation_type,
+                "tool_id": operation_result.get("tool_id") or preview.get("tool_id"),
+                "execution_state": operation_result.get("execution_state"),
+                "success": bool(operation_result.get("success")),
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+                "received_at": operation_result.get("received_at"),
+                "target": _compact_operation_target(
+                    operation_type=operation_type,
+                    payload=payload,
+                    result=result,
+                ),
+                "operation_payload": payload,
+                "result": result,
+                "undo_hint": operation_result.get("undo_hint"),
+            }
+            items.append(item)
+            if len(items) >= limit:
+                break
+        if len(items) >= limit:
+            break
+    last_successful = next((item for item in items if item.get("success")), None)
+    return {
+        "version": "recent_editor_operations_v1",
+        "status": "available" if items else "not_available",
+        "items": items,
+        "last_successful": last_successful,
+        "count": len(items),
+        "policy": "Only confirmed UE plugin execution results are reused as active editor context.",
+    }
 
 
 def _session_summary(db: Session, session_id: str) -> dict[str, Any]:
@@ -243,6 +338,7 @@ def _estimate_chars(bundle: dict[str, Any]) -> int:
             total += len(str(item.get("text") or ""))
     total += len(str(bundle.get("active_context") or ""))
     total += len(str(bundle.get("editor_context") or ""))
+    total += len(str(bundle.get("recent_editor_operations") or ""))
     return total
 
 
@@ -289,6 +385,17 @@ def build_context_bundle(
         long_term_result=long_term_memory_result,
         web_memory_result=web_memory_result,
     )
+    editor_operations_context = _recent_editor_operations(
+        db,
+        session_id,
+        limit=DEFAULT_EDITOR_OPERATION_TASKS,
+    )
+    active_context = build_active_context(request=request, routing=routing)
+    active_context["editor_operation"] = {
+        "status": editor_operations_context["status"],
+        "last_successful": editor_operations_context["last_successful"],
+        "recent_count": editor_operations_context["count"],
+    }
     bundle = {
         "version": "context_bundle_v1",
         "input_summary": {
@@ -299,7 +406,7 @@ def build_context_bundle(
             "selected_tool_id": routing.get("route", {}).get("selected_tool_id"),
             "latest_user_message": _clip(latest_user_message, 700),
         },
-        "active_context": build_active_context(request=request, routing=routing),
+        "active_context": active_context,
         "editor_context": build_context_summary(request),
         "language_context": dict(routing.get("locale") or {}),
         "recent_messages": recent_messages,
@@ -323,10 +430,12 @@ def build_context_bundle(
             "note": "RAG retrieval chunks are attached after retrieval when selected.",
         },
         "tool_context": _tool_context(db, session_id, limit=tool_task_limit),
+        "recent_editor_operations": editor_operations_context["items"],
         "source_policy": {
             "chat_history": "Only agent_chat/project_qa messages are persisted to chat history.",
             "tool_tasks": "Tool tasks are summarized separately and do not pollute chat history.",
             "raw_payload": "Raw request remains in Debug View; Context Bundle keeps compact excerpts only.",
+            "editor_operations": editor_operations_context["policy"],
         },
     }
     estimated_chars = _estimate_chars(bundle)
@@ -383,6 +492,15 @@ def context_bundle_prompt_excerpt(context_bundle: dict[str, Any]) -> str:
         lines.append("- Recent tool task summaries:")
         for item in tool_context:
             lines.append(f"  - {item.get('task_type')}[{item.get('status')}]: {item.get('summary')}")
+    editor_operations = context_bundle.get("recent_editor_operations") or []
+    if editor_operations:
+        lines.append("- Recent confirmed editor operations:")
+        for item in editor_operations[:3]:
+            lines.append(
+                "  - "
+                f"{item.get('operation_type')}[{item.get('execution_state')}]: "
+                f"target={item.get('target')}"
+            )
     long_term_memory = context_bundle.get("long_term_memory") or {}
     if long_term_memory.get("items"):
         lines.append("- Long-term project memory:")
