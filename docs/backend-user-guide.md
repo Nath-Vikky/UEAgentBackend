@@ -2892,6 +2892,75 @@ UMG 写操作边界：
 - 父控件必须是 `PanelWidget`；如果 root 不是 panel，或指定父控件不存在，则执行器 blocked。
 - `text` 只对 `TextBlock` 生效；传给其他控件时不会失败整个操作，但会在 `failed_fields` 中说明没有应用。
 - 不设置锚点、尺寸、动画、绑定和复杂 slot 参数；这些放到后续 UMG v2。
+
+### 26.2 Level / Material 低风险编辑器操作 v1
+
+I4-5 先补两类可控写操作：Level Actor 放置，以及 Material Instance scalar/vector 参数设置。二者都仍然走 `Editor Operation Proposal -> 用户确认 -> UE 插件执行 -> 回传结果`，后端不直接调用 UE Editor API。
+
+放置 Actor 到当前 Level：
+
+```json
+{
+  "operation_type": "place_actor_in_level",
+  "payload": {
+    "actor_class": "/Script/Engine.PointLight",
+    "actor_label": "KeyLight_A",
+    "transform": {
+      "location": {"x": 120.0, "y": 50.0, "z": 300.0},
+      "rotation": {"pitch": -25.0, "yaw": 45.0, "roll": 0.0},
+      "scale": {"x": 1.0, "y": 1.0, "z": 1.0}
+    }
+  }
+}
+```
+
+边界：
+
+- `actor_class` 必填，允许 `/Script/...`、`/Game/...` 或 UE 插件可解析的基础类名。
+- `actor_label` 可选，只作为编辑器内显示 label。
+- `transform` 可选，默认 location/rotation 为 0，scale 为 1。
+- v1 不做批量摆放、不删除 Actor、不修改已存在 Actor、不触发导航重建/灯光烘焙等派生流程。
+
+设置 Material Instance 参数：
+
+```json
+{
+  "operation_type": "set_material_instance_parameter",
+  "payload": {
+    "material_instance_path": "/Game/Materials/MI_Player",
+    "parameter_name": "Roughness",
+    "parameter_type": "scalar",
+    "value": 0.35
+  }
+}
+```
+
+vector 参数：
+
+```json
+{
+  "operation_type": "set_material_instance_parameter",
+  "payload": {
+    "material_instance_path": "/Game/Materials/MI_Player",
+    "parameter_name": "Tint Color",
+    "parameter_type": "vector",
+    "value": {"r": 0.1, "g": 0.2, "b": 0.3, "a": 1.0}
+  }
+}
+```
+
+边界：
+
+- 只支持 Material Instance Constant。
+- `parameter_type` 只支持 `scalar` 和 `vector`。
+- vector 使用 `r/g/b/a`，也可由后端接受数组或 `x/y/z/w` 并归一成 `r/g/b/a`。
+- v1 不支持 Texture 参数、不编辑材质图谱、不创建 Material Function、不自动保存资产。
+
+建议验证：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py tests\unit\test_tool_registry.py tests\unit\test_mcp_tool_adapter.py -q
+```
 ## 27. Multi-Agent Code Review Chain v1
 
 后端现在在默认 Code Review 之外，新增了一条轻量 Multi-Agent 链：`review_fix_validate`。它用于展示链式审查流程和真实辅助审查，不替代默认 Code Review，也不新增主菜单。

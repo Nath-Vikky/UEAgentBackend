@@ -53,6 +53,8 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "batch_rename_assets",
         "move_assets",
         "add_umg_widget",
+        "place_actor_in_level",
+        "set_material_instance_parameter",
     }.issubset(operation_types)
     operation_items = {
         item["operation_type"]: item
@@ -65,6 +67,8 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["batch_rename_assets"]["frontend_status"] == "implemented_v1"
     assert operation_items["move_assets"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_umg_widget"]["frontend_status"] == "implemented_v1"
+    assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_material_instance_parameter"]["frontend_status"] == "implemented_v1"
     assert body["capabilities"]["safety_policy"]["requires_frontend_confirmation"] is True
 
     capabilities = client.get("/api/v1/system/capabilities").json()
@@ -84,6 +88,8 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "mcp_get_blueprint_graph" in tool_ids
     assert "mcp_get_widget_tree" in tool_ids
     assert "editor_add_umg_widget" in tool_ids
+    assert "editor_place_actor_in_level" in tool_ids
+    assert "editor_set_material_instance_parameter" in tool_ids
 
 
 def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient) -> None:
@@ -393,6 +399,116 @@ def test_add_umg_widget_rejects_unsupported_class(client: TestClient) -> None:
     assert response.status_code == 400
     body = response.json()
     assert body["errors"][0]["code"] == "widget_class_not_supported_in_v1"
+
+
+def test_place_actor_in_level_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "place_actor_in_level",
+            "payload": {
+                "actor_class": "/Script/Engine.PointLight",
+                "actor_label": "KeyLight_A",
+                "transform": {
+                    "location": {"x": 120.0, "y": 50.0, "z": 300.0},
+                    "rotation": {"pitch": -25.0, "yaw": 45.0, "roll": 0.0},
+                    "scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+                },
+            },
+            "reason": "Place a key light for preview.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "place_actor_in_level"
+    assert body["operation"]["tool_id"] == "editor_place_actor_in_level"
+    payload = body["operation"]["operation_payload"]
+    assert payload["actor_class"] == "/Script/Engine.PointLight"
+    assert payload["actor_label"] == "KeyLight_A"
+    assert payload["transform"]["location"]["z"] == 300.0
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_place_actor_rejects_invalid_scale(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "place_actor_in_level",
+            "payload": {
+                "actor_class": "/Script/Engine.Actor",
+                "transform": {"scale": {"x": 0.0, "y": 1.0, "z": 1.0}},
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "scale_x_out_of_range"
+
+
+def test_set_material_instance_scalar_parameter_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_material_instance_parameter",
+            "payload": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "Roughness",
+                "parameter_type": "scalar",
+                "value": 0.35,
+            },
+            "reason": "Tune the preview material.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_material_instance_parameter"
+    assert body["operation"]["tool_id"] == "editor_set_material_instance_parameter"
+    payload = body["operation"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "Roughness"
+    assert payload["parameter_type"] == "scalar"
+    assert payload["value"] == 0.35
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_set_material_instance_vector_parameter_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_material_instance_parameter",
+            "payload": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "Tint Color",
+                "parameter_type": "vector",
+                "value": {"r": 0.1, "g": 0.2, "b": 0.3, "a": 1.0},
+            },
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()["operation"]["operation_payload"]
+    assert payload["parameter_type"] == "vector"
+    assert payload["value"] == {"r": 0.1, "g": 0.2, "b": 0.3, "a": 1.0}
+
+
+def test_set_material_instance_rejects_unknown_parameter_type(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_material_instance_parameter",
+            "payload": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "Tint",
+                "parameter_type": "texture",
+                "value": "/Game/Textures/T_Test",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "material_parameter_type_not_supported_in_v1"
 
 
 def test_assets_inspect_emits_rename_editor_operation_proposal(client: TestClient) -> None:

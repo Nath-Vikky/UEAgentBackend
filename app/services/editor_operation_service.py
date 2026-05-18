@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import uuid
 from typing import Any
@@ -24,6 +25,7 @@ EDITOR_OPERATION_PROPOSAL_TYPE = "editor_operation"
 
 _ASSET_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{1,63}$")
 _CLASS_NAME_RE = re.compile(r"^[A-Za-z_/][A-Za-z0-9_./:]*$")
+_PARAMETER_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_ ]{0,79}$")
 _SAFE_TEXT_RE = re.compile(r"^[A-Za-z0-9_./:-]+$")
 
 STATIC_MESH_SETTING_KEYS = {
@@ -107,6 +109,8 @@ UMG_WIDGET_CLASS_ALIASES = {
 
 UMG_WIDGET_CLASS_ALLOWLIST = set(UMG_WIDGET_CLASS_ALIASES.values())
 
+MATERIAL_PARAMETER_TYPES = {"scalar", "vector"}
+
 OPERATION_SPECS: dict[str, dict[str, Any]] = {
     "rename_selected_asset": {
         "tool_id": "editor_rename_asset",
@@ -186,6 +190,22 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "MEDIUM",
         "summary": "Add one simple widget to a Widget Blueprint after user confirmation.",
         "required_fields": ["widget_blueprint_path", "widget_name", "widget_class"],
+        "frontend_status": "implemented_v1",
+    },
+    "place_actor_in_level": {
+        "tool_id": "editor_place_actor_in_level",
+        "title": "Place Actor In Level",
+        "risk_flags": "MEDIUM",
+        "summary": "Place one Actor class in the current editor level after user confirmation.",
+        "required_fields": ["actor_class"],
+        "frontend_status": "implemented_v1",
+    },
+    "set_material_instance_parameter": {
+        "tool_id": "editor_set_material_instance_parameter",
+        "title": "Set Material Instance Parameter",
+        "risk_flags": "MEDIUM",
+        "summary": "Set one scalar or vector parameter on a Material Instance after user confirmation.",
+        "required_fields": ["material_instance_path", "parameter_name", "parameter_type", "value"],
         "frontend_status": "implemented_v1",
     },
 }
@@ -619,6 +639,148 @@ class EditorOperationService:
             )
         return text
 
+    @staticmethod
+    def _normalize_finite_float(
+        value: Any,
+        field_name: str,
+        *,
+        min_value: float = -1_000_000.0,
+        max_value: float = 1_000_000.0,
+    ) -> float:
+        if isinstance(value, bool):
+            raise EditorOperationValidationError(f"{field_name}_must_be_number")
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as exc:
+            raise EditorOperationValidationError(f"{field_name}_must_be_number") from exc
+        if not math.isfinite(number) or number < min_value or number > max_value:
+            raise EditorOperationValidationError(
+                f"{field_name}_out_of_range",
+                {"min": min_value, "max": max_value, "value": value},
+            )
+        return number
+
+    def _normalize_vector3(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        defaults: tuple[float, float, float],
+        component_names: tuple[str, str, str] = ("x", "y", "z"),
+        min_value: float = -1_000_000.0,
+        max_value: float = 1_000_000.0,
+    ) -> dict[str, float]:
+        if value is None:
+            values = list(defaults)
+        elif isinstance(value, list | tuple) and len(value) == 3:
+            values = list(value)
+        elif isinstance(value, dict):
+            values = [
+                value.get(component_names[0], defaults[0]),
+                value.get(component_names[1], defaults[1]),
+                value.get(component_names[2], defaults[2]),
+            ]
+        else:
+            raise EditorOperationValidationError(f"{field_name}_must_be_vector3")
+        return {
+            component_names[0]: self._normalize_finite_float(
+                values[0],
+                f"{field_name}_{component_names[0]}",
+                min_value=min_value,
+                max_value=max_value,
+            ),
+            component_names[1]: self._normalize_finite_float(
+                values[1],
+                f"{field_name}_{component_names[1]}",
+                min_value=min_value,
+                max_value=max_value,
+            ),
+            component_names[2]: self._normalize_finite_float(
+                values[2],
+                f"{field_name}_{component_names[2]}",
+                min_value=min_value,
+                max_value=max_value,
+            ),
+        }
+
+    def _normalize_actor_transform(self, value: Any) -> dict[str, dict[str, float]]:
+        if value is None:
+            value = {}
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError("transform_must_be_object")
+        return {
+            "location": self._normalize_vector3(
+                value.get("location"),
+                field_name="location",
+                defaults=(0.0, 0.0, 0.0),
+            ),
+            "rotation": self._normalize_vector3(
+                value.get("rotation"),
+                field_name="rotation",
+                defaults=(0.0, 0.0, 0.0),
+                component_names=("pitch", "yaw", "roll"),
+                min_value=-360_000.0,
+                max_value=360_000.0,
+            ),
+            "scale": self._normalize_vector3(
+                value.get("scale"),
+                field_name="scale",
+                defaults=(1.0, 1.0, 1.0),
+                min_value=0.001,
+                max_value=1000.0,
+            ),
+        }
+
+    @staticmethod
+    def _normalize_material_parameter_type(value: Any) -> str:
+        parameter_type = str(value or "").strip().lower()
+        if parameter_type not in MATERIAL_PARAMETER_TYPES:
+            raise EditorOperationValidationError(
+                "material_parameter_type_not_supported_in_v1",
+                {"parameter_type": parameter_type, "allowed_types": sorted(MATERIAL_PARAMETER_TYPES)},
+            )
+        return parameter_type
+
+    @staticmethod
+    def _normalize_parameter_name(value: Any) -> str:
+        parameter_name = str(value or "").strip()
+        if not _PARAMETER_NAME_RE.match(parameter_name):
+            raise EditorOperationValidationError(
+                "material_parameter_name_invalid",
+                {
+                    "parameter_name": parameter_name,
+                    "rule": "Use 1-80 characters. Start with a letter. Only letters, numbers, spaces, and underscore are allowed.",
+                },
+            )
+        return parameter_name
+
+    def _normalize_material_vector_value(self, value: Any) -> dict[str, float]:
+        if isinstance(value, list | tuple) and len(value) in {3, 4}:
+            raw_values = {
+                "r": value[0],
+                "g": value[1],
+                "b": value[2],
+                "a": value[3] if len(value) == 4 else 1.0,
+            }
+        elif isinstance(value, dict):
+            raw_values = {
+                "r": value.get("r", value.get("x", 0.0)),
+                "g": value.get("g", value.get("y", 0.0)),
+                "b": value.get("b", value.get("z", 0.0)),
+                "a": value.get("a", value.get("w", 1.0)),
+            }
+        else:
+            raise EditorOperationValidationError("material_vector_value_must_be_color_object_or_array")
+        return {
+            component: self._normalize_finite_float(
+                raw_value,
+                f"material_vector_{component}",
+                min_value=-10_000.0,
+                max_value=10_000.0,
+            )
+            for component, raw_value in raw_values.items()
+        }
+
     def _normalize_payload(self, operation_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         if operation_type == "rename_selected_asset":
             asset_path = self._normalize_asset_path(payload.get("asset_path"))
@@ -747,6 +909,34 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "place_actor_in_level":
+            actor_class = self._normalize_class_path(payload.get("actor_class"))
+            actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
+            return {
+                "actor_class": actor_class,
+                "actor_label": actor_label or None,
+                "transform": self._normalize_actor_transform(payload.get("transform")),
+                "save_policy": "mark_dirty_only",
+            }
+
+        if operation_type == "set_material_instance_parameter":
+            material_instance_path = self._normalize_asset_path(payload.get("material_instance_path"))
+            parameter_name = self._normalize_parameter_name(payload.get("parameter_name"))
+            parameter_type = self._normalize_material_parameter_type(payload.get("parameter_type"))
+            raw_value = payload.get("value")
+            value = (
+                self._normalize_finite_float(raw_value, "material_scalar_value")
+                if parameter_type == "scalar"
+                else self._normalize_material_vector_value(raw_value)
+            )
+            return {
+                "material_instance_path": material_instance_path,
+                "parameter_name": parameter_name,
+                "parameter_type": parameter_type,
+                "value": value,
+                "save_policy": "mark_dirty_only",
+            }
+
         raise EditorOperationValidationError("unsupported_editor_operation", {"operation_type": operation_type})
 
     def _build_summaries(self, operation_type: str, payload: dict[str, Any]) -> tuple[str, str]:
@@ -813,6 +1003,18 @@ class EditorOperationService:
             return (
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Add `{payload['widget_name']}` ({payload['widget_class']}) under {parent}. The package is not auto-saved.",
+            )
+        if operation_type == "place_actor_in_level":
+            location = payload["transform"]["location"]
+            label = payload.get("actor_label") or "(default label)"
+            return (
+                f"Current level before change: no Actor is spawned before confirmation. Class: {payload['actor_class']}",
+                f"Place Actor label `{label}` at ({location['x']}, {location['y']}, {location['z']}). The level is marked dirty, not auto-saved.",
+            )
+        if operation_type == "set_material_instance_parameter":
+            return (
+                f"Material Instance before change: {payload['material_instance_path']}",
+                f"Set `{payload['parameter_name']}` {payload['parameter_type']} value. The package is marked dirty, not auto-saved.",
             )
         return ("", "")
 
