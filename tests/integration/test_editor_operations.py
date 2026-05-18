@@ -668,6 +668,67 @@ def test_agent_chat_can_place_selected_blueprint_in_level(client: TestClient) ->
     assert payload["transform"]["location"] == {"x": 0.0, "y": 0.0, "z": 100.0}
 
 
+def test_agent_chat_resolves_blueprint_from_project_inventory_for_level_placement(
+    client: TestClient,
+) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
+                    "asset_name": "BP_EnemySpawner",
+                    "asset_type": "Blueprint",
+                    "settings": {"parent_class": "AActor"},
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_place_inventory_blueprint_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Place BP_EnemySpawner in the current level at location 10 20 30",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {
+                "user_query": "Place BP_EnemySpawner in the current level at location 10 20 30"
+            },
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["actor_class"] == "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner_C"
+    assert payload["transform"]["location"] == {"x": 10.0, "y": 20.0, "z": 30.0}
+    assert body["debug_view"]["active_context"]["inventory"]["query_candidate_count"] == 1
+
+
 def test_agent_chat_can_set_selected_material_instance_parameter(client: TestClient) -> None:
     response = client.post(
         "/api/v1/chat/runs",
@@ -709,6 +770,63 @@ def test_agent_chat_can_set_selected_material_instance_parameter(client: TestCli
     assert payload["parameter_name"] == "Roughness"
     assert payload["parameter_type"] == "scalar"
     assert payload["value"] == 0.35
+
+
+def test_agent_chat_resolves_material_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Materials/MI_Player.MI_Player",
+                    "asset_name": "MI_Player",
+                    "asset_type": "MaterialInstanceConstant",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_material_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Set MI_Player material Roughness to 0.25",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Set MI_Player material Roughness to 0.25"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "Roughness"
+    assert payload["value"] == 0.25
+    assert body["debug_view"]["active_context"]["inventory"]["query_candidate_count"] == 1
 
 
 def test_agent_chat_reuses_recent_material_operation_context(client: TestClient) -> None:

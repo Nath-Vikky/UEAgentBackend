@@ -689,6 +689,23 @@ class TaskService:
             selected_assets=list(request.context.selected_assets or []),
             current_file=request.context.current_file,
         )
+        inventory_query = str(
+            (bundle.get("input_summary") or {}).get("latest_user_message")
+            or request.payload.get("user_query")
+            or ""
+        ).strip()
+        if inventory_context.get("has_snapshot") and inventory_query:
+            inventory_matches = self.inventory_service.query(
+                query=inventory_query,
+                project_id=self._inventory_project_id(request),
+                selected_assets=list(request.context.selected_assets or []),
+                limit=10,
+            )
+            inventory_context["query_candidates"] = list(inventory_matches.get("items") or [])
+            inventory_context["query_summary"] = dict(inventory_matches.get("summary") or {})
+        else:
+            inventory_context["query_candidates"] = []
+            inventory_context["query_summary"] = {}
         active_context["inventory"] = {
             "status": inventory_context.get("status"),
             "has_snapshot": inventory_context.get("has_snapshot"),
@@ -697,6 +714,7 @@ class TaskService:
             "asset_count": (inventory_context.get("summary") or {}).get("asset_count", 0),
             "code_file_count": (inventory_context.get("summary") or {}).get("code_file_count", 0),
             "selected_asset_count": len(inventory_context.get("selected_assets") or []),
+            "query_candidate_count": len(inventory_context.get("query_candidates") or []),
         }
         asset_context = dict(active_context.get("asset") or {})
         asset_context["selected_asset_details"] = inventory_context.get("selected_assets", [])

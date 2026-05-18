@@ -450,6 +450,78 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _inventory_asset_candidates(context_bundle: dict[str, Any] | None) -> list[dict[str, Any]]:
+        if not isinstance(context_bundle, dict):
+            return []
+        inventory_context = context_bundle.get("project_inventory_context")
+        if not isinstance(inventory_context, dict):
+            return []
+        candidates: list[dict[str, Any]] = []
+        for key in ("query_candidates", "selected_assets", "top_assets"):
+            for item in list(inventory_context.get(key) or []):
+                if isinstance(item, dict):
+                    candidates.append(item)
+
+        deduped: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in candidates:
+            path = str(item.get("asset_path") or "").strip()
+            name = str(item.get("asset_name") or "").strip()
+            key = (path or name).lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        return deduped
+
+    @staticmethod
+    def _find_inventory_candidate_path(
+        *,
+        context_bundle: dict[str, Any] | None,
+        query_text: str,
+        accepted_type_tokens: tuple[str, ...],
+        prefixes: tuple[str, ...],
+        require_prefix_for_generic_material: bool = False,
+    ) -> str | None:
+        query_lower = query_text.lower()
+        explicit_names: set[str] = set()
+        for prefix in prefixes:
+            for match in re.findall(
+                rf"\b({re.escape(prefix)}[A-Za-z][A-Za-z0-9_]{{1,63}})\b",
+                query_text,
+                flags=re.IGNORECASE,
+            ):
+                explicit_names.add(match.lower())
+
+        for item in EditorOperationService._inventory_asset_candidates(context_bundle):
+            path = str(item.get("asset_path") or "").strip()
+            name = str(item.get("asset_name") or EditorOperationService._asset_name_from_path(path)).strip()
+            if not path or not name:
+                continue
+            name_lower = name.lower()
+            path_lower = path.lower()
+            leaf_lower = EditorOperationService._asset_name_from_path(path).lower()
+            mentioned = (
+                name_lower in query_lower
+                or leaf_lower in query_lower
+                or path_lower in query_lower
+                or name_lower in explicit_names
+                or leaf_lower in explicit_names
+            )
+            if not mentioned:
+                continue
+
+            asset_type = str(item.get("asset_type") or "").replace(" ", "").lower()
+            has_prefix = any(name_lower.startswith(prefix.lower()) for prefix in prefixes)
+            type_matches = any(token.replace(" ", "").lower() in asset_type for token in accepted_type_tokens)
+            if accepted_type_tokens and not (type_matches or has_prefix):
+                continue
+            if require_prefix_for_generic_material and asset_type == "material" and not has_prefix:
+                continue
+            return path
+        return None
+
+    @staticmethod
     def _extract_actor_label_from_text(text: str) -> str | None:
         match = re.search(
             r"(?:label|name|命名为|命名|叫做|叫|名称为)\s*[:：]?\s*([A-Za-z][A-Za-z0-9_]{1,63})",
@@ -523,6 +595,15 @@ class EditorOperationService:
         if named_candidate:
             return EditorOperationService._asset_path_to_generated_class_path(named_candidate)
 
+        inventory_candidate = EditorOperationService._find_inventory_candidate_path(
+            context_bundle=context_bundle,
+            query_text=query_text,
+            accepted_type_tokens=("blueprint",),
+            prefixes=("BP_",),
+        )
+        if inventory_candidate:
+            return EditorOperationService._asset_path_to_generated_class_path(inventory_candidate)
+
         if EditorOperationService._references_recent_target(query_text):
             recent_actor_class = EditorOperationService._recent_editor_operation_value(
                 context_bundle=context_bundle,
@@ -561,6 +642,15 @@ class EditorOperationService:
         named_candidate = EditorOperationService._find_named_candidate_path(request, query_text, prefixes=("MI_",))
         if named_candidate:
             return named_candidate
+        inventory_candidate = EditorOperationService._find_inventory_candidate_path(
+            context_bundle=context_bundle,
+            query_text=query_text,
+            accepted_type_tokens=("materialinstance", "material instance"),
+            prefixes=("MI_",),
+            require_prefix_for_generic_material=True,
+        )
+        if inventory_candidate:
+            return inventory_candidate
         selected_asset = EditorOperationService._selected_asset_path(request)
         if selected_asset and re.search(r"(^|[/._])MI_[A-Za-z0-9_]+", selected_asset):
             return selected_asset

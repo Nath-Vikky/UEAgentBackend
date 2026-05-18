@@ -3872,6 +3872,27 @@ Frontend impact:
 - Existing proposal rendering and confirmation flow remain valid.
 - Debug View may optionally display `active_context.editor_operation.last_successful` to help users understand why "that material" or "previous actor" was resolved.
 
+## 2026-05-18 Project Inventory candidates for editor operations
+
+Agent Chat editor-operation planning can now use compact Project Inventory candidates when the user did not select an asset in the UE Content Browser.
+
+Examples:
+
+- If Project Inventory contains `BP_EnemySpawner`, a chat request like `Place BP_EnemySpawner in the current level at location 10 20 30` can produce a `place_actor_in_level` proposal.
+- If Project Inventory contains `MI_Player`, a chat request like `Set MI_Player material Roughness to 0.25` can produce a `set_material_instance_parameter` proposal.
+
+Debug fields:
+
+- `debug_view.active_context.inventory.query_candidate_count`
+- `debug_view.context_bundle.project_inventory_context.query_candidates`
+- `debug_view.context_bundle.project_inventory_context.query_summary`
+
+Boundary:
+
+- The backend only trusts explicit asset names or paths from the user query, selected assets, recent confirmed operation context, or Project Inventory candidates.
+- If no path can be resolved, the operation is blocked instead of fabricating a `/Game/...` path.
+- UE frontend does not need to change for this backend behavior, but richer Project Inventory snapshots will improve resolution quality.
+
 ## 2026-05-17 Knowledge Curation Artifact Export
 
 Project QA already returns `knowledge_curation` diagnostics when local KB evidence is weak but controlled Web Search or Web Memory finds useful evidence. This stage adds a manual export path so backend maintainers can review those suggestions as files instead of digging through Debug View every time.
