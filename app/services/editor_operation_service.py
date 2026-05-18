@@ -200,6 +200,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["widget_blueprint_path", "widget_name", "text"],
         "frontend_status": "implemented_v1",
     },
+    "set_umg_widget_layout": {
+        "tool_id": "editor_set_umg_widget_layout",
+        "title": "Set UMG Widget Layout",
+        "risk_flags": "MEDIUM",
+        "summary": "Set CanvasPanelSlot layout fields on one UMG widget after user confirmation.",
+        "required_fields": ["widget_blueprint_path", "widget_name", "layout"],
+        "frontend_status": "implemented_v1",
+    },
     "place_actor_in_level": {
         "tool_id": "editor_place_actor_in_level",
         "title": "Place Actor In Level",
@@ -928,6 +936,41 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _extract_vector2_after_keyword(query_text: str, keyword: str) -> dict[str, float] | None:
+        pattern = rf"(?:{keyword})\s*(?:to|=|:)?\s*\(?\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)"
+        match = re.search(pattern, query_text, flags=re.IGNORECASE)
+        if not match:
+            return None
+        return {"x": float(match.group(1)), "y": float(match.group(2))}
+
+    @staticmethod
+    def _detect_umg_layout_from_request(request: UnifiedTaskRequest, query_text: str) -> dict[str, Any]:
+        layout = request.payload.get("layout")
+        if isinstance(layout, dict):
+            return dict(layout)
+
+        detected: dict[str, Any] = {}
+        if isinstance(request.payload.get("position"), dict | list | tuple):
+            detected["position"] = request.payload["position"]
+        if isinstance(request.payload.get("size"), dict | list | tuple):
+            detected["size"] = request.payload["size"]
+        if isinstance(request.payload.get("alignment"), dict | list | tuple):
+            detected["alignment"] = request.payload["alignment"]
+        if isinstance(request.payload.get("anchors"), dict):
+            detected["anchors"] = request.payload["anchors"]
+
+        position = EditorOperationService._extract_vector2_after_keyword(query_text, "position|pos|location")
+        if position:
+            detected["position"] = position
+        size = EditorOperationService._extract_vector2_after_keyword(query_text, "size")
+        if size:
+            detected["size"] = size
+        alignment = EditorOperationService._extract_vector2_after_keyword(query_text, "alignment|align")
+        if alignment:
+            detected["alignment"] = alignment
+        return detected
+
+    @staticmethod
     def _detect_material_parameter_name(query_text: str) -> str | None:
         for known_name in (
             "Roughness",
@@ -1106,12 +1149,16 @@ class EditorOperationService:
                 context=request.context.model_dump(mode="json"),
             )
 
-        wants_umg_text = any(
+        explicit_umg_text_request = (
+            "text" in request.payload
+            or re.search(r"\b(?:text|label|content)\s*(?:to|=|:)", query_lower) is not None
+        )
+        wants_umg_text = explicit_umg_text_request and any(
             token in query_lower
             for token in ("umg", "widget", "textblock", "text block", "hud", "wbp_")
         ) and any(
             token in query_lower
-            for token in ("set", "change", "update", "replace", "text", "label", "content")
+            for token in ("set", "change", "update", "replace")
         )
         if wants_umg_text:
             widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
@@ -1127,6 +1174,36 @@ class EditorOperationService:
                     "widget_blueprint_path": widget_blueprint_path or "",
                     "widget_name": widget_name or "",
                     "text": text_value if text_value is not None else "",
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_umg_layout = any(
+            token in query_lower
+            for token in ("umg", "widget", "textblock", "text block", "hud", "wbp_")
+        ) and any(
+            token in query_lower
+            for token in ("position", "pos", "layout", "size", "alignment", "align", "anchor")
+        ) and any(
+            token in query_lower
+            for token in ("set", "change", "update", "move", "resize")
+        )
+        if wants_umg_layout:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+            layout = EditorOperationService._detect_umg_layout_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="set_umg_widget_layout",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
+                    "layout": layout,
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -1587,6 +1664,86 @@ class EditorOperationService:
             ),
         }
 
+    def _normalize_vector2(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        defaults: tuple[float, float],
+        min_value: float = -100_000.0,
+        max_value: float = 100_000.0,
+    ) -> dict[str, float]:
+        if value is None:
+            values = list(defaults)
+        elif isinstance(value, list | tuple) and len(value) == 2:
+            values = list(value)
+        elif isinstance(value, dict):
+            values = [value.get("x", value.get("X", defaults[0])), value.get("y", value.get("Y", defaults[1]))]
+        else:
+            raise EditorOperationValidationError(f"{field_name}_must_be_vector2")
+        return {
+            component: self._normalize_finite_float(
+                values[index],
+                f"{field_name}_{component}",
+                min_value=min_value,
+                max_value=max_value,
+            )
+            for index, component in enumerate(("x", "y"))
+        }
+
+    def _normalize_umg_anchors(self, value: Any) -> dict[str, dict[str, float]]:
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError("anchors_must_be_object")
+        if isinstance(value.get("minimum"), dict | list | tuple) or isinstance(value.get("maximum"), dict | list | tuple):
+            minimum = self._normalize_vector2(
+                value.get("minimum"),
+                field_name="anchors_minimum",
+                defaults=(0.0, 0.0),
+                min_value=0.0,
+                max_value=1.0,
+            )
+            maximum = self._normalize_vector2(
+                value.get("maximum"),
+                field_name="anchors_maximum",
+                defaults=(0.0, 0.0),
+                min_value=0.0,
+                max_value=1.0,
+            )
+        else:
+            minimum = {
+                "x": self._normalize_finite_float(value.get("min_x", 0.0), "anchors_min_x", min_value=0.0, max_value=1.0),
+                "y": self._normalize_finite_float(value.get("min_y", 0.0), "anchors_min_y", min_value=0.0, max_value=1.0),
+            }
+            maximum = {
+                "x": self._normalize_finite_float(value.get("max_x", 0.0), "anchors_max_x", min_value=0.0, max_value=1.0),
+                "y": self._normalize_finite_float(value.get("max_y", 0.0), "anchors_max_y", min_value=0.0, max_value=1.0),
+            }
+        if minimum["x"] > maximum["x"] or minimum["y"] > maximum["y"]:
+            raise EditorOperationValidationError("anchors_minimum_must_not_exceed_maximum")
+        return {"minimum": minimum, "maximum": maximum}
+
+    def _normalize_umg_layout(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError("layout_must_be_object")
+        normalized: dict[str, Any] = {}
+        if "position" in value:
+            normalized["position"] = self._normalize_vector2(value.get("position"), field_name="position", defaults=(0.0, 0.0))
+        if "size" in value:
+            normalized["size"] = self._normalize_vector2(value.get("size"), field_name="size", defaults=(100.0, 30.0), min_value=0.0)
+        if "alignment" in value:
+            normalized["alignment"] = self._normalize_vector2(
+                value.get("alignment"),
+                field_name="alignment",
+                defaults=(0.0, 0.0),
+                min_value=-10.0,
+                max_value=10.0,
+            )
+        if "anchors" in value:
+            normalized["anchors"] = self._normalize_umg_anchors(value.get("anchors"))
+        if not normalized:
+            raise EditorOperationValidationError("layout_requires_position_size_alignment_or_anchors")
+        return normalized
+
     def _normalize_actor_transform(self, value: Any) -> dict[str, dict[str, float]]:
         if value is None:
             value = {}
@@ -1849,6 +2006,17 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_umg_widget_layout":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "layout": self._normalize_umg_layout(payload.get("layout")),
+                "slot_type": "CanvasPanelSlot",
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "place_actor_in_level":
             actor_class = self._normalize_class_path(payload.get("actor_class"))
             actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
@@ -1978,6 +2146,12 @@ class EditorOperationService:
             return (
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Set TextBlock `{payload['widget_name']}` text to `{payload['text']}`. The package is not auto-saved.",
+            )
+        if operation_type == "set_umg_widget_layout":
+            fields = ", ".join(sorted(payload["layout"].keys()))
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Set CanvasPanelSlot layout for `{payload['widget_name']}` fields: {fields}. The package is not auto-saved.",
             )
         if operation_type == "place_actor_in_level":
             location = payload["transform"]["location"]

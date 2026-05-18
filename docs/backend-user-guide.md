@@ -2898,6 +2898,27 @@ required_payload_fields: widget_blueprint_path
 }
 ```
 
+设置 CanvasPanelSlot 布局：
+
+```json
+{
+  "operation_type": "set_umg_widget_layout",
+  "payload": {
+    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+    "widget_name": "TitleText",
+    "layout": {
+      "position": {"x": 20, "y": 30},
+      "size": {"x": 300, "y": 48},
+      "alignment": {"x": 0.5, "y": 0},
+      "anchors": {
+        "minimum": {"x": 0, "y": 0},
+        "maximum": {"x": 0, "y": 0}
+      }
+    }
+  }
+}
+```
+
 UMG 写操作边界：
 
 - v1 只支持基础控件：`TextBlock`、`Button`、`Image`、`Border`、`CanvasPanel`、`HorizontalBox`、`VerticalBox`。
@@ -2905,7 +2926,8 @@ UMG 写操作边界：
 - 父控件必须是 `PanelWidget`；如果 root 不是 panel，或指定父控件不存在，则执行器 blocked。
 - `text` 只对 `TextBlock` 生效；传给其他控件时不会失败整个操作，但会在 `failed_fields` 中说明没有应用。
 - `set_umg_widget_text` 只修改已有 `TextBlock` 的文本；如果目标控件不存在或不是 `TextBlock`，UE 执行器会 blocked。
-- 不设置锚点、尺寸、动画、绑定和复杂 slot 参数；这些放到后续 UMG v2。
+- `set_umg_widget_layout` 只修改挂在 `CanvasPanel` 下的控件，也就是目标控件必须拥有 `CanvasPanelSlot`；v1 只支持 `position`、`size`、`alignment`、`anchors`。
+- 不设置颜色、字体、动画、绑定和复杂 slot 参数；这些放到后续 UMG v2。
 
 ### 26.2 Level / Material 低风险编辑器操作 v1
 
@@ -4562,3 +4584,49 @@ Validation:
 ```
 
 UE frontend impact: add `set_umg_widget_text` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
+
+## 2026-05-18 UMG CanvasPanelSlot Layout Proposal
+
+`Editor Operation Bridge` now includes `set_umg_widget_layout`, a confirmed-write proposal for updating a limited `CanvasPanelSlot` layout on one existing UMG widget.
+
+Supported request forms:
+
+- Explicit proposal API: `operation_type=set_umg_widget_layout`.
+- Agent Chat: `Set WBP_MainHUD TitleText position to 20 30 size to 300 48`.
+- Inventory-assisted resolution: when `selected_assets` is empty, Project Inventory can provide the `WBP_...` Widget Blueprint path.
+
+Payload shape:
+
+```json
+{
+  "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+  "widget_name": "TitleText",
+  "layout": {
+    "position": {"x": 20, "y": 30},
+    "size": {"x": 300, "y": 48},
+    "alignment": {"x": 0.5, "y": 0},
+    "anchors": {
+      "minimum": {"x": 0, "y": 0},
+      "maximum": {"x": 0, "y": 0}
+    }
+  },
+  "slot_type": "CanvasPanelSlot",
+  "save_policy": "mark_dirty_only"
+}
+```
+
+Execution boundary:
+
+- Backend only creates and validates the proposal.
+- UEAgentTool finds the widget by exact/case-insensitive name and requires its slot to be `CanvasPanelSlot`.
+- UEAgentTool may call `SetPosition`, `SetSize`, `SetAlignment`, and `SetAnchors` after user confirmation.
+- The Widget Blueprint package is marked dirty, not auto-saved.
+- v1 does not edit colors, fonts, bindings, animations, non-canvas slots, or arbitrary widget properties.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py -q
+```
+
+UE frontend impact: add `set_umg_widget_layout` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
