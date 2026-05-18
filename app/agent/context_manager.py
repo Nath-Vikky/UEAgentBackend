@@ -158,9 +158,12 @@ def _compact_operation_target(
         "blueprint_path",
         "material_instance_path",
         "actor_class",
+        "actor_reference",
         "actor_label",
+        "actor_name",
         "parameter_name",
         "parameter_type",
+        "transform_mode",
     ):
         value = result.get(key)
         if value in (None, "", [], {}):
@@ -175,6 +178,18 @@ def _compact_operation_target(
         material_path = payload.get("material_instance_path") or result.get("material_instance_path")
         if material_path:
             target["material_instance_path"] = material_path
+    if operation_type in {"place_actor_in_level", "set_actor_transform"}:
+        actor_reference = (
+            target.get("actor_reference")
+            or target.get("actor_label")
+            or target.get("actor_name")
+            or result.get("actor_label")
+            or result.get("actor_name")
+            or payload.get("actor_reference")
+            or payload.get("actor_label")
+        )
+        if actor_reference:
+            target["actor_reference"] = actor_reference
     return target
 
 

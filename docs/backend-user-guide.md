@@ -3893,6 +3893,38 @@ Boundary:
 - If no path can be resolved, the operation is blocked instead of fabricating a `/Game/...` path.
 - UE frontend does not need to change for this backend behavior, but richer Project Inventory snapshots will improve resolution quality.
 
+## 2026-05-18 Level Actor Transform Proposal
+
+`Editor Operation Bridge` now includes `set_actor_transform`, a confirmed-write proposal for modifying one existing Actor in the current editor level.
+
+Supported request forms:
+
+- Explicit proposal API: `operation_type=set_actor_transform`.
+- Agent Chat follow-up: after a successful `place_actor_in_level` result is reported, the user can say `Move that actor right 200`.
+- Selected actor payloads can also be used if the UE frontend sends `context.editor_state.selected_actors` or `payload.selected_actors`.
+
+Payload shape:
+
+```json
+{
+  "actor_reference": "BP_TestActor_1",
+  "transform_mode": "delta",
+  "transform_delta": {
+    "location": {"x": 0, "y": 200, "z": 0}
+  }
+}
+```
+
+For `transform_mode=absolute`, use `transform` instead of `transform_delta`. Supported fields are `location`, `rotation`, and `scale`.
+
+Safety boundary:
+
+- Backend creates a Proposal only.
+- UE frontend executes only after user confirmation.
+- UE frontend finds the Actor by exact actor label, object name, or object path.
+- The operation uses editor transaction/undo and marks the level dirty, but does not auto-save.
+- Deleting actors, batch transform, snapping, navigation/light rebuild, and procedural placement remain out of scope for this slice.
+
 ## 2026-05-17 Knowledge Curation Artifact Export
 
 Project QA already returns `knowledge_curation` diagnostics when local KB evidence is weak but controlled Web Search or Web Memory finds useful evidence. This stage adds a manual export path so backend maintainers can review those suggestions as files instead of digging through Debug View every time.

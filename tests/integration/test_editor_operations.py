@@ -54,6 +54,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "move_assets",
         "add_umg_widget",
         "place_actor_in_level",
+        "set_actor_transform",
         "set_material_instance_parameter",
     }.issubset(operation_types)
     operation_items = {
@@ -68,6 +69,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["move_assets"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_umg_widget"]["frontend_status"] == "implemented_v1"
     assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_material_instance_parameter"]["frontend_status"] == "implemented_v1"
     assert body["capabilities"]["safety_policy"]["requires_frontend_confirmation"] is True
 
@@ -89,6 +91,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "mcp_get_widget_tree" in tool_ids
     assert "editor_add_umg_widget" in tool_ids
     assert "editor_place_actor_in_level" in tool_ids
+    assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_material_instance_parameter" in tool_ids
 
 
@@ -447,6 +450,48 @@ def test_place_actor_rejects_invalid_scale(client: TestClient) -> None:
     assert body["errors"][0]["code"] == "scale_x_out_of_range"
 
 
+def test_set_actor_transform_delta_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_actor_transform",
+            "payload": {
+                "actor_reference": "BP_TestActor_1",
+                "transform_mode": "delta",
+                "transform_delta": {"location": {"x": 0.0, "y": 200.0, "z": 0.0}},
+            },
+            "reason": "Move the placed actor to the right.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_actor_transform"
+    assert body["operation"]["tool_id"] == "editor_set_actor_transform"
+    payload = body["operation"]["operation_payload"]
+    assert payload["actor_reference"] == "BP_TestActor_1"
+    assert payload["transform_mode"] == "delta"
+    assert payload["transform_delta"]["location"] == {"x": 0.0, "y": 200.0, "z": 0.0}
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_set_actor_transform_rejects_missing_transform(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_actor_transform",
+            "payload": {
+                "actor_reference": "BP_TestActor_1",
+                "transform_mode": "absolute",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "transform_requires_location_rotation_or_scale"
+
+
 def test_set_material_instance_scalar_parameter_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -727,6 +772,101 @@ def test_agent_chat_resolves_blueprint_from_project_inventory_for_level_placemen
     assert payload["actor_class"] == "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner_C"
     assert payload["transform"]["location"] == {"x": 10.0, "y": 20.0, "z": 30.0}
     assert body["debug_view"]["active_context"]["inventory"]["query_candidate_count"] == 1
+
+
+def test_agent_chat_reuses_recent_placed_actor_for_transform(client: TestClient) -> None:
+    session_id = "chat_actor_transform_active_context_session"
+    first = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": session_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Place BP_TestActor in the current level at location 0 0 100",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+            },
+            "payload": {"user_query": "Place BP_TestActor in the current level at location 0 0 100"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    assert first.status_code == 200
+    proposal_id = first.json()["action_proposals"][0]["proposal_id"]
+    confirmed = client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm")
+    assert confirmed.status_code == 200
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "place_actor_in_level",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "transaction_id": f"ue_transaction_{proposal_id}",
+            "undo_hint": "Use editor undo.",
+            "result": {
+                "actor_class": "/Game/Blueprints/BP_TestActor.BP_TestActor_C",
+                "actor_label": "BP_TestActor_1",
+                "actor_name": "BP_TestActor_C_1",
+            },
+        },
+    )
+    assert result.status_code == 200
+
+    followup = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": session_id,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Move that actor right 200",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+            },
+            "payload": {"user_query": "Move that actor right 200"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    assert followup.status_code == 200
+    body = followup.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["actor_reference"] == "BP_TestActor_1"
+    assert payload["transform_mode"] == "delta"
+    assert payload["transform_delta"]["location"] == {"x": 0.0, "y": 200.0, "z": 0.0}
+    last_operation = body["debug_view"]["active_context"]["editor_operation"]["last_successful"]
+    assert last_operation["target"]["actor_reference"] == "BP_TestActor_1"
 
 
 def test_agent_chat_can_set_selected_material_instance_parameter(client: TestClient) -> None:

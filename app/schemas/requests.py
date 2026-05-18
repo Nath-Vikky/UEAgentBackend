@@ -90,6 +90,7 @@ class EditorOperationProposalRequest(BaseModel):
         "move_assets",
         "add_umg_widget",
         "place_actor_in_level",
+        "set_actor_transform",
         "set_material_instance_parameter",
     ]
     payload: dict[str, Any] = Field(default_factory=dict)

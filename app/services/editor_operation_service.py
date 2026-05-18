@@ -200,6 +200,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["actor_class"],
         "frontend_status": "implemented_v1",
     },
+    "set_actor_transform": {
+        "tool_id": "editor_set_actor_transform",
+        "title": "Set Actor Transform",
+        "risk_flags": "MEDIUM",
+        "summary": "Modify one existing Actor transform in the current editor level after user confirmation.",
+        "required_fields": ["actor_reference", "transform_mode"],
+        "frontend_status": "implemented_v1",
+    },
     "set_material_instance_parameter": {
         "tool_id": "editor_set_material_instance_parameter",
         "title": "Set Material Instance Parameter",
@@ -448,6 +456,109 @@ class EditorOperationService:
                     if value not in (None, "", [], {}):
                         return value
         return None
+
+    @staticmethod
+    def _detect_actor_reference_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None,
+    ) -> str | None:
+        for key in ("actor_reference", "actor_label", "actor_name"):
+            explicit_value = str(request.payload.get(key) or "").strip()
+            if explicit_value:
+                return explicit_value
+
+        editor_state = dict(request.context.editor_state or {})
+        selected_actors = editor_state.get("selected_actors") or request.payload.get("selected_actors") or []
+        if isinstance(selected_actors, list) and selected_actors:
+            first = selected_actors[0]
+            if isinstance(first, dict):
+                for key in ("actor_label", "actor_name", "name", "label"):
+                    value = str(first.get(key) or "").strip()
+                    if value:
+                        return value
+            value = str(first or "").strip()
+            if value:
+                return value
+
+        if EditorOperationService._references_recent_target(query_text):
+            recent_actor = EditorOperationService._recent_editor_operation_value(
+                context_bundle=context_bundle,
+                operation_types={"place_actor_in_level", "set_actor_transform"},
+                keys=("actor_reference", "actor_label", "actor_name"),
+            )
+            if recent_actor:
+                return str(recent_actor)
+        return None
+
+    @staticmethod
+    def _directional_delta_from_text(query_text: str) -> dict[str, dict[str, float]]:
+        direction_specs = (
+            ("right", "y", 1.0),
+            ("left", "y", -1.0),
+            ("forward", "x", 1.0),
+            ("backward", "x", -1.0),
+            ("back", "x", -1.0),
+            ("up", "z", 1.0),
+            ("down", "z", -1.0),
+            ("往右", "y", 1.0),
+            ("向右", "y", 1.0),
+            ("往左", "y", -1.0),
+            ("向左", "y", -1.0),
+            ("往前", "x", 1.0),
+            ("向前", "x", 1.0),
+            ("往后", "x", -1.0),
+            ("向后", "x", -1.0),
+            ("向上", "z", 1.0),
+            ("往上", "z", 1.0),
+            ("向下", "z", -1.0),
+            ("往下", "z", -1.0),
+        )
+        query_lower = query_text.lower()
+        for token, axis, sign in direction_specs:
+            token_index = query_lower.find(token) if token.isascii() else query_text.find(token)
+            if token_index < 0:
+                continue
+            window = query_text[token_index : token_index + 48]
+            match = re.search(r"(-?\d+(?:\.\d+)?)", window)
+            if not match:
+                continue
+            location = {"x": 0.0, "y": 0.0, "z": 0.0}
+            location[axis] = float(match.group(1)) * sign
+            return {"location": location}
+        return {}
+
+    @staticmethod
+    def _extract_actor_transform_update_from_text(query_text: str) -> tuple[str, dict[str, Any]]:
+        query_lower = query_text.lower()
+        absolute_transform = EditorOperationService._extract_transform_from_text(query_text)
+        if absolute_transform:
+            return ("absolute", absolute_transform)
+
+        scale_match = re.search(
+            r"(?:set\s+scale|scale|放大|缩放)\s*(?:to|为|到)?\s*(-?\d+(?:\.\d+)?)",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if scale_match:
+            scale = float(scale_match.group(1))
+            return ("absolute", {"scale": {"x": scale, "y": scale, "z": scale}})
+
+        delta_transform = EditorOperationService._directional_delta_from_text(query_text)
+        if delta_transform:
+            return ("delta", delta_transform)
+
+        rotation_match = re.search(
+            r"(?:rotate|turn|旋转)\s*(?:yaw|around\s+z|z)?\s*(?:by|to|为|到)?\s*(-?\d+(?:\.\d+)?)",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if rotation_match:
+            yaw_delta = float(rotation_match.group(1))
+            mode = "absolute" if any(token in query_lower or token in query_text for token in (" to ", "set", "为", "到")) else "delta"
+            return (mode, {"rotation": {"pitch": 0.0, "yaw": yaw_delta, "roll": 0.0}})
+
+        return ("absolute", {})
 
     @staticmethod
     def _inventory_asset_candidates(context_bundle: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -780,6 +891,57 @@ class EditorOperationService:
                 payload["transform"] = transform
             return EditorOperationProposalRequest(
                 operation_type="place_actor_in_level",
+                payload=payload,
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_actor_transform = any(
+            token in query_lower or token in query_text
+            for token in (
+                "move",
+                "translate",
+                "rotate",
+                "turn",
+                "scale",
+                "transform",
+                "location",
+                "移动",
+                "平移",
+                "旋转",
+                "缩放",
+                "放大",
+                "往右",
+                "往左",
+                "向右",
+                "向左",
+                "向上",
+                "向下",
+                "往前",
+                "往后",
+            )
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("actor", "that", "previous", "last", "刚才", "上一个", "那个", "这个", "场景物体")
+        )
+        if wants_actor_transform:
+            actor_reference = EditorOperationService._detect_actor_reference_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            transform_mode, transform_update = EditorOperationService._extract_actor_transform_update_from_text(query_text)
+            payload: dict[str, Any] = {
+                "actor_reference": actor_reference or "",
+                "transform_mode": transform_mode,
+            }
+            if transform_mode == "delta":
+                payload["transform_delta"] = transform_update
+            else:
+                payload["transform"] = transform_update
+            return EditorOperationProposalRequest(
+                operation_type="set_actor_transform",
                 payload=payload,
                 reason=query_text,
                 requested_by="agent_chat",
@@ -1232,6 +1394,49 @@ class EditorOperationService:
             ),
         }
 
+    def _normalize_actor_transform_update(self, value: Any, *, field_name: str) -> dict[str, dict[str, float]]:
+        if value is None:
+            value = {}
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError(f"{field_name}_must_be_object")
+        normalized: dict[str, dict[str, float]] = {}
+        if "location" in value:
+            normalized["location"] = self._normalize_vector3(
+                value.get("location"),
+                field_name=f"{field_name}_location",
+                defaults=(0.0, 0.0, 0.0),
+            )
+        if "rotation" in value:
+            normalized["rotation"] = self._normalize_vector3(
+                value.get("rotation"),
+                field_name=f"{field_name}_rotation",
+                defaults=(0.0, 0.0, 0.0),
+                component_names=("pitch", "yaw", "roll"),
+                min_value=-360_000.0,
+                max_value=360_000.0,
+            )
+        if "scale" in value:
+            normalized["scale"] = self._normalize_vector3(
+                value.get("scale"),
+                field_name=f"{field_name}_scale",
+                defaults=(1.0, 1.0, 1.0),
+                min_value=0.001,
+                max_value=1000.0,
+            )
+        if not normalized:
+            raise EditorOperationValidationError(f"{field_name}_requires_location_rotation_or_scale")
+        return normalized
+
+    @staticmethod
+    def _normalize_transform_mode(value: Any) -> str:
+        mode = str(value or "absolute").strip().lower()
+        if mode not in {"absolute", "delta"}:
+            raise EditorOperationValidationError(
+                "transform_mode_not_supported",
+                {"transform_mode": mode, "allowed_modes": ["absolute", "delta"]},
+            )
+        return mode
+
     @staticmethod
     def _normalize_material_parameter_type(value: Any) -> str:
         parameter_type = str(value or "").strip().lower()
@@ -1420,6 +1625,25 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_actor_transform":
+            actor_reference = self._normalize_optional_string(payload.get("actor_reference") or "", max_length=120)
+            if not actor_reference:
+                raise EditorOperationValidationError("actor_reference_required")
+            transform_mode = self._normalize_transform_mode(payload.get("transform_mode"))
+            transform_key = "transform_delta" if transform_mode == "delta" else "transform"
+            transform_update = self._normalize_actor_transform_update(
+                payload.get(transform_key),
+                field_name=transform_key,
+            )
+            return {
+                "actor_reference": actor_reference,
+                "actor_name": self._normalize_optional_string(payload.get("actor_name") or "", max_length=120) or None,
+                "actor_label": self._normalize_optional_string(payload.get("actor_label") or "", max_length=120) or None,
+                "transform_mode": transform_mode,
+                transform_key: transform_update,
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "set_material_instance_parameter":
             material_instance_path = self._normalize_asset_path(payload.get("material_instance_path"))
             parameter_name = self._normalize_parameter_name(payload.get("parameter_name"))
@@ -1511,6 +1735,13 @@ class EditorOperationService:
             return (
                 f"Current level before change: no Actor is spawned before confirmation. Class: {payload['actor_class']}",
                 f"Place Actor label `{label}` at ({location['x']}, {location['y']}, {location['z']}). The level is marked dirty, not auto-saved.",
+            )
+        if operation_type == "set_actor_transform":
+            transform_key = "transform_delta" if payload["transform_mode"] == "delta" else "transform"
+            fields = ", ".join(sorted(payload[transform_key].keys()))
+            return (
+                f"Actor before change: {payload['actor_reference']}",
+                f"Apply {payload['transform_mode']} transform fields: {fields}. The level is marked dirty, not auto-saved.",
             )
         if operation_type == "set_material_instance_parameter":
             return (
