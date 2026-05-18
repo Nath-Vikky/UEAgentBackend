@@ -150,6 +150,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["blueprint_path"],
         "frontend_status": "implemented_v1",
     },
+    "batch_rename_assets": {
+        "tool_id": "editor_batch_rename_assets",
+        "title": "Batch Rename Assets",
+        "risk_flags": "HIGH",
+        "summary": "Rename multiple Unreal assets in one confirmed editor transaction.",
+        "required_fields": ["renames"],
+        "frontend_status": "implemented_v1",
+    },
 }
 
 
@@ -489,6 +497,44 @@ class EditorOperationService:
             raise EditorOperationValidationError("graph_name_invalid", {"graph_name": text})
         return text
 
+    def _normalize_batch_renames(self, value: Any) -> list[dict[str, str]]:
+        if not isinstance(value, list) or not value:
+            raise EditorOperationValidationError("renames_must_be_non_empty_array")
+        if len(value) > 20:
+            raise EditorOperationValidationError("batch_rename_too_many_items", {"max_items": 20})
+
+        normalized: list[dict[str, str]] = []
+        seen_sources: set[str] = set()
+        seen_targets: set[str] = set()
+        for index, raw_item in enumerate(value):
+            if not isinstance(raw_item, dict):
+                raise EditorOperationValidationError("rename_item_must_be_object", {"index": index})
+            asset_path = self._normalize_asset_path(raw_item.get("asset_path"))
+            new_name = self._normalize_asset_name(raw_item.get("new_name"), "new_name")
+            folder = asset_path.rsplit("/", 1)[0]
+            old_name = asset_path.rsplit("/", 1)[-1]
+            target_path = f"{folder}/{new_name}"
+            if old_name == new_name:
+                raise EditorOperationValidationError(
+                    "batch_rename_item_matches_current_name",
+                    {"index": index, "asset_path": asset_path, "new_name": new_name},
+                )
+            if asset_path in seen_sources:
+                raise EditorOperationValidationError("batch_rename_duplicate_source", {"asset_path": asset_path})
+            if target_path in seen_targets:
+                raise EditorOperationValidationError("batch_rename_duplicate_target", {"target_path": target_path})
+            seen_sources.add(asset_path)
+            seen_targets.add(target_path)
+            normalized.append(
+                {
+                    "asset_path": asset_path,
+                    "current_name": old_name,
+                    "new_name": new_name,
+                    "target_path": target_path,
+                }
+            )
+        return normalized
+
     def _normalize_payload(self, operation_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         if operation_type == "rename_selected_asset":
             asset_path = self._normalize_asset_path(payload.get("asset_path"))
@@ -583,6 +629,14 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "batch_rename_assets":
+            renames = self._normalize_batch_renames(payload.get("renames"))
+            return {
+                "renames": renames,
+                "item_count": len(renames),
+                "save_policy": "mark_dirty_only",
+            }
+
         raise EditorOperationValidationError("unsupported_editor_operation", {"operation_type": operation_type})
 
     def _build_summaries(self, operation_type: str, payload: dict[str, Any]) -> tuple[str, str]:
@@ -621,6 +675,17 @@ class EditorOperationService:
             return (
                 f"Blueprint before compile: {payload['blueprint_path']}",
                 "Compile the Blueprint in Unreal Editor and return compile status. The package is not auto-saved.",
+            )
+        if operation_type == "batch_rename_assets":
+            preview = ", ".join(
+                f"{item['asset_path']} -> {item['target_path']}"
+                for item in payload["renames"][:5]
+            )
+            if payload["item_count"] > 5:
+                preview += f", ... (+{payload['item_count'] - 5} more)"
+            return (
+                f"Batch rename {payload['item_count']} assets. No asset is changed before confirmation.",
+                f"Rename plan: {preview}. Redirectors are not fixed automatically in this operation.",
             )
         return ("", "")
 

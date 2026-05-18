@@ -50,6 +50,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "add_blueprint_component",
         "create_blueprint_event_stub",
         "compile_blueprint",
+        "batch_rename_assets",
     }.issubset(operation_types)
     operation_items = {
         item["operation_type"]: item
@@ -59,6 +60,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["add_blueprint_component"]["frontend_status"] == "implemented_v1"
     assert operation_items["create_blueprint_event_stub"]["frontend_status"] == "implemented_v1"
     assert operation_items["compile_blueprint"]["frontend_status"] == "implemented_v1"
+    assert operation_items["batch_rename_assets"]["frontend_status"] == "implemented_v1"
     assert body["capabilities"]["safety_policy"]["requires_frontend_confirmation"] is True
 
     capabilities = client.get("/api/v1/system/capabilities").json()
@@ -73,7 +75,9 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_add_blueprint_component" in tool_ids
     assert "editor_create_blueprint_event_stub" in tool_ids
     assert "editor_compile_blueprint" in tool_ids
+    assert "editor_batch_rename_assets" in tool_ids
     assert "mcp_get_blueprint_graph" in tool_ids
+    assert "mcp_get_widget_tree" in tool_ids
 
 
 def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient) -> None:
@@ -254,6 +258,50 @@ def test_blueprint_compile_proposal_contract(client: TestClient) -> None:
     assert payload["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
     assert payload["compile_mode"] == "default"
     assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_batch_rename_assets_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "batch_rename_assets",
+            "payload": {
+                "renames": [
+                    {"asset_path": "/Game/Props/Chair", "new_name": "SM_Chair_A"},
+                    {"asset_path": "/Game/Props/Table", "new_name": "SM_Table_A"},
+                ],
+            },
+            "reason": "Normalize asset naming for a content folder.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "batch_rename_assets"
+    assert body["operation"]["tool_id"] == "editor_batch_rename_assets"
+    payload = body["operation"]["operation_payload"]
+    assert payload["item_count"] == 2
+    assert payload["renames"][0]["target_path"] == "/Game/Props/SM_Chair_A"
+    assert payload["renames"][1]["target_path"] == "/Game/Props/SM_Table_A"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_batch_rename_rejects_duplicate_targets(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "batch_rename_assets",
+            "payload": {
+                "renames": [
+                    {"asset_path": "/Game/Props/Chair", "new_name": "SM_Common"},
+                    {"asset_path": "/Game/Props/Table", "new_name": "SM_Common"},
+                ],
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "batch_rename_duplicate_target"
 
 
 def test_assets_inspect_emits_rename_editor_operation_proposal(client: TestClient) -> None:

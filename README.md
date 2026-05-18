@@ -11,7 +11,7 @@
 - **RAG + 本地 grep 并存**：没有向量模型时使用本地 lexical/grep 检索；配置 Embedding + Qdrant 后可扩展为混合检索。
 - **Agentic RAG 轻量增强**：Project QA / Code Generate 在第一轮证据不足时最多再做 1 轮 query rewrite，并在 Debug View 暴露 `agentic_rag` 与 `retrieval_quality_gate`。
 - **安全写入闭环**：代码生成默认只返回草稿，并先做轻量 UE C++ Preflight；只有显式请求并经 Proposal 确认后，才允许有限写入 `Source/` 或 `Plugins/`。
-- **Editor Operation Bridge**：第一版 MCP-like 编辑器操作通过 Proposal 表达，支持从 Assets Inspect / Agent Chat 生成重命名资产、应用 Static Mesh 基础设置、创建 Blueprint 资产、基础 Blueprint 图谱操作和 Blueprint 编译提案，真实执行必须由 UE 插件确认后完成。
+- **Editor Operation Bridge**：第一版 MCP-like 编辑器操作通过 Proposal 表达，支持从 Assets Inspect / Agent Chat 生成重命名资产、批量重命名资产、应用 Static Mesh 基础设置、创建 Blueprint 资产、基础 Blueprint 图谱操作和 Blueprint 编译提案，真实执行必须由 UE 插件确认后完成。
 - **可观测和可评测**：提供 `user_view / debug_view`、trace、artifact、Prometheus metrics、alerts、RAG eval 和项目级 benchmark。
 - **可选 MCP 工具层**：HTTP 仍是 UE 前端和后端主协议，MCP 只作为未来工具 transport，默认关闭。
 
@@ -280,7 +280,7 @@ MCP 调试接口，默认关闭，仅用于本地验证可选工具层：
 - `GET /api/v1/mcp/tools`
 - `POST /api/v1/mcp/tools/{tool_name}/call`
 
-当前后端支持资产改名、Static Mesh 基础设置、Blueprint 创建，以及 Blueprint Graph Automation v1 的四个 proposal 契约：添加变量、添加组件、创建基础事件 stub、编译 Blueprint。所有写入都必须由 UE 前端确认并执行。可选 TCP 工具层额外提供 `get_blueprint_graph` 只读图谱摘要，用于未来 Agent 感知蓝图结构。
+当前后端支持资产改名、批量资产改名、Static Mesh 基础设置、Blueprint 创建，以及 Blueprint Graph Automation v1 的四个 proposal 契约：添加变量、添加组件、创建基础事件 stub、编译 Blueprint。所有写入都必须由 UE 前端确认并执行。可选 TCP 工具层额外提供 `get_blueprint_graph` 和 `get_widget_tree` 只读摘要，用于未来 Agent 感知蓝图/UMG 结构。
 
 会话：
 
@@ -388,7 +388,7 @@ Code Review 保留默认单阶段审查，同时支持轻量链式 Agent：
 - 仅允许调用 `MCP_ALLOWED_TOOLS` 白名单中的工具。
 - 调用入口是 `/api/v1/mcp/tools` 和 `/api/v1/mcp/tools/{tool_name}/call`。
 - MCP 仍只是后端工具 transport；UE 前端和后端之间继续使用 HTTP。
-- 当前 UE TCP 服务只建议允许 `ue_agent_tools_list`、`get_blueprint_graph` 这类 read-only 工具；写操作仍必须走 Editor Operation Proposal。
+- 当前 UE TCP 服务只建议允许 `ue_agent_tools_list`、`get_blueprint_graph`、`get_widget_tree` 这类 read-only 工具；写操作仍必须走 Editor Operation Proposal。
 
 ## Optional Web Memory
 

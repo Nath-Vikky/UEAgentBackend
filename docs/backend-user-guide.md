@@ -2795,6 +2795,57 @@ required_payload_fields: blueprint_path
 - `get_blueprint_graph` 只读，不经过 Proposal；建议仅在本地 TCP 白名单中开放。
 - 变量类型只允许常见内置类型、短别名，或 `/Script/`、`/Game/` 开头的项目/引擎类型。
 - `/api/v1/editor-operations/results` 的 `result` 是开放对象，后端接受 `applied_fields`、`failed_fields`、`dirty_packages`、`graph_name`、`created_nodes`、`save_policy` 等 UE 侧回传字段；`dirty_packages` 建议传字符串数组，当前不强制固定为某一种 package path 格式。
+
+### 26.1 UMG / Asset 批量操作 v1
+
+I4-4 第一版只补两个低风险能力：批量资产重命名 Proposal，以及 UMG Widget Tree 只读感知。不做删除资产、不做自动修复 Redirectors、不做复杂 Widget 创建/布局。
+
+批量重命名资产：
+
+```json
+{
+  "operation_type": "batch_rename_assets",
+  "payload": {
+    "renames": [
+      {
+        "asset_path": "/Game/Props/Chair",
+        "new_name": "SM_Chair_A"
+      },
+      {
+        "asset_path": "/Game/Props/Table",
+        "new_name": "SM_Table_A"
+      }
+    ]
+  }
+}
+```
+
+后端校验规则：
+
+- `renames` 必须是非空数组，最多 20 项。
+- 每项必须包含 `/Game` 下的 `asset_path` 和合法 `new_name`。
+- 拒绝重复源资产、重复目标路径和新旧名称相同的项目。
+- 后端只生成 preview/proposal；UE 插件确认后才调用 `AssetTools.RenameAssets`。
+- 执行器会先校验全量源资产和目标路径，任何一项失败都会整批 blocked，避免半途改名。
+
+可选 TCP 只读 UMG Widget Tree 工具：
+
+```text
+tool_id: mcp_get_widget_tree
+mcp_tool_name: get_widget_tree
+transport: mcp_tcp
+required_payload_fields: widget_blueprint_path
+```
+
+调用参数：
+
+```json
+{
+  "widget_blueprint_path": "/Game/UI/WBP_MainHUD"
+}
+```
+
+返回摘要包含 `widget_blueprint_path`、`status`、`parent_class`、`root_widget`、`widgets` 等字段。每个 widget 会尽量返回 `widget_name`、`widget_class`、`is_variable` 和 `slot_class`。这是 read-only 感知能力，不需要用户确认，也不会修改 Widget Blueprint。
 ## 27. Multi-Agent Code Review Chain v1
 
 后端现在在默认 Code Review 之外，新增了一条轻量 Multi-Agent 链：`review_fix_validate`。它用于展示链式审查流程和真实辅助审查，不替代默认 Code Review，也不新增主菜单。
