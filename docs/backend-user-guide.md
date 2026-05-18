@@ -2961,6 +2961,56 @@ vector 参数：
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py tests\unit\test_tool_registry.py tests\unit\test_mcp_tool_adapter.py -q
 ```
+
+### 26.3 Agent Chat 自然语言触发编辑器 Proposal
+
+后端现在会在 Agent Chat 中优先识别明确的编辑器写操作意图。命中后不会让 LLM 返回 Python 脚本或纯文本方案，而是生成可确认的 Editor Operation Proposal。
+
+示例：
+
+```text
+把 BP_TestActor 放到当前关卡，位置 0 0 100
+```
+
+如果当前上下文或 `selected_assets` 中包含 `/Game/Blueprints/BP_TestActor`，后端会生成：
+
+```json
+{
+  "operation_type": "place_actor_in_level",
+  "payload": {
+    "actor_class": "/Game/Blueprints/BP_TestActor.BP_TestActor_C",
+    "transform": {
+      "location": {"x": 0.0, "y": 0.0, "z": 100.0}
+    }
+  }
+}
+```
+
+材质示例：
+
+```text
+把 MI_Player 的 Roughness 调到 0.35
+```
+
+如果当前上下文或 `selected_assets` 中包含 `/Game/Materials/MI_Player`，后端会生成：
+
+```json
+{
+  "operation_type": "set_material_instance_parameter",
+  "payload": {
+    "material_instance_path": "/Game/Materials/MI_Player",
+    "parameter_name": "Roughness",
+    "parameter_type": "scalar",
+    "value": 0.35
+  }
+}
+```
+
+当前边界：
+
+- 如果用户只写 `BP_TestActor` 或 `MI_Player`，但前端没有传 `selected_assets` 或明确 `/Game/...` 路径，后端不会编造资产路径。
+- 缺少关键参数时，本轮优先 blocked / clarification，不退回到 Python 脚本。
+- UEAgentTool 也兼容直接把 `/Game/.../BP_X` Blueprint 资产路径作为 Actor class 输入，执行时会解析 GeneratedClass。
 ## 27. Multi-Agent Code Review Chain v1
 
 后端现在在默认 Code Review 之外，新增了一条轻量 Multi-Agent 链：`review_fix_validate`。它用于展示链式审查流程和真实辅助审查，不替代默认 Code Review，也不新增主菜单。

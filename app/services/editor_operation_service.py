@@ -296,15 +296,250 @@ class EditorOperationService:
 
     @staticmethod
     def _selected_asset_path(request: UnifiedTaskRequest) -> str | None:
-        selected_assets = list(request.context.selected_assets or [])
+        selected_assets = EditorOperationService._candidate_asset_paths(request)
         if selected_assets:
-            return str(selected_assets[0])
+            return selected_assets[0]
+        return None
+
+    @staticmethod
+    def _candidate_asset_paths(request: UnifiedTaskRequest) -> list[str]:
+        paths: list[str] = []
+        for raw_path in list(request.context.selected_assets or []):
+            path = str(raw_path or "").strip()
+            if path:
+                paths.append(path)
         asset_items = request.payload.get("asset_items") or request.payload.get("assets") or []
-        if isinstance(asset_items, list) and asset_items:
-            first = asset_items[0]
-            if isinstance(first, dict):
-                return str(first.get("asset_path") or first.get("package_path") or "")
-            return str(first)
+        if isinstance(asset_items, list):
+            for first in asset_items:
+                path = ""
+                if isinstance(first, dict):
+                    path = str(first.get("asset_path") or first.get("package_path") or "")
+                else:
+                    path = str(first or "")
+                path = path.strip()
+                if path and path not in paths:
+                    paths.append(path)
+        return paths
+
+    @staticmethod
+    def _extract_unreal_path_from_text(text: str) -> str | None:
+        match = re.search(r"(/Game/[A-Za-z0-9_./-]+)", text)
+        if not match:
+            return None
+        return match.group(1).rstrip(".,;:，。；：)）]")
+
+    @staticmethod
+    def _asset_path_to_generated_class_path(asset_path: str) -> str:
+        path = str(asset_path or "").strip().replace("\\", "/")
+        if not path:
+            return path
+        if path.startswith("/Script/"):
+            return path
+        if path.endswith("_C") and "." in path:
+            return path
+        if path.endswith(".uasset"):
+            path = path[: -len(".uasset")]
+        if "." in path and path.startswith("/Game/"):
+            package_path, object_name = path.rsplit(".", 1)
+            if object_name.endswith("_C"):
+                return path
+            if package_path.endswith("/" + object_name):
+                path = package_path
+            else:
+                return f"{package_path}.{object_name}_C"
+        if path.startswith("/Game/"):
+            asset_name = path.rstrip("/").rsplit("/", 1)[-1]
+            return f"{path}.{asset_name}_C"
+        return path
+
+    @staticmethod
+    def _asset_name_from_path(path: str) -> str:
+        clean_path = str(path or "").rstrip("/")
+        if "." in clean_path:
+            clean_path = clean_path.rsplit(".", 1)[-1]
+        return clean_path.rsplit("/", 1)[-1]
+
+    @staticmethod
+    def _find_named_candidate_path(request: UnifiedTaskRequest, query_text: str, *, prefixes: tuple[str, ...]) -> str | None:
+        candidates = EditorOperationService._candidate_asset_paths(request)
+        query_lower = query_text.lower()
+        for path in candidates:
+            asset_name = EditorOperationService._asset_name_from_path(path)
+            if asset_name and asset_name.lower() in query_lower:
+                return path
+        for prefix in prefixes:
+            match = re.search(rf"\b({re.escape(prefix)}[A-Za-z][A-Za-z0-9_]{{1,63}})\b", query_text, flags=re.IGNORECASE)
+            if not match:
+                continue
+            target_name = match.group(1).lower()
+            for path in candidates:
+                if EditorOperationService._asset_name_from_path(path).lower() == target_name:
+                    return path
+        return None
+
+    @staticmethod
+    def _extract_actor_label_from_text(text: str) -> str | None:
+        match = re.search(
+            r"(?:label|name|命名为|命名|叫做|叫|名称为)\s*[:：]?\s*([A-Za-z][A-Za-z0-9_]{1,63})",
+            text,
+            flags=re.IGNORECASE,
+        )
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _extract_transform_from_text(text: str) -> dict[str, Any]:
+        transform: dict[str, Any] = {}
+        location_match = re.search(
+            r"(?:位置|坐标|location|loc|at)\s*[:：=]?\s*\(?\s*(-?\d+(?:\.\d+)?)\s*[,， ]\s*(-?\d+(?:\.\d+)?)\s*[,， ]\s*(-?\d+(?:\.\d+)?)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if location_match:
+            transform["location"] = {
+                "x": float(location_match.group(1)),
+                "y": float(location_match.group(2)),
+                "z": float(location_match.group(3)),
+            }
+        else:
+            xyz_matches = {
+                axis.lower(): float(value)
+                for axis, value in re.findall(r"\b([XYZxyz])\s*[:=]\s*(-?\d+(?:\.\d+)?)", text)
+            }
+            if {"x", "y", "z"}.issubset(xyz_matches):
+                transform["location"] = {"x": xyz_matches["x"], "y": xyz_matches["y"], "z": xyz_matches["z"]}
+
+        rotation_match = re.search(
+            r"(?:旋转|rotation|rot)\s*[:：=]?\s*\(?\s*(-?\d+(?:\.\d+)?)\s*[,， ]\s*(-?\d+(?:\.\d+)?)\s*[,， ]\s*(-?\d+(?:\.\d+)?)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if rotation_match:
+            transform["rotation"] = {
+                "pitch": float(rotation_match.group(1)),
+                "yaw": float(rotation_match.group(2)),
+                "roll": float(rotation_match.group(3)),
+            }
+
+        scale_match = re.search(
+            r"(?:缩放|scale)\s*[:：=]?\s*\(?\s*(-?\d+(?:\.\d+)?)(?:\s*[,， ]\s*(-?\d+(?:\.\d+)?)\s*[,， ]\s*(-?\d+(?:\.\d+)?))?",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if scale_match:
+            x_value = float(scale_match.group(1))
+            y_value = float(scale_match.group(2)) if scale_match.group(2) else x_value
+            z_value = float(scale_match.group(3)) if scale_match.group(3) else x_value
+            transform["scale"] = {"x": x_value, "y": y_value, "z": z_value}
+        return transform
+
+    @staticmethod
+    def _detect_actor_class_from_request(request: UnifiedTaskRequest, query_text: str, query_lower: str) -> str | None:
+        explicit_class = str(request.payload.get("actor_class") or "").strip()
+        if explicit_class:
+            return explicit_class
+
+        explicit_path = EditorOperationService._extract_unreal_path_from_text(query_text)
+        if explicit_path and ("bp_" in explicit_path.lower() or explicit_path.lower().endswith("_c")):
+            return EditorOperationService._asset_path_to_generated_class_path(explicit_path)
+
+        named_candidate = EditorOperationService._find_named_candidate_path(request, query_text, prefixes=("BP_",))
+        if named_candidate:
+            return EditorOperationService._asset_path_to_generated_class_path(named_candidate)
+
+        selected_asset = EditorOperationService._selected_asset_path(request)
+        if selected_asset and ("bp_" in selected_asset.lower() or "blueprint" in query_lower or "蓝图" in query_text):
+            return EditorOperationService._asset_path_to_generated_class_path(selected_asset)
+
+        if "point light" in query_lower or "pointlight" in query_lower or "点光" in query_text:
+            return "/Script/Engine.PointLight"
+        if "spot light" in query_lower or "spotlight" in query_lower or "聚光" in query_text:
+            return "/Script/Engine.SpotLight"
+        if "camera" in query_lower or "相机" in query_text:
+            return "/Script/Engine.CameraActor"
+        if "actor" in query_lower:
+            return "/Script/Engine.Actor"
+        return None
+
+    @staticmethod
+    def _detect_material_path_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
+        explicit_path = str(request.payload.get("material_instance_path") or "").strip()
+        if explicit_path:
+            return explicit_path
+        text_path = EditorOperationService._extract_unreal_path_from_text(query_text)
+        if text_path:
+            return text_path
+        named_candidate = EditorOperationService._find_named_candidate_path(request, query_text, prefixes=("MI_",))
+        if named_candidate:
+            return named_candidate
+        selected_asset = EditorOperationService._selected_asset_path(request)
+        if selected_asset and re.search(r"(^|[/._])MI_[A-Za-z0-9_]+", selected_asset):
+            return selected_asset
+        return None
+
+    @staticmethod
+    def _detect_material_parameter_name(query_text: str) -> str | None:
+        for known_name in (
+            "Roughness",
+            "Metallic",
+            "Specular",
+            "Opacity",
+            "Alpha",
+            "Emissive",
+            "Base Color",
+            "BaseColor",
+            "Tint Color",
+            "Tint",
+        ):
+            if known_name.lower() in query_text.lower():
+                return known_name
+        match = re.search(
+            r"(?:参数|parameter)\s*[:：]?\s*([A-Za-z][A-Za-z0-9_ ]{0,79})",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        return match.group(1).strip() if match else None
+
+    @staticmethod
+    def _detect_material_value(query_text: str, parameter_name: str | None) -> tuple[str, Any] | None:
+        color_values = {
+            "红": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},
+            "red": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},
+            "绿": {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0},
+            "green": {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0},
+            "蓝": {"r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0},
+            "blue": {"r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0},
+            "白": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
+            "white": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
+            "黑": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0},
+            "black": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0},
+        }
+        query_lower = query_text.lower()
+        for token, value in color_values.items():
+            if token in query_lower or token in query_text:
+                return ("vector", value)
+        rgb_match = re.search(
+            r"(?:rgb|颜色|color)\s*[:：=]?\s*\(?\s*(-?\d+(?:\.\d+)?)\s*[,， ]\s*(-?\d+(?:\.\d+)?)\s*[,， ]\s*(-?\d+(?:\.\d+)?)(?:\s*[,， ]\s*(-?\d+(?:\.\d+)?))?",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if rgb_match:
+            return (
+                "vector",
+                {
+                    "r": float(rgb_match.group(1)),
+                    "g": float(rgb_match.group(2)),
+                    "b": float(rgb_match.group(3)),
+                    "a": float(rgb_match.group(4) or 1.0),
+                },
+            )
+        value_match = re.search(r"(?:到|为|成|=|value|set to|to)\s*(-?\d+(?:\.\d+)?)", query_text, flags=re.IGNORECASE)
+        if not value_match:
+            value_match = re.search(r"(-?\d+(?:\.\d+)?)", query_text)
+        if value_match:
+            name = (parameter_name or "").lower()
+            parameter_type = "vector" if any(token in name for token in ("color", "tint", "basecolor")) else "scalar"
+            value = float(value_match.group(1))
+            return (parameter_type, {"r": value, "g": value, "b": value, "a": 1.0} if parameter_type == "vector" else value)
         return None
 
     @staticmethod
@@ -327,6 +562,71 @@ class EditorOperationService:
         if not query_text:
             return None
         query_lower = query_text.lower()
+
+        wants_place_actor = any(
+            token in query_lower or token in query_text
+            for token in ("place", "spawn", "add to level", "put", "放置", "摆放", "放到", "放入", "加入关卡")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("actor", "blueprint", "bp_", "level", "world", "map", "蓝图", "关卡", "场景", "灯光", "相机")
+        )
+        if wants_place_actor:
+            actor_class = EditorOperationService._detect_actor_class_from_request(request, query_text, query_lower)
+            payload: dict[str, Any] = {
+                "actor_class": actor_class or "",
+                "actor_label": request.payload.get("actor_label")
+                or EditorOperationService._extract_actor_label_from_text(query_text),
+            }
+            transform = request.payload.get("transform") if isinstance(request.payload.get("transform"), dict) else {}
+            if not transform:
+                transform = EditorOperationService._extract_transform_from_text(query_text)
+            if transform:
+                payload["transform"] = transform
+            return EditorOperationProposalRequest(
+                operation_type="place_actor_in_level",
+                payload=payload,
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_material_parameter = any(
+            token in query_lower or token in query_text
+            for token in (
+                "material instance",
+                "material parameter",
+                "mi_",
+                "材质实例",
+                "材质参数",
+                "材质",
+            )
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("set", "adjust", "tune", "change", "设置", "调整", "调到", "改成", "改为")
+        )
+        if wants_material_parameter:
+            material_path = EditorOperationService._detect_material_path_from_request(request, query_text)
+            parameter_name = str(request.payload.get("parameter_name") or "").strip() or (
+                EditorOperationService._detect_material_parameter_name(query_text) or ""
+            )
+            value_result = (
+                (str(request.payload.get("parameter_type") or "scalar").strip().lower(), request.payload.get("value"))
+                if "value" in request.payload
+                else EditorOperationService._detect_material_value(query_text, parameter_name)
+            )
+            parameter_type, value = value_result if value_result else ("", None)
+            return EditorOperationProposalRequest(
+                operation_type="set_material_instance_parameter",
+                payload={
+                    "material_instance_path": material_path or "",
+                    "parameter_name": parameter_name,
+                    "parameter_type": parameter_type,
+                    "value": value,
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
 
         wants_blueprint = (
             ("蓝图" in query_text or "blueprint" in query_lower or "bp_" in query_lower)

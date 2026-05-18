@@ -625,3 +625,87 @@ def test_agent_chat_can_create_blueprint_editor_operation_proposal(client: TestC
     payload = proposal["dry_run_preview"]["operation_payload"]
     assert payload["parent_class"] == "/Script/Engine.Character"
     assert payload["asset_name"] == "BP_TestCharacter"
+
+
+def test_agent_chat_can_place_selected_blueprint_in_level(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_place_blueprint_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "把 BP_TestActor 放到当前关卡，位置 0 0 100",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+            },
+            "payload": {"user_query": "把 BP_TestActor 放到当前关卡，位置 0 0 100"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "zh-CN",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "place_actor_in_level"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["actor_class"] == "/Game/Blueprints/BP_TestActor.BP_TestActor_C"
+    assert payload["transform"]["location"] == {"x": 0.0, "y": 0.0, "z": 100.0}
+
+
+def test_agent_chat_can_set_selected_material_instance_parameter(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_material_parameter_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "把 MI_Player 的 Roughness 调到 0.35",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Materials/MI_Player"],
+            },
+            "payload": {"user_query": "把 MI_Player 的 Roughness 调到 0.35"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "zh-CN",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_material_instance_parameter"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "Roughness"
+    assert payload["parameter_type"] == "scalar"
+    assert payload["value"] == 0.35
