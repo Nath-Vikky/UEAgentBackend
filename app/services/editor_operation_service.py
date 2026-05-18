@@ -109,6 +109,31 @@ UMG_WIDGET_CLASS_ALIASES = {
 
 UMG_WIDGET_CLASS_ALLOWLIST = set(UMG_WIDGET_CLASS_ALIASES.values())
 
+UMG_VISIBILITY_VALUES = {
+    "visible",
+    "collapsed",
+    "hidden",
+    "hit_test_invisible",
+    "self_hit_test_invisible",
+}
+
+UMG_VISIBILITY_ALIASES = {
+    "show": "visible",
+    "shown": "visible",
+    "visible": "visible",
+    "hide": "collapsed",
+    "hidden": "hidden",
+    "invisible": "hidden",
+    "collapse": "collapsed",
+    "collapsed": "collapsed",
+    "hit test invisible": "hit_test_invisible",
+    "hittestinvisible": "hit_test_invisible",
+    "hit_test_invisible": "hit_test_invisible",
+    "self hit test invisible": "self_hit_test_invisible",
+    "selfhittestinvisible": "self_hit_test_invisible",
+    "self_hit_test_invisible": "self_hit_test_invisible",
+}
+
 MATERIAL_PARAMETER_TYPES = {"scalar", "vector"}
 
 OPERATION_SPECS: dict[str, dict[str, Any]] = {
@@ -206,6 +231,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "MEDIUM",
         "summary": "Set CanvasPanelSlot layout fields on one UMG widget after user confirmation.",
         "required_fields": ["widget_blueprint_path", "widget_name", "layout"],
+        "frontend_status": "implemented_v1",
+    },
+    "set_umg_widget_visibility": {
+        "tool_id": "editor_set_umg_widget_visibility",
+        "title": "Set UMG Widget Visibility",
+        "risk_flags": "MEDIUM",
+        "summary": "Set visibility on one UMG widget after user confirmation.",
+        "required_fields": ["widget_blueprint_path", "widget_name", "visibility"],
         "frontend_status": "implemented_v1",
     },
     "place_actor_in_level": {
@@ -971,6 +1004,17 @@ class EditorOperationService:
         return detected
 
     @staticmethod
+    def _detect_umg_visibility_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
+        explicit_visibility = request.payload.get("visibility")
+        if explicit_visibility is not None:
+            return str(explicit_visibility)
+        query_lower = query_text.lower()
+        for alias, value in UMG_VISIBILITY_ALIASES.items():
+            if re.search(rf"\b{re.escape(alias)}\b", query_lower):
+                return value
+        return None
+
+    @staticmethod
     def _detect_material_parameter_name(query_text: str) -> str | None:
         for known_name in (
             "Roughness",
@@ -1204,6 +1248,36 @@ class EditorOperationService:
                     "widget_blueprint_path": widget_blueprint_path or "",
                     "widget_name": widget_name or "",
                     "layout": layout,
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_umg_visibility = any(
+            token in query_lower
+            for token in ("umg", "widget", "textblock", "text block", "hud", "wbp_")
+        ) and any(
+            token in query_lower
+            for token in ("visibility", "visible", "hidden", "collapsed", "hide", "show", "invisible")
+        ) and any(
+            token in query_lower
+            for token in ("set", "change", "update", "make", "hide", "show")
+        )
+        if wants_umg_visibility:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+            visibility = EditorOperationService._detect_umg_visibility_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="set_umg_widget_visibility",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
+                    "visibility": visibility or "",
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -1597,6 +1671,17 @@ class EditorOperationService:
                     "allowed_aliases": sorted(UMG_WIDGET_CLASS_ALIASES),
                     "allowed_classes": sorted(UMG_WIDGET_CLASS_ALLOWLIST),
                 },
+            )
+        return text
+
+    @staticmethod
+    def _normalize_umg_visibility(value: Any) -> str:
+        text = str(value or "").strip().replace("-", "_").replace(" ", "_").lower()
+        text = UMG_VISIBILITY_ALIASES.get(text.replace("_", " "), UMG_VISIBILITY_ALIASES.get(text, text))
+        if text not in UMG_VISIBILITY_VALUES:
+            raise EditorOperationValidationError(
+                "widget_visibility_not_supported_in_v1",
+                {"visibility": text, "allowed_values": sorted(UMG_VISIBILITY_VALUES)},
             )
         return text
 
@@ -2017,6 +2102,16 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_umg_widget_visibility":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "visibility": self._normalize_umg_visibility(payload.get("visibility")),
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "place_actor_in_level":
             actor_class = self._normalize_class_path(payload.get("actor_class"))
             actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
@@ -2152,6 +2247,11 @@ class EditorOperationService:
             return (
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Set CanvasPanelSlot layout for `{payload['widget_name']}` fields: {fields}. The package is not auto-saved.",
+            )
+        if operation_type == "set_umg_widget_visibility":
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Set widget `{payload['widget_name']}` visibility to `{payload['visibility']}`. The package is not auto-saved.",
             )
         if operation_type == "place_actor_in_level":
             location = payload["transform"]["location"]

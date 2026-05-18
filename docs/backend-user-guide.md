@@ -2927,6 +2927,7 @@ UMG 写操作边界：
 - `text` 只对 `TextBlock` 生效；传给其他控件时不会失败整个操作，但会在 `failed_fields` 中说明没有应用。
 - `set_umg_widget_text` 只修改已有 `TextBlock` 的文本；如果目标控件不存在或不是 `TextBlock`，UE 执行器会 blocked。
 - `set_umg_widget_layout` 只修改挂在 `CanvasPanel` 下的控件，也就是目标控件必须拥有 `CanvasPanelSlot`；v1 只支持 `position`、`size`、`alignment`、`anchors`。
+- `set_umg_widget_visibility` 只修改已有控件的 `Visibility`，白名单为 `visible`、`collapsed`、`hidden`、`hit_test_invisible`、`self_hit_test_invisible`。
 - 不设置颜色、字体、动画、绑定和复杂 slot 参数；这些放到后续 UMG v2。
 
 ### 26.2 Level / Material 低风险编辑器操作 v1
@@ -4630,3 +4631,50 @@ Validation:
 ```
 
 UE frontend impact: add `set_umg_widget_layout` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
+
+## 2026-05-18 UMG Widget Visibility Proposal
+
+`Editor Operation Bridge` now includes `set_umg_widget_visibility`, a confirmed-write proposal for changing one existing UMG widget's `Visibility` value.
+
+Supported request forms:
+
+- Explicit proposal API: `operation_type=set_umg_widget_visibility`.
+- Agent Chat: `Hide WBP_MainHUD TitleText widget`.
+- Agent Chat: `Set WBP_MainHUD StartButton visibility to hit test invisible`.
+- Inventory-assisted resolution: when `selected_assets` is empty, Project Inventory can provide the `WBP_...` Widget Blueprint path.
+
+Payload shape:
+
+```json
+{
+  "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+  "widget_name": "TitleText",
+  "visibility": "collapsed",
+  "save_policy": "mark_dirty_only"
+}
+```
+
+Supported `visibility` values:
+
+- `visible`
+- `collapsed`
+- `hidden`
+- `hit_test_invisible`
+- `self_hit_test_invisible`
+
+Execution boundary:
+
+- Backend only creates and validates the proposal.
+- UEAgentTool finds the widget by exact/case-insensitive name.
+- UEAgentTool calls `UWidget.SetVisibility` after user confirmation.
+- The Widget Blueprint package is marked dirty, not auto-saved.
+- v1 does not edit render opacity, enabled state, bindings, animations, or batch widget state.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check app tests scripts
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+UE frontend impact: add `set_umg_widget_visibility` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.

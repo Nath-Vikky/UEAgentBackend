@@ -55,6 +55,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "add_umg_widget",
         "set_umg_widget_text",
         "set_umg_widget_layout",
+        "set_umg_widget_visibility",
         "place_actor_in_level",
         "set_actor_transform",
         "set_material_instance_parameter",
@@ -73,6 +74,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["add_umg_widget"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_text"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_layout"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_umg_widget_visibility"]["frontend_status"] == "implemented_v1"
     assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_material_instance_parameter"]["frontend_status"] == "implemented_v1"
@@ -98,6 +100,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_add_umg_widget" in tool_ids
     assert "editor_set_umg_widget_text" in tool_ids
     assert "editor_set_umg_widget_layout" in tool_ids
+    assert "editor_set_umg_widget_visibility" in tool_ids
     assert "editor_place_actor_in_level" in tool_ids
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_material_instance_parameter" in tool_ids
@@ -505,6 +508,49 @@ def test_set_umg_widget_layout_rejects_empty_layout(client: TestClient) -> None:
     assert response.status_code == 400
     body = response.json()
     assert body["errors"][0]["code"] == "layout_requires_position_size_alignment_or_anchors"
+
+
+def test_set_umg_widget_visibility_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_widget_visibility",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "visibility": "collapsed",
+            },
+            "reason": "Hide the HUD title for this screen state.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_umg_widget_visibility"
+    assert body["operation"]["tool_id"] == "editor_set_umg_widget_visibility"
+    payload = body["operation"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "TitleText"
+    assert payload["visibility"] == "collapsed"
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_set_umg_widget_visibility_rejects_unknown_value(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_widget_visibility",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "visibility": "transparent",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "widget_visibility_not_supported_in_v1"
 
 
 def test_place_actor_in_level_proposal_contract(client: TestClient) -> None:
@@ -1113,6 +1159,64 @@ def test_agent_chat_resolves_umg_layout_from_project_inventory(client: TestClien
     assert payload["widget_name"] == "TitleText"
     assert payload["layout"]["position"] == {"x": 20.0, "y": 30.0}
     assert payload["layout"]["size"] == {"x": 300.0, "y": 48.0}
+
+
+def test_agent_chat_resolves_umg_visibility_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/UI/WBP_MainHUD.WBP_MainHUD",
+                    "asset_name": "WBP_MainHUD",
+                    "asset_type": "WidgetBlueprint",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_umg_visibility_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Hide WBP_MainHUD TitleText widget",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Hide WBP_MainHUD TitleText widget"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_umg_widget_visibility"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "TitleText"
+    assert payload["visibility"] == "collapsed"
 
 
 def test_agent_chat_can_set_selected_material_instance_parameter(client: TestClient) -> None:

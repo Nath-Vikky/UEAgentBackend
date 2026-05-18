@@ -159,6 +159,7 @@ def _compact_operation_target(
         "widget_blueprint_path",
         "widget_name",
         "slot_type",
+        "visibility",
         "material_instance_path",
         "actor_class",
         "actor_reference",
