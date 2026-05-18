@@ -53,6 +53,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "batch_rename_assets",
         "move_assets",
         "add_umg_widget",
+        "set_umg_widget_text",
         "place_actor_in_level",
         "set_actor_transform",
         "set_material_instance_parameter",
@@ -69,6 +70,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["batch_rename_assets"]["frontend_status"] == "implemented_v1"
     assert operation_items["move_assets"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_umg_widget"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_umg_widget_text"]["frontend_status"] == "implemented_v1"
     assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_material_instance_parameter"]["frontend_status"] == "implemented_v1"
@@ -92,6 +94,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "mcp_get_blueprint_graph" in tool_ids
     assert "mcp_get_widget_tree" in tool_ids
     assert "editor_add_umg_widget" in tool_ids
+    assert "editor_set_umg_widget_text" in tool_ids
     assert "editor_place_actor_in_level" in tool_ids
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_material_instance_parameter" in tool_ids
@@ -405,6 +408,49 @@ def test_add_umg_widget_rejects_unsupported_class(client: TestClient) -> None:
     assert response.status_code == 400
     body = response.json()
     assert body["errors"][0]["code"] == "widget_class_not_supported_in_v1"
+
+
+def test_set_umg_widget_text_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_widget_text",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "text": "Mission Ready",
+            },
+            "reason": "Update HUD title copy.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_umg_widget_text"
+    assert body["operation"]["tool_id"] == "editor_set_umg_widget_text"
+    payload = body["operation"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "TitleText"
+    assert payload["text"] == "Mission Ready"
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_set_umg_widget_text_rejects_empty_text(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_widget_text",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "text": "",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "widget_text_required"
 
 
 def test_place_actor_in_level_proposal_contract(client: TestClient) -> None:
@@ -896,6 +942,64 @@ def test_agent_chat_reuses_recent_placed_actor_for_transform(client: TestClient)
     assert payload["transform_delta"]["location"] == {"x": 0.0, "y": 200.0, "z": 0.0}
     last_operation = body["debug_view"]["active_context"]["editor_operation"]["last_successful"]
     assert last_operation["target"]["actor_reference"] == "BP_TestActor_1"
+
+
+def test_agent_chat_resolves_umg_text_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/UI/WBP_MainHUD.WBP_MainHUD",
+                    "asset_name": "WBP_MainHUD",
+                    "asset_type": "WidgetBlueprint",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_umg_text_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Set WBP_MainHUD TitleText text to 'Mission Ready'",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Set WBP_MainHUD TitleText text to 'Mission Ready'"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_umg_widget_text"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "TitleText"
+    assert payload["text"] == "Mission Ready"
 
 
 def test_agent_chat_can_set_selected_material_instance_parameter(client: TestClient) -> None:

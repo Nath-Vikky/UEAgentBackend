@@ -192,6 +192,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["widget_blueprint_path", "widget_name", "widget_class"],
         "frontend_status": "implemented_v1",
     },
+    "set_umg_widget_text": {
+        "tool_id": "editor_set_umg_widget_text",
+        "title": "Set UMG Widget Text",
+        "risk_flags": "MEDIUM",
+        "summary": "Set text on one TextBlock in a Widget Blueprint after user confirmation.",
+        "required_fields": ["widget_blueprint_path", "widget_name", "text"],
+        "frontend_status": "implemented_v1",
+    },
     "place_actor_in_level": {
         "tool_id": "editor_place_actor_in_level",
         "title": "Place Actor In Level",
@@ -841,6 +849,85 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_widget_blueprint_path_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None = None,
+    ) -> str | None:
+        explicit_path = str(
+            request.payload.get("widget_blueprint_path")
+            or request.payload.get("widget_path")
+            or request.payload.get("umg_path")
+            or ""
+        ).strip()
+        if explicit_path:
+            return explicit_path
+
+        for path in EditorOperationService._extract_unreal_paths_from_text(query_text):
+            asset_name = EditorOperationService._asset_name_from_path(path)
+            if asset_name.lower().startswith(("wbp_", "ui_")) or "/ui/" in path.lower():
+                return path
+
+        named_candidate = EditorOperationService._find_named_candidate_path(
+            request,
+            query_text,
+            prefixes=("WBP_", "UI_"),
+        )
+        if named_candidate:
+            return named_candidate
+
+        inventory_candidate = EditorOperationService._find_inventory_candidate_path(
+            context_bundle=context_bundle,
+            query_text=query_text,
+            accepted_type_tokens=("widgetblueprint", "widget blueprint", "userwidget", "blueprint"),
+            prefixes=("WBP_", "UI_"),
+        )
+        if inventory_candidate:
+            return inventory_candidate
+
+        selected_asset = EditorOperationService._selected_asset_path(request)
+        if selected_asset and re.search(r"(^|[/._])(WBP_|UI_)[A-Za-z0-9_]+", selected_asset):
+            return selected_asset
+        return None
+
+    @staticmethod
+    def _detect_widget_name_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
+        explicit_name = str(
+            request.payload.get("widget_name")
+            or request.payload.get("target_widget_name")
+            or request.payload.get("text_block_name")
+            or ""
+        ).strip()
+        if explicit_name:
+            return explicit_name
+        for match in re.finditer(
+            r"\b([A-Za-z][A-Za-z0-9_]*(?:Text|TextBlock|Label|Title|Name|Value))\b",
+            query_text,
+            flags=re.IGNORECASE,
+        ):
+            candidate = match.group(1)
+            if not candidate.lower().startswith(("wbp_", "ui_")):
+                return candidate
+        return None
+
+    @staticmethod
+    def _detect_umg_text_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
+        explicit_text = request.payload.get("text")
+        if explicit_text is not None:
+            return str(explicit_text)
+        quoted = re.search(r"[\"']([^\"']{1,240})[\"']", query_text)
+        if quoted:
+            return quoted.group(1)
+        match = re.search(
+            r"(?:text|label|content)\s*(?:to|=|:)\s*(.{1,240})$",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group(1).strip()
+        return None
+
+    @staticmethod
     def _detect_material_parameter_name(query_text: str) -> str | None:
         for known_name in (
             "Roughness",
@@ -1014,6 +1101,33 @@ class EditorOperationService:
             return EditorOperationProposalRequest(
                 operation_type="set_actor_transform",
                 payload=payload,
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_umg_text = any(
+            token in query_lower
+            for token in ("umg", "widget", "textblock", "text block", "hud", "wbp_")
+        ) and any(
+            token in query_lower
+            for token in ("set", "change", "update", "replace", "text", "label", "content")
+        )
+        if wants_umg_text:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+            text_value = EditorOperationService._detect_umg_text_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="set_umg_widget_text",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
+                    "text": text_value if text_value is not None else "",
+                },
                 reason=query_text,
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
@@ -1722,6 +1836,19 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_umg_widget_text":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            text_value = self._normalize_optional_string(payload.get("text") or "", max_length=500)
+            if not text_value:
+                raise EditorOperationValidationError("widget_text_required")
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "text": text_value,
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "place_actor_in_level":
             actor_class = self._normalize_class_path(payload.get("actor_class"))
             actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
@@ -1846,6 +1973,11 @@ class EditorOperationService:
             return (
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Add `{payload['widget_name']}` ({payload['widget_class']}) under {parent}. The package is not auto-saved.",
+            )
+        if operation_type == "set_umg_widget_text":
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Set TextBlock `{payload['widget_name']}` text to `{payload['text']}`. The package is not auto-saved.",
             )
         if operation_type == "place_actor_in_level":
             location = payload["transform"]["location"]

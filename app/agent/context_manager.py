@@ -156,6 +156,8 @@ def _compact_operation_target(
         "asset_path",
         "final_asset_path",
         "blueprint_path",
+        "widget_blueprint_path",
+        "widget_name",
         "material_instance_path",
         "actor_class",
         "actor_reference",

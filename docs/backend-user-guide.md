@@ -2885,12 +2885,26 @@ required_payload_fields: widget_blueprint_path
 }
 ```
 
+设置已有 TextBlock 文本：
+
+```json
+{
+  "operation_type": "set_umg_widget_text",
+  "payload": {
+    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+    "widget_name": "TitleText",
+    "text": "Mission Ready"
+  }
+}
+```
+
 UMG 写操作边界：
 
 - v1 只支持基础控件：`TextBlock`、`Button`、`Image`、`Border`、`CanvasPanel`、`HorizontalBox`、`VerticalBox`。
 - `parent_widget_name` 为空时，若 Widget Blueprint 还没有 root widget，则新控件会成为 root；若已有 root，则默认挂到 root 下。
 - 父控件必须是 `PanelWidget`；如果 root 不是 panel，或指定父控件不存在，则执行器 blocked。
 - `text` 只对 `TextBlock` 生效；传给其他控件时不会失败整个操作，但会在 `failed_fields` 中说明没有应用。
+- `set_umg_widget_text` 只修改已有 `TextBlock` 的文本；如果目标控件不存在或不是 `TextBlock`，UE 执行器会 blocked。
 - 不设置锚点、尺寸、动画、绑定和复杂 slot 参数；这些放到后续 UMG v2。
 
 ### 26.2 Level / Material 低风险编辑器操作 v1
@@ -4511,3 +4525,40 @@ Validation:
 ```
 
 UE frontend impact: add `set_material_instance_texture_parameter` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
+
+## 2026-05-18 UMG TextBlock Text Proposal
+
+`Editor Operation Bridge` now includes `set_umg_widget_text`, a confirmed-write proposal for updating the text of one existing `TextBlock` in a Widget Blueprint.
+
+Supported request forms:
+
+- Explicit proposal API: `operation_type=set_umg_widget_text`.
+- Agent Chat: `Set WBP_MainHUD TitleText text to 'Mission Ready'`.
+- Inventory-assisted resolution: when `selected_assets` is empty, Project Inventory can provide the `WBP_...` Widget Blueprint path.
+
+Payload shape:
+
+```json
+{
+  "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+  "widget_name": "TitleText",
+  "text": "Mission Ready",
+  "save_policy": "mark_dirty_only"
+}
+```
+
+Execution boundary:
+
+- Backend only creates and validates the proposal.
+- UEAgentTool finds the widget by exact/case-insensitive name and requires it to be a `TextBlock`.
+- UEAgentTool calls `UTextBlock.SetText` after user confirmation.
+- The Widget Blueprint package is marked dirty, not auto-saved.
+- v1 does not edit anchors, slots, bindings, animations, or arbitrary widget properties.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py -q
+```
+
+UE frontend impact: add `set_umg_widget_text` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.

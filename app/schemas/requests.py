@@ -89,6 +89,7 @@ class EditorOperationProposalRequest(BaseModel):
         "batch_rename_assets",
         "move_assets",
         "add_umg_widget",
+        "set_umg_widget_text",
         "place_actor_in_level",
         "set_actor_transform",
         "set_material_instance_parameter",
