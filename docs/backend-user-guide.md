@@ -2798,7 +2798,7 @@ required_payload_fields: blueprint_path
 
 ### 26.1 UMG / Asset 批量操作 v1
 
-I4-4 第一版只补两个低风险能力：批量资产重命名 Proposal，以及 UMG Widget Tree 只读感知。不做删除资产、不做自动修复 Redirectors、不做复杂 Widget 创建/布局。
+I4-4 第一版只补低风险能力：批量资产重命名 Proposal、批量移动资产 Proposal、UMG Widget Tree 只读感知，以及添加基础 UMG Widget Proposal。不做删除资产、不做自动修复 Redirectors、不做复杂 Widget 创建/布局。
 
 批量重命名资产：
 
@@ -2828,6 +2828,28 @@ I4-4 第一版只补两个低风险能力：批量资产重命名 Proposal，以
 - 后端只生成 preview/proposal；UE 插件确认后才调用 `AssetTools.RenameAssets`。
 - 执行器会先校验全量源资产和目标路径，任何一项失败都会整批 blocked，避免半途改名。
 
+批量移动资产：
+
+```json
+{
+  "operation_type": "move_assets",
+  "payload": {
+    "asset_paths": [
+      "/Game/Props/SM_Chair_A",
+      "/Game/Props/SM_Table_A"
+    ],
+    "target_folder": "/Game/Environment/Props"
+  }
+}
+```
+
+移动资产边界：
+
+- `asset_paths` 必须是非空数组，最多 20 项。
+- `target_folder` 必须在 `/Game` 下，且不能与源资产当前目录相同。
+- 后端会预览每个 `asset_path -> target_path`，UE 插件确认后使用 `AssetTools.RenameAssets` 移动。
+- 和批量重命名一样，任意一项校验失败则整批 blocked；不会自动保存，也不会自动修复 Redirectors。
+
 可选 TCP 只读 UMG Widget Tree 工具：
 
 ```text
@@ -2846,6 +2868,30 @@ required_payload_fields: widget_blueprint_path
 ```
 
 返回摘要包含 `widget_blueprint_path`、`status`、`parent_class`、`root_widget`、`widgets` 等字段。每个 widget 会尽量返回 `widget_name`、`widget_class`、`is_variable` 和 `slot_class`。这是 read-only 感知能力，不需要用户确认，也不会修改 Widget Blueprint。
+
+添加基础 UMG Widget：
+
+```json
+{
+  "operation_type": "add_umg_widget",
+  "payload": {
+    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+    "widget_name": "TitleText",
+    "widget_class": "TextBlock",
+    "parent_widget_name": "RootCanvas",
+    "text": "Ready",
+    "is_variable": true
+  }
+}
+```
+
+UMG 写操作边界：
+
+- v1 只支持基础控件：`TextBlock`、`Button`、`Image`、`Border`、`CanvasPanel`、`HorizontalBox`、`VerticalBox`。
+- `parent_widget_name` 为空时，若 Widget Blueprint 还没有 root widget，则新控件会成为 root；若已有 root，则默认挂到 root 下。
+- 父控件必须是 `PanelWidget`；如果 root 不是 panel，或指定父控件不存在，则执行器 blocked。
+- `text` 只对 `TextBlock` 生效；传给其他控件时不会失败整个操作，但会在 `failed_fields` 中说明没有应用。
+- 不设置锚点、尺寸、动画、绑定和复杂 slot 参数；这些放到后续 UMG v2。
 ## 27. Multi-Agent Code Review Chain v1
 
 后端现在在默认 Code Review 之外，新增了一条轻量 Multi-Agent 链：`review_fix_validate`。它用于展示链式审查流程和真实辅助审查，不替代默认 Code Review，也不新增主菜单。

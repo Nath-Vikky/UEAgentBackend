@@ -93,6 +93,20 @@ BLUEPRINT_EVENT_NAMES = {
     "ActorEndOverlap",
 }
 
+UMG_WIDGET_CLASS_ALIASES = {
+    "text": "/Script/UMG.TextBlock",
+    "textblock": "/Script/UMG.TextBlock",
+    "button": "/Script/UMG.Button",
+    "image": "/Script/UMG.Image",
+    "border": "/Script/UMG.Border",
+    "canvas": "/Script/UMG.CanvasPanel",
+    "canvaspanel": "/Script/UMG.CanvasPanel",
+    "horizontalbox": "/Script/UMG.HorizontalBox",
+    "verticalbox": "/Script/UMG.VerticalBox",
+}
+
+UMG_WIDGET_CLASS_ALLOWLIST = set(UMG_WIDGET_CLASS_ALIASES.values())
+
 OPERATION_SPECS: dict[str, dict[str, Any]] = {
     "rename_selected_asset": {
         "tool_id": "editor_rename_asset",
@@ -156,6 +170,22 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "HIGH",
         "summary": "Rename multiple Unreal assets in one confirmed editor transaction.",
         "required_fields": ["renames"],
+        "frontend_status": "implemented_v1",
+    },
+    "move_assets": {
+        "tool_id": "editor_move_assets",
+        "title": "Move Assets",
+        "risk_flags": "HIGH",
+        "summary": "Move multiple Unreal assets to one target folder after user confirmation.",
+        "required_fields": ["asset_paths", "target_folder"],
+        "frontend_status": "implemented_v1",
+    },
+    "add_umg_widget": {
+        "tool_id": "editor_add_umg_widget",
+        "title": "Add UMG Widget",
+        "risk_flags": "MEDIUM",
+        "summary": "Add one simple widget to a Widget Blueprint after user confirmation.",
+        "required_fields": ["widget_blueprint_path", "widget_name", "widget_class"],
         "frontend_status": "implemented_v1",
     },
 }
@@ -535,6 +565,60 @@ class EditorOperationService:
             )
         return normalized
 
+    def _normalize_asset_paths_for_move(self, value: Any, target_folder: str) -> list[dict[str, str]]:
+        if not isinstance(value, list) or not value:
+            raise EditorOperationValidationError("asset_paths_must_be_non_empty_array")
+        if len(value) > 20:
+            raise EditorOperationValidationError("move_assets_too_many_items", {"max_items": 20})
+
+        normalized: list[dict[str, str]] = []
+        seen_sources: set[str] = set()
+        seen_targets: set[str] = set()
+        for index, raw_value in enumerate(value):
+            asset_path = self._normalize_asset_path(raw_value)
+            asset_name = asset_path.rsplit("/", 1)[-1]
+            current_folder = asset_path.rsplit("/", 1)[0]
+            if current_folder == target_folder:
+                raise EditorOperationValidationError(
+                    "move_asset_target_folder_matches_current",
+                    {"index": index, "asset_path": asset_path, "target_folder": target_folder},
+                )
+            target_path = f"{target_folder}/{asset_name}"
+            if asset_path in seen_sources:
+                raise EditorOperationValidationError("move_assets_duplicate_source", {"asset_path": asset_path})
+            if target_path in seen_targets:
+                raise EditorOperationValidationError("move_assets_duplicate_target", {"target_path": target_path})
+            seen_sources.add(asset_path)
+            seen_targets.add(target_path)
+            normalized.append(
+                {
+                    "asset_path": asset_path,
+                    "asset_name": asset_name,
+                    "target_folder": target_folder,
+                    "target_path": target_path,
+                }
+            )
+        return normalized
+
+    @staticmethod
+    def _normalize_umg_widget_class(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            raise EditorOperationValidationError("widget_class_required")
+        alias = UMG_WIDGET_CLASS_ALIASES.get(text.replace("_", "").replace(" ", "").lower())
+        if alias:
+            return alias
+        if text not in UMG_WIDGET_CLASS_ALLOWLIST:
+            raise EditorOperationValidationError(
+                "widget_class_not_supported_in_v1",
+                {
+                    "widget_class": text,
+                    "allowed_aliases": sorted(UMG_WIDGET_CLASS_ALIASES),
+                    "allowed_classes": sorted(UMG_WIDGET_CLASS_ALLOWLIST),
+                },
+            )
+        return text
+
     def _normalize_payload(self, operation_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         if operation_type == "rename_selected_asset":
             asset_path = self._normalize_asset_path(payload.get("asset_path"))
@@ -637,6 +721,32 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "move_assets":
+            target_folder = self._normalize_folder(payload.get("target_folder"))
+            moves = self._normalize_asset_paths_for_move(payload.get("asset_paths"), target_folder)
+            return {
+                "asset_paths": [item["asset_path"] for item in moves],
+                "target_folder": target_folder,
+                "moves": moves,
+                "item_count": len(moves),
+                "save_policy": "mark_dirty_only",
+            }
+
+        if operation_type == "add_umg_widget":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            widget_class = self._normalize_umg_widget_class(payload.get("widget_class"))
+            parent_widget_name = self._normalize_optional_string(payload.get("parent_widget_name") or "", max_length=80)
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "widget_class": widget_class,
+                "parent_widget_name": parent_widget_name or None,
+                "text": self._clean_text(payload.get("text"), max_length=160),
+                "is_variable": bool(payload.get("is_variable", True)),
+                "save_policy": "mark_dirty_only",
+            }
+
         raise EditorOperationValidationError("unsupported_editor_operation", {"operation_type": operation_type})
 
     def _build_summaries(self, operation_type: str, payload: dict[str, Any]) -> tuple[str, str]:
@@ -686,6 +796,23 @@ class EditorOperationService:
             return (
                 f"Batch rename {payload['item_count']} assets. No asset is changed before confirmation.",
                 f"Rename plan: {preview}. Redirectors are not fixed automatically in this operation.",
+            )
+        if operation_type == "move_assets":
+            preview = ", ".join(
+                f"{item['asset_path']} -> {item['target_path']}"
+                for item in payload["moves"][:5]
+            )
+            if payload["item_count"] > 5:
+                preview += f", ... (+{payload['item_count'] - 5} more)"
+            return (
+                f"Move {payload['item_count']} assets to {payload['target_folder']}. No asset is changed before confirmation.",
+                f"Move plan: {preview}. Redirectors are not fixed automatically in this operation.",
+            )
+        if operation_type == "add_umg_widget":
+            parent = payload.get("parent_widget_name") or "root widget"
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Add `{payload['widget_name']}` ({payload['widget_class']}) under {parent}. The package is not auto-saved.",
             )
         return ("", "")
 
