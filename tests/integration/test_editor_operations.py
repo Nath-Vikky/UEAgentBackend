@@ -49,6 +49,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "add_blueprint_variable",
         "add_blueprint_component",
         "create_blueprint_event_stub",
+        "compile_blueprint",
     }.issubset(operation_types)
     operation_items = {
         item["operation_type"]: item
@@ -57,6 +58,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["add_blueprint_variable"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_blueprint_component"]["frontend_status"] == "implemented_v1"
     assert operation_items["create_blueprint_event_stub"]["frontend_status"] == "implemented_v1"
+    assert operation_items["compile_blueprint"]["frontend_status"] == "implemented_v1"
     assert body["capabilities"]["safety_policy"]["requires_frontend_confirmation"] is True
 
     capabilities = client.get("/api/v1/system/capabilities").json()
@@ -70,6 +72,8 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_add_blueprint_variable" in tool_ids
     assert "editor_add_blueprint_component" in tool_ids
     assert "editor_create_blueprint_event_stub" in tool_ids
+    assert "editor_compile_blueprint" in tool_ids
+    assert "mcp_get_blueprint_graph" in tool_ids
 
 
 def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient) -> None:
@@ -228,6 +232,28 @@ def test_blueprint_graph_event_stub_is_whitelisted(client: TestClient) -> None:
     body = response.json()
     assert body["errors"][0]["code"] == "event_name_not_supported_in_v1"
     assert "BeginPlay" in body["errors"][0]["details"]["allowed_events"]
+
+
+def test_blueprint_compile_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "compile_blueprint",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+            },
+            "reason": "Compile after generated graph changes.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "compile_blueprint"
+    assert body["operation"]["tool_id"] == "editor_compile_blueprint"
+    payload = body["operation"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
+    assert payload["compile_mode"] == "default"
+    assert body["item"]["confirmation"]["state"] == "pending"
 
 
 def test_assets_inspect_emits_rename_editor_operation_proposal(client: TestClient) -> None:

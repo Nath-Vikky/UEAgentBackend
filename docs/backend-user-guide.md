@@ -2707,7 +2707,7 @@ Agent Chat / Project QA 会把最近项目快照注入：
 
 ## 26. Blueprint Graph Automation v1 Proposal 契约
 
-后端已经把蓝图图表自动化纳入 `Editor Operation Bridge`，但第一版仍然只生成 proposal，不直接执行 UE Editor API。UE 前端回传确认：以下三个 operation 已在 UE 侧接入真实执行路径，`GET /api/v1/editor-operations/capabilities` 中的 `frontend_status` 已标记为 `implemented_v1`。
+后端已经把蓝图图表自动化纳入 `Editor Operation Bridge`。写操作第一版仍然只生成 proposal，不直接绕过 UE 前端执行 Editor API。UE 前端回传确认：以下四个 operation 已在 UE 侧接入真实执行路径，`GET /api/v1/editor-operations/capabilities` 中的 `frontend_status` 已标记为 `implemented_v1`。另外，默认关闭的 TCP 工具层提供 `get_blueprint_graph` 只读图谱摘要，供未来 Agent 感知蓝图结构。
 
 新增 operation：
 
@@ -2715,6 +2715,7 @@ Agent Chat / Project QA 会把最近项目快照注入：
 add_blueprint_variable
 add_blueprint_component
 create_blueprint_event_stub
+compile_blueprint
 ```
 
 添加变量示例：
@@ -2762,11 +2763,36 @@ create_blueprint_event_stub
 }
 ```
 
+编译 Blueprint 示例：
+
+```json
+{
+  "operation_type": "compile_blueprint",
+  "payload": {
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "compile_mode": "default"
+  }
+}
+```
+
+可选 TCP 只读图谱工具：
+
+```text
+tool_id: mcp_get_blueprint_graph
+mcp_tool_name: get_blueprint_graph
+transport: mcp_tcp
+required_payload_fields: blueprint_path
+```
+
+开启 UE 插件 TCP 服务并在后端设置 `MCP_TOOL_ADAPTER_ENABLED=true`、`MCP_TRANSPORT=tcp` 后，可以通过 `/api/v1/mcp/tools/get_blueprint_graph/call` 读取蓝图摘要。返回内容包含 `blueprint_path`、`status`、`parent_class`、`graphs`、`variables`、`components` 等字段；这是只读能力，不需要用户确认，也不会修改资产。
+
 安全边界：
 
 - 仍然必须走 `confirm -> UE 前端执行 -> results 回传`。
 - v1 不做复杂节点连线、不生成大段蓝图逻辑、不自动放入关卡、不自动保存包。
 - `create_blueprint_event_stub` 仅允许 `BeginPlay / Tick / ActorBeginOverlap / ActorEndOverlap`。
+- `compile_blueprint` 只触发一次 UE 编译并返回状态，不自动保存 package，不做循环修复。
+- `get_blueprint_graph` 只读，不经过 Proposal；建议仅在本地 TCP 白名单中开放。
 - 变量类型只允许常见内置类型、短别名，或 `/Script/`、`/Game/` 开头的项目/引擎类型。
 - `/api/v1/editor-operations/results` 的 `result` 是开放对象，后端接受 `applied_fields`、`failed_fields`、`dirty_packages`、`graph_name`、`created_nodes`、`save_policy` 等 UE 侧回传字段；`dirty_packages` 建议传字符串数组，当前不强制固定为某一种 package path 格式。
 ## 27. Multi-Agent Code Review Chain v1

@@ -142,6 +142,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["blueprint_path", "event_name"],
         "frontend_status": "implemented_v1",
     },
+    "compile_blueprint": {
+        "tool_id": "editor_compile_blueprint",
+        "title": "Compile Blueprint",
+        "risk_flags": "MEDIUM",
+        "summary": "Compile one Blueprint in the Unreal Editor after user confirmation.",
+        "required_fields": ["blueprint_path"],
+        "frontend_status": "implemented_v1",
+    },
 }
 
 
@@ -337,6 +345,17 @@ class EditorOperationService:
             return EditorOperationProposalRequest(
                 operation_type="apply_static_mesh_basic_settings",
                 payload={"asset_path": selected_asset, "settings": settings},
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+        wants_blueprint_compile = selected_asset and (
+            "blueprint" in query_lower or "蓝图" in query_text or str(selected_asset).lower().endswith("_c")
+        ) and any(token in query_lower or token in query_text for token in ("compile", "编译"))
+        if wants_blueprint_compile:
+            return EditorOperationProposalRequest(
+                operation_type="compile_blueprint",
+                payload={"blueprint_path": selected_asset},
                 reason=query_text,
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
@@ -556,6 +575,14 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "compile_blueprint":
+            blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
+            return {
+                "blueprint_path": blueprint_path,
+                "compile_mode": self._normalize_optional_string(payload.get("compile_mode") or "default", max_length=40),
+                "save_policy": "mark_dirty_only",
+            }
+
         raise EditorOperationValidationError("unsupported_editor_operation", {"operation_type": operation_type})
 
     def _build_summaries(self, operation_type: str, payload: dict[str, Any]) -> tuple[str, str]:
@@ -589,6 +616,11 @@ class EditorOperationService:
             return (
                 f"Blueprint graph before change: {payload['blueprint_path']}::{payload['graph_name']}",
                 f"Create event stub `{payload['event_name']}`. No complex node graph is generated in v1.",
+            )
+        if operation_type == "compile_blueprint":
+            return (
+                f"Blueprint before compile: {payload['blueprint_path']}",
+                "Compile the Blueprint in Unreal Editor and return compile status. The package is not auto-saved.",
             )
         return ("", "")
 

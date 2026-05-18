@@ -85,6 +85,7 @@ class EditorOperationProposalRequest(BaseModel):
         "add_blueprint_variable",
         "add_blueprint_component",
         "create_blueprint_event_stub",
+        "compile_blueprint",
     ]
     payload: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None
