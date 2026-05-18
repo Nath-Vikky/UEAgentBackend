@@ -92,6 +92,7 @@ class EditorOperationProposalRequest(BaseModel):
         "place_actor_in_level",
         "set_actor_transform",
         "set_material_instance_parameter",
+        "set_material_instance_texture_parameter",
     ]
     payload: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None

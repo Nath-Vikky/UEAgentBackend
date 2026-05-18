@@ -163,6 +163,7 @@ def _compact_operation_target(
         "actor_name",
         "parameter_name",
         "parameter_type",
+        "texture_path",
         "transform_mode",
     ):
         value = result.get(key)
@@ -178,6 +179,13 @@ def _compact_operation_target(
         material_path = payload.get("material_instance_path") or result.get("material_instance_path")
         if material_path:
             target["material_instance_path"] = material_path
+    if operation_type == "set_material_instance_texture_parameter":
+        material_path = payload.get("material_instance_path") or result.get("material_instance_path")
+        texture_path = payload.get("texture_path") or result.get("texture_path")
+        if material_path:
+            target["material_instance_path"] = material_path
+        if texture_path:
+            target["texture_path"] = texture_path
     if operation_type in {"place_actor_in_level", "set_actor_transform"}:
         actor_reference = (
             target.get("actor_reference")

@@ -56,6 +56,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "place_actor_in_level",
         "set_actor_transform",
         "set_material_instance_parameter",
+        "set_material_instance_texture_parameter",
     }.issubset(operation_types)
     operation_items = {
         item["operation_type"]: item
@@ -71,6 +72,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_material_instance_parameter"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_material_instance_texture_parameter"]["frontend_status"] == "implemented_v1"
     assert body["capabilities"]["safety_policy"]["requires_frontend_confirmation"] is True
 
     capabilities = client.get("/api/v1/system/capabilities").json()
@@ -93,6 +95,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_place_actor_in_level" in tool_ids
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_material_instance_parameter" in tool_ids
+    assert "editor_set_material_instance_texture_parameter" in tool_ids
 
 
 def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient) -> None:
@@ -538,6 +541,32 @@ def test_set_material_instance_vector_parameter_proposal_contract(client: TestCl
     assert payload["value"] == {"r": 0.1, "g": 0.2, "b": 0.3, "a": 1.0}
 
 
+def test_set_material_instance_texture_parameter_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_material_instance_texture_parameter",
+            "payload": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "BaseTexture",
+                "texture_path": "/Game/Textures/T_Player_D",
+            },
+            "reason": "Assign the preview diffuse texture.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_material_instance_texture_parameter"
+    assert body["operation"]["tool_id"] == "editor_set_material_instance_texture_parameter"
+    payload = body["operation"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "BaseTexture"
+    assert payload["texture_path"] == "/Game/Textures/T_Player_D"
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
 def test_set_material_instance_rejects_unknown_parameter_type(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -967,6 +996,69 @@ def test_agent_chat_resolves_material_from_project_inventory(client: TestClient)
     assert payload["parameter_name"] == "Roughness"
     assert payload["value"] == 0.25
     assert body["debug_view"]["active_context"]["inventory"]["query_candidate_count"] == 1
+
+
+def test_agent_chat_resolves_material_texture_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Materials/MI_Player.MI_Player",
+                    "asset_name": "MI_Player",
+                    "asset_type": "MaterialInstanceConstant",
+                },
+                {
+                    "asset_path": "/Game/Textures/T_Player_D.T_Player_D",
+                    "asset_name": "T_Player_D",
+                    "asset_type": "Texture2D",
+                },
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_material_texture_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Set MI_Player material BaseTexture to T_Player_D texture",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Set MI_Player material BaseTexture to T_Player_D texture"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_material_instance_texture_parameter"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "BaseTexture"
+    assert payload["texture_path"] == "/Game/Textures/T_Player_D"
 
 
 def test_agent_chat_reuses_recent_material_operation_context(client: TestClient) -> None:

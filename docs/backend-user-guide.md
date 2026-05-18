@@ -2895,7 +2895,7 @@ UMG 写操作边界：
 
 ### 26.2 Level / Material 低风险编辑器操作 v1
 
-I4-5 先补两类可控写操作：Level Actor 放置，以及 Material Instance scalar/vector 参数设置。二者都仍然走 `Editor Operation Proposal -> 用户确认 -> UE 插件执行 -> 回传结果`，后端不直接调用 UE Editor API。
+I4-5 先补两类可控写操作：Level Actor 放置，以及 Material Instance 参数设置。它们都仍然走 `Editor Operation Proposal -> 用户确认 -> UE 插件执行 -> 回传结果`，后端不直接调用 UE Editor API。
 
 放置 Actor 到当前 Level：
 
@@ -2949,12 +2949,26 @@ vector 参数：
 }
 ```
 
+texture 参数使用独立 operation，避免和 scalar/vector 的 `value` 结构混在一起：
+
+```json
+{
+  "operation_type": "set_material_instance_texture_parameter",
+  "payload": {
+    "material_instance_path": "/Game/Materials/MI_Player",
+    "parameter_name": "BaseTexture",
+    "texture_path": "/Game/Textures/T_Player_D"
+  }
+}
+```
+
 边界：
 
 - 只支持 Material Instance Constant。
-- `parameter_type` 只支持 `scalar` 和 `vector`。
+- `set_material_instance_parameter` 的 `parameter_type` 只支持 `scalar` 和 `vector`。
 - vector 使用 `r/g/b/a`，也可由后端接受数组或 `x/y/z/w` 并归一成 `r/g/b/a`。
-- v1 不支持 Texture 参数、不编辑材质图谱、不创建 Material Function、不自动保存资产。
+- texture 参数走 `set_material_instance_texture_parameter`，只接受明确的 `texture_path`。
+- v1 不编辑材质图谱、不创建 Material Function、不自动保存资产。
 
 建议验证：
 
@@ -3002,6 +3016,25 @@ vector 参数：
     "parameter_name": "Roughness",
     "parameter_type": "scalar",
     "value": 0.35
+  }
+}
+```
+
+材质贴图示例：
+
+```text
+Set MI_Player material BaseTexture to T_Player_D texture
+```
+
+如果 Project Inventory 中能解析 `MI_Player` 和 `T_Player_D`，后端会生成：
+
+```json
+{
+  "operation_type": "set_material_instance_texture_parameter",
+  "payload": {
+    "material_instance_path": "/Game/Materials/MI_Player",
+    "parameter_name": "BaseTexture",
+    "texture_path": "/Game/Textures/T_Player_D"
   }
 }
 ```
@@ -4442,3 +4475,39 @@ Validation:
 ```
 
 UE frontend impact: no mandatory change. If a future frontend wants a KB maintenance panel, it can read these curation endpoints, but this is optional.
+
+## 2026-05-18 Material Texture Parameter Proposal
+
+`Editor Operation Bridge` now includes `set_material_instance_texture_parameter`, a confirmed-write proposal for assigning one texture asset to one Material Instance parameter.
+
+Supported request forms:
+
+- Explicit proposal API: `operation_type=set_material_instance_texture_parameter`.
+- Agent Chat: `Set MI_Player material BaseTexture to T_Player_D texture`.
+- Inventory-assisted resolution: when `selected_assets` is empty, Project Inventory can provide both the `MI_...` Material Instance and the `T_...` Texture2D path.
+
+Payload shape:
+
+```json
+{
+  "material_instance_path": "/Game/Materials/MI_Player",
+  "parameter_name": "BaseTexture",
+  "texture_path": "/Game/Textures/T_Player_D",
+  "save_policy": "mark_dirty_only"
+}
+```
+
+Execution boundary:
+
+- Backend only creates the proposal and validates normalized paths.
+- UEAgentTool executes `UMaterialInstanceConstant.SetTextureParameterValueEditorOnly` after user confirmation.
+- The package is marked dirty, not auto-saved.
+- This is separate from `set_material_instance_parameter`, which remains scalar/vector only.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py -q
+```
+
+UE frontend impact: add `set_material_instance_texture_parameter` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.

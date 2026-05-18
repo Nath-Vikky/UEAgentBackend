@@ -216,6 +216,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["material_instance_path", "parameter_name", "parameter_type", "value"],
         "frontend_status": "implemented_v1",
     },
+    "set_material_instance_texture_parameter": {
+        "tool_id": "editor_set_material_instance_texture_parameter",
+        "title": "Set Material Instance Texture Parameter",
+        "risk_flags": "MEDIUM",
+        "summary": "Set one texture parameter on a Material Instance after user confirmation.",
+        "required_fields": ["material_instance_path", "parameter_name", "texture_path"],
+        "frontend_status": "implemented_v1",
+    },
 }
 
 
@@ -335,6 +343,15 @@ class EditorOperationService:
         if not match:
             return None
         return match.group(1).rstrip(".,;:，。；：)）]")
+
+    @staticmethod
+    def _extract_unreal_paths_from_text(text: str) -> list[str]:
+        paths: list[str] = []
+        for match in re.finditer(r"(/Game/[A-Za-z0-9_./-]+)", text):
+            path = match.group(1).rstrip(".,;:)]}")
+            if path and path not in paths:
+                paths.append(path)
+        return paths
 
     @staticmethod
     def _asset_path_to_generated_class_path(asset_path: str) -> str:
@@ -747,9 +764,15 @@ class EditorOperationService:
         explicit_path = str(request.payload.get("material_instance_path") or "").strip()
         if explicit_path:
             return explicit_path
-        text_path = EditorOperationService._extract_unreal_path_from_text(query_text)
-        if text_path:
-            return text_path
+        text_paths = EditorOperationService._extract_unreal_paths_from_text(query_text)
+        for path in text_paths:
+            asset_name = EditorOperationService._asset_name_from_path(path)
+            if asset_name.lower().startswith("mi_") or "/materials/" in path.lower():
+                return path
+        if len(text_paths) == 1:
+            asset_name = EditorOperationService._asset_name_from_path(text_paths[0])
+            if not asset_name.lower().startswith(("t_", "tx_")):
+                return text_paths[0]
         named_candidate = EditorOperationService._find_named_candidate_path(request, query_text, prefixes=("MI_",))
         if named_candidate:
             return named_candidate
@@ -768,11 +791,53 @@ class EditorOperationService:
         if EditorOperationService._references_recent_target(query_text):
             recent_material_path = EditorOperationService._recent_editor_operation_value(
                 context_bundle=context_bundle,
-                operation_types={"set_material_instance_parameter"},
+                operation_types={"set_material_instance_parameter", "set_material_instance_texture_parameter"},
                 keys=("material_instance_path", "asset_path", "final_asset_path"),
             )
             if recent_material_path:
                 return str(recent_material_path)
+        return None
+
+    @staticmethod
+    def _detect_texture_path_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None = None,
+    ) -> str | None:
+        explicit_path = str(
+            request.payload.get("texture_path")
+            or request.payload.get("texture_asset_path")
+            or request.payload.get("texture")
+            or ""
+        ).strip()
+        if explicit_path:
+            return explicit_path
+
+        named_candidate = EditorOperationService._find_named_candidate_path(
+            request,
+            query_text,
+            prefixes=("T_", "TX_"),
+        )
+        if named_candidate:
+            return named_candidate
+
+        inventory_candidate = EditorOperationService._find_inventory_candidate_path(
+            context_bundle=context_bundle,
+            query_text=query_text,
+            accepted_type_tokens=("texture", "texture2d"),
+            prefixes=("T_", "TX_"),
+        )
+        if inventory_candidate:
+            return inventory_candidate
+
+        for selected_asset in EditorOperationService._candidate_asset_paths(request):
+            if re.search(r"(^|[/._])(T_|TX_)[A-Za-z0-9_]+", selected_asset):
+                return selected_asset
+
+        for path in EditorOperationService._extract_unreal_paths_from_text(query_text):
+            asset_name = EditorOperationService._asset_name_from_path(path)
+            if asset_name.lower().startswith(("t_", "tx_")) or "texture" in path.lower():
+                return path
         return None
 
     @staticmethod
@@ -786,6 +851,12 @@ class EditorOperationService:
             "Emissive",
             "Base Color",
             "BaseColor",
+            "Base Texture",
+            "BaseTexture",
+            "Albedo",
+            "Diffuse",
+            "Normal",
+            "Mask",
             "Tint Color",
             "Tint",
         ):
@@ -943,6 +1014,42 @@ class EditorOperationService:
             return EditorOperationProposalRequest(
                 operation_type="set_actor_transform",
                 payload=payload,
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_material_texture_parameter = any(
+            token in query_lower or token in query_text
+            for token in ("texture", "texture parameter", "t_", "tx_", "贴图", "纹理")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("material", "material instance", "mi_", "材质", "材质实例")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("set", "adjust", "change", "assign", "use", "设置", "调整", "改成", "改为", "使用")
+        )
+        if wants_material_texture_parameter:
+            material_path = EditorOperationService._detect_material_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            texture_path = EditorOperationService._detect_texture_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            parameter_name = str(request.payload.get("parameter_name") or "").strip() or (
+                EditorOperationService._detect_material_parameter_name(query_text) or ""
+            )
+            return EditorOperationProposalRequest(
+                operation_type="set_material_instance_texture_parameter",
+                payload={
+                    "material_instance_path": material_path or "",
+                    "parameter_name": parameter_name,
+                    "texture_path": texture_path or "",
+                },
                 reason=query_text,
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
@@ -1662,6 +1769,17 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_material_instance_texture_parameter":
+            material_instance_path = self._normalize_asset_path(payload.get("material_instance_path"))
+            parameter_name = self._normalize_parameter_name(payload.get("parameter_name"))
+            texture_path = self._normalize_asset_path(payload.get("texture_path"))
+            return {
+                "material_instance_path": material_instance_path,
+                "parameter_name": parameter_name,
+                "texture_path": texture_path,
+                "save_policy": "mark_dirty_only",
+            }
+
         raise EditorOperationValidationError("unsupported_editor_operation", {"operation_type": operation_type})
 
     def _build_summaries(self, operation_type: str, payload: dict[str, Any]) -> tuple[str, str]:
@@ -1747,6 +1865,11 @@ class EditorOperationService:
             return (
                 f"Material Instance before change: {payload['material_instance_path']}",
                 f"Set `{payload['parameter_name']}` {payload['parameter_type']} value. The package is marked dirty, not auto-saved.",
+            )
+        if operation_type == "set_material_instance_texture_parameter":
+            return (
+                f"Material Instance before change: {payload['material_instance_path']}",
+                f"Set texture parameter `{payload['parameter_name']}` to `{payload['texture_path']}`. The package is marked dirty, not auto-saved.",
             )
         return ("", "")
 
