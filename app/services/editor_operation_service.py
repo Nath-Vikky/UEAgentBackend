@@ -97,11 +97,17 @@ BLUEPRINT_EVENT_NAMES = {
 }
 
 BLUEPRINT_NODE_TEMPLATE_IDS = {
+    "branch_print_string",
     "print_string",
 }
 
 BLUEPRINT_NODE_ENTRY_EVENTS = {
     "BeginPlay",
+}
+
+BLUEPRINT_BRANCH_PATHS = {
+    "false",
+    "true",
 }
 
 UMG_WIDGET_CLASS_ALIASES = {
@@ -1427,6 +1433,65 @@ class EditorOperationService:
                 context=request.context.model_dump(mode="json"),
             )
 
+        blueprint_signal = "blueprint" in query_lower or "bp_" in query_lower or "\u84dd\u56fe" in query_text
+        print_string_signal = any(
+            token in query_lower or token in query_text
+            for token in (
+                "print string",
+                "printstring",
+                "\u6253\u5370\u5b57\u7b26\u4e32",
+                "\u6253\u5370\u6587\u672c",
+            )
+        )
+        add_signal = any(
+            token in query_lower or token in query_text
+            for token in ("add", "create", "\u653e", "\u6dfb\u52a0", "\u521b\u5efa")
+        )
+        branch_signal = any(
+            token in query_lower or token in query_text
+            for token in (
+                "branch",
+                "ifthenelse",
+                "if node",
+                "condition",
+                "\u5206\u652f",
+                "\u6761\u4ef6",
+                "\u5224\u65ad",
+                "\u5982\u679c",
+            )
+        )
+        if blueprint_signal and print_string_signal and add_signal and branch_signal:
+            blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            false_branch_signal = any(
+                token in query_lower or token in query_text
+                for token in ("false", "else", "\u5426", "\u5426\u5219", "\u5931\u8d25")
+            )
+            condition_default = request.payload.get("condition_default")
+            if condition_default is None:
+                condition_default = not false_branch_signal
+            return EditorOperationProposalRequest(
+                operation_type="add_blueprint_node_template",
+                payload={
+                    "blueprint_path": blueprint_path or "",
+                    "template_id": "branch_print_string",
+                    "graph_name": request.payload.get("graph_name") or "EventGraph",
+                    "message": request.payload.get("message")
+                    or request.payload.get("string_value")
+                    or "Branch reached from UEAgent",
+                    "entry_event": request.payload.get("entry_event") or "BeginPlay",
+                    "condition_default": condition_default,
+                    "branch_path": request.payload.get("branch_path") or ("false" if false_branch_signal else "true"),
+                    "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
         wants_blueprint_print_string = (
             ("蓝图" in query_text or "blueprint" in query_lower or "bp_" in query_lower)
             and any(token in query_lower or token in query_text for token in ("print string", "printstring", "打印字符串", "打印文本"))
@@ -1679,6 +1744,12 @@ class EditorOperationService:
     def _normalize_blueprint_node_template_id(value: Any) -> str:
         text = str(value or "").strip().replace("-", "_").replace(" ", "_").lower()
         aliases = {
+            "branch": "branch_print_string",
+            "branch_print": "branch_print_string",
+            "branch_printstring": "branch_print_string",
+            "branch_print_string": "branch_print_string",
+            "if_print_string": "branch_print_string",
+            "ifthenelse_print_string": "branch_print_string",
             "print": "print_string",
             "printstring": "print_string",
             "print_string": "print_string",
@@ -1718,6 +1789,50 @@ class EditorOperationService:
                 },
             )
         return event_name
+
+    @staticmethod
+    def _normalize_boolean_field(value: Any, field_name: str, *, default: bool = False) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int | float):
+            return bool(value)
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "no", "n", "off"}:
+            return False
+        raise EditorOperationValidationError(
+            "boolean_field_invalid",
+            {"field": field_name, "value": str(value)},
+        )
+
+    @staticmethod
+    def _normalize_blueprint_branch_path(value: Any) -> str:
+        text = str(value or "true").strip().replace("-", "_").replace(" ", "_").lower()
+        aliases = {
+            "1": "true",
+            "then": "true",
+            "true": "true",
+            "true_pin": "true",
+            "condition_true": "true",
+            "0": "false",
+            "else": "false",
+            "false": "false",
+            "false_pin": "false",
+            "condition_false": "false",
+        }
+        text = aliases.get(text, text)
+        if text not in BLUEPRINT_BRANCH_PATHS:
+            raise EditorOperationValidationError(
+                "blueprint_branch_path_not_supported_in_v1",
+                {
+                    "branch_path": text,
+                    "allowed_branch_paths": sorted(BLUEPRINT_BRANCH_PATHS),
+                },
+            )
+        return text
 
     def _normalize_blueprint_node_position(self, value: Any) -> dict[str, float]:
         if not isinstance(value, dict):
@@ -2184,16 +2299,19 @@ class EditorOperationService:
         if operation_type == "add_blueprint_node_template":
             blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
             template_id = self._normalize_blueprint_node_template_id(payload.get("template_id"))
+            entry_event_raw = payload.get("entry_event")
+            if template_id == "branch_print_string" and not str(entry_event_raw or "").strip():
+                entry_event_raw = "BeginPlay"
             normalized: dict[str, Any] = {
                 "blueprint_path": blueprint_path,
                 "template_id": template_id,
                 "graph_name": self._normalize_graph_name(payload.get("graph_name")),
                 "node_comment": self._clean_text(payload.get("node_comment"), max_length=160),
-                "entry_event": self._normalize_blueprint_node_entry_event(payload.get("entry_event")),
+                "entry_event": self._normalize_blueprint_node_entry_event(entry_event_raw),
                 "compile_after_edit": bool(payload.get("compile_after_edit", True)),
                 "save_policy": "mark_dirty_only",
             }
-            if template_id == "print_string":
+            if template_id in {"branch_print_string", "print_string"}:
                 normalized["message"] = self._clean_text(
                     payload.get("message") or payload.get("string_value") or "Hello from UEAgent",
                     max_length=240,
@@ -2206,6 +2324,13 @@ class EditorOperationService:
                 )
                 normalized["print_to_screen"] = bool(payload.get("print_to_screen", True))
                 normalized["print_to_log"] = bool(payload.get("print_to_log", True))
+            if template_id == "branch_print_string":
+                normalized["condition_default"] = self._normalize_boolean_field(
+                    payload.get("condition_default"),
+                    "condition_default",
+                    default=True,
+                )
+                normalized["branch_path"] = self._normalize_blueprint_branch_path(payload.get("branch_path"))
             node_position = self._normalize_blueprint_node_position(payload.get("node_position"))
             if node_position:
                 normalized["node_position"] = node_position
@@ -2383,6 +2508,11 @@ class EditorOperationService:
             details = f"Add `{payload['template_id']}` node template to `{payload['graph_name']}`"
             if payload["template_id"] == "print_string":
                 details += f" with message `{payload['message']}`"
+            if payload["template_id"] == "branch_print_string":
+                details += (
+                    f" with `{payload['branch_path']}` branch path connected to PrintString"
+                    f" and condition default `{payload['condition_default']}`"
+                )
             if payload.get("entry_event"):
                 details += f" and connect from `{payload['entry_event']}`"
             if payload.get("compile_after_edit"):
@@ -2507,7 +2637,15 @@ class EditorOperationService:
                 "action": operation_type,
                 "path": payload["blueprint_path"],
             }
-            for key in ("variable_name", "component_name", "event_name", "template_id", "graph_name", "entry_event"):
+            for key in (
+                "variable_name",
+                "component_name",
+                "event_name",
+                "template_id",
+                "graph_name",
+                "entry_event",
+                "branch_path",
+            ):
                 if payload.get(key):
                     target[key] = payload[key]
             return [target]
@@ -2593,6 +2731,8 @@ class EditorOperationService:
                 "template_id",
                 "graph_name",
                 "entry_event",
+                "branch_path",
+                "condition_default",
                 "created_nodes",
                 "linked_nodes",
                 "linked_pins",

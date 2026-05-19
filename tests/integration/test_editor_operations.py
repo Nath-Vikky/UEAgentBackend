@@ -367,6 +367,38 @@ def test_blueprint_node_template_print_string_proposal_contract(client: TestClie
     assert "linked_pins" in body["operation"]["expected_result_contract"]["operation_result_fields"]
 
 
+def test_blueprint_node_template_branch_print_string_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "branch_print_string",
+                "graph_name": "EventGraph",
+                "message": "False branch reached",
+                "condition_default": False,
+                "branch_path": "false",
+                "compile_after_edit": True,
+            },
+            "reason": "Add BeginPlay -> Branch -> PrintString for a safe graph smoke test.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    payload = body["operation"]["operation_payload"]
+    assert payload["template_id"] == "branch_print_string"
+    assert payload["entry_event"] == "BeginPlay"
+    assert payload["condition_default"] is False
+    assert payload["branch_path"] == "false"
+    assert body["operation"]["affected_targets"][0]["branch_path"] == "false"
+    result_fields = body["operation"]["expected_result_contract"]["operation_result_fields"]
+    assert "condition_default" in result_fields
+    assert "branch_path" in result_fields
+    assert "linked_pins" in result_fields
+
+
 def test_blueprint_node_template_rejects_unknown_template(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -381,7 +413,7 @@ def test_blueprint_node_template_rejects_unknown_template(client: TestClient) ->
     assert response.status_code == 400
     body = response.json()
     assert body["errors"][0]["code"] == "blueprint_node_template_not_supported_in_v1"
-    assert body["errors"][0]["details"]["allowed_template_ids"] == ["print_string"]
+    assert body["errors"][0]["details"]["allowed_template_ids"] == ["branch_print_string", "print_string"]
 
 
 def test_blueprint_node_template_rejects_unknown_entry_event(client: TestClient) -> None:
@@ -400,6 +432,24 @@ def test_blueprint_node_template_rejects_unknown_entry_event(client: TestClient)
     body = response.json()
     assert body["errors"][0]["code"] == "blueprint_node_entry_event_not_supported_in_v1"
     assert body["errors"][0]["details"]["allowed_entry_events"] == ["BeginPlay"]
+
+
+def test_blueprint_node_template_rejects_unknown_branch_path(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "branch_print_string",
+                "branch_path": "maybe",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "blueprint_branch_path_not_supported_in_v1"
+    assert body["errors"][0]["details"]["allowed_branch_paths"] == ["false", "true"]
 
 
 def test_blueprint_compile_proposal_contract(client: TestClient) -> None:

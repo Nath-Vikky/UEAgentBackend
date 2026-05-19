@@ -2779,7 +2779,30 @@ compile_blueprint
 }
 ```
 
-`add_blueprint_node_template` 当前只开放 `template_id=print_string`。UE 插件会在指定 graph 中创建 `UKismetSystemLibrary::PrintString` CallFunction 节点。若传入 `entry_event=BeginPlay`，插件会创建或复用 `Event BeginPlay` 节点，并尝试连接 `BeginPlay.Then -> PrintString.Execute`。执行后可选编译一次 Blueprint，并把 `created_nodes`、`linked_nodes`、`linked_pins`、`compile_status`、`dirty_packages`、`applied_fields` 回传后端。后续模板会继续按白名单扩展，不开放任意节点类名。
+`add_blueprint_node_template` 当前开放两个白名单模板：
+
+- `template_id=print_string`：UE 插件会在指定 graph 中创建 `UKismetSystemLibrary::PrintString` CallFunction 节点。若传入 `entry_event=BeginPlay`，插件会创建或复用 `Event BeginPlay` 节点，并尝试连接 `BeginPlay.Then -> PrintString.Execute`。
+- `template_id=branch_print_string`：UE 插件会创建或复用 `Event BeginPlay`，创建 `Branch` 节点和 `PrintString` 节点，并连接 `BeginPlay -> Branch -> PrintString`。可传 `condition_default=true/false` 设置 Branch 条件默认值，可传 `branch_path=true/false` 指定把 PrintString 接到 True 分支还是 False 分支。
+
+执行后可选编译一次 Blueprint，并把 `created_nodes`、`linked_nodes`、`linked_pins`、`branch_path`、`condition_default`、`compile_status`、`dirty_packages`、`applied_fields` 回传后端。后续模板会继续按白名单扩展，不开放任意节点类名。
+
+Branch + PrintString 示例：
+
+```json
+{
+  "operation_type": "add_blueprint_node_template",
+  "payload": {
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "template_id": "branch_print_string",
+    "graph_name": "EventGraph",
+    "message": "Branch reached",
+    "entry_event": "BeginPlay",
+    "condition_default": true,
+    "branch_path": "true",
+    "compile_after_edit": true
+  }
+}
+```
 
 编译 Blueprint 示例：
 
@@ -2809,7 +2832,7 @@ required_payload_fields: blueprint_path
 - 仍然必须走 `confirm -> UE 前端执行 -> results 回传`。
 - v1 不做复杂节点连线、不生成大段蓝图逻辑、不自动放入关卡、不自动保存包。
 - `create_blueprint_event_stub` 仅允许 `BeginPlay / Tick / ActorBeginOverlap / ActorEndOverlap`。
-- `add_blueprint_node_template` 当前只允许 `print_string`，自动连线只支持 `entry_event=BeginPlay` 这一条模板化路径；不支持任意节点、删除节点、批量替换节点或任意 pin 连线。
+- `add_blueprint_node_template` 当前只允许 `print_string` 与 `branch_print_string`，自动连线只支持 `entry_event=BeginPlay` 这一条模板化入口；不支持任意节点、删除节点、批量替换节点或任意 pin 连线。
 - `compile_blueprint` 只触发一次 UE 编译并返回状态，不自动保存 package，不做循环修复。
 - `get_blueprint_graph` 只读，不经过 Proposal；建议仅在本地 TCP 白名单中开放。
 - 变量类型只允许常见内置类型、短别名，或 `/Script/`、`/Game/` 开头的项目/引擎类型。
