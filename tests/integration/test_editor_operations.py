@@ -399,6 +399,36 @@ def test_blueprint_node_template_branch_print_string_proposal_contract(client: T
     assert "linked_pins" in result_fields
 
 
+def test_blueprint_node_template_sequence_print_strings_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "sequence_print_strings",
+                "graph_name": "EventGraph",
+                "messages": ["Sequence A", "Sequence B"],
+                "compile_after_edit": True,
+            },
+            "reason": "Add BeginPlay -> Sequence -> two PrintString nodes.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    payload = body["operation"]["operation_payload"]
+    assert payload["template_id"] == "sequence_print_strings"
+    assert payload["entry_event"] == "BeginPlay"
+    assert payload["messages"] == ["Sequence A", "Sequence B"]
+    assert payload["sequence_output_count"] == 2
+    assert body["operation"]["affected_targets"][0]["sequence_output_count"] == 2
+    result_fields = body["operation"]["expected_result_contract"]["operation_result_fields"]
+    assert "sequence_output_count" in result_fields
+    assert "messages" in result_fields
+    assert "linked_pins" in result_fields
+
+
 def test_blueprint_node_template_rejects_unknown_template(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -413,7 +443,11 @@ def test_blueprint_node_template_rejects_unknown_template(client: TestClient) ->
     assert response.status_code == 400
     body = response.json()
     assert body["errors"][0]["code"] == "blueprint_node_template_not_supported_in_v1"
-    assert body["errors"][0]["details"]["allowed_template_ids"] == ["branch_print_string", "print_string"]
+    assert body["errors"][0]["details"]["allowed_template_ids"] == [
+        "branch_print_string",
+        "print_string",
+        "sequence_print_strings",
+    ]
 
 
 def test_blueprint_node_template_rejects_unknown_entry_event(client: TestClient) -> None:

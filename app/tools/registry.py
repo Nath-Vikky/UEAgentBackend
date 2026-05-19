@@ -1101,6 +1101,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         optional_payload_fields=(
             "graph_name",
             "message",
+            "messages",
             "duration",
             "print_to_screen",
             "print_to_log",
@@ -1116,9 +1117,10 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "required": ["blueprint_path", "template_id"],
             "properties": {
                 "blueprint_path": {"type": "string"},
-                "template_id": {"type": "string", "enum": ["branch_print_string", "print_string"]},
+                "template_id": {"type": "string", "enum": ["branch_print_string", "print_string", "sequence_print_strings"]},
                 "graph_name": {"type": "string"},
                 "message": {"type": "string"},
+                "messages": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
                 "duration": {"type": "number"},
                 "print_to_screen": {"type": "boolean"},
                 "print_to_log": {"type": "boolean"},

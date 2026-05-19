@@ -99,6 +99,7 @@ BLUEPRINT_EVENT_NAMES = {
 BLUEPRINT_NODE_TEMPLATE_IDS = {
     "branch_print_string",
     "print_string",
+    "sequence_print_strings",
 }
 
 BLUEPRINT_NODE_ENTRY_EVENTS = {
@@ -1460,6 +1461,42 @@ class EditorOperationService:
                 "\u5982\u679c",
             )
         )
+        sequence_signal = any(
+            token in query_lower or token in query_text
+            for token in (
+                "sequence",
+                "then 0",
+                "then 1",
+                "\u987a\u5e8f",
+                "\u4f9d\u6b21",
+                "\u5148",
+                "\u7136\u540e",
+            )
+        )
+        if blueprint_signal and print_string_signal and add_signal and sequence_signal:
+            blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            return EditorOperationProposalRequest(
+                operation_type="add_blueprint_node_template",
+                payload={
+                    "blueprint_path": blueprint_path or "",
+                    "template_id": "sequence_print_strings",
+                    "graph_name": request.payload.get("graph_name") or "EventGraph",
+                    "messages": request.payload.get("messages")
+                    or [
+                        request.payload.get("message") or "Sequence step 1 from UEAgent",
+                        request.payload.get("message_2") or "Sequence step 2 from UEAgent",
+                    ],
+                    "entry_event": request.payload.get("entry_event") or "BeginPlay",
+                    "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
         if blueprint_signal and print_string_signal and add_signal and branch_signal:
             blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
                 request,
@@ -1753,6 +1790,10 @@ class EditorOperationService:
             "print": "print_string",
             "printstring": "print_string",
             "print_string": "print_string",
+            "sequence": "sequence_print_strings",
+            "sequence_print": "sequence_print_strings",
+            "sequence_print_string": "sequence_print_strings",
+            "sequence_print_strings": "sequence_print_strings",
             "打印字符串": "print_string",
             "打印文本": "print_string",
         }
@@ -1833,6 +1874,30 @@ class EditorOperationService:
                 },
             )
         return text
+
+    def _normalize_blueprint_template_messages(self, payload: dict[str, Any]) -> list[str]:
+        raw_messages = payload.get("messages")
+        messages: list[str] = []
+        if isinstance(raw_messages, list):
+            for item in raw_messages[:2]:
+                cleaned = self._clean_text(item, max_length=240)
+                if cleaned:
+                    messages.append(cleaned)
+        elif raw_messages is not None:
+            cleaned = self._clean_text(raw_messages, max_length=240)
+            if cleaned:
+                messages.append(cleaned)
+
+        for key in ("message", "message_1", "message_2", "string_value"):
+            if len(messages) >= 2:
+                break
+            cleaned = self._clean_text(payload.get(key), max_length=240)
+            if cleaned and cleaned not in messages:
+                messages.append(cleaned)
+
+        while len(messages) < 2:
+            messages.append(f"Sequence step {len(messages) + 1} from UEAgent")
+        return messages[:2]
 
     def _normalize_blueprint_node_position(self, value: Any) -> dict[str, float]:
         if not isinstance(value, dict):
@@ -2300,7 +2365,7 @@ class EditorOperationService:
             blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
             template_id = self._normalize_blueprint_node_template_id(payload.get("template_id"))
             entry_event_raw = payload.get("entry_event")
-            if template_id == "branch_print_string" and not str(entry_event_raw or "").strip():
+            if template_id in {"branch_print_string", "sequence_print_strings"} and not str(entry_event_raw or "").strip():
                 entry_event_raw = "BeginPlay"
             normalized: dict[str, Any] = {
                 "blueprint_path": blueprint_path,
@@ -2311,7 +2376,7 @@ class EditorOperationService:
                 "compile_after_edit": bool(payload.get("compile_after_edit", True)),
                 "save_policy": "mark_dirty_only",
             }
-            if template_id in {"branch_print_string", "print_string"}:
+            if template_id in {"branch_print_string", "print_string", "sequence_print_strings"}:
                 normalized["message"] = self._clean_text(
                     payload.get("message") or payload.get("string_value") or "Hello from UEAgent",
                     max_length=240,
@@ -2331,6 +2396,9 @@ class EditorOperationService:
                     default=True,
                 )
                 normalized["branch_path"] = self._normalize_blueprint_branch_path(payload.get("branch_path"))
+            if template_id == "sequence_print_strings":
+                normalized["messages"] = self._normalize_blueprint_template_messages(payload)
+                normalized["sequence_output_count"] = len(normalized["messages"])
             node_position = self._normalize_blueprint_node_position(payload.get("node_position"))
             if node_position:
                 normalized["node_position"] = node_position
@@ -2513,6 +2581,8 @@ class EditorOperationService:
                     f" with `{payload['branch_path']}` branch path connected to PrintString"
                     f" and condition default `{payload['condition_default']}`"
                 )
+            if payload["template_id"] == "sequence_print_strings":
+                details += f" with `{payload['sequence_output_count']}` sequence outputs connected to PrintString nodes"
             if payload.get("entry_event"):
                 details += f" and connect from `{payload['entry_event']}`"
             if payload.get("compile_after_edit"):
@@ -2645,6 +2715,7 @@ class EditorOperationService:
                 "graph_name",
                 "entry_event",
                 "branch_path",
+                "sequence_output_count",
             ):
                 if payload.get(key):
                     target[key] = payload[key]
@@ -2733,6 +2804,8 @@ class EditorOperationService:
                 "entry_event",
                 "branch_path",
                 "condition_default",
+                "sequence_output_count",
+                "messages",
                 "created_nodes",
                 "linked_nodes",
                 "linked_pins",
