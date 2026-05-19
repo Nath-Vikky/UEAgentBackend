@@ -4711,3 +4711,29 @@ GET /api/v1/editor-operations/history?operation_type=set_umg_widget_visibility&l
 This endpoint returns recent editor operation proposals with preview and result summaries. It is intended for Debug View, future operation history panels, and follow-up context.
 
 Frontend impact: no mandatory change. Existing Proposal cards can ignore the new fields. Optional UI improvements can show `affected_targets`, `preflight_checks`, and `result_summary` when available.
+
+## 2026-05-19 UEAgentTool Result Contract Normalization
+
+UEAgentTool now normalizes editor operation execution results at the Tool Registry exit point. This keeps individual executors focused on real UE Editor API work while guaranteeing a stable backend-facing result shape.
+
+Normalized result fields:
+
+- `success`
+- `execution_state`
+- `operation_type`
+- `tool_id`
+- `save_policy`
+- `applied_fields`
+- `failed_fields`
+- `dirty_packages`
+- `undo_hint` when available
+
+Behavior:
+
+- Existing executor-specific fields are preserved.
+- Existing `save_policy`, `dirty_packages`, `applied_fields`, and `failed_fields` are not overwritten.
+- If a successful editor write does not provide `save_policy`, UEAgentTool fills `mark_dirty_only`.
+- If a blocked/failed operation does not provide `save_policy`, UEAgentTool fills `not_applied`.
+- `dirty_packages` falls back to common fields such as `package_name`, `level_name`, `asset_path`, `blueprint_path`, `widget_blueprint_path`, or `material_instance_path` when the executor did not set it explicitly.
+
+Frontend impact: no mandatory change. The existing result callback remains the same, but Debug View and future operation history can rely on these common fields being present.
