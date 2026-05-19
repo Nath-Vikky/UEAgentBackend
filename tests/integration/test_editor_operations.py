@@ -49,6 +49,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "add_blueprint_variable",
         "add_blueprint_component",
         "create_blueprint_event_stub",
+        "add_blueprint_node_template",
         "compile_blueprint",
         "batch_rename_assets",
         "move_assets",
@@ -68,6 +69,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["add_blueprint_variable"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_blueprint_component"]["frontend_status"] == "implemented_v1"
     assert operation_items["create_blueprint_event_stub"]["frontend_status"] == "implemented_v1"
+    assert operation_items["add_blueprint_node_template"]["frontend_status"] == "implemented_v1"
     assert operation_items["compile_blueprint"]["frontend_status"] == "implemented_v1"
     assert operation_items["batch_rename_assets"]["frontend_status"] == "implemented_v1"
     assert operation_items["move_assets"]["frontend_status"] == "implemented_v1"
@@ -92,6 +94,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_add_blueprint_variable" in tool_ids
     assert "editor_add_blueprint_component" in tool_ids
     assert "editor_create_blueprint_event_stub" in tool_ids
+    assert "editor_add_blueprint_node_template" in tool_ids
     assert "editor_compile_blueprint" in tool_ids
     assert "editor_batch_rename_assets" in tool_ids
     assert "editor_move_assets" in tool_ids
@@ -326,6 +329,77 @@ def test_blueprint_graph_event_stub_is_whitelisted(client: TestClient) -> None:
     body = response.json()
     assert body["errors"][0]["code"] == "event_name_not_supported_in_v1"
     assert "BeginPlay" in body["errors"][0]["details"]["allowed_events"]
+
+
+def test_blueprint_node_template_print_string_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "print_string",
+                "graph_name": "EventGraph",
+                "message": "Hello from UEAgent",
+                "duration": 1.5,
+                "entry_event": "BeginPlay",
+                "node_position": {"x": 320, "y": 160},
+                "compile_after_edit": True,
+            },
+            "reason": "Add a debug print node for a quick smoke test.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "add_blueprint_node_template"
+    assert body["operation"]["tool_id"] == "editor_add_blueprint_node_template"
+    payload = body["operation"]["operation_payload"]
+    assert payload["template_id"] == "print_string"
+    assert payload["message"] == "Hello from UEAgent"
+    assert payload["duration"] == 1.5
+    assert payload["entry_event"] == "BeginPlay"
+    assert payload["compile_after_edit"] is True
+    assert payload["node_position"] == {"x": 320.0, "y": 160.0}
+    assert body["operation"]["affected_targets"][0]["template_id"] == "print_string"
+    assert body["operation"]["affected_targets"][0]["entry_event"] == "BeginPlay"
+    assert "created_nodes" in body["operation"]["expected_result_contract"]["operation_result_fields"]
+    assert "linked_pins" in body["operation"]["expected_result_contract"]["operation_result_fields"]
+
+
+def test_blueprint_node_template_rejects_unknown_template(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "delete_all_nodes",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "blueprint_node_template_not_supported_in_v1"
+    assert body["errors"][0]["details"]["allowed_template_ids"] == ["print_string"]
+
+
+def test_blueprint_node_template_rejects_unknown_entry_event(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "print_string",
+                "entry_event": "Tick",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "blueprint_node_entry_event_not_supported_in_v1"
+    assert body["errors"][0]["details"]["allowed_entry_events"] == ["BeginPlay"]
 
 
 def test_blueprint_compile_proposal_contract(client: TestClient) -> None:

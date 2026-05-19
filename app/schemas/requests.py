@@ -85,6 +85,7 @@ class EditorOperationProposalRequest(BaseModel):
         "add_blueprint_variable",
         "add_blueprint_component",
         "create_blueprint_event_stub",
+        "add_blueprint_node_template",
         "compile_blueprint",
         "batch_rename_assets",
         "move_assets",

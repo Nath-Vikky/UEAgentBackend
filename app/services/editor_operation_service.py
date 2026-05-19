@@ -96,6 +96,14 @@ BLUEPRINT_EVENT_NAMES = {
     "ActorEndOverlap",
 }
 
+BLUEPRINT_NODE_TEMPLATE_IDS = {
+    "print_string",
+}
+
+BLUEPRINT_NODE_ENTRY_EVENTS = {
+    "BeginPlay",
+}
+
 UMG_WIDGET_CLASS_ALIASES = {
     "text": "/Script/UMG.TextBlock",
     "textblock": "/Script/UMG.TextBlock",
@@ -184,6 +192,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "risk_flags": "MEDIUM",
         "summary": "Create a small event stub in one Blueprint graph after user confirmation.",
         "required_fields": ["blueprint_path", "event_name"],
+        "frontend_status": "implemented_v1",
+    },
+    "add_blueprint_node_template": {
+        "tool_id": "editor_add_blueprint_node_template",
+        "title": "Add Blueprint Node Template",
+        "risk_flags": "MEDIUM",
+        "summary": "Add one whitelisted Blueprint node template to a graph after user confirmation.",
+        "required_fields": ["blueprint_path", "template_id"],
         "frontend_status": "implemented_v1",
     },
     "compile_blueprint": {
@@ -891,6 +907,53 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_blueprint_path_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None = None,
+    ) -> str | None:
+        explicit_path = str(request.payload.get("blueprint_path") or "").strip()
+        if explicit_path:
+            return explicit_path
+        text_paths = EditorOperationService._extract_unreal_paths_from_text(query_text)
+        for path in text_paths:
+            asset_name = EditorOperationService._asset_name_from_path(path)
+            if asset_name.lower().startswith("bp_") or "/blueprint" in path.lower():
+                return path
+        named_candidate = EditorOperationService._find_named_candidate_path(request, query_text, prefixes=("BP_",))
+        if named_candidate:
+            return named_candidate
+        inventory_candidate = EditorOperationService._find_inventory_candidate_path(
+            context_bundle=context_bundle,
+            query_text=query_text,
+            accepted_type_tokens=("blueprint", "blueprintgeneratedclass"),
+            prefixes=("BP_",),
+        )
+        if inventory_candidate:
+            return inventory_candidate
+        selected_asset = EditorOperationService._selected_asset_path(request)
+        if selected_asset:
+            asset_name = EditorOperationService._asset_name_from_path(selected_asset).lower()
+            if asset_name.startswith("bp_") or "/blueprint" in selected_asset.lower():
+                return selected_asset
+        if EditorOperationService._references_recent_target(query_text):
+            recent_blueprint_path = EditorOperationService._recent_editor_operation_value(
+                context_bundle=context_bundle,
+                operation_types={
+                    "create_blueprint_asset",
+                    "add_blueprint_variable",
+                    "add_blueprint_component",
+                    "create_blueprint_event_stub",
+                    "add_blueprint_node_template",
+                    "compile_blueprint",
+                },
+                keys=("blueprint_path", "asset_path", "final_asset_path", "target_path"),
+            )
+            if recent_blueprint_path:
+                return str(recent_blueprint_path)
+        return None
+
+    @staticmethod
     def _detect_widget_blueprint_path_from_request(
         request: UnifiedTaskRequest,
         query_text: str,
@@ -1364,6 +1427,35 @@ class EditorOperationService:
                 context=request.context.model_dump(mode="json"),
             )
 
+        wants_blueprint_print_string = (
+            ("蓝图" in query_text or "blueprint" in query_lower or "bp_" in query_lower)
+            and any(token in query_lower or token in query_text for token in ("print string", "printstring", "打印字符串", "打印文本"))
+            and any(token in query_lower or token in query_text for token in ("add", "create", "放", "添加", "创建"))
+        )
+        if wants_blueprint_print_string:
+            blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            return EditorOperationProposalRequest(
+                operation_type="add_blueprint_node_template",
+                payload={
+                    "blueprint_path": blueprint_path or "",
+                    "template_id": "print_string",
+                    "graph_name": request.payload.get("graph_name") or "EventGraph",
+                    "message": request.payload.get("message")
+                    or request.payload.get("string_value")
+                    or "Hello from UEAgent",
+                    "entry_event": request.payload.get("entry_event")
+                    or ("BeginPlay" if ("beginplay" in query_lower or "eventbeginplay" in query_lower or "开始播放" in query_text) else ""),
+                    "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
         wants_blueprint = (
             ("蓝图" in query_text or "blueprint" in query_lower or "bp_" in query_lower)
             and any(token in query_lower or token in query_text for token in ("创建", "新建", "生成", "create", "make"))
@@ -1582,6 +1674,58 @@ class EditorOperationService:
         if not _ASSET_NAME_RE.match(text):
             raise EditorOperationValidationError("graph_name_invalid", {"graph_name": text})
         return text
+
+    @staticmethod
+    def _normalize_blueprint_node_template_id(value: Any) -> str:
+        text = str(value or "").strip().replace("-", "_").replace(" ", "_").lower()
+        aliases = {
+            "print": "print_string",
+            "printstring": "print_string",
+            "print_string": "print_string",
+            "打印字符串": "print_string",
+            "打印文本": "print_string",
+        }
+        text = aliases.get(text, text)
+        if text not in BLUEPRINT_NODE_TEMPLATE_IDS:
+            raise EditorOperationValidationError(
+                "blueprint_node_template_not_supported_in_v1",
+                {
+                    "template_id": text,
+                    "allowed_template_ids": sorted(BLUEPRINT_NODE_TEMPLATE_IDS),
+                },
+            )
+        return text
+
+    @staticmethod
+    def _normalize_blueprint_node_entry_event(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        normalized = text.replace("_", "").replace(" ", "").lower()
+        aliases = {
+            "beginplay": "BeginPlay",
+            "eventbeginplay": "BeginPlay",
+            "receivebeginplay": "BeginPlay",
+            "开始播放": "BeginPlay",
+        }
+        event_name = aliases.get(normalized, text)
+        if event_name not in BLUEPRINT_NODE_ENTRY_EVENTS:
+            raise EditorOperationValidationError(
+                "blueprint_node_entry_event_not_supported_in_v1",
+                {
+                    "entry_event": text,
+                    "allowed_entry_events": sorted(BLUEPRINT_NODE_ENTRY_EVENTS),
+                },
+            )
+        return event_name
+
+    def _normalize_blueprint_node_position(self, value: Any) -> dict[str, float]:
+        if not isinstance(value, dict):
+            return {}
+        return {
+            "x": self._normalize_finite_float(value.get("x", value.get("X", 0.0)), "node_position_x"),
+            "y": self._normalize_finite_float(value.get("y", value.get("Y", 0.0)), "node_position_y"),
+        }
 
     def _normalize_batch_renames(self, value: Any) -> list[dict[str, str]]:
         if not isinstance(value, list) or not value:
@@ -2037,6 +2181,36 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "add_blueprint_node_template":
+            blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
+            template_id = self._normalize_blueprint_node_template_id(payload.get("template_id"))
+            normalized: dict[str, Any] = {
+                "blueprint_path": blueprint_path,
+                "template_id": template_id,
+                "graph_name": self._normalize_graph_name(payload.get("graph_name")),
+                "node_comment": self._clean_text(payload.get("node_comment"), max_length=160),
+                "entry_event": self._normalize_blueprint_node_entry_event(payload.get("entry_event")),
+                "compile_after_edit": bool(payload.get("compile_after_edit", True)),
+                "save_policy": "mark_dirty_only",
+            }
+            if template_id == "print_string":
+                normalized["message"] = self._clean_text(
+                    payload.get("message") or payload.get("string_value") or "Hello from UEAgent",
+                    max_length=240,
+                )
+                normalized["duration"] = self._normalize_finite_float(
+                    payload.get("duration", 2.0),
+                    "print_string_duration",
+                    min_value=0.0,
+                    max_value=60.0,
+                )
+                normalized["print_to_screen"] = bool(payload.get("print_to_screen", True))
+                normalized["print_to_log"] = bool(payload.get("print_to_log", True))
+            node_position = self._normalize_blueprint_node_position(payload.get("node_position"))
+            if node_position:
+                normalized["node_position"] = node_position
+            return normalized
+
         if operation_type == "compile_blueprint":
             blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
             return {
@@ -2205,6 +2379,18 @@ class EditorOperationService:
                 f"Blueprint graph before change: {payload['blueprint_path']}::{payload['graph_name']}",
                 f"Create event stub `{payload['event_name']}`. No complex node graph is generated in v1.",
             )
+        if operation_type == "add_blueprint_node_template":
+            details = f"Add `{payload['template_id']}` node template to `{payload['graph_name']}`"
+            if payload["template_id"] == "print_string":
+                details += f" with message `{payload['message']}`"
+            if payload.get("entry_event"):
+                details += f" and connect from `{payload['entry_event']}`"
+            if payload.get("compile_after_edit"):
+                details += " and compile once after edit"
+            return (
+                f"Blueprint graph before change: {payload['blueprint_path']}::{payload['graph_name']}",
+                f"{details}. The package is marked dirty, not auto-saved.",
+            )
         if operation_type == "compile_blueprint":
             return (
                 f"Blueprint before compile: {payload['blueprint_path']}",
@@ -2309,13 +2495,19 @@ class EditorOperationService:
                     "parent_class": payload["parent_class"],
                 }
             ]
-        if operation_type in {"add_blueprint_variable", "add_blueprint_component", "create_blueprint_event_stub", "compile_blueprint"}:
+        if operation_type in {
+            "add_blueprint_variable",
+            "add_blueprint_component",
+            "create_blueprint_event_stub",
+            "add_blueprint_node_template",
+            "compile_blueprint",
+        }:
             target: dict[str, Any] = {
                 "kind": "blueprint",
                 "action": operation_type,
                 "path": payload["blueprint_path"],
             }
-            for key in ("variable_name", "component_name", "event_name", "graph_name"):
+            for key in ("variable_name", "component_name", "event_name", "template_id", "graph_name", "entry_event"):
                 if payload.get(key):
                     target[key] = payload[key]
             return [target]
@@ -2396,6 +2588,18 @@ class EditorOperationService:
             "add_blueprint_variable": ["blueprint_path", "variable_name", "dirty", "dirty_packages"],
             "add_blueprint_component": ["blueprint_path", "component_name", "dirty", "dirty_packages"],
             "create_blueprint_event_stub": ["blueprint_path", "event_name", "dirty", "dirty_packages"],
+            "add_blueprint_node_template": [
+                "blueprint_path",
+                "template_id",
+                "graph_name",
+                "entry_event",
+                "created_nodes",
+                "linked_nodes",
+                "linked_pins",
+                "compile_status",
+                "dirty",
+                "dirty_packages",
+            ],
             "compile_blueprint": ["blueprint_path", "compile_status", "messages"],
             "batch_rename_assets": ["renamed_assets", "dirty_packages", "failed_items"],
             "move_assets": ["moved_assets", "dirty_packages", "failed_items"],
