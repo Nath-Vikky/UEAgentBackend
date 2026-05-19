@@ -1146,7 +1146,17 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "type": "object",
             "properties": {
                 "content": {"type": "array"},
-                "structuredContent": {"type": "object"},
+                "structuredContent": {
+                    "type": "object",
+                    "properties": {
+                        "graph_schema_version": {"type": "string"},
+                        "blueprint_path": {"type": "string"},
+                        "graph_metrics": {"type": "object"},
+                        "graphs": {"type": "array"},
+                        "variables": {"type": "array"},
+                        "components": {"type": "array"},
+                    },
+                },
             },
         },
     ),

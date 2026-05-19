@@ -105,6 +105,16 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_material_instance_parameter" in tool_ids
     assert "editor_set_material_instance_texture_parameter" in tool_ids
+    tools_by_id = {
+        item["tool_id"]: item
+        for item in capabilities["capabilities"]["tool_registry"]["tools"]
+    }
+    blueprint_graph_schema = tools_by_id["mcp_get_blueprint_graph"]["output_schema"]["properties"][
+        "structuredContent"
+    ]["properties"]
+    assert "graph_schema_version" in blueprint_graph_schema
+    assert "graph_metrics" in blueprint_graph_schema
+    assert "graphs" in blueprint_graph_schema
 
 
 def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient) -> None:

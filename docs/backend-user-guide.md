@@ -4737,3 +4737,31 @@ Behavior:
 - `dirty_packages` falls back to common fields such as `package_name`, `level_name`, `asset_path`, `blueprint_path`, `widget_blueprint_path`, or `material_instance_path` when the executor did not set it explicitly.
 
 Frontend impact: no mandatory change. The existing result callback remains the same, but Debug View and future operation history can rely on these common fields being present.
+
+## 2026-05-19 Blueprint Graph Snapshot v2
+
+The optional read-only `get_blueprint_graph` TCP/MCP tool now returns a richer Blueprint graph snapshot for future Blueprint Graph Automation work.
+
+New/expanded `structuredContent` fields:
+
+- `graph_schema_version`: currently `blueprint_graph_snapshot_v2`.
+- `graph_metrics`: graph count, node count, pin count, link count, and snapshot limits.
+- `graphs[].graph_id`: stable graph identifier when available.
+- `graphs[].nodes[].node_id`: node GUID.
+- `graphs[].nodes[].pin_count`, `input_pin_count`, `output_pin_count`, `link_count`.
+- `graphs[].nodes[].pins[]`: pin id, name, direction, type, linked target count, and limited linked pin summaries.
+
+Limits:
+
+- Up to 64 graphs.
+- Up to 64 nodes per graph.
+- Up to 32 pins per node.
+- Up to 8 linked targets per pin.
+
+Boundary:
+
+- This is still read-only.
+- It does not create nodes, connect pins, compile Blueprints, or modify assets.
+- It is intended to support safer future graph editing because later write proposals can refer to explicit graph/node/pin identifiers instead of vague names.
+
+Frontend impact: no mandatory change. If Debug View displays raw MCP structured content, the new fields will appear automatically.
