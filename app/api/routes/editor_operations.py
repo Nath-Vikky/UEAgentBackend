@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_app_settings, get_db
@@ -32,6 +32,19 @@ def editor_operation_capabilities() -> dict:
         "capabilities": EditorOperationService.supported_operations(),
         "errors": [],
     }
+
+
+@router.get("/history")
+def editor_operation_history(
+    operation_type: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = EditorOperationService(db).list_operation_history(
+        limit=limit,
+        operation_type=operation_type,
+    )
+    return {"success": True, **payload, "errors": []}
 
 
 @router.post("/proposals", response_model=EditorOperationProposalResponse)

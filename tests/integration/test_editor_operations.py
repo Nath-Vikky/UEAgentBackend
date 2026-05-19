@@ -127,6 +127,10 @@ def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient)
     assert created_body["item"]["confirmation"]["state"] == "pending"
     assert created_body["operation"]["tool_id"] == "editor_rename_asset"
     assert created_body["operation"]["operation_payload"]["target_path"] == "/Game/Maps/L_TestCombatArena"
+    assert created_body["operation"]["preview_summary"]["target_count"] == 1
+    assert created_body["operation"]["affected_targets"][0]["target_path"] == "/Game/Maps/L_TestCombatArena"
+    assert created_body["operation"]["preflight_checks"][0]["status"] == "passed"
+    assert created_body["operation"]["expected_result_contract"]["schema_version"] == "editor_operation_result_v1"
 
     confirmed = client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm")
     assert confirmed.status_code == 200
@@ -145,6 +149,8 @@ def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient)
             "result": {
                 "final_asset_path": "/Game/Maps/L_TestCombatArena",
                 "dirty": True,
+                "dirty_packages": ["/Game/Maps/L_TestCombatArena"],
+                "applied_fields": {"asset_name": "L_TestCombatArena"},
             },
         },
     )
@@ -152,6 +158,8 @@ def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient)
     result_body = result.json()
     assert result_body["item"]["success"] is True
     assert result_body["item"]["execution_state"] == "completed"
+    assert result_body["item"]["result_summary"]["dirty_packages"] == ["/Game/Maps/L_TestCombatArena"]
+    assert result_body["item"]["result_summary"]["applied_field_count"] == 1
     assert result_body["proposal"]["dry_run_preview"]["operation_result"]["transaction_id"] == "tx_rename_001"
 
 
@@ -181,6 +189,51 @@ def test_editor_operation_result_requires_confirmation(client: TestClient) -> No
     )
     assert result.status_code == 409
     assert result.json()["errors"][0]["code"] == "proposal_must_be_confirmed_before_execution_result"
+
+
+def test_editor_operation_history_returns_preview_and_result_summary(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_widget_visibility",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "visibility": "hidden",
+            },
+            "requested_by": "integration_test",
+        },
+    )
+    assert created.status_code == 200
+    proposal_id = created.json()["item"]["proposal_id"]
+    assert client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm").status_code == 200
+    recorded = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "set_umg_widget_visibility",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "result": {
+                "dirty": True,
+                "dirty_packages": ["/Game/UI/WBP_MainHUD"],
+                "applied_fields": {"visibility": "hidden"},
+            },
+        },
+    )
+    assert recorded.status_code == 200
+
+    history = client.get("/api/v1/editor-operations/history", params={"operation_type": "set_umg_widget_visibility"})
+    assert history.status_code == 200
+    body = history.json()
+    assert body["summary"]["item_count"] >= 1
+    item = body["items"][0]
+    assert item["proposal_id"] == proposal_id
+    assert item["operation_type"] == "set_umg_widget_visibility"
+    assert item["preview_summary"]["target_count"] == 1
+    assert item["result_summary"]["dirty_packages"] == ["/Game/UI/WBP_MainHUD"]
+    assert item["result_summary"]["applied_field_count"] == 1
 
 
 def test_editor_operation_static_mesh_settings_are_whitelisted(client: TestClient) -> None:

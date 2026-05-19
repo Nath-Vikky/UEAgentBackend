@@ -4678,3 +4678,36 @@ Validation:
 ```
 
 UE frontend impact: add `set_umg_widget_visibility` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
+
+## 2026-05-19 Editor Operation Preview and History v1
+
+`Editor Operation Bridge` now returns a richer, backward-compatible preview contract for every editor operation proposal.
+
+New `dry_run_preview` fields:
+
+- `affected_targets`: normalized list of assets, widgets, actors, materials, or Blueprint targets that may change after confirmation.
+- `preflight_checks`: backend validation and safety checks, including pending user confirmation and UE plugin execution.
+- `expected_result_contract`: fields the UE plugin should report back through `POST /api/v1/editor-operations/results`.
+- `preview_summary`: compact risk and target summary for UI cards and Debug View.
+
+Result recording now also stores `operation_result.result_summary`:
+
+- `execution_state`
+- `success`
+- `target_count`
+- `dirty_packages`
+- `applied_field_count`
+- `failed_field_count`
+- `error_codes`
+- `needs_user_attention`
+
+New read-only endpoint:
+
+```http
+GET /api/v1/editor-operations/history?limit=50
+GET /api/v1/editor-operations/history?operation_type=set_umg_widget_visibility&limit=20
+```
+
+This endpoint returns recent editor operation proposals with preview and result summaries. It is intended for Debug View, future operation history panels, and follow-up context.
+
+Frontend impact: no mandatory change. Existing Proposal cards can ignore the new fields. Optional UI improvements can show `affected_targets`, `preflight_checks`, and `result_summary` when available.

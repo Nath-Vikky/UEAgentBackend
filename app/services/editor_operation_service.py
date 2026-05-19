@@ -5,6 +5,7 @@ import re
 import uuid
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models.audit import AuditLogModel
@@ -2279,6 +2280,224 @@ class EditorOperationService:
             )
         return ("", "")
 
+    @staticmethod
+    def _build_affected_targets(operation_type: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        if operation_type == "rename_selected_asset":
+            return [
+                {
+                    "kind": "asset",
+                    "action": "rename",
+                    "path": payload["asset_path"],
+                    "target_path": payload["target_path"],
+                }
+            ]
+        if operation_type == "apply_static_mesh_basic_settings":
+            return [
+                {
+                    "kind": "static_mesh",
+                    "action": "modify_settings",
+                    "path": payload["asset_path"],
+                    "fields": sorted(payload["settings"].keys()),
+                }
+            ]
+        if operation_type == "create_blueprint_asset":
+            return [
+                {
+                    "kind": "blueprint_asset",
+                    "action": "create",
+                    "path": payload["target_path"],
+                    "parent_class": payload["parent_class"],
+                }
+            ]
+        if operation_type in {"add_blueprint_variable", "add_blueprint_component", "create_blueprint_event_stub", "compile_blueprint"}:
+            target: dict[str, Any] = {
+                "kind": "blueprint",
+                "action": operation_type,
+                "path": payload["blueprint_path"],
+            }
+            for key in ("variable_name", "component_name", "event_name", "graph_name"):
+                if payload.get(key):
+                    target[key] = payload[key]
+            return [target]
+        if operation_type == "batch_rename_assets":
+            return [
+                {
+                    "kind": "asset",
+                    "action": "rename",
+                    "path": item["asset_path"],
+                    "target_path": item["target_path"],
+                }
+                for item in payload["renames"]
+            ]
+        if operation_type == "move_assets":
+            return [
+                {
+                    "kind": "asset",
+                    "action": "move",
+                    "path": item["asset_path"],
+                    "target_path": item["target_path"],
+                }
+                for item in payload["moves"]
+            ]
+        if operation_type in {
+            "add_umg_widget",
+            "set_umg_widget_text",
+            "set_umg_widget_layout",
+            "set_umg_widget_visibility",
+        }:
+            target = {
+                "kind": "umg_widget",
+                "action": operation_type,
+                "widget_blueprint_path": payload["widget_blueprint_path"],
+                "widget_name": payload["widget_name"],
+            }
+            for key in ("widget_class", "slot_type", "visibility"):
+                if payload.get(key):
+                    target[key] = payload[key]
+            return [target]
+        if operation_type == "place_actor_in_level":
+            return [
+                {
+                    "kind": "level_actor",
+                    "action": "place_actor",
+                    "actor_class": payload["actor_class"],
+                    "actor_label": payload.get("actor_label"),
+                }
+            ]
+        if operation_type == "set_actor_transform":
+            return [
+                {
+                    "kind": "level_actor",
+                    "action": "set_transform",
+                    "actor_reference": payload["actor_reference"],
+                    "transform_mode": payload["transform_mode"],
+                }
+            ]
+        if operation_type in {"set_material_instance_parameter", "set_material_instance_texture_parameter"}:
+            target = {
+                "kind": "material_instance",
+                "action": operation_type,
+                "path": payload["material_instance_path"],
+                "parameter_name": payload["parameter_name"],
+            }
+            if payload.get("parameter_type"):
+                target["parameter_type"] = payload["parameter_type"]
+            if payload.get("texture_path"):
+                target["texture_path"] = payload["texture_path"]
+            return [target]
+        return [{"kind": "editor_operation", "action": operation_type}]
+
+    @staticmethod
+    def _expected_result_contract(operation_type: str) -> dict[str, Any]:
+        operation_fields = {
+            "rename_selected_asset": ["final_asset_path", "dirty", "dirty_packages"],
+            "apply_static_mesh_basic_settings": ["dirty", "dirty_packages", "applied_fields", "failed_fields"],
+            "create_blueprint_asset": ["asset_path", "dirty", "dirty_packages"],
+            "add_blueprint_variable": ["blueprint_path", "variable_name", "dirty", "dirty_packages"],
+            "add_blueprint_component": ["blueprint_path", "component_name", "dirty", "dirty_packages"],
+            "create_blueprint_event_stub": ["blueprint_path", "event_name", "dirty", "dirty_packages"],
+            "compile_blueprint": ["blueprint_path", "compile_status", "messages"],
+            "batch_rename_assets": ["renamed_assets", "dirty_packages", "failed_items"],
+            "move_assets": ["moved_assets", "dirty_packages", "failed_items"],
+            "add_umg_widget": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
+            "set_umg_widget_text": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
+            "set_umg_widget_layout": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
+            "set_umg_widget_visibility": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
+            "place_actor_in_level": ["actor_label", "actor_path", "level_dirty", "dirty_packages"],
+            "set_actor_transform": ["actor_reference", "transform_mode", "level_dirty", "dirty_packages"],
+            "set_material_instance_parameter": ["material_instance_path", "parameter_name", "dirty", "dirty_packages"],
+            "set_material_instance_texture_parameter": [
+                "material_instance_path",
+                "parameter_name",
+                "texture_path",
+                "dirty",
+                "dirty_packages",
+            ],
+        }
+        return {
+            "schema_version": "editor_operation_result_v1",
+            "result_endpoint": "POST /api/v1/editor-operations/results",
+            "required_request_fields": ["proposal_id", "execution_state", "success"],
+            "accepted_execution_states": ["completed", "failed", "blocked", "cancelled"],
+            "common_result_fields": [
+                "dirty",
+                "dirty_packages",
+                "save_policy",
+                "applied_fields",
+                "failed_fields",
+                "undo_hint",
+            ],
+            "operation_result_fields": operation_fields.get(operation_type, []),
+            "frontend_must_report_result": True,
+        }
+
+    @staticmethod
+    def _build_preflight_checks(
+        *,
+        operation_type: str,
+        spec: dict[str, Any],
+        payload: dict[str, Any],
+        affected_targets: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        checks: list[dict[str, Any]] = [
+            {
+                "check_id": "payload_normalized",
+                "status": "passed",
+                "summary": "Backend normalized and validated the editor operation payload.",
+                "details": {"required_fields": spec["required_fields"]},
+            },
+            {
+                "check_id": "target_preview_built",
+                "status": "passed",
+                "summary": f"Preview includes {len(affected_targets)} affected target(s).",
+                "details": {"target_count": len(affected_targets)},
+            },
+            {
+                "check_id": "user_confirmation_required",
+                "status": "pending",
+                "summary": "No editor change is executed until the user confirms this proposal.",
+            },
+            {
+                "check_id": "ue_plugin_execution_required",
+                "status": "pending",
+                "summary": "UEAgentTool must execute the operation inside the Unreal Editor process.",
+            },
+            {
+                "check_id": "auto_save_disabled",
+                "status": "passed",
+                "summary": "The operation marks packages dirty but does not auto-save them.",
+            },
+        ]
+        if operation_type in {"batch_rename_assets", "move_assets"}:
+            checks.append(
+                {
+                    "check_id": "batch_size_limit",
+                    "status": "passed",
+                    "summary": "Batch operation is within the configured v1 safety limit.",
+                    "details": {"item_count": payload.get("item_count"), "max_item_count": 20},
+                }
+            )
+        return checks
+
+    @staticmethod
+    def _build_preview_summary(
+        *,
+        operation_type: str,
+        spec: dict[str, Any],
+        affected_targets: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "operation_type": operation_type,
+            "tool_id": spec["tool_id"],
+            "risk_flags": spec["risk_flags"],
+            "target_count": len(affected_targets),
+            "writes_to_unreal_editor": True,
+            "writes_to_backend": False,
+            "requires_confirmation": True,
+            "auto_save": False,
+            "rollback_hint": "Use Unreal Editor Undo or revert dirty packages if the UE operation reports success.",
+        }
+
     def build_action_proposal(
         self,
         request: EditorOperationProposalRequest,
@@ -2290,6 +2509,19 @@ class EditorOperationService:
         normalized_payload = self._normalize_payload(operation_type, dict(request.payload or {}))
         before_summary, after_summary = self._build_summaries(operation_type, normalized_payload)
         resolved_proposal_id = proposal_id or f"proposal_{uuid.uuid4().hex}"
+        affected_targets = self._build_affected_targets(operation_type, normalized_payload)
+        preflight_checks = self._build_preflight_checks(
+            operation_type=operation_type,
+            spec=spec,
+            payload=normalized_payload,
+            affected_targets=affected_targets,
+        )
+        expected_result_contract = self._expected_result_contract(operation_type)
+        preview_summary = self._build_preview_summary(
+            operation_type=operation_type,
+            spec=spec,
+            affected_targets=affected_targets,
+        )
         dry_run_preview = {
             "protocol_version": EDITOR_OPERATION_PROTOCOL_VERSION,
             "proposal_kind": "editor_operation",
@@ -2300,6 +2532,10 @@ class EditorOperationService:
             "side_effect_level": "confirmed_write",
             "approval_state": "pending",
             "operation_payload": normalized_payload,
+            "affected_targets": affected_targets,
+            "preflight_checks": preflight_checks,
+            "expected_result_contract": expected_result_contract,
+            "preview_summary": preview_summary,
             "source_task_id": request.source_task_id,
             "context": dict(request.context or {}),
             "execution_contract": {
@@ -2321,6 +2557,7 @@ class EditorOperationService:
             "reject_endpoint": f"/api/v1/editor-operations/proposals/{resolved_proposal_id}/reject",
             "generic_decision_endpoint": f"/api/v1/proposals/{resolved_proposal_id}/decision",
             "result_endpoint": "/api/v1/editor-operations/results",
+            "preview_fields": ["affected_targets", "preflight_checks", "expected_result_contract"],
             "confirmation_labels": {
                 "confirm": "Confirm in Unreal Editor",
                 "reject": "Cancel",
@@ -2442,6 +2679,112 @@ class EditorOperationService:
             "operation": dry_run_preview,
         }
 
+    @staticmethod
+    def _as_string_list(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item or "").strip()]
+        text = str(value or "").strip()
+        return [text] if text else []
+
+    @staticmethod
+    def _normalize_result_summary(
+        *,
+        request: EditorOperationResultRequest,
+        preview: dict[str, Any],
+    ) -> dict[str, Any]:
+        result = dict(request.result or {})
+        errors = list(request.errors or [])
+        applied_fields = result.get("applied_fields") or {}
+        failed_fields = result.get("failed_fields") or []
+        dirty_packages = (
+            EditorOperationService._as_string_list(result.get("dirty_packages"))
+            or EditorOperationService._as_string_list(result.get("dirty_package"))
+            or EditorOperationService._as_string_list(result.get("package_name"))
+        )
+        error_codes = [
+            str(item.get("code") or item.get("reason") or item.get("message") or "unknown_error")
+            for item in errors
+            if isinstance(item, dict)
+        ]
+        error_codes.extend(str(item) for item in errors if not isinstance(item, dict))
+        target_count = int(dict(preview.get("preview_summary") or {}).get("target_count") or 0)
+        if isinstance(applied_fields, dict):
+            applied_field_count = len(applied_fields)
+        elif isinstance(applied_fields, list):
+            applied_field_count = len(applied_fields)
+        else:
+            applied_field_count = 0
+        if isinstance(failed_fields, dict):
+            failed_field_count = len(failed_fields)
+        elif isinstance(failed_fields, list):
+            failed_field_count = len(failed_fields)
+        else:
+            failed_field_count = 0
+        return {
+            "schema_version": "editor_operation_result_summary_v1",
+            "execution_state": request.execution_state,
+            "success": request.success,
+            "target_count": target_count,
+            "applied_field_count": applied_field_count,
+            "failed_field_count": failed_field_count,
+            "dirty_packages": dirty_packages,
+            "save_policy": result.get("save_policy"),
+            "dirty": bool(result.get("dirty") or result.get("level_dirty")),
+            "applied_fields": applied_fields,
+            "failed_fields": failed_fields,
+            "error_count": len(error_codes),
+            "error_codes": error_codes,
+            "needs_user_attention": (not request.success) or bool(error_codes) or failed_field_count > 0,
+        }
+
+    def list_operation_history(self, *, limit: int = 50, operation_type: str | None = None) -> dict[str, Any]:
+        safe_limit = max(1, min(int(limit), 200))
+        fetch_limit = safe_limit if not operation_type else min(max(safe_limit * 4, 50), 500)
+        statement = (
+            select(ProposalModel)
+            .where(ProposalModel.proposal_type == EDITOR_OPERATION_PROPOSAL_TYPE)
+            .order_by(ProposalModel.updated_at.desc())
+            .limit(fetch_limit)
+        )
+        proposals = list(self.db.scalars(statement))
+        items: list[dict[str, Any]] = []
+        for proposal in proposals:
+            preview = dict(proposal.dry_run_preview_json or {})
+            current_operation_type = str(preview.get("operation_type") or "")
+            if operation_type and current_operation_type != operation_type:
+                continue
+            operation_result = dict(preview.get("operation_result") or {})
+            items.append(
+                {
+                    "proposal_id": proposal.proposal_id,
+                    "title": proposal.title,
+                    "operation_type": current_operation_type,
+                    "tool_id": preview.get("tool_id"),
+                    "risk_flags": proposal.risk_flags,
+                    "confirmation_state": proposal.confirmation_state,
+                    "approval_state": preview.get("approval_state"),
+                    "created_at": proposal.created_at.isoformat() if proposal.created_at else None,
+                    "updated_at": proposal.updated_at.isoformat() if proposal.updated_at else None,
+                    "preview_summary": preview.get("preview_summary", {}),
+                    "affected_targets": preview.get("affected_targets", []),
+                    "result_summary": operation_result.get("result_summary", {}),
+                    "execution_state": operation_result.get("execution_state"),
+                    "success": operation_result.get("success"),
+                }
+            )
+            if len(items) >= safe_limit:
+                break
+        return {
+            "summary": {
+                "item_count": len(items),
+                "limit": safe_limit,
+                "operation_type": operation_type,
+            },
+            "items": items,
+        }
+
     def record_operation_result(self, request: EditorOperationResultRequest) -> dict[str, Any] | None:
         proposal = get_proposal(self.db, request.proposal_id)
         if not proposal:
@@ -2465,6 +2808,7 @@ class EditorOperationService:
                 {"expected": preview.get("operation_type"), "received": operation_type},
             )
 
+        result_summary = self._normalize_result_summary(request=request, preview=preview)
         operation_result = {
             "received_at": now_utc().isoformat(),
             "proposal_id": request.proposal_id,
@@ -2476,6 +2820,7 @@ class EditorOperationService:
             "transaction_id": request.transaction_id,
             "undo_hint": request.undo_hint,
             "result": dict(request.result or {}),
+            "result_summary": result_summary,
             "errors": list(request.errors or []),
             "metadata": dict(request.metadata or {}),
         }
