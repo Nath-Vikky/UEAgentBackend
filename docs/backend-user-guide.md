@@ -2779,13 +2779,15 @@ compile_blueprint
 }
 ```
 
-`add_blueprint_node_template` 当前开放三个白名单模板：
+`add_blueprint_node_template` 当前开放五个白名单模板：
 
 - `template_id=print_string`：UE 插件会在指定 graph 中创建 `UKismetSystemLibrary::PrintString` CallFunction 节点。若传入 `entry_event=BeginPlay`，插件会创建或复用 `Event BeginPlay` 节点，并尝试连接 `BeginPlay.Then -> PrintString.Execute`。
 - `template_id=branch_print_string`：UE 插件会创建或复用 `Event BeginPlay`，创建 `Branch` 节点和 `PrintString` 节点，并连接 `BeginPlay -> Branch -> PrintString`。可传 `condition_default=true/false` 设置 Branch 条件默认值，可传 `branch_path=true/false` 指定把 PrintString 接到 True 分支还是 False 分支。
 - `template_id=sequence_print_strings`：UE 插件会创建或复用 `Event BeginPlay`，创建 `Sequence` 节点和两个 `PrintString` 节点，并连接 `BeginPlay -> Sequence -> PrintString(1/2)`。可传 `messages` 字符串数组，当前固定两条输出，避免开放任意数量节点。
+- `template_id=get_variable`：UE 插件会为已有 Blueprint member variable 创建一个 `Variable Get` 节点。当前只支持 `variable_scope=self`，不会自动连线。
+- `template_id=set_variable`：UE 插件会为已有 Blueprint member variable 创建一个 `Variable Set` 节点，默认创建或复用 `Event BeginPlay` 并连接 `BeginPlay -> SetVariable`。可传 `variable_value` 写入 Set 节点值 Pin 的默认值。
 
-执行后可选编译一次 Blueprint，并把 `created_nodes`、`linked_nodes`、`linked_pins`、`branch_path`、`condition_default`、`sequence_output_count`、`messages`、`compile_status`、`dirty_packages`、`applied_fields` 回传后端。后续模板会继续按白名单扩展，不开放任意节点类名。
+执行后可选编译一次 Blueprint，并把 `created_nodes`、`linked_nodes`、`linked_pins`、`branch_path`、`condition_default`、`sequence_output_count`、`messages`、`variable_name`、`variable_scope`、`variable_value`、`compile_status`、`dirty_packages`、`applied_fields` 回传后端。后续模板会继续按白名单扩展，不开放任意节点类名。
 
 Branch + PrintString 示例：
 
@@ -2821,6 +2823,38 @@ Sequence + PrintString 示例：
 }
 ```
 
+Set Variable 示例：
+
+```json
+{
+  "operation_type": "add_blueprint_node_template",
+  "payload": {
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "template_id": "set_variable",
+    "graph_name": "EventGraph",
+    "variable_name": "Health",
+    "variable_value": "100.0",
+    "entry_event": "BeginPlay",
+    "compile_after_edit": true
+  }
+}
+```
+
+Get Variable 示例：
+
+```json
+{
+  "operation_type": "add_blueprint_node_template",
+  "payload": {
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "template_id": "get_variable",
+    "graph_name": "EventGraph",
+    "variable_name": "Health",
+    "compile_after_edit": true
+  }
+}
+```
+
 编译 Blueprint 示例：
 
 ```json
@@ -2849,7 +2883,7 @@ required_payload_fields: blueprint_path
 - 仍然必须走 `confirm -> UE 前端执行 -> results 回传`。
 - v1 不做复杂节点连线、不生成大段蓝图逻辑、不自动放入关卡、不自动保存包。
 - `create_blueprint_event_stub` 仅允许 `BeginPlay / Tick / ActorBeginOverlap / ActorEndOverlap`。
-- `add_blueprint_node_template` 当前只允许 `print_string`、`branch_print_string` 与 `sequence_print_strings`，自动连线只支持 `entry_event=BeginPlay` 这一条模板化入口；不支持任意节点、删除节点、批量替换节点或任意 pin 连线。
+- `add_blueprint_node_template` 当前只允许 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable` 与 `set_variable`；自动连线只支持 `entry_event=BeginPlay` 这一条模板化入口；变量模板只支持已有 member variable，不会自动创建变量；不支持任意节点、删除节点、批量替换节点或任意 pin 连线。
 - `compile_blueprint` 只触发一次 UE 编译并返回状态，不自动保存 package，不做循环修复。
 - `get_blueprint_graph` 只读，不经过 Proposal；建议仅在本地 TCP 白名单中开放。
 - 变量类型只允许常见内置类型、短别名，或 `/Script/`、`/Game/` 开头的项目/引擎类型。

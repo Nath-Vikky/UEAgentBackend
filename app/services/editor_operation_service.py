@@ -98,8 +98,10 @@ BLUEPRINT_EVENT_NAMES = {
 
 BLUEPRINT_NODE_TEMPLATE_IDS = {
     "branch_print_string",
+    "get_variable",
     "print_string",
     "sequence_print_strings",
+    "set_variable",
 }
 
 BLUEPRINT_NODE_ENTRY_EVENTS = {
@@ -382,6 +384,18 @@ class EditorOperationService:
             if match:
                 return match.group(1)
         return default_name
+
+    @staticmethod
+    def _extract_blueprint_variable_name_from_text(text: str) -> str:
+        for pattern in (
+            r"(?:variable|var|property)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
+            r"(?:set|get)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
+            r"(?:变量|属性)\s*([A-Za-z][A-Za-z0-9_]{1,63})",
+        ):
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return ""
 
     @staticmethod
     def _selected_asset_path(request: UnifiedTaskRequest) -> str | None:
@@ -1529,6 +1543,55 @@ class EditorOperationService:
                 context=request.context.model_dump(mode="json"),
             )
 
+        variable_signal = any(
+            token in query_lower or token in query_text
+            for token in ("variable", "property", "var ", "\u53d8\u91cf", "\u5c5e\u6027")
+        )
+        variable_node_signal = any(
+            token in query_lower or token in query_text
+            for token in ("node", "graph", "\u8282\u70b9", "\u56fe\u8868", "\u56fe\u8c31")
+        )
+        set_variable_signal = any(
+            token in query_lower or token in query_text
+            for token in ("set ", "assign", "write", "\u8bbe\u7f6e", "\u8d4b\u503c", "\u5199\u5165", "\u6539\u6210")
+        )
+        get_variable_signal = any(
+            token in query_lower or token in query_text
+            for token in ("get ", "read", "\u83b7\u53d6", "\u8bfb\u53d6")
+        )
+        if blueprint_signal and variable_signal and variable_node_signal and (set_variable_signal or get_variable_signal):
+            variable_name = (
+                str(request.payload.get("variable_name") or "").strip()
+                or EditorOperationService._extract_blueprint_variable_name_from_text(query_text)
+            )
+            if variable_name:
+                blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                    request,
+                    query_text,
+                    context_bundle,
+                )
+                template_id = "set_variable" if set_variable_signal else "get_variable"
+                payload: dict[str, Any] = {
+                    "blueprint_path": blueprint_path or "",
+                    "template_id": template_id,
+                    "graph_name": request.payload.get("graph_name") or "EventGraph",
+                    "variable_name": variable_name,
+                    "entry_event": request.payload.get("entry_event") or ("BeginPlay" if template_id == "set_variable" else ""),
+                    "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                }
+                if template_id == "set_variable":
+                    payload["variable_value"] = request.payload.get(
+                        "variable_value",
+                        request.payload.get("default_value", ""),
+                    )
+                return EditorOperationProposalRequest(
+                    operation_type="add_blueprint_node_template",
+                    payload=payload,
+                    reason=query_text,
+                    requested_by="agent_chat",
+                    context=request.context.model_dump(mode="json"),
+                )
+
         wants_blueprint_print_string = (
             ("蓝图" in query_text or "blueprint" in query_lower or "bp_" in query_lower)
             and any(token in query_lower or token in query_text for token in ("print string", "printstring", "打印字符串", "打印文本"))
@@ -1785,6 +1848,9 @@ class EditorOperationService:
             "branch_print": "branch_print_string",
             "branch_printstring": "branch_print_string",
             "branch_print_string": "branch_print_string",
+            "get": "get_variable",
+            "get_var": "get_variable",
+            "get_variable": "get_variable",
             "if_print_string": "branch_print_string",
             "ifthenelse_print_string": "branch_print_string",
             "print": "print_string",
@@ -1794,6 +1860,11 @@ class EditorOperationService:
             "sequence_print": "sequence_print_strings",
             "sequence_print_string": "sequence_print_strings",
             "sequence_print_strings": "sequence_print_strings",
+            "set": "set_variable",
+            "set_var": "set_variable",
+            "set_variable": "set_variable",
+            "variable_get": "get_variable",
+            "variable_set": "set_variable",
             "打印字符串": "print_string",
             "打印文本": "print_string",
         }
@@ -2365,7 +2436,9 @@ class EditorOperationService:
             blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
             template_id = self._normalize_blueprint_node_template_id(payload.get("template_id"))
             entry_event_raw = payload.get("entry_event")
-            if template_id in {"branch_print_string", "sequence_print_strings"} and not str(entry_event_raw or "").strip():
+            if template_id == "get_variable":
+                entry_event_raw = ""
+            if template_id in {"branch_print_string", "sequence_print_strings", "set_variable"} and not str(entry_event_raw or "").strip():
                 entry_event_raw = "BeginPlay"
             normalized: dict[str, Any] = {
                 "blueprint_path": blueprint_path,
@@ -2399,6 +2472,17 @@ class EditorOperationService:
             if template_id == "sequence_print_strings":
                 normalized["messages"] = self._normalize_blueprint_template_messages(payload)
                 normalized["sequence_output_count"] = len(normalized["messages"])
+            if template_id in {"get_variable", "set_variable"}:
+                normalized["variable_name"] = self._normalize_asset_name(
+                    payload.get("variable_name"),
+                    "variable_name",
+                )
+                normalized["variable_scope"] = "self"
+            if template_id == "set_variable":
+                normalized["variable_value"] = self._normalize_optional_string(
+                    payload.get("variable_value", payload.get("default_value", "")),
+                    max_length=240,
+                )
             node_position = self._normalize_blueprint_node_position(payload.get("node_position"))
             if node_position:
                 normalized["node_position"] = node_position
@@ -2583,6 +2667,12 @@ class EditorOperationService:
                 )
             if payload["template_id"] == "sequence_print_strings":
                 details += f" with `{payload['sequence_output_count']}` sequence outputs connected to PrintString nodes"
+            if payload["template_id"] == "get_variable":
+                details += f" for existing variable `{payload['variable_name']}`"
+            if payload["template_id"] == "set_variable":
+                details += f" for existing variable `{payload['variable_name']}`"
+                if payload.get("variable_value"):
+                    details += f" with default value `{payload['variable_value']}`"
             if payload.get("entry_event"):
                 details += f" and connect from `{payload['entry_event']}`"
             if payload.get("compile_after_edit"):
@@ -2806,6 +2896,9 @@ class EditorOperationService:
                 "condition_default",
                 "sequence_output_count",
                 "messages",
+                "variable_name",
+                "variable_scope",
+                "variable_value",
                 "created_nodes",
                 "linked_nodes",
                 "linked_pins",

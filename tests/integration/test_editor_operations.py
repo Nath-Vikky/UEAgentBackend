@@ -429,6 +429,63 @@ def test_blueprint_node_template_sequence_print_strings_proposal_contract(client
     assert "linked_pins" in result_fields
 
 
+def test_blueprint_node_template_set_variable_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "set_variable",
+                "graph_name": "EventGraph",
+                "variable_name": "Health",
+                "variable_value": "100.0",
+                "compile_after_edit": True,
+            },
+            "reason": "Add BeginPlay -> Set Health node.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    payload = body["operation"]["operation_payload"]
+    assert payload["template_id"] == "set_variable"
+    assert payload["entry_event"] == "BeginPlay"
+    assert payload["variable_name"] == "Health"
+    assert payload["variable_scope"] == "self"
+    assert payload["variable_value"] == "100.0"
+    assert body["operation"]["affected_targets"][0]["variable_name"] == "Health"
+    result_fields = body["operation"]["expected_result_contract"]["operation_result_fields"]
+    assert "variable_name" in result_fields
+    assert "variable_value" in result_fields
+    assert "linked_pins" in result_fields
+
+
+def test_blueprint_node_template_get_variable_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "get_variable",
+                "graph_name": "EventGraph",
+                "variable_name": "Health",
+            },
+            "reason": "Add a Get Health node for graph authoring.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    payload = body["operation"]["operation_payload"]
+    assert payload["template_id"] == "get_variable"
+    assert payload["entry_event"] == ""
+    assert payload["variable_name"] == "Health"
+    assert payload["variable_scope"] == "self"
+    assert body["operation"]["affected_targets"][0]["variable_name"] == "Health"
+
+
 def test_blueprint_node_template_rejects_unknown_template(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -445,8 +502,10 @@ def test_blueprint_node_template_rejects_unknown_template(client: TestClient) ->
     assert body["errors"][0]["code"] == "blueprint_node_template_not_supported_in_v1"
     assert body["errors"][0]["details"]["allowed_template_ids"] == [
         "branch_print_string",
+        "get_variable",
         "print_string",
         "sequence_print_strings",
+        "set_variable",
     ]
 
 
