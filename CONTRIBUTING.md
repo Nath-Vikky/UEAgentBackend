@@ -31,7 +31,7 @@ Broader local checks:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\unit tests\contract tests\eval tests\integration
-.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output docs\benchmark-report.md
+.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output storage\artifacts\evals\project-benchmark-latest.md
 ```
 
 ## Adding A Tool
@@ -76,6 +76,5 @@ After adding knowledge, run:
 - Include tests for behavior changes.
 - Do not commit `.env`, `storage/`, `.test-runtime/`, private docs, or external
   knowledge repositories.
-- Do not add enterprise-only scope such as multi-tenant auth, cloud deployment,
-  or destructive autonomous editor operations unless the roadmap explicitly asks
-  for it.
+- Keep public documentation focused on `README.md`, `CONTRIBUTING.md`,
+  `docs/backend-user-guide.md`, and `docs/release-notes/`.

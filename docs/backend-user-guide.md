@@ -2,19 +2,14 @@
 
 ## 0. 文档边界
 
-公开仓库默认只保留：
+公开仓库默认只保留面向使用者和读者的文档：
 
-- `README.md`：快速启动和最小配置。
+- `README.md`：项目介绍、架构概览、快速启动和常用验证命令。
+- `CONTRIBUTING.md`：开发、测试、扩展 Skill/Tool 的基本约定。
 - `docs/backend-user-guide.md`：完整使用手册。
-- `docs/architecture.md`：公开架构说明。
-- `docs/integration-smoke-tests.md`：本地端到端 smoke test 请求示例。
-- `docs/benchmark-report.md`：当前量化评估结果。
-- `docs/hallucination-guard-report.md`：证据不足与幻觉守卫评估结果。
-- `docs/router-signal-eval-report.md`：Router SignalDetector shadow 评估结果。
-- `docs/project-review-checklist.md`：项目收口、验证和交付检查清单。
-- `docs/release-notes/v0.1.0.md`：稳定版本说明。
+- `docs/release-notes/`：公开版本说明。
 
-开发过程文档，例如 `docs/improveplan.md`、`docs/backend-dev-log.md`、`docs/frontend-unified-handoff.md`、架构学习笔记和请求生命周期复盘，建议只保留在本地，不发布给普通使用者。这样 GitHub 页面会更清爽，也更接近一个可交付项目。
+评测报告、开发计划、交接记录、阶段复盘和学习笔记默认作为本地资料保存，不进入公开文档集。需要查看最新量化结果时，请重新运行对应脚本，报告会生成到 `storage/artifacts/evals/`。
 
 ## 1. 项目定位
 
@@ -244,8 +239,8 @@ LLM 排查补充：
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/unit tests/integration tests/contract tests/eval
 .\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
-.\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output docs\hallucination-guard-report.md
-.\.venv\Scripts\python.exe scripts\run_router_signal_eval.py --output storage\artifacts\evals\router-signal-eval-latest.json --markdown-output docs\router-signal-eval-report.md
+.\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output storage\artifacts\evals\hallucination-guard-latest.md
+.\.venv\Scripts\python.exe scripts\run_router_signal_eval.py --output storage\artifacts\evals\router-signal-eval-latest.json --markdown-output storage\artifacts\evals\router-signal-eval-latest.md
 ```
 
 GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行。日常验证以本地 Ruff、pytest 和 RAG eval 为准；CI 只用于需要时手动复核，不做部署。
@@ -275,7 +270,7 @@ Agentic RAG A/B 对比：
 
 输出文件：
 - `storage/artifacts/evals/rag-agentic-ab-latest.json`
-- `docs/rag-agentic-ab-report.md`
+- `storage/artifacts/evals/rag-agentic-ab-latest.md`
 
 报告适合用于项目说明：当前 Agentic RAG 不是复杂 planner，而是一个可量化、可关闭、可回归测试的轻量 query refinement 层。
 
@@ -2083,7 +2078,7 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 运行命令：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output docs\benchmark-report.md
+.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output storage\artifacts\evals\project-benchmark-latest.md
 ```
 
 默认模式：
@@ -2097,13 +2092,13 @@ KB_SOURCE_PATHS=["./knowledge","D:/PrivateKnowledge/uecpp/knowledge","D:/Private
 如果要评估真实 LLM 链路：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --use-live-llm --markdown-output docs\benchmark-report.md
+.\.venv\Scripts\python.exe scripts\run_project_benchmark.py --use-live-llm --markdown-output storage\artifacts\evals\project-benchmark-live.md
 ```
 
 当前报告位置：
 
-- `docs/benchmark-report.md`
-- `docs/hallucination-guard-report.md`
+- `storage/artifacts/evals/project-benchmark-latest.md`
+- `storage/artifacts/evals/hallucination-guard-latest.md`
 - `storage/artifacts/evals/project-benchmark-latest.json`
 
 当前 Hallucination Guard 报告重点：
@@ -3156,8 +3151,8 @@ tests/eval/code_review_benchmark_dataset.jsonl
 输出结果：
 
 ```text
-docs/code-review-benchmark-report.md
 storage/artifacts/evals/code-review-benchmark-latest.json
+storage/artifacts/evals/code-review-benchmark-latest.md
 ```
 
 当前报告指标：
@@ -3282,7 +3277,7 @@ Content-Type: application/json
 
 本地验证建议优先查看：
 
-- `docs/integration-smoke-tests.md`：7 条最小端到端 HTTP smoke test。
+- 本地 smoke test：可直接使用 `README.md` 和本指南中的 HTTP 示例运行。
 - `debug_view.tools`：确认本轮用了哪些工具。
 - `debug_view.memory_summary`：确认 session summary / long-term memory 是否参与上下文。
 - `data.llm_analysis`、`data.llm_review` 或相关 LLM 字段：如果没有配置 LLM key，会以 fallback 方式标记。
@@ -4037,7 +4032,7 @@ Commands run locally:
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_regression_suite.py --output storage\artifacts\regression\i2-f6-regression-latest.json
 .\.venv\Scripts\python.exe scripts\run_web_search_eval.py --min-success-rate 1 --min-safety-pass-rate 1
-.\.venv\Scripts\python.exe scripts\run_code_review_benchmark.py --output storage\artifacts\evals\code-review-benchmark-latest.json --markdown-output docs\code-review-benchmark-report.md
+.\.venv\Scripts\python.exe scripts\run_code_review_benchmark.py --output storage\artifacts\evals\code-review-benchmark-latest.json --markdown-output storage\artifacts\evals\code-review-benchmark-latest.md
 ```
 
 Observed results:
@@ -4369,7 +4364,7 @@ The backend now includes a small offline route-diff eval for the router SignalDe
 Command:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_router_signal_eval.py --output storage\artifacts\evals\router-signal-eval-latest.json --markdown-output docs\router-signal-eval-report.md
+.\.venv\Scripts\python.exe scripts\run_router_signal_eval.py --output storage\artifacts\evals\router-signal-eval-latest.json --markdown-output storage\artifacts\evals\router-signal-eval-latest.md
 ```
 
 Dataset:

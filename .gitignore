@@ -39,15 +39,24 @@ local-knowledge/
 local_knowledge/
 
 # Local-only development notes. Keep these on your machine, but do not publish them.
+CHANGELOG.md
+docs/architecture.md
 docs/agent-architecture-study.md
 docs/agent-project-study-notes.md
 docs/backend-dev-log.md
+docs/benchmark-report.md
+docs/code-review-benchmark-report.md
 docs/frontend-unified-handoff.md
+docs/hallucination-guard-report.md
 docs/improveplan.md
+docs/integration-smoke-tests.md
+docs/project-review-checklist.md
 docs/project-demo-script.md
+docs/rag-agentic-ab-report.md
 docs/rag-and-memory-study.md
 docs/rag-eval-report.md
 docs/request-lifecycle.md
+docs/router-signal-eval-report.md
 docs/skill-development-guide.md
 !storage/uploads/.gitkeep
 !storage/artifacts/.gitkeep
