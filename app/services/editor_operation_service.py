@@ -99,6 +99,7 @@ BLUEPRINT_EVENT_NAMES = {
 BLUEPRINT_NODE_TEMPLATE_IDS = {
     "branch_print_string",
     "call_function",
+    "enhanced_input_action_event",
     "get_variable",
     "print_string",
     "sequence_print_strings",
@@ -1906,6 +1907,9 @@ class EditorOperationService:
             "branch_print_string": "branch_print_string",
             "call": "call_function",
             "call_function": "call_function",
+            "enhanced_input": "enhanced_input_action_event",
+            "enhanced_input_action": "enhanced_input_action_event",
+            "enhanced_input_action_event": "enhanced_input_action_event",
             "function": "call_function",
             "function_call": "call_function",
             "get": "get_variable",
@@ -2532,6 +2536,8 @@ class EditorOperationService:
             entry_event_raw = payload.get("entry_event")
             if template_id == "get_variable":
                 entry_event_raw = ""
+            if template_id == "enhanced_input_action_event":
+                entry_event_raw = ""
             if template_id in {"branch_print_string", "call_function", "sequence_print_strings", "set_variable"} and not str(entry_event_raw or "").strip():
                 entry_event_raw = "BeginPlay"
             normalized: dict[str, Any] = {
@@ -2583,6 +2589,8 @@ class EditorOperationService:
                     "function_name",
                 )
                 normalized["function_target"] = "self"
+            if template_id == "enhanced_input_action_event":
+                normalized["input_action_path"] = self._normalize_asset_path(payload.get("input_action_path"))
             node_position = self._normalize_blueprint_node_position(payload.get("node_position"))
             if node_position:
                 normalized["node_position"] = node_position
@@ -2800,6 +2808,8 @@ class EditorOperationService:
                     details += f" with default value `{payload['variable_value']}`"
             if payload["template_id"] == "call_function":
                 details += f" for existing self function `{payload['function_name']}`"
+            if payload["template_id"] == "enhanced_input_action_event":
+                details += f" for Input Action `{payload['input_action_path']}`"
             if payload.get("entry_event"):
                 details += f" and connect from `{payload['entry_event']}`"
             if payload.get("compile_after_edit"):
@@ -2946,6 +2956,7 @@ class EditorOperationService:
                 "sequence_output_count",
                 "function_name",
                 "function_target",
+                "input_action_path",
                 "source_node_id",
                 "source_pin_name",
                 "target_node_id",
@@ -3047,6 +3058,8 @@ class EditorOperationService:
                 "variable_value",
                 "function_name",
                 "function_target",
+                "input_action_path",
+                "input_action_name",
                 "created_nodes",
                 "linked_nodes",
                 "linked_pins",

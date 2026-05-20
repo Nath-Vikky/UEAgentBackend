@@ -1113,6 +1113,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "variable_value",
             "function_name",
             "function_target",
+            "input_action_path",
             "node_position",
             "node_comment",
             "compile_after_edit",
@@ -1127,6 +1128,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                     "enum": [
                         "branch_print_string",
                         "call_function",
+                        "enhanced_input_action_event",
                         "get_variable",
                         "print_string",
                         "sequence_print_strings",
@@ -1147,6 +1149,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                 "variable_value": {"type": "string"},
                 "function_name": {"type": "string"},
                 "function_target": {"type": "string", "enum": ["self"]},
+                "input_action_path": {"type": "string"},
                 "node_position": {"type": "object"},
                 "node_comment": {"type": "string"},
                 "compile_after_edit": {"type": "boolean"},

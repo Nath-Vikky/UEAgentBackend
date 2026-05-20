@@ -515,6 +515,33 @@ def test_blueprint_node_template_call_function_proposal_contract(client: TestCli
     assert "linked_pins" in result_fields
 
 
+def test_blueprint_node_template_enhanced_input_action_event_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "enhanced_input_action_event",
+                "graph_name": "EventGraph",
+                "input_action_path": "/Game/Input/IA_Jump",
+            },
+            "reason": "Add Enhanced Input Action event node.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    payload = body["operation"]["operation_payload"]
+    assert payload["template_id"] == "enhanced_input_action_event"
+    assert payload["entry_event"] == ""
+    assert payload["input_action_path"] == "/Game/Input/IA_Jump"
+    assert body["operation"]["affected_targets"][0]["input_action_path"] == "/Game/Input/IA_Jump"
+    result_fields = body["operation"]["expected_result_contract"]["operation_result_fields"]
+    assert "input_action_path" in result_fields
+    assert "created_nodes" in result_fields
+
+
 def test_blueprint_node_template_rejects_unknown_template(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -532,6 +559,7 @@ def test_blueprint_node_template_rejects_unknown_template(client: TestClient) ->
     assert body["errors"][0]["details"]["allowed_template_ids"] == [
         "branch_print_string",
         "call_function",
+        "enhanced_input_action_event",
         "get_variable",
         "print_string",
         "sequence_print_strings",
