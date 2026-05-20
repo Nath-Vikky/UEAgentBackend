@@ -212,6 +212,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["blueprint_path", "template_id"],
         "frontend_status": "implemented_v1",
     },
+    "connect_blueprint_nodes": {
+        "tool_id": "editor_connect_blueprint_nodes",
+        "title": "Connect Blueprint Nodes",
+        "risk_flags": "MEDIUM",
+        "summary": "Connect two explicit Blueprint pins in one graph after user confirmation.",
+        "required_fields": ["blueprint_path", "graph_name", "source_node_id", "source_pin_name", "target_node_id", "target_pin_name"],
+        "frontend_status": "implemented_v1",
+    },
     "compile_blueprint": {
         "tool_id": "editor_compile_blueprint",
         "title": "Compile Blueprint",
@@ -1998,6 +2006,40 @@ class EditorOperationService:
             )
         return text
 
+    @staticmethod
+    def _normalize_blueprint_node_identifier(value: Any, field_name: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            raise EditorOperationValidationError(f"{field_name}_required")
+        if len(text) > 120 or "\\" in text or ".." in text:
+            raise EditorOperationValidationError(f"{field_name}_invalid", {field_name: text})
+        if not re.match(r"^[A-Za-z0-9_.:-]+$", text):
+            raise EditorOperationValidationError(
+                f"{field_name}_invalid",
+                {
+                    field_name: text,
+                    "rule": "Use a graph snapshot node_id or generated node_name. Letters, numbers, underscore, dash, dot and colon are allowed.",
+                },
+            )
+        return text
+
+    @staticmethod
+    def _normalize_blueprint_pin_name(value: Any, field_name: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            raise EditorOperationValidationError(f"{field_name}_required")
+        if len(text) > 120 or "\\" in text or ".." in text:
+            raise EditorOperationValidationError(f"{field_name}_invalid", {field_name: text})
+        if not re.match(r"^[A-Za-z0-9_ .:-]+$", text):
+            raise EditorOperationValidationError(
+                f"{field_name}_invalid",
+                {
+                    field_name: text,
+                    "rule": "Use the exact pin_name from get_blueprint_graph. Letters, numbers, underscore, space, dash, dot and colon are allowed.",
+                },
+            )
+        return text
+
     def _normalize_blueprint_template_messages(self, payload: dict[str, Any]) -> list[str]:
         raw_messages = payload.get("messages")
         messages: list[str] = []
@@ -2546,6 +2588,31 @@ class EditorOperationService:
                 normalized["node_position"] = node_position
             return normalized
 
+        if operation_type == "connect_blueprint_nodes":
+            blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
+            return {
+                "blueprint_path": blueprint_path,
+                "graph_name": self._normalize_graph_name(payload.get("graph_name")),
+                "source_node_id": self._normalize_blueprint_node_identifier(
+                    payload.get("source_node_id", payload.get("source_node_name")),
+                    "source_node_id",
+                ),
+                "source_pin_name": self._normalize_blueprint_pin_name(
+                    payload.get("source_pin_name"),
+                    "source_pin_name",
+                ),
+                "target_node_id": self._normalize_blueprint_node_identifier(
+                    payload.get("target_node_id", payload.get("target_node_name")),
+                    "target_node_id",
+                ),
+                "target_pin_name": self._normalize_blueprint_pin_name(
+                    payload.get("target_pin_name"),
+                    "target_pin_name",
+                ),
+                "compile_after_edit": bool(payload.get("compile_after_edit", True)),
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "compile_blueprint":
             blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
             return {
@@ -2741,6 +2808,16 @@ class EditorOperationService:
                 f"Blueprint graph before change: {payload['blueprint_path']}::{payload['graph_name']}",
                 f"{details}. The package is marked dirty, not auto-saved.",
             )
+        if operation_type == "connect_blueprint_nodes":
+            return (
+                f"Blueprint graph before change: {payload['blueprint_path']}::{payload['graph_name']}",
+                (
+                    "Connect explicit pins "
+                    f"`{payload['source_node_id']}.{payload['source_pin_name']}` -> "
+                    f"`{payload['target_node_id']}.{payload['target_pin_name']}`"
+                    ". The package is marked dirty, not auto-saved."
+                ),
+            )
         if operation_type == "compile_blueprint":
             return (
                 f"Blueprint before compile: {payload['blueprint_path']}",
@@ -2850,6 +2927,7 @@ class EditorOperationService:
             "add_blueprint_component",
             "create_blueprint_event_stub",
             "add_blueprint_node_template",
+            "connect_blueprint_nodes",
             "compile_blueprint",
         }:
             target: dict[str, Any] = {
@@ -2868,6 +2946,10 @@ class EditorOperationService:
                 "sequence_output_count",
                 "function_name",
                 "function_target",
+                "source_node_id",
+                "source_pin_name",
+                "target_node_id",
+                "target_pin_name",
                 "variable_scope",
                 "variable_value",
             ):
@@ -2967,6 +3049,18 @@ class EditorOperationService:
                 "function_target",
                 "created_nodes",
                 "linked_nodes",
+                "linked_pins",
+                "compile_status",
+                "dirty",
+                "dirty_packages",
+            ],
+            "connect_blueprint_nodes": [
+                "blueprint_path",
+                "graph_name",
+                "source_node_id",
+                "source_pin_name",
+                "target_node_id",
+                "target_pin_name",
                 "linked_pins",
                 "compile_status",
                 "dirty",

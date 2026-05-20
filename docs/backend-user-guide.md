@@ -2711,6 +2711,7 @@ add_blueprint_variable
 add_blueprint_component
 create_blueprint_event_stub
 add_blueprint_node_template
+connect_blueprint_nodes
 compile_blueprint
 ```
 
@@ -2872,6 +2873,25 @@ Call Function 示例：
 }
 ```
 
+显式连接 Blueprint Pin 示例：
+
+```json
+{
+  "operation_type": "connect_blueprint_nodes",
+  "payload": {
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "graph_name": "EventGraph",
+    "source_node_id": "6C7D8E9F-0000-1111-2222-333344445555",
+    "source_pin_name": "then",
+    "target_node_id": "8E9F0001-2222-3333-4444-555566667777",
+    "target_pin_name": "execute",
+    "compile_after_edit": true
+  }
+}
+```
+
+`connect_blueprint_nodes` 必须使用 `get_blueprint_graph` 返回的 `node_id` 或 UE 生成的 `node_name`，并使用节点上的准确 `pin_name`。UE 插件只允许同一 Blueprint graph 内的 `Output -> Input` 连接；如果任一 pin 已经连接到其他 pin，v1 会直接 blocked，不会自动断开或重写已有蓝图逻辑。
+
 编译 Blueprint 示例：
 
 ```json
@@ -2901,6 +2921,7 @@ required_payload_fields: blueprint_path
 - v1 不做复杂节点连线、不生成大段蓝图逻辑、不自动放入关卡、不自动保存包。
 - `create_blueprint_event_stub` 仅允许 `BeginPlay / Tick / ActorBeginOverlap / ActorEndOverlap`。
 - `add_blueprint_node_template` 当前只允许 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable`、`set_variable` 与 `call_function`；自动连线只支持 `entry_event=BeginPlay` 这一条模板化入口；变量模板只支持已有 member variable，不会自动创建变量；函数调用模板只支持当前 Blueprint / 父类上已有的无输入参数、非 Pure 函数；不支持任意节点、删除节点、批量替换节点或任意 pin 连线。
+- `connect_blueprint_nodes` 只允许明确 source/target node id 和 pin name 的单次连接；不支持跨 Blueprint、跨 graph、断开已有连接、批量连线或自动猜 pin。
 - `compile_blueprint` 只触发一次 UE 编译并返回状态，不自动保存 package，不做循环修复。
 - `get_blueprint_graph` 只读，不经过 Proposal；建议仅在本地 TCP 白名单中开放。
 - 变量类型只允许常见内置类型、短别名，或 `/Script/`、`/Game/` 开头的项目/引擎类型。

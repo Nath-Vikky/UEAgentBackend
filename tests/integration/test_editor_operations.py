@@ -575,6 +575,60 @@ def test_blueprint_node_template_rejects_unknown_branch_path(client: TestClient)
     assert body["errors"][0]["details"]["allowed_branch_paths"] == ["false", "true"]
 
 
+def test_connect_blueprint_nodes_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "connect_blueprint_nodes",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "source_node_id": "6C7D8E9F-0000-1111-2222-333344445555",
+                "source_pin_name": "then",
+                "target_node_id": "8E9F0001-2222-3333-4444-555566667777",
+                "target_pin_name": "execute",
+                "compile_after_edit": True,
+            },
+            "reason": "Connect two explicit Blueprint pins from graph snapshot.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    payload = body["operation"]["operation_payload"]
+    assert payload["graph_name"] == "EventGraph"
+    assert payload["source_node_id"] == "6C7D8E9F-0000-1111-2222-333344445555"
+    assert payload["source_pin_name"] == "then"
+    assert payload["target_node_id"] == "8E9F0001-2222-3333-4444-555566667777"
+    assert payload["target_pin_name"] == "execute"
+    assert payload["compile_after_edit"] is True
+    assert body["operation"]["tool_id"] == "editor_connect_blueprint_nodes"
+    assert body["operation"]["affected_targets"][0]["source_pin_name"] == "then"
+    result_fields = body["operation"]["expected_result_contract"]["operation_result_fields"]
+    assert "linked_pins" in result_fields
+    assert "compile_status" in result_fields
+
+
+def test_connect_blueprint_nodes_rejects_unsafe_node_identifier(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "connect_blueprint_nodes",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "source_node_id": "../bad",
+                "source_pin_name": "then",
+                "target_node_id": "TargetNode",
+                "target_pin_name": "execute",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "source_node_id_invalid"
+
+
 def test_blueprint_compile_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
