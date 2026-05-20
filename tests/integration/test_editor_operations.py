@@ -486,6 +486,35 @@ def test_blueprint_node_template_get_variable_proposal_contract(client: TestClie
     assert body["operation"]["affected_targets"][0]["variable_name"] == "Health"
 
 
+def test_blueprint_node_template_call_function_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "call_function",
+                "graph_name": "EventGraph",
+                "function_name": "RefreshHud",
+            },
+            "reason": "Add BeginPlay -> RefreshHud call node.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    payload = body["operation"]["operation_payload"]
+    assert payload["template_id"] == "call_function"
+    assert payload["entry_event"] == "BeginPlay"
+    assert payload["function_name"] == "RefreshHud"
+    assert payload["function_target"] == "self"
+    assert body["operation"]["affected_targets"][0]["function_name"] == "RefreshHud"
+    result_fields = body["operation"]["expected_result_contract"]["operation_result_fields"]
+    assert "function_name" in result_fields
+    assert "function_target" in result_fields
+    assert "linked_pins" in result_fields
+
+
 def test_blueprint_node_template_rejects_unknown_template(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -502,6 +531,7 @@ def test_blueprint_node_template_rejects_unknown_template(client: TestClient) ->
     assert body["errors"][0]["code"] == "blueprint_node_template_not_supported_in_v1"
     assert body["errors"][0]["details"]["allowed_template_ids"] == [
         "branch_print_string",
+        "call_function",
         "get_variable",
         "print_string",
         "sequence_print_strings",

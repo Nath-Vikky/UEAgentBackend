@@ -98,6 +98,7 @@ BLUEPRINT_EVENT_NAMES = {
 
 BLUEPRINT_NODE_TEMPLATE_IDS = {
     "branch_print_string",
+    "call_function",
     "get_variable",
     "print_string",
     "sequence_print_strings",
@@ -391,6 +392,19 @@ class EditorOperationService:
             r"(?:variable|var|property)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
             r"(?:set|get)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
             r"(?:变量|属性)\s*([A-Za-z][A-Za-z0-9_]{1,63})",
+        ):
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return ""
+
+    @staticmethod
+    def _extract_blueprint_function_name_from_text(text: str) -> str:
+        for pattern in (
+            r"(?:function|func)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
+            r"(?:call|invoke|execute)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
+            r"(?:函数|方法)\s*([A-Za-z][A-Za-z0-9_]{1,63})",
+            r"(?:调用|执行)\s*([A-Za-z][A-Za-z0-9_]{1,63})",
         ):
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if match:
@@ -1592,6 +1606,40 @@ class EditorOperationService:
                     context=request.context.model_dump(mode="json"),
                 )
 
+        function_signal = any(
+            token in query_lower or token in query_text
+            for token in ("function", "func", "\u51fd\u6570", "\u65b9\u6cd5")
+        )
+        call_function_signal = any(
+            token in query_lower or token in query_text
+            for token in ("call", "invoke", "execute", "\u8c03\u7528", "\u6267\u884c")
+        )
+        if blueprint_signal and function_signal and variable_node_signal and call_function_signal:
+            function_name = (
+                str(request.payload.get("function_name") or "").strip()
+                or EditorOperationService._extract_blueprint_function_name_from_text(query_text)
+            )
+            if function_name:
+                blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                    request,
+                    query_text,
+                    context_bundle,
+                )
+                return EditorOperationProposalRequest(
+                    operation_type="add_blueprint_node_template",
+                    payload={
+                        "blueprint_path": blueprint_path or "",
+                        "template_id": "call_function",
+                        "graph_name": request.payload.get("graph_name") or "EventGraph",
+                        "function_name": function_name,
+                        "entry_event": request.payload.get("entry_event") or "BeginPlay",
+                        "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                    },
+                    reason=query_text,
+                    requested_by="agent_chat",
+                    context=request.context.model_dump(mode="json"),
+                )
+
         wants_blueprint_print_string = (
             ("蓝图" in query_text or "blueprint" in query_lower or "bp_" in query_lower)
             and any(token in query_lower or token in query_text for token in ("print string", "printstring", "打印字符串", "打印文本"))
@@ -1848,6 +1896,10 @@ class EditorOperationService:
             "branch_print": "branch_print_string",
             "branch_printstring": "branch_print_string",
             "branch_print_string": "branch_print_string",
+            "call": "call_function",
+            "call_function": "call_function",
+            "function": "call_function",
+            "function_call": "call_function",
             "get": "get_variable",
             "get_var": "get_variable",
             "get_variable": "get_variable",
@@ -2438,7 +2490,7 @@ class EditorOperationService:
             entry_event_raw = payload.get("entry_event")
             if template_id == "get_variable":
                 entry_event_raw = ""
-            if template_id in {"branch_print_string", "sequence_print_strings", "set_variable"} and not str(entry_event_raw or "").strip():
+            if template_id in {"branch_print_string", "call_function", "sequence_print_strings", "set_variable"} and not str(entry_event_raw or "").strip():
                 entry_event_raw = "BeginPlay"
             normalized: dict[str, Any] = {
                 "blueprint_path": blueprint_path,
@@ -2483,6 +2535,12 @@ class EditorOperationService:
                     payload.get("variable_value", payload.get("default_value", "")),
                     max_length=240,
                 )
+            if template_id == "call_function":
+                normalized["function_name"] = self._normalize_asset_name(
+                    payload.get("function_name"),
+                    "function_name",
+                )
+                normalized["function_target"] = "self"
             node_position = self._normalize_blueprint_node_position(payload.get("node_position"))
             if node_position:
                 normalized["node_position"] = node_position
@@ -2673,6 +2731,8 @@ class EditorOperationService:
                 details += f" for existing variable `{payload['variable_name']}`"
                 if payload.get("variable_value"):
                     details += f" with default value `{payload['variable_value']}`"
+            if payload["template_id"] == "call_function":
+                details += f" for existing self function `{payload['function_name']}`"
             if payload.get("entry_event"):
                 details += f" and connect from `{payload['entry_event']}`"
             if payload.get("compile_after_edit"):
@@ -2806,6 +2866,10 @@ class EditorOperationService:
                 "entry_event",
                 "branch_path",
                 "sequence_output_count",
+                "function_name",
+                "function_target",
+                "variable_scope",
+                "variable_value",
             ):
                 if payload.get(key):
                     target[key] = payload[key]
@@ -2899,6 +2963,8 @@ class EditorOperationService:
                 "variable_name",
                 "variable_scope",
                 "variable_value",
+                "function_name",
+                "function_target",
                 "created_nodes",
                 "linked_nodes",
                 "linked_pins",
