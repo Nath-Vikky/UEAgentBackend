@@ -2562,6 +2562,8 @@ GET /api/v1/editor-operations/capabilities
 - `items[].risk_flags`：风险等级，当前写操作仍需用户确认。
 - `items[].result_contract_fields`：UE 插件执行后建议回传的结果字段。
 - `safety_policy.auto_execute_follow_ups=false`：后端不会自动执行 follow-up。
+- `roadmap_items[]`：后续 P3/P4/P5 计划能力，只用于展示路线图，不会被当成可执行 proposal。
+- `roadmap_items[].proposal_enabled=false`：明确表示当前后端不会创建这些计划项的写操作。
 
 公开工具目录可以从同一个后端声明生成：
 

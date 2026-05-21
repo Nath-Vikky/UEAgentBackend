@@ -68,10 +68,20 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     }
     assert body["capabilities"]["summary"]["operation_count"] >= 18
     assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
+    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 8
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
+    assert body["capabilities"]["summary"]["roadmap_group_counts"]["umg"] >= 3
     group_ids = {item["group_id"] for item in body["capabilities"]["groups"]}
     assert {"asset", "blueprint", "umg", "level", "material"}.issubset(group_ids)
+    roadmap_items = {
+        item["operation_type"]: item
+        for item in body["capabilities"]["roadmap_items"]
+    }
+    assert "set_umg_widget_appearance" in roadmap_items
+    assert roadmap_items["inspect_level_actors"]["side_effect_level"] == "read_only"
+    assert roadmap_items["inspect_level_actors"]["requires_confirmation"] is False
+    assert roadmap_items["set_actor_metadata"]["proposal_enabled"] is False
     assert operation_items["add_blueprint_variable"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_blueprint_variable"]["group"] == "blueprint"
     assert operation_items["add_blueprint_variable"]["risk_flags"] == "MEDIUM"

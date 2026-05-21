@@ -16,9 +16,13 @@ def render_editor_operation_catalog(catalog: dict[str, Any] | None = None) -> st
     summary = dict(capabilities.get("summary") or {})
     safety_policy = dict(capabilities.get("safety_policy") or {})
     items = [dict(item) for item in capabilities.get("items") or []]
+    roadmap_items = [dict(item) for item in capabilities.get("roadmap_items") or []]
     items_by_group: dict[str, list[dict[str, Any]]] = {}
     for item in items:
         items_by_group.setdefault(str(item.get("group") or "misc"), []).append(item)
+    roadmap_by_group: dict[str, list[dict[str, Any]]] = {}
+    for item in roadmap_items:
+        roadmap_by_group.setdefault(str(item.get("group") or "misc"), []).append(item)
 
     lines = [
         "# Editor Operation Catalog",
@@ -35,6 +39,7 @@ def render_editor_operation_catalog(catalog: dict[str, Any] | None = None) -> st
         f"- LLM direct execution: `{safety_policy.get('llm_direct_execution')}`",
         f"- Auto execute follow-ups: `{safety_policy.get('auto_execute_follow_ups')}`",
         f"- Auto save: `{safety_policy.get('auto_save')}`",
+        f"- Roadmap operation count: `{summary.get('roadmap_operation_count', len(roadmap_items))}`",
         "",
         "## Groups",
         "",
@@ -62,6 +67,26 @@ def render_editor_operation_catalog(catalog: dict[str, Any] | None = None) -> st
                 f"{_format_list(list(item.get('result_contract_fields') or []))} |"
             )
         lines.append("")
+
+        group_roadmap = roadmap_by_group.get(group_id, [])
+        if group_roadmap:
+            lines.extend(
+                [
+                    "Roadmap:",
+                    "",
+                    "| Planned Operation | Side Effect | Required Fields | Boundary |",
+                    "| --- | --- | --- | --- |",
+                ]
+            )
+            for item in group_roadmap:
+                lines.append(
+                    "| "
+                    f"`{item.get('operation_type')}` | "
+                    f"`{item.get('side_effect_level')}` | "
+                    f"{_format_list(list(item.get('required_fields') or []))} | "
+                    f"{item.get('boundary') or ''} |"
+                )
+            lines.append("")
 
     lines.extend(
         [

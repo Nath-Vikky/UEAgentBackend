@@ -12,6 +12,7 @@ This catalog is generated from the backend editor operation registry.
 - LLM direct execution: `False`
 - Auto execute follow-ups: `False`
 - Auto save: `False`
+- Roadmap operation count: `8`
 
 ## Groups
 
@@ -51,6 +52,14 @@ Inspect and edit simple Widget Blueprint structure and properties.
 | `set_umg_widget_layout` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `layout` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
 | `set_umg_widget_visibility` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `visibility` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
 
+Roadmap:
+
+| Planned Operation | Side Effect | Required Fields | Boundary |
+| --- | --- | --- | --- |
+| `set_umg_widget_appearance` | `confirmed_write` | `widget_blueprint_path`, `widget_name`, `appearance` | No animation editing, binding generation, or complex style inheritance. |
+| `set_umg_widget_brush` | `confirmed_write` | `widget_blueprint_path`, `widget_name`, `brush` | No dynamic binding, no atlas editing, and no bulk widget tree rewrite. |
+| `set_umg_slot_layout_v2` | `confirmed_write` | `widget_blueprint_path`, `widget_name`, `slot_type`, `layout` | No responsive layout generation and no complex container restructuring. |
+
 ### Level Operations
 
 Place actors and adjust transforms in the current editor level.
@@ -60,6 +69,14 @@ Place actors and adjust transforms in the current editor level.
 | `place_actor_in_level` | `MEDIUM` | `actor_class` | `actor_label`, `actor_path`, `level_dirty`, `dirty_packages` |
 | `set_actor_transform` | `MEDIUM` | `actor_reference`, `transform_mode` | `actor_reference`, `transform_mode`, `level_dirty`, `dirty_packages` |
 
+Roadmap:
+
+| Planned Operation | Side Effect | Required Fields | Boundary |
+| --- | --- | --- | --- |
+| `inspect_level_actors` | `read_only` | - | Read-only inventory; no level streaming or World Partition editing. |
+| `set_actor_metadata` | `confirmed_write` | `actor_reference`, `metadata` | No actor deletion and no hidden batch edits. |
+| `arrange_actors_pattern` | `confirmed_write` | `actor_references`, `pattern` | Batch operations require preview, item limits, and user confirmation. |
+
 ### Material Operations
 
 Edit safe Material Instance parameters.
@@ -68,6 +85,13 @@ Edit safe Material Instance parameters.
 | --- | --- | --- | --- |
 | `set_material_instance_parameter` | `MEDIUM` | `material_instance_path`, `parameter_name`, `parameter_type`, `value` | `material_instance_path`, `parameter_name`, `dirty`, `dirty_packages` |
 | `set_material_instance_texture_parameter` | `MEDIUM` | `material_instance_path`, `parameter_name`, `texture_path` | `material_instance_path`, `parameter_name`, `texture_path`, `dirty`, `dirty_packages` |
+
+Roadmap:
+
+| Planned Operation | Side Effect | Required Fields | Boundary |
+| --- | --- | --- | --- |
+| `inspect_material_instance_parameters` | `read_only` | `material_instance_path` | Read-only inspection; parent Material graph editing remains out of scope. |
+| `set_material_instance_static_switch` | `confirmed_write` | `material_instance_path`, `parameter_name`, `value` | No parent material graph changes and no shader optimization pass. |
 
 ## Safety Boundary
 

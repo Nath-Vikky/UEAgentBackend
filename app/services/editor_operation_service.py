@@ -364,6 +364,81 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
     },
 }
 
+OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
+    "set_umg_widget_appearance": {
+        "group": "umg",
+        "title": "Set UMG Widget Appearance",
+        "summary": "Set safe visual fields such as render opacity, enabled state, tint color, or font size.",
+        "side_effect_level": "confirmed_write",
+        "frontend_status": "planned_v2",
+        "required_fields": ["widget_blueprint_path", "widget_name", "appearance"],
+        "boundary": "No animation editing, binding generation, or complex style inheritance.",
+    },
+    "set_umg_widget_brush": {
+        "group": "umg",
+        "title": "Set UMG Widget Brush",
+        "summary": "Set a safe Image or Border brush texture/material reference on one widget.",
+        "side_effect_level": "confirmed_write",
+        "frontend_status": "planned_v2",
+        "required_fields": ["widget_blueprint_path", "widget_name", "brush"],
+        "boundary": "No dynamic binding, no atlas editing, and no bulk widget tree rewrite.",
+    },
+    "set_umg_slot_layout_v2": {
+        "group": "umg",
+        "title": "Set UMG Slot Layout v2",
+        "summary": "Support basic VerticalBox, HorizontalBox, and Overlay slot layout fields.",
+        "side_effect_level": "confirmed_write",
+        "frontend_status": "planned_v2",
+        "required_fields": ["widget_blueprint_path", "widget_name", "slot_type", "layout"],
+        "boundary": "No responsive layout generation and no complex container restructuring.",
+    },
+    "inspect_material_instance_parameters": {
+        "group": "material",
+        "title": "Inspect Material Instance Parameters",
+        "summary": "Read scalar, vector, texture, and static switch parameter names and current values.",
+        "side_effect_level": "read_only",
+        "frontend_status": "planned_v2",
+        "required_fields": ["material_instance_path"],
+        "boundary": "Read-only inspection; parent Material graph editing remains out of scope.",
+    },
+    "set_material_instance_static_switch": {
+        "group": "material",
+        "title": "Set Material Instance Static Switch",
+        "summary": "Set one static switch parameter on a Material Instance with explicit confirmation.",
+        "side_effect_level": "confirmed_write",
+        "frontend_status": "planned_v2",
+        "required_fields": ["material_instance_path", "parameter_name", "value"],
+        "boundary": "No parent material graph changes and no shader optimization pass.",
+    },
+    "inspect_level_actors": {
+        "group": "level",
+        "title": "Inspect Level Actors",
+        "summary": "Read current level actor labels, classes, transforms, folders, and tags.",
+        "side_effect_level": "read_only",
+        "frontend_status": "planned_v2",
+        "required_fields": [],
+        "boundary": "Read-only inventory; no level streaming or World Partition editing.",
+    },
+    "set_actor_metadata": {
+        "group": "level",
+        "title": "Set Actor Metadata",
+        "summary": "Set one Actor label, folder, or tags after user confirmation.",
+        "side_effect_level": "confirmed_write",
+        "frontend_status": "planned_v2",
+        "required_fields": ["actor_reference", "metadata"],
+        "boundary": "No actor deletion and no hidden batch edits.",
+    },
+    "arrange_actors_pattern": {
+        "group": "level",
+        "title": "Arrange Actors Pattern",
+        "summary": "Arrange a bounded actor set with simple grid, line, or circle placement templates.",
+        "side_effect_level": "confirmed_write",
+        "frontend_status": "planned_v2",
+        "required_fields": ["actor_references", "pattern"],
+        "boundary": "Batch operations require preview, item limits, and user confirmation.",
+    },
+}
+
 
 class EditorOperationValidationError(ValueError):
     def __init__(self, reason: str, details: dict[str, Any] | None = None):
@@ -391,13 +466,21 @@ class EditorOperationService:
             EditorOperationService._operation_group(operation_type)
             for operation_type in OPERATION_SPECS
         )
+        roadmap_group_counts = Counter(str(item["group"]) for item in OPERATION_ROADMAP.values())
+        roadmap_status_counts = Counter(str(item["frontend_status"]) for item in OPERATION_ROADMAP.values())
         groups = [
             {
                 "group_id": group_id,
                 "title": group["title"],
                 "summary": group["summary"],
                 "operation_count": sum(1 for item in group["operation_types"] if item in OPERATION_SPECS),
+                "roadmap_count": roadmap_group_counts.get(group_id, 0),
                 "operation_types": [item for item in group["operation_types"] if item in OPERATION_SPECS],
+                "roadmap_operation_types": [
+                    operation_type
+                    for operation_type, item in OPERATION_ROADMAP.items()
+                    if item["group"] == group_id
+                ],
             }
             for group_id, group in OPERATION_GROUPS.items()
         ]
@@ -413,6 +496,9 @@ class EditorOperationService:
                 "frontend_status_counts": dict(frontend_status_counts),
                 "group_counts": dict(group_counts),
                 "group_count": len(groups),
+                "roadmap_operation_count": len(OPERATION_ROADMAP),
+                "roadmap_group_counts": dict(roadmap_group_counts),
+                "roadmap_status_counts": dict(roadmap_status_counts),
             },
             "safety_policy": {
                 "side_effect_level": "confirmed_write",
@@ -441,6 +527,22 @@ class EditorOperationService:
                     ],
                 }
                 for operation_type, spec in OPERATION_SPECS.items()
+            ],
+            "roadmap_items": [
+                {
+                    "operation_type": operation_type,
+                    "group": item["group"],
+                    "title": item["title"],
+                    "summary": item["summary"],
+                    "required_fields": item["required_fields"],
+                    "frontend_status": item["frontend_status"],
+                    "side_effect_level": item["side_effect_level"],
+                    "requires_confirmation": item["side_effect_level"] != "read_only",
+                    "auto_save": False,
+                    "proposal_enabled": False,
+                    "boundary": item["boundary"],
+                }
+                for operation_type, item in OPERATION_ROADMAP.items()
             ],
         }
 
