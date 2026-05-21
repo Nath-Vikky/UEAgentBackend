@@ -66,7 +66,18 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         item["operation_type"]: item
         for item in body["capabilities"]["items"]
     }
+    assert body["capabilities"]["summary"]["operation_count"] >= 18
+    assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
+    assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
+    assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
+    group_ids = {item["group_id"] for item in body["capabilities"]["groups"]}
+    assert {"asset", "blueprint", "umg", "level", "material"}.issubset(group_ids)
     assert operation_items["add_blueprint_variable"]["frontend_status"] == "implemented_v1"
+    assert operation_items["add_blueprint_variable"]["group"] == "blueprint"
+    assert operation_items["add_blueprint_variable"]["risk_flags"] == "MEDIUM"
+    assert operation_items["add_blueprint_variable"]["requires_confirmation"] is True
+    assert operation_items["add_blueprint_variable"]["auto_save"] is False
+    assert "blueprint_path" in operation_items["add_blueprint_variable"]["result_contract_fields"]
     assert operation_items["add_blueprint_component"]["frontend_status"] == "implemented_v1"
     assert operation_items["create_blueprint_event_stub"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_blueprint_node_template"]["frontend_status"] == "implemented_v1"

@@ -312,6 +312,58 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
     },
 }
 
+OPERATION_GROUPS: dict[str, dict[str, Any]] = {
+    "asset": {
+        "title": "Asset Operations",
+        "summary": "Rename, move, and apply safe asset settings.",
+        "operation_types": [
+            "rename_selected_asset",
+            "apply_static_mesh_basic_settings",
+            "batch_rename_assets",
+            "move_assets",
+        ],
+    },
+    "blueprint": {
+        "title": "Blueprint Operations",
+        "summary": "Create Blueprint assets and perform bounded Blueprint graph edits.",
+        "operation_types": [
+            "create_blueprint_asset",
+            "add_blueprint_variable",
+            "add_blueprint_component",
+            "create_blueprint_event_stub",
+            "add_blueprint_node_template",
+            "connect_blueprint_nodes",
+            "compile_blueprint",
+        ],
+    },
+    "umg": {
+        "title": "UMG Operations",
+        "summary": "Inspect and edit simple Widget Blueprint structure and properties.",
+        "operation_types": [
+            "add_umg_widget",
+            "set_umg_widget_text",
+            "set_umg_widget_layout",
+            "set_umg_widget_visibility",
+        ],
+    },
+    "level": {
+        "title": "Level Operations",
+        "summary": "Place actors and adjust transforms in the current editor level.",
+        "operation_types": [
+            "place_actor_in_level",
+            "set_actor_transform",
+        ],
+    },
+    "material": {
+        "title": "Material Operations",
+        "summary": "Edit safe Material Instance parameters.",
+        "operation_types": [
+            "set_material_instance_parameter",
+            "set_material_instance_texture_parameter",
+        ],
+    },
+}
+
 
 class EditorOperationValidationError(ValueError):
     def __init__(self, reason: str, details: dict[str, Any] | None = None):
@@ -325,26 +377,68 @@ class EditorOperationService:
         self.db = db
 
     @staticmethod
+    def _operation_group(operation_type: str) -> str:
+        for group_id, group in OPERATION_GROUPS.items():
+            if operation_type in set(group["operation_types"]):
+                return group_id
+        return "misc"
+
+    @staticmethod
     def supported_operations() -> dict[str, Any]:
+        risk_counts = Counter(str(spec["risk_flags"]) for spec in OPERATION_SPECS.values())
+        frontend_status_counts = Counter(str(spec["frontend_status"]) for spec in OPERATION_SPECS.values())
+        group_counts = Counter(
+            EditorOperationService._operation_group(operation_type)
+            for operation_type in OPERATION_SPECS
+        )
+        groups = [
+            {
+                "group_id": group_id,
+                "title": group["title"],
+                "summary": group["summary"],
+                "operation_count": sum(1 for item in group["operation_types"] if item in OPERATION_SPECS),
+                "operation_types": [item for item in group["operation_types"] if item in OPERATION_SPECS],
+            }
+            for group_id, group in OPERATION_GROUPS.items()
+        ]
         return {
             "protocol_version": EDITOR_OPERATION_PROTOCOL_VERSION,
             "proposal_type": EDITOR_OPERATION_PROPOSAL_TYPE,
             "transport": "http",
             "mcp_like": True,
+            "summary": {
+                "operation_count": len(OPERATION_SPECS),
+                "implemented_frontend_count": frontend_status_counts.get("implemented_v1", 0),
+                "risk_flag_counts": dict(risk_counts),
+                "frontend_status_counts": dict(frontend_status_counts),
+                "group_counts": dict(group_counts),
+                "group_count": len(groups),
+            },
             "safety_policy": {
                 "side_effect_level": "confirmed_write",
                 "llm_direct_execution": False,
                 "requires_frontend_confirmation": True,
                 "ue_plugin_executes_editor_api": True,
+                "auto_execute_follow_ups": False,
+                "auto_save": False,
             },
+            "groups": groups,
             "items": [
                 {
                     "operation_type": operation_type,
+                    "group": EditorOperationService._operation_group(operation_type),
                     "tool_id": spec["tool_id"],
                     "title": spec["title"],
                     "summary": spec["summary"],
+                    "risk_flags": spec["risk_flags"],
                     "required_fields": spec["required_fields"],
                     "frontend_status": spec["frontend_status"],
+                    "side_effect_level": "confirmed_write",
+                    "requires_confirmation": True,
+                    "auto_save": False,
+                    "result_contract_fields": EditorOperationService._expected_result_contract(operation_type)[
+                        "operation_result_fields"
+                    ],
                 }
                 for operation_type, spec in OPERATION_SPECS.items()
             ],

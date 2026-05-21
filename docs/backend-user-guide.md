@@ -2538,17 +2538,30 @@ GET /api/v1/knowledge-base/eval/reports/project-benchmark-latest.json
 - UE 插件必须让用户确认后才执行真实 Editor API。
 - 执行结果必须回传后端，进入 proposal 的 `dry_run_preview.operation_result` 和 audit log。
 
-第一版只支持 3 个操作：
+当前编辑器操作已经按能力域分组：
 
-- `rename_selected_asset`：重命名一个选中资产，不移动目录，不批量重命名。
-- `apply_static_mesh_basic_settings`：修改一个 Static Mesh 的白名单基础设置。
-- `create_blueprint_asset`：在 `/Game` 下创建一个普通 Blueprint 资产。
+- `asset`：资产重命名、批量重命名、移动资产、Static Mesh 白名单设置。
+- `blueprint`：创建 Blueprint、添加变量/组件/Event Stub、模板化节点写入、显式 pin 连接、编译 Blueprint。
+- `umg`：添加基础 Widget、设置 TextBlock 文本、CanvasPanelSlot 布局、Visibility。
+- `level`：放置 Actor、设置 Actor Transform。
+- `material`：设置 Material Instance scalar/vector/texture 参数。
 
 查看能力：
 
 ```http
 GET /api/v1/editor-operations/capabilities
 ```
+
+能力响应适合前端和公开文档生成使用，重点字段：
+
+- `summary.operation_count`：当前后端声明的编辑器操作数量。
+- `summary.group_counts`：按 `asset / blueprint / umg / level / material` 分组统计。
+- `summary.risk_flag_counts`：当前操作风险等级分布。
+- `groups[]`：每个能力域的标题、说明和 operation 列表。
+- `items[].group`：单个操作所属能力域。
+- `items[].risk_flags`：风险等级，当前写操作仍需用户确认。
+- `items[].result_contract_fields`：UE 插件执行后建议回传的结果字段。
+- `safety_policy.auto_execute_follow_ups=false`：后端不会自动执行 follow-up。
 
 创建提案：
 
