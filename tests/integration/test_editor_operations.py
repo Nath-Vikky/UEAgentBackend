@@ -1399,6 +1399,83 @@ def test_agent_chat_can_place_selected_blueprint_in_level(client: TestClient) ->
     assert payload["transform"]["location"] == {"x": 0.0, "y": 0.0, "z": 100.0}
 
 
+def test_agent_chat_builds_print_string_template_for_beginplay_text(client: TestClient) -> None:
+    query = "给 BP_TestActor 的 EventBeginPlay 添加一个 Print String 节点"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_blueprint_print_beginplay_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "zh-CN",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "add_blueprint_node_template"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_TestActor"
+    assert payload["template_id"] == "print_string"
+    assert payload["graph_name"] == "EventGraph"
+    assert payload["entry_event"] == "BeginPlay"
+
+
+def test_agent_chat_detects_construction_script_graph_for_blueprint_template(
+    client: TestClient,
+) -> None:
+    query = "Add Print String node to BP_TestActor ConstructionScript"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_blueprint_print_construction_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["template_id"] == "print_string"
+    assert payload["graph_name"] == "ConstructionScript"
+    assert payload["entry_event"] == ""
+
+
 def test_agent_chat_resolves_blueprint_from_project_inventory_for_level_placement(
     client: TestClient,
 ) -> None:

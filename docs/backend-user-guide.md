@@ -2928,6 +2928,14 @@ Enhanced Input Action Event 示例：
 
 `connect_blueprint_nodes` 必须使用 `get_blueprint_graph` 返回的 `node_id` 或 UE 生成的 `node_name`，并使用节点上的准确 `pin_name`。UE 插件只允许同一 Blueprint graph 内的 `Output -> Input` 连接；如果任一 pin 已经连接到其他 pin，v1 会直接 blocked，不会自动断开或重写已有蓝图逻辑。
 
+Agent Chat 自然语言桥接会做一层轻量图谱语义识别：
+
+- 文本包含 `EventBeginPlay`、`BeginPlay`、`开始播放` 时，会把 `entry_event` 规范化为 `BeginPlay`，而不是把它误当成 graph 名。
+- 文本包含 `ConstructionScript`、`construction script`、`构造脚本` 时，会把 `graph_name` 设为 `ConstructionScript`。
+- 文本包含 `EventGraph`、`event graph`、`事件图表` 时，会把 `graph_name` 设为 `EventGraph`。
+
+这仍然不是“自动猜整张蓝图怎么连”的能力；它只是把常见口语表达转成更稳定的 Proposal payload。Graph 是否真实存在、Pin 是否可连接，仍由 UEAgentTool 执行时验证并回传结果。
+
 编译 Blueprint 示例：
 
 ```json

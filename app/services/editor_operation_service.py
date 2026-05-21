@@ -421,6 +421,62 @@ class EditorOperationService:
         return ""
 
     @staticmethod
+    def _detect_blueprint_graph_name_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+    ) -> str:
+        explicit_graph = str(request.payload.get("graph_name") or "").strip()
+        if explicit_graph:
+            return explicit_graph
+
+        compact = query_text.replace("_", "").replace(" ", "").lower()
+        query_lower = query_text.lower()
+        if any(
+            token in compact or token in query_lower or token in query_text
+            for token in (
+                "constructionscript",
+                "userconstructionscript",
+                "construction script",
+                "构造脚本",
+            )
+        ):
+            return "ConstructionScript"
+        if any(
+            token in compact or token in query_lower or token in query_text
+            for token in ("eventgraph", "event graph", "事件图表", "事件图")
+        ):
+            return "EventGraph"
+
+        for pattern in (
+            r"(?:graph|图表|图谱)\s*[:：]?\s*([A-Za-z][A-Za-z0-9_]{1,63})",
+            r"\b([A-Za-z][A-Za-z0-9_]{1,63})\s+(?:graph)\b",
+        ):
+            match = re.search(pattern, query_text, flags=re.IGNORECASE)
+            if match:
+                graph_name = match.group(1)
+                if graph_name.lower() not in {"blueprint", "event", "node"}:
+                    return graph_name
+        return "EventGraph"
+
+    @staticmethod
+    def _detect_blueprint_entry_event_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        *,
+        default: str = "",
+    ) -> str:
+        explicit_event = str(request.payload.get("entry_event") or "").strip()
+        if explicit_event:
+            return explicit_event
+        compact = query_text.replace("_", "").replace(" ", "").lower()
+        if any(
+            token in compact or token in query_text
+            for token in ("beginplay", "eventbeginplay", "receivebeginplay", "开始播放")
+        ):
+            return "BeginPlay"
+        return default
+
+    @staticmethod
     def _selected_asset_path(request: UnifiedTaskRequest) -> str | None:
         selected_assets = EditorOperationService._candidate_asset_paths(request)
         if selected_assets:
@@ -1521,13 +1577,20 @@ class EditorOperationService:
                 payload={
                     "blueprint_path": blueprint_path or "",
                     "template_id": "sequence_print_strings",
-                    "graph_name": request.payload.get("graph_name") or "EventGraph",
+                    "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                        request,
+                        query_text,
+                    ),
                     "messages": request.payload.get("messages")
                     or [
                         request.payload.get("message") or "Sequence step 1 from UEAgent",
                         request.payload.get("message_2") or "Sequence step 2 from UEAgent",
                     ],
-                    "entry_event": request.payload.get("entry_event") or "BeginPlay",
+                    "entry_event": EditorOperationService._detect_blueprint_entry_event_from_request(
+                        request,
+                        query_text,
+                        default="BeginPlay",
+                    ),
                     "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
                 },
                 reason=query_text,
@@ -1552,11 +1615,18 @@ class EditorOperationService:
                 payload={
                     "blueprint_path": blueprint_path or "",
                     "template_id": "branch_print_string",
-                    "graph_name": request.payload.get("graph_name") or "EventGraph",
+                    "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                        request,
+                        query_text,
+                    ),
                     "message": request.payload.get("message")
                     or request.payload.get("string_value")
                     or "Branch reached from UEAgent",
-                    "entry_event": request.payload.get("entry_event") or "BeginPlay",
+                    "entry_event": EditorOperationService._detect_blueprint_entry_event_from_request(
+                        request,
+                        query_text,
+                        default="BeginPlay",
+                    ),
                     "condition_default": condition_default,
                     "branch_path": request.payload.get("branch_path") or ("false" if false_branch_signal else "true"),
                     "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
@@ -1597,9 +1667,16 @@ class EditorOperationService:
                 payload: dict[str, Any] = {
                     "blueprint_path": blueprint_path or "",
                     "template_id": template_id,
-                    "graph_name": request.payload.get("graph_name") or "EventGraph",
+                    "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                        request,
+                        query_text,
+                    ),
                     "variable_name": variable_name,
-                    "entry_event": request.payload.get("entry_event") or ("BeginPlay" if template_id == "set_variable" else ""),
+                    "entry_event": EditorOperationService._detect_blueprint_entry_event_from_request(
+                        request,
+                        query_text,
+                        default="BeginPlay" if template_id == "set_variable" else "",
+                    ),
                     "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
                 }
                 if template_id == "set_variable":
@@ -1639,9 +1716,16 @@ class EditorOperationService:
                     payload={
                         "blueprint_path": blueprint_path or "",
                         "template_id": "call_function",
-                        "graph_name": request.payload.get("graph_name") or "EventGraph",
+                        "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                            request,
+                            query_text,
+                        ),
                         "function_name": function_name,
-                        "entry_event": request.payload.get("entry_event") or "BeginPlay",
+                        "entry_event": EditorOperationService._detect_blueprint_entry_event_from_request(
+                            request,
+                            query_text,
+                            default="BeginPlay",
+                        ),
                         "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
                     },
                     reason=query_text,
@@ -1665,12 +1749,17 @@ class EditorOperationService:
                 payload={
                     "blueprint_path": blueprint_path or "",
                     "template_id": "print_string",
-                    "graph_name": request.payload.get("graph_name") or "EventGraph",
+                    "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                        request,
+                        query_text,
+                    ),
                     "message": request.payload.get("message")
                     or request.payload.get("string_value")
                     or "Hello from UEAgent",
-                    "entry_event": request.payload.get("entry_event")
-                    or ("BeginPlay" if ("beginplay" in query_lower or "eventbeginplay" in query_lower or "开始播放" in query_text) else ""),
+                    "entry_event": EditorOperationService._detect_blueprint_entry_event_from_request(
+                        request,
+                        query_text,
+                    ),
                     "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
                 },
                 reason=query_text,
