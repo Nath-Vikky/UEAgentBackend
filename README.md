@@ -169,4 +169,5 @@ Agent 判断意图
 - [Demo Checklist](./docs/demo-checklist.md)
 - [FAQ](./docs/faq.md)
 - [Release Notes](./docs/release-notes/)
+- [Latest Release Note](./docs/release-notes/v0.2.0.md)
 - [Contributing Guide](./CONTRIBUTING.md)
