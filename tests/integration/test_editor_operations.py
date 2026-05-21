@@ -775,6 +775,40 @@ def test_blueprint_node_template_result_summary_flags_missing_expected_links(
     assert diagnostics["needs_user_attention"] is True
     assert result.json()["item"]["result_summary"]["needs_user_attention"] is True
 
+    attention_history = client.get(
+        "/api/v1/editor-operations/history",
+        params={
+            "operation_type": "add_blueprint_node_template",
+            "needs_user_attention": "true",
+        },
+    )
+    assert attention_history.status_code == 200
+    attention_body = attention_history.json()
+    assert attention_body["summary"]["needs_user_attention"] is True
+    assert attention_body["items"][0]["proposal_id"] == proposal_id
+
+    diagnostic_history = client.get(
+        "/api/v1/editor-operations/history",
+        params={
+            "operation_type": "add_blueprint_node_template",
+            "diagnostic_flag": "expected_linked_pins_missing",
+        },
+    )
+    assert diagnostic_history.status_code == 200
+    diagnostic_body = diagnostic_history.json()
+    assert diagnostic_body["summary"]["diagnostic_flag"] == "expected_linked_pins_missing"
+    assert diagnostic_body["items"][0]["proposal_id"] == proposal_id
+
+    clean_history = client.get(
+        "/api/v1/editor-operations/history",
+        params={
+            "operation_type": "add_blueprint_node_template",
+            "needs_user_attention": "false",
+        },
+    )
+    assert clean_history.status_code == 200
+    assert clean_history.json()["items"] == []
+
 
 def test_blueprint_compile_proposal_contract(client: TestClient) -> None:
     response = client.post(

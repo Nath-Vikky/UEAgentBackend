@@ -37,12 +37,16 @@ def editor_operation_capabilities() -> dict:
 @router.get("/history")
 def editor_operation_history(
     operation_type: str | None = None,
+    needs_user_attention: bool | None = None,
+    diagnostic_flag: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
 ) -> dict:
     payload = EditorOperationService(db).list_operation_history(
         limit=limit,
         operation_type=operation_type,
+        needs_user_attention=needs_user_attention,
+        diagnostic_flag=diagnostic_flag,
     )
     return {"success": True, **payload, "errors": []}
 

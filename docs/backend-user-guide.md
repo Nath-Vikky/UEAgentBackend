@@ -2812,6 +2812,15 @@ UE 插件回传 Blueprint Graph 执行结果后，后端会在 `result_summary.o
 
 这些字段主要给 Debug View、操作历史和排查使用，不要求前端立刻新增 UI；旧版 Proposal 卡片可以继续只显示原有结果。
 
+操作历史可以按诊断状态筛选：
+
+```http
+GET /api/v1/editor-operations/history?needs_user_attention=true
+GET /api/v1/editor-operations/history?operation_type=add_blueprint_node_template&diagnostic_flag=expected_linked_pins_missing
+```
+
+这两个查询参数都是可选的；旧版 `GET /api/v1/editor-operations/history` 行为不变。
+
 Branch + PrintString 示例：
 
 ```json

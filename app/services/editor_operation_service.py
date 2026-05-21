@@ -3746,9 +3746,17 @@ class EditorOperationService:
             ),
         }
 
-    def list_operation_history(self, *, limit: int = 50, operation_type: str | None = None) -> dict[str, Any]:
+    def list_operation_history(
+        self,
+        *,
+        limit: int = 50,
+        operation_type: str | None = None,
+        needs_user_attention: bool | None = None,
+        diagnostic_flag: str | None = None,
+    ) -> dict[str, Any]:
         safe_limit = max(1, min(int(limit), 200))
-        fetch_limit = safe_limit if not operation_type else min(max(safe_limit * 4, 50), 500)
+        has_filters = bool(operation_type or needs_user_attention is not None or diagnostic_flag)
+        fetch_limit = safe_limit if not has_filters else min(max(safe_limit * 6, 80), 500)
         statement = (
             select(ProposalModel)
             .where(ProposalModel.proposal_type == EDITOR_OPERATION_PROPOSAL_TYPE)
@@ -3763,6 +3771,16 @@ class EditorOperationService:
             if operation_type and current_operation_type != operation_type:
                 continue
             operation_result = dict(preview.get("operation_result") or {})
+            result_summary = dict(operation_result.get("result_summary") or {})
+            operation_diagnostics = dict(result_summary.get("operation_diagnostics") or {})
+            if needs_user_attention is not None and bool(
+                result_summary.get("needs_user_attention")
+            ) != needs_user_attention:
+                continue
+            if diagnostic_flag:
+                diagnostic_flags = [str(item) for item in operation_diagnostics.get("diagnostic_flags") or []]
+                if str(diagnostic_flag) not in diagnostic_flags:
+                    continue
             items.append(
                 {
                     "proposal_id": proposal.proposal_id,
@@ -3776,7 +3794,7 @@ class EditorOperationService:
                     "updated_at": proposal.updated_at.isoformat() if proposal.updated_at else None,
                     "preview_summary": preview.get("preview_summary", {}),
                     "affected_targets": preview.get("affected_targets", []),
-                    "result_summary": operation_result.get("result_summary", {}),
+                    "result_summary": result_summary,
                     "execution_state": operation_result.get("execution_state"),
                     "success": operation_result.get("success"),
                 }
@@ -3788,6 +3806,8 @@ class EditorOperationService:
                 "item_count": len(items),
                 "limit": safe_limit,
                 "operation_type": operation_type,
+                "needs_user_attention": needs_user_attention,
+                "diagnostic_flag": diagnostic_flag,
             },
             "items": items,
         }
