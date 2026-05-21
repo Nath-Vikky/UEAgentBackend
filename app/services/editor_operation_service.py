@@ -477,6 +477,54 @@ class EditorOperationService:
         return default
 
     @staticmethod
+    def _detect_blueprint_event_name_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+    ) -> str:
+        explicit_event = str(request.payload.get("event_name") or "").strip()
+        if explicit_event:
+            return explicit_event
+
+        compact = query_text.replace("_", "").replace(" ", "").lower()
+        query_lower = query_text.lower()
+        if any(
+            token in compact or token in query_lower or token in query_text
+            for token in (
+                "actorbeginoverlap",
+                "beginoverlap",
+                "begin overlap",
+                "overlap begin",
+                "开始重叠",
+                "进入重叠",
+                "开始碰撞",
+            )
+        ):
+            return "ActorBeginOverlap"
+        if any(
+            token in compact or token in query_lower or token in query_text
+            for token in (
+                "actorendoverlap",
+                "endoverlap",
+                "end overlap",
+                "overlap end",
+                "结束重叠",
+                "离开重叠",
+                "结束碰撞",
+            )
+        ):
+            return "ActorEndOverlap"
+        if any(
+            token in compact or token in query_lower or token in query_text
+            for token in ("beginplay", "eventbeginplay", "receivebeginplay", "开始播放")
+        ):
+            return "BeginPlay"
+        if re.search(r"\btick\b", query_lower) is not None or any(
+            token in query_text for token in ("每帧", "帧更新")
+        ):
+            return "Tick"
+        return ""
+
+    @staticmethod
     def _selected_asset_path(request: UnifiedTaskRequest) -> str | None:
         selected_assets = EditorOperationService._candidate_asset_paths(request)
         if selected_assets:
@@ -1782,6 +1830,40 @@ class EditorOperationService:
                         query_text,
                     ),
                     "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        blueprint_event_name = EditorOperationService._detect_blueprint_event_name_from_request(
+            request,
+            query_text,
+        )
+        wants_blueprint_event_stub = (
+            blueprint_signal
+            and bool(blueprint_event_name)
+            and add_signal
+            and not print_string_signal
+            and not variable_signal
+            and not function_signal
+        )
+        if wants_blueprint_event_stub:
+            blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            return EditorOperationProposalRequest(
+                operation_type="create_blueprint_event_stub",
+                payload={
+                    "blueprint_path": blueprint_path or "",
+                    "event_name": blueprint_event_name,
+                    "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                        request,
+                        query_text,
+                    ),
+                    "node_comment": request.payload.get("node_comment") or "",
                 },
                 reason=query_text,
                 requested_by="agent_chat",

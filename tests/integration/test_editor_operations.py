@@ -1567,6 +1567,98 @@ def test_agent_chat_resolves_blueprint_compile_from_project_inventory(
     assert payload["blueprint_path"] == "/Game/Blueprints/BP_EnemySpawner"
 
 
+def test_agent_chat_can_create_blueprint_overlap_event_stub(client: TestClient) -> None:
+    query = "给 BP_TestActor 添加 ActorBeginOverlap 事件节点"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_blueprint_overlap_event_stub_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "zh-CN",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "create_blueprint_event_stub"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_TestActor"
+    assert payload["event_name"] == "ActorBeginOverlap"
+    assert payload["graph_name"] == "EventGraph"
+
+
+def test_agent_chat_resolves_blueprint_tick_event_stub_from_inventory(
+    client: TestClient,
+) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
+                    "asset_name": "BP_EnemySpawner",
+                    "asset_type": "Blueprint",
+                }
+            ],
+        },
+    )
+    query = "Add Tick event to BP_EnemySpawner blueprint"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_blueprint_tick_event_stub_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "create_blueprint_event_stub"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_EnemySpawner"
+    assert payload["event_name"] == "Tick"
+
+
 def test_agent_chat_resolves_blueprint_from_project_inventory_for_level_placement(
     client: TestClient,
 ) -> None:

@@ -107,6 +107,25 @@ def _cases() -> list[dict[str, Any]]:
             "expected_result_fields": ["created_nodes", "linked_pins"],
         },
         {
+            "case_id": "event_stub_actor_begin_overlap",
+            "request": _proposal_payload(
+                "create_blueprint_event_stub",
+                {
+                    "blueprint_path": blueprint_path,
+                    "event_name": "ActorBeginOverlap",
+                    "graph_name": "EventGraph",
+                },
+            ),
+            "expected_status": 200,
+            "expected_tool_id": "editor_create_blueprint_event_stub",
+            "expected_payload": {
+                "blueprint_path": blueprint_path,
+                "event_name": "ActorBeginOverlap",
+                "graph_name": "EventGraph",
+            },
+            "expected_result_fields": ["event_name", "dirty_packages"],
+        },
+        {
             "case_id": "template_branch_print_string",
             "request": _proposal_payload(
                 "add_blueprint_node_template",
