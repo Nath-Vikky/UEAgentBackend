@@ -68,7 +68,8 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     }
     assert body["capabilities"]["summary"]["operation_count"] >= 18
     assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
-    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 8
+    assert body["capabilities"]["summary"]["read_only_operation_count"] >= 2
+    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 6
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
     assert body["capabilities"]["summary"]["roadmap_group_counts"]["umg"] >= 3
@@ -78,10 +79,18 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         item["operation_type"]: item
         for item in body["capabilities"]["roadmap_items"]
     }
+    read_only_items = {
+        item["operation_type"]: item
+        for item in body["capabilities"]["read_only_items"]
+    }
     assert "set_umg_widget_appearance" in roadmap_items
-    assert roadmap_items["inspect_level_actors"]["side_effect_level"] == "read_only"
-    assert roadmap_items["inspect_level_actors"]["requires_confirmation"] is False
     assert roadmap_items["set_actor_metadata"]["proposal_enabled"] is False
+    assert read_only_items["inspect_level_actors"]["side_effect_level"] == "read_only"
+    assert read_only_items["inspect_level_actors"]["requires_confirmation"] is False
+    assert read_only_items["inspect_level_actors"]["proposal_enabled"] is False
+    assert read_only_items["inspect_material_instance_parameters"]["endpoint"].endswith(
+        "/inspect/material-instance-parameters"
+    )
     assert operation_items["add_blueprint_variable"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_blueprint_variable"]["group"] == "blueprint"
     assert operation_items["add_blueprint_variable"]["risk_flags"] == "MEDIUM"
@@ -139,6 +148,52 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "graph_schema_version" in blueprint_graph_schema
     assert "graph_metrics" in blueprint_graph_schema
     assert "graphs" in blueprint_graph_schema
+
+
+def test_editor_operation_read_only_inspections_use_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "ReadOnlyInspectionProject",
+            "project_name": "ReadOnlyInspectionProject",
+            "level_actors": [
+                {
+                    "actor_label": "BP_EnemySpawner_1",
+                    "actor_class": "BP_EnemySpawner_C",
+                    "level_name": "L_Test",
+                    "transform": {"location": {"x": 100, "y": 0, "z": 20}},
+                    "components": [{"component_name": "SceneRoot", "component_class": "SceneComponent"}],
+                }
+            ],
+            "material_instances": [
+                {
+                    "material_instance_path": "/Game/Materials/MI_Rock.MI_Rock",
+                    "material_instance_name": "MI_Rock",
+                    "parent_material": "/Game/Materials/M_Rock.M_Rock",
+                    "scalar_parameters": [{"name": "Roughness", "value": 0.6}],
+                    "static_switch_parameters": [{"name": "UseDetail", "value": True}],
+                }
+            ],
+        },
+    )
+    actors = client.get(
+        "/api/v1/editor-operations/inspect/level-actors",
+        params={"project_id": "ReadOnlyInspectionProject", "query": "EnemySpawner"},
+    )
+    materials = client.get(
+        "/api/v1/editor-operations/inspect/material-instance-parameters",
+        params={"project_id": "ReadOnlyInspectionProject", "material_instance_path": "/Game/Materials/MI_Rock"},
+    )
+
+    assert snapshot.status_code == 200
+    assert actors.status_code == 200
+    assert actors.json()["inspection"]["operation_type"] == "inspect_level_actors"
+    assert actors.json()["inspection"]["side_effect_level"] == "read_only"
+    assert actors.json()["items"][0]["actor_label"] == "BP_EnemySpawner_1"
+    assert materials.status_code == 200
+    assert materials.json()["inspection"]["operation_type"] == "inspect_material_instance_parameters"
+    assert materials.json()["items"][0]["material_instance_name"] == "MI_Rock"
+    assert materials.json()["items"][0]["scalar_parameters"][0]["name"] == "Roughness"
 
 
 def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient) -> None:

@@ -6,13 +6,14 @@ This catalog is generated from the backend editor operation registry.
 
 - Operation count: `19`
 - Implemented frontend count: `19`
+- Read-only inspection count: `2`
 - Transport: `http`
 - Proposal type: `editor_operation`
 - Requires confirmation: `True`
 - LLM direct execution: `False`
 - Auto execute follow-ups: `False`
 - Auto save: `False`
-- Roadmap operation count: `8`
+- Roadmap operation count: `6`
 
 ## Groups
 
@@ -69,11 +70,16 @@ Place actors and adjust transforms in the current editor level.
 | `place_actor_in_level` | `MEDIUM` | `actor_class` | `actor_label`, `actor_path`, `level_dirty`, `dirty_packages` |
 | `set_actor_transform` | `MEDIUM` | `actor_reference`, `transform_mode` | `actor_reference`, `transform_mode`, `level_dirty`, `dirty_packages` |
 
+Read-only inspections:
+
+| Inspection | Endpoint | Required Fields | Boundary |
+| --- | --- | --- | --- |
+| `inspect_level_actors` | `/api/v1/editor-operations/inspect/level-actors` | - | Read-only inventory; no level streaming, World Partition editing, or Actor mutation. |
+
 Roadmap:
 
 | Planned Operation | Side Effect | Required Fields | Boundary |
 | --- | --- | --- | --- |
-| `inspect_level_actors` | `read_only` | - | Read-only inventory; no level streaming or World Partition editing. |
 | `set_actor_metadata` | `confirmed_write` | `actor_reference`, `metadata` | No actor deletion and no hidden batch edits. |
 | `arrange_actors_pattern` | `confirmed_write` | `actor_references`, `pattern` | Batch operations require preview, item limits, and user confirmation. |
 
@@ -86,11 +92,16 @@ Edit safe Material Instance parameters.
 | `set_material_instance_parameter` | `MEDIUM` | `material_instance_path`, `parameter_name`, `parameter_type`, `value` | `material_instance_path`, `parameter_name`, `dirty`, `dirty_packages` |
 | `set_material_instance_texture_parameter` | `MEDIUM` | `material_instance_path`, `parameter_name`, `texture_path` | `material_instance_path`, `parameter_name`, `texture_path`, `dirty`, `dirty_packages` |
 
+Read-only inspections:
+
+| Inspection | Endpoint | Required Fields | Boundary |
+| --- | --- | --- | --- |
+| `inspect_material_instance_parameters` | `/api/v1/editor-operations/inspect/material-instance-parameters` | `material_instance_path` | Read-only inspection; parent Material graph editing remains out of scope. |
+
 Roadmap:
 
 | Planned Operation | Side Effect | Required Fields | Boundary |
 | --- | --- | --- | --- |
-| `inspect_material_instance_parameters` | `read_only` | `material_instance_path` | Read-only inspection; parent Material graph editing remains out of scope. |
 | `set_material_instance_static_switch` | `confirmed_write` | `material_instance_path`, `parameter_name`, `value` | No parent material graph changes and no shader optimization pass. |
 
 ## Safety Boundary

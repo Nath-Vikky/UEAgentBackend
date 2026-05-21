@@ -364,6 +364,29 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
     },
 }
 
+READ_ONLY_INSPECTION_SPECS: dict[str, dict[str, Any]] = {
+    "inspect_level_actors": {
+        "group": "level",
+        "tool_id": "editor_inspect_level_actors",
+        "title": "Inspect Level Actors",
+        "summary": "Read current level actor labels, classes, transforms, folders, tags, and component summaries from Project Inventory.",
+        "required_fields": [],
+        "frontend_status": "backend_read_only_v1",
+        "endpoint": "/api/v1/editor-operations/inspect/level-actors",
+        "boundary": "Read-only inventory; no level streaming, World Partition editing, or Actor mutation.",
+    },
+    "inspect_material_instance_parameters": {
+        "group": "material",
+        "tool_id": "editor_inspect_material_instance_parameters",
+        "title": "Inspect Material Instance Parameters",
+        "summary": "Read scalar, vector, texture, and static switch parameter names and current values from Project Inventory.",
+        "required_fields": ["material_instance_path"],
+        "frontend_status": "backend_read_only_v1",
+        "endpoint": "/api/v1/editor-operations/inspect/material-instance-parameters",
+        "boundary": "Read-only inspection; parent Material graph editing remains out of scope.",
+    },
+}
+
 OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
     "set_umg_widget_appearance": {
         "group": "umg",
@@ -392,15 +415,6 @@ OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
         "required_fields": ["widget_blueprint_path", "widget_name", "slot_type", "layout"],
         "boundary": "No responsive layout generation and no complex container restructuring.",
     },
-    "inspect_material_instance_parameters": {
-        "group": "material",
-        "title": "Inspect Material Instance Parameters",
-        "summary": "Read scalar, vector, texture, and static switch parameter names and current values.",
-        "side_effect_level": "read_only",
-        "frontend_status": "planned_v2",
-        "required_fields": ["material_instance_path"],
-        "boundary": "Read-only inspection; parent Material graph editing remains out of scope.",
-    },
     "set_material_instance_static_switch": {
         "group": "material",
         "title": "Set Material Instance Static Switch",
@@ -409,15 +423,6 @@ OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
         "frontend_status": "planned_v2",
         "required_fields": ["material_instance_path", "parameter_name", "value"],
         "boundary": "No parent material graph changes and no shader optimization pass.",
-    },
-    "inspect_level_actors": {
-        "group": "level",
-        "title": "Inspect Level Actors",
-        "summary": "Read current level actor labels, classes, transforms, folders, and tags.",
-        "side_effect_level": "read_only",
-        "frontend_status": "planned_v2",
-        "required_fields": [],
-        "boundary": "Read-only inventory; no level streaming or World Partition editing.",
     },
     "set_actor_metadata": {
         "group": "level",
@@ -466,6 +471,8 @@ class EditorOperationService:
             EditorOperationService._operation_group(operation_type)
             for operation_type in OPERATION_SPECS
         )
+        read_only_group_counts = Counter(str(item["group"]) for item in READ_ONLY_INSPECTION_SPECS.values())
+        read_only_status_counts = Counter(str(item["frontend_status"]) for item in READ_ONLY_INSPECTION_SPECS.values())
         roadmap_group_counts = Counter(str(item["group"]) for item in OPERATION_ROADMAP.values())
         roadmap_status_counts = Counter(str(item["frontend_status"]) for item in OPERATION_ROADMAP.values())
         groups = [
@@ -474,8 +481,14 @@ class EditorOperationService:
                 "title": group["title"],
                 "summary": group["summary"],
                 "operation_count": sum(1 for item in group["operation_types"] if item in OPERATION_SPECS),
+                "read_only_count": read_only_group_counts.get(group_id, 0),
                 "roadmap_count": roadmap_group_counts.get(group_id, 0),
                 "operation_types": [item for item in group["operation_types"] if item in OPERATION_SPECS],
+                "read_only_operation_types": [
+                    operation_type
+                    for operation_type, item in READ_ONLY_INSPECTION_SPECS.items()
+                    if item["group"] == group_id
+                ],
                 "roadmap_operation_types": [
                     operation_type
                     for operation_type, item in OPERATION_ROADMAP.items()
@@ -496,6 +509,9 @@ class EditorOperationService:
                 "frontend_status_counts": dict(frontend_status_counts),
                 "group_counts": dict(group_counts),
                 "group_count": len(groups),
+                "read_only_operation_count": len(READ_ONLY_INSPECTION_SPECS),
+                "read_only_group_counts": dict(read_only_group_counts),
+                "read_only_status_counts": dict(read_only_status_counts),
                 "roadmap_operation_count": len(OPERATION_ROADMAP),
                 "roadmap_group_counts": dict(roadmap_group_counts),
                 "roadmap_status_counts": dict(roadmap_status_counts),
@@ -527,6 +543,24 @@ class EditorOperationService:
                     ],
                 }
                 for operation_type, spec in OPERATION_SPECS.items()
+            ],
+            "read_only_items": [
+                {
+                    "operation_type": operation_type,
+                    "group": item["group"],
+                    "tool_id": item["tool_id"],
+                    "title": item["title"],
+                    "summary": item["summary"],
+                    "required_fields": item["required_fields"],
+                    "frontend_status": item["frontend_status"],
+                    "side_effect_level": "read_only",
+                    "requires_confirmation": False,
+                    "auto_save": False,
+                    "proposal_enabled": False,
+                    "endpoint": item["endpoint"],
+                    "boundary": item["boundary"],
+                }
+                for operation_type, item in READ_ONLY_INSPECTION_SPECS.items()
             ],
             "roadmap_items": [
                 {

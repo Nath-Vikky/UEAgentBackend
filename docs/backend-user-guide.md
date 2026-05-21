@@ -2588,6 +2588,7 @@ GET /api/v1/editor-operations/capabilities
 - `items[].group`：单个操作所属能力域。
 - `items[].risk_flags`：风险等级，当前写操作仍需用户确认。
 - `items[].result_contract_fields`：UE 插件执行后建议回传的结果字段。
+- `read_only_items[]`：后端已可直接执行的只读检查操作，不创建 Proposal，不要求用户确认。
 - `safety_policy.auto_execute_follow_ups=false`：后端不会自动执行 follow-up。
 - `roadmap_items[]`：后续 P3/P4/P5 计划能力，只用于展示路线图，不会被当成可执行 proposal。
 - `roadmap_items[].proposal_enabled=false`：明确表示当前后端不会创建这些计划项的写操作。
@@ -2778,6 +2779,15 @@ Agent Chat / Project QA 会把最近项目快照注入：
 ```
 
 当问题包含 `this asset / selected asset / components / variables / functions / graphs` 这类上下文词时，后端会优先返回选中资产，而不是列出全项目资产。关卡 Actor 和材质实例字段来自 UEAgentTool 的 Inventory 采集；旧前端不提交时，summary 会显示数量为 0，问答不会编造缺失信息。
+
+Editor Operation Bridge 也提供了两个只读检查入口，方便前端或调试脚本按“编辑器操作能力”的命名方式读取同一份 Inventory：
+
+```http
+GET /api/v1/editor-operations/inspect/level-actors
+GET /api/v1/editor-operations/inspect/material-instance-parameters
+```
+
+它们返回 `inspection.side_effect_level=read_only`，不会创建 Proposal，也不会要求 UE 前端执行 Editor API。数据来源仍是最近一次 Project Inventory 快照。
 
 边界：
 

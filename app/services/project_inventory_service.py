@@ -1185,6 +1185,25 @@ class ProjectInventoryService:
                 "多少",
             )
         )
+        write_action_hint = any(
+            token in query
+            for token in (
+                "place ",
+                "spawn ",
+                "add ",
+                "create ",
+                "move ",
+                "set ",
+                "put ",
+                "放置",
+                "添加",
+                "创建",
+                "移动",
+                "设置",
+            )
+        )
+        if write_action_hint and not listing_hint:
+            return False
         return level_hint and (actor_hint or listing_hint)
 
     @staticmethod

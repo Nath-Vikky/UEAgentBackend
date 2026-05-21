@@ -16,10 +16,14 @@ def render_editor_operation_catalog(catalog: dict[str, Any] | None = None) -> st
     summary = dict(capabilities.get("summary") or {})
     safety_policy = dict(capabilities.get("safety_policy") or {})
     items = [dict(item) for item in capabilities.get("items") or []]
+    read_only_items = [dict(item) for item in capabilities.get("read_only_items") or []]
     roadmap_items = [dict(item) for item in capabilities.get("roadmap_items") or []]
     items_by_group: dict[str, list[dict[str, Any]]] = {}
     for item in items:
         items_by_group.setdefault(str(item.get("group") or "misc"), []).append(item)
+    read_only_by_group: dict[str, list[dict[str, Any]]] = {}
+    for item in read_only_items:
+        read_only_by_group.setdefault(str(item.get("group") or "misc"), []).append(item)
     roadmap_by_group: dict[str, list[dict[str, Any]]] = {}
     for item in roadmap_items:
         roadmap_by_group.setdefault(str(item.get("group") or "misc"), []).append(item)
@@ -33,6 +37,7 @@ def render_editor_operation_catalog(catalog: dict[str, Any] | None = None) -> st
         "",
         f"- Operation count: `{summary.get('operation_count', len(items))}`",
         f"- Implemented frontend count: `{summary.get('implemented_frontend_count', 0)}`",
+        f"- Read-only inspection count: `{summary.get('read_only_operation_count', len(read_only_items))}`",
         f"- Transport: `{capabilities.get('transport')}`",
         f"- Proposal type: `{capabilities.get('proposal_type')}`",
         f"- Requires confirmation: `{safety_policy.get('requires_frontend_confirmation')}`",
@@ -67,6 +72,26 @@ def render_editor_operation_catalog(catalog: dict[str, Any] | None = None) -> st
                 f"{_format_list(list(item.get('result_contract_fields') or []))} |"
             )
         lines.append("")
+
+        group_read_only = read_only_by_group.get(group_id, [])
+        if group_read_only:
+            lines.extend(
+                [
+                    "Read-only inspections:",
+                    "",
+                    "| Inspection | Endpoint | Required Fields | Boundary |",
+                    "| --- | --- | --- | --- |",
+                ]
+            )
+            for item in group_read_only:
+                lines.append(
+                    "| "
+                    f"`{item.get('operation_type')}` | "
+                    f"`{item.get('endpoint')}` | "
+                    f"{_format_list(list(item.get('required_fields') or []))} | "
+                    f"{item.get('boundary') or ''} |"
+                )
+            lines.append("")
 
         group_roadmap = roadmap_by_group.get(group_id, [])
         if group_roadmap:

@@ -20,6 +20,7 @@ from app.services.editor_operation_service import (
     EditorOperationService,
     EditorOperationValidationError,
 )
+from app.services.project_inventory_service import ProjectInventoryService
 from app.services.proposal_service import ProposalService
 
 router = APIRouter(prefix="/editor-operations", tags=["editor-operations"])
@@ -62,6 +63,99 @@ def editor_operation_diagnostics(
         operation_type=operation_type,
     )
     return {"success": True, **payload, "errors": []}
+
+
+@router.get("/inspect/level-actors")
+def inspect_level_actors(
+    project_id: str | None = None,
+    query: str | None = None,
+    level_name: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    settings: Settings = Depends(get_app_settings),
+) -> dict:
+    service = ProjectInventoryService(settings)
+    items = service.list_level_actors(
+        project_id=project_id,
+        query=query,
+        level_name=level_name,
+        limit=limit,
+    )
+    summary = service.summary(project_id)
+    empty_reason = ""
+    if not summary.get("has_snapshot"):
+        empty_reason = "no_project_inventory_snapshot"
+    elif not items:
+        empty_reason = "no_matching_level_actors"
+    return {
+        "success": True,
+        "inspection": {
+            "operation_type": "inspect_level_actors",
+            "side_effect_level": "read_only",
+            "source": "project_inventory",
+            "query": query or "",
+            "project_id": project_id or summary.get("project_id") or "",
+            "level_name": level_name or "",
+            "match_count": len(items),
+            "empty_reason": empty_reason,
+        },
+        "summary": summary,
+        "items": items,
+        "errors": [],
+    }
+
+
+@router.get("/inspect/material-instance-parameters")
+def inspect_material_instance_parameters(
+    project_id: str | None = None,
+    material_instance_path: str | None = None,
+    query: str | None = None,
+    parent_material: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    settings: Settings = Depends(get_app_settings),
+) -> dict:
+    service = ProjectInventoryService(settings)
+    search_query = material_instance_path or query
+    items = service.list_material_instances(
+        project_id=project_id,
+        query=search_query,
+        parent_material=parent_material,
+        limit=limit,
+    )
+    if material_instance_path:
+        expected = material_instance_path.lower()
+        items = [
+            item
+            for item in items
+            if expected
+            in {
+                str(item.get("material_instance_path") or "").lower(),
+                str(item.get("material_instance_name") or "").lower(),
+            }
+            or expected in str(item.get("material_instance_path") or "").lower()
+        ]
+    summary = service.summary(project_id)
+    empty_reason = ""
+    if not summary.get("has_snapshot"):
+        empty_reason = "no_project_inventory_snapshot"
+    elif not items:
+        empty_reason = "no_matching_material_instances"
+    return {
+        "success": True,
+        "inspection": {
+            "operation_type": "inspect_material_instance_parameters",
+            "side_effect_level": "read_only",
+            "source": "project_inventory",
+            "query": query or "",
+            "project_id": project_id or summary.get("project_id") or "",
+            "material_instance_path": material_instance_path or "",
+            "parent_material": parent_material or "",
+            "match_count": len(items),
+            "empty_reason": empty_reason,
+        },
+        "summary": summary,
+        "items": items,
+        "errors": [],
+    }
 
 
 @router.post("/proposals", response_model=EditorOperationProposalResponse)
