@@ -3372,6 +3372,109 @@ class EditorOperationService:
         return [text] if text else []
 
     @staticmethod
+    def _collection_count(value: Any) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, dict):
+            return 1 if value else 0
+        if isinstance(value, (list, tuple, set)):
+            return len(value)
+        return 1 if str(value or "").strip() else 0
+
+    @staticmethod
+    def _first_non_empty_text(*values: Any) -> str:
+        for value in values:
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    @staticmethod
+    def _blueprint_graph_result_diagnostics(
+        *,
+        request: EditorOperationResultRequest,
+        preview: dict[str, Any],
+        result: dict[str, Any],
+        dirty_packages: list[str],
+    ) -> dict[str, Any]:
+        operation_type = str(preview.get("operation_type") or request.operation_type or "")
+        graph_operations = {
+            "add_blueprint_variable",
+            "add_blueprint_component",
+            "create_blueprint_event_stub",
+            "add_blueprint_node_template",
+            "connect_blueprint_nodes",
+            "compile_blueprint",
+        }
+        if operation_type not in graph_operations:
+            return {}
+
+        payload = dict(preview.get("operation_payload") or {})
+        template_id = EditorOperationService._first_non_empty_text(
+            result.get("template_id"),
+            payload.get("template_id"),
+        )
+        compile_status = EditorOperationService._first_non_empty_text(result.get("compile_status"))
+        created_node_count = EditorOperationService._collection_count(result.get("created_nodes"))
+        linked_node_count = EditorOperationService._collection_count(result.get("linked_nodes"))
+        linked_pin_count = EditorOperationService._collection_count(result.get("linked_pins"))
+        result_fields = list(
+            dict(preview.get("expected_result_contract") or {}).get("operation_result_fields") or []
+        )
+        compile_requested = bool(payload.get("compile_after_edit"))
+        expects_created_nodes = operation_type == "add_blueprint_node_template"
+        expects_linked_pins = (
+            operation_type == "connect_blueprint_nodes"
+            or template_id
+            in {
+                "print_string",
+                "branch_print_string",
+                "sequence_print_strings",
+                "set_variable",
+                "call_function",
+            }
+        )
+
+        diagnostic_flags: list[str] = []
+        if request.success and expects_created_nodes and created_node_count == 0:
+            diagnostic_flags.append("created_nodes_missing")
+        if request.success and expects_linked_pins and linked_pin_count == 0:
+            diagnostic_flags.append("expected_linked_pins_missing")
+        if compile_requested and not compile_status:
+            diagnostic_flags.append("compile_status_missing")
+        if compile_status.lower() in {"failed", "error", "compile_failed", "blocked"}:
+            diagnostic_flags.append("compile_failed")
+        if request.success and "dirty_packages" in result_fields and not dirty_packages:
+            diagnostic_flags.append("dirty_packages_missing")
+
+        return {
+            "schema_version": "blueprint_graph_operation_diagnostics_v1",
+            "category": "blueprint_graph",
+            "operation_type": operation_type,
+            "blueprint_path": EditorOperationService._first_non_empty_text(
+                result.get("blueprint_path"),
+                payload.get("blueprint_path"),
+            ),
+            "graph_name": EditorOperationService._first_non_empty_text(
+                result.get("graph_name"),
+                payload.get("graph_name"),
+            ),
+            "template_id": template_id,
+            "entry_event": EditorOperationService._first_non_empty_text(
+                result.get("entry_event"),
+                payload.get("entry_event"),
+            ),
+            "compile_requested": compile_requested,
+            "compile_status": compile_status,
+            "created_node_count": created_node_count,
+            "linked_node_count": linked_node_count,
+            "linked_pin_count": linked_pin_count,
+            "has_graph_changes": created_node_count > 0 or linked_pin_count > 0,
+            "diagnostic_flags": diagnostic_flags,
+            "needs_user_attention": (not request.success) or bool(diagnostic_flags),
+        }
+
+    @staticmethod
     def _normalize_result_summary(
         *,
         request: EditorOperationResultRequest,
@@ -3405,6 +3508,12 @@ class EditorOperationService:
             failed_field_count = len(failed_fields)
         else:
             failed_field_count = 0
+        operation_diagnostics = EditorOperationService._blueprint_graph_result_diagnostics(
+            request=request,
+            preview=preview,
+            result=result,
+            dirty_packages=dirty_packages,
+        )
         return {
             "schema_version": "editor_operation_result_summary_v1",
             "execution_state": request.execution_state,
@@ -3419,7 +3528,13 @@ class EditorOperationService:
             "failed_fields": failed_fields,
             "error_count": len(error_codes),
             "error_codes": error_codes,
-            "needs_user_attention": (not request.success) or bool(error_codes) or failed_field_count > 0,
+            "operation_diagnostics": operation_diagnostics,
+            "needs_user_attention": (
+                (not request.success)
+                or bool(error_codes)
+                or failed_field_count > 0
+                or bool(operation_diagnostics.get("needs_user_attention"))
+            ),
         }
 
     def list_operation_history(self, *, limit: int = 50, operation_type: str | None = None) -> dict[str, Any]:

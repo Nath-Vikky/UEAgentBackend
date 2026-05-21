@@ -2803,6 +2803,15 @@ compile_blueprint
 
 这个命令不启动 UE，不执行编辑器写入，也不调用 LLM；它用于检查后端 Proposal 契约、白名单模板、显式 Pin 连接和拒绝用例是否仍然稳定。真正的节点生成、连线、编译和 Undo 行为仍需要在 UEAgentTool 侧实机验证。
 
+UE 插件回传 Blueprint Graph 执行结果后，后端会在 `result_summary.operation_diagnostics` 中补充诊断摘要：
+
+- `created_node_count`：本次创建的节点数量。
+- `linked_pin_count`：本次真实连接的 pin 数量。
+- `compile_requested / compile_status`：是否请求编译以及 UE 插件回传的编译状态。
+- `diagnostic_flags`：例如 `expected_linked_pins_missing`、`compile_status_missing`、`compile_failed`、`created_nodes_missing`。
+
+这些字段主要给 Debug View、操作历史和排查使用，不要求前端立刻新增 UI；旧版 Proposal 卡片可以继续只显示原有结果。
+
 Branch + PrintString 示例：
 
 ```json

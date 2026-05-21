@@ -657,6 +657,125 @@ def test_connect_blueprint_nodes_rejects_unsafe_node_identifier(client: TestClie
     assert body["errors"][0]["code"] == "source_node_id_invalid"
 
 
+def test_blueprint_node_template_result_summary_includes_graph_diagnostics(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "print_string",
+                "graph_name": "EventGraph",
+                "message": "Hello diagnostics",
+                "entry_event": "BeginPlay",
+                "compile_after_edit": True,
+            },
+        },
+    )
+    assert created.status_code == 200
+    proposal_id = created.json()["item"]["proposal_id"]
+    assert client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm").status_code == 200
+
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "add_blueprint_node_template",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "template_id": "print_string",
+                "created_nodes": [{"node_name": "K2Node_CallFunction_0"}],
+                "linked_nodes": [{"source": "EventBeginPlay", "target": "K2Node_CallFunction_0"}],
+                "linked_pins": [{"source_pin": "then", "target_pin": "execute"}],
+                "compile_status": "succeeded",
+                "dirty": True,
+                "dirty_packages": ["/Game/Blueprints/BP_PlayerCharacter"],
+                "applied_fields": {"template_id": "print_string"},
+            },
+        },
+    )
+    assert result.status_code == 200
+    summary = result.json()["item"]["result_summary"]
+    diagnostics = summary["operation_diagnostics"]
+    assert diagnostics["schema_version"] == "blueprint_graph_operation_diagnostics_v1"
+    assert diagnostics["category"] == "blueprint_graph"
+    assert diagnostics["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
+    assert diagnostics["graph_name"] == "EventGraph"
+    assert diagnostics["template_id"] == "print_string"
+    assert diagnostics["created_node_count"] == 1
+    assert diagnostics["linked_node_count"] == 1
+    assert diagnostics["linked_pin_count"] == 1
+    assert diagnostics["compile_requested"] is True
+    assert diagnostics["compile_status"] == "succeeded"
+    assert diagnostics["diagnostic_flags"] == []
+    assert diagnostics["needs_user_attention"] is False
+    assert summary["needs_user_attention"] is False
+
+    history = client.get(
+        "/api/v1/editor-operations/history",
+        params={"operation_type": "add_blueprint_node_template"},
+    )
+    assert history.status_code == 200
+    history_item = history.json()["items"][0]
+    assert history_item["proposal_id"] == proposal_id
+    history_diagnostics = history_item["result_summary"]["operation_diagnostics"]
+    assert history_diagnostics["created_node_count"] == 1
+    assert history_diagnostics["linked_pin_count"] == 1
+
+
+def test_blueprint_node_template_result_summary_flags_missing_expected_links(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "print_string",
+                "graph_name": "EventGraph",
+                "message": "Unlinked diagnostics",
+                "entry_event": "BeginPlay",
+                "compile_after_edit": True,
+            },
+        },
+    )
+    assert created.status_code == 200
+    proposal_id = created.json()["item"]["proposal_id"]
+    assert client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm").status_code == 200
+
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "add_blueprint_node_template",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "result": {
+                "created_nodes": [{"node_name": "K2Node_CallFunction_0"}],
+                "linked_pins": [],
+                "compile_status": "succeeded",
+                "dirty": True,
+                "dirty_packages": ["/Game/Blueprints/BP_PlayerCharacter"],
+            },
+        },
+    )
+    assert result.status_code == 200
+    diagnostics = result.json()["item"]["result_summary"]["operation_diagnostics"]
+    assert diagnostics["created_node_count"] == 1
+    assert diagnostics["linked_pin_count"] == 0
+    assert diagnostics["diagnostic_flags"] == ["expected_linked_pins_missing"]
+    assert diagnostics["needs_user_attention"] is True
+    assert result.json()["item"]["result_summary"]["needs_user_attention"] is True
+
+
 def test_blueprint_compile_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
