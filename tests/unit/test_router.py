@@ -133,6 +133,39 @@ def test_agent_chat_with_current_project_asset_list_routes_to_inventory() -> Non
     assert routing["route"]["top_signal_detector"]["detector"] == "inventory_query"
 
 
+def test_agent_chat_with_current_level_actor_list_routes_to_inventory() -> None:
+    request = _request(
+        content="List current level actors",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["project_inventory_query"] is True
+
+
+def test_agent_chat_with_chinese_level_actor_list_routes_to_inventory() -> None:
+    content = "\u5f53\u524d\u5173\u5361\u6709\u54ea\u4e9bActor"
+    request = _request(
+        content=content,
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["project_inventory_query"] is True
+
+
 def test_router_keeps_existing_decision_while_exposing_signal_trace() -> None:
     request = _request(
         content="Explain how this file initializes the subsystem.",

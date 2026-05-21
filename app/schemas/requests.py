@@ -147,6 +147,8 @@ class ProjectInventorySnapshotRequest(BaseModel):
     plugin_version: str | None = None
     assets: list[dict[str, Any]] = Field(default_factory=list)
     code_files: list[dict[str, Any]] = Field(default_factory=list)
+    level_actors: list[dict[str, Any]] = Field(default_factory=list)
+    material_instances: list[dict[str, Any]] = Field(default_factory=list)
     scan_diagnostics: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -154,7 +156,9 @@ class ProjectInventorySnapshotRequest(BaseModel):
 class ProjectInventoryQueryRequest(BaseModel):
     query: str
     project_id: str | None = None
+    asset_path: str | None = None
     asset_type: str | None = None
+    fields: list[str] = Field(default_factory=list)
     selected_assets: list[str] = Field(default_factory=list)
     limit: int = Field(default=20, ge=1, le=200)
 

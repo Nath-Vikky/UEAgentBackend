@@ -70,11 +70,25 @@ class ProjectInventoryService:
             previous.get("code_files", []) if previous else [],
             self._normalize_code_files(request.code_files),
         )
+        level_actors = self._merge_by_id(
+            previous.get("level_actors", []) if previous else [],
+            self._normalize_level_actors(request.level_actors),
+        )
+        material_instances = self._merge_by_id(
+            previous.get("material_instances", []) if previous else [],
+            self._normalize_material_instances(request.material_instances),
+        )
         summary = {
             "asset_count": len(assets),
             "code_file_count": len(code_files),
+            "level_actor_count": len(level_actors),
+            "material_instance_count": len(material_instances),
             "asset_type_counts": self._count_by(assets, "asset_type"),
             "code_file_type_counts": self._count_by(code_files, "file_type"),
+            "level_actor_class_counts": self._count_by(level_actors, "actor_class"),
+            "level_actor_level_counts": self._count_by(level_actors, "level_name"),
+            "material_instance_parent_counts": self._count_by(material_instances, "parent_material"),
+            "material_parameter_count": sum(int(item.get("parameter_count") or 0) for item in material_instances),
             "blueprint_count": sum(1 for item in assets if self._is_blueprint_asset(item)),
             "static_mesh_count": sum(1 for item in assets if str(item.get("asset_type") or "") == "StaticMesh"),
             "map_count": sum(1 for item in assets if str(item.get("asset_type") or "") in {"World", "Map"}),
@@ -91,9 +105,13 @@ class ProjectInventoryService:
             "created_at": created_at,
             "asset_count": len(assets),
             "code_file_count": len(code_files),
+            "level_actor_count": len(level_actors),
+            "material_instance_count": len(material_instances),
             "summary": summary,
             "assets": assets,
             "code_files": code_files,
+            "level_actors": level_actors,
+            "material_instances": material_instances,
             "scan_diagnostics": request.scan_diagnostics,
             "metadata": request.metadata,
         }
@@ -104,7 +122,7 @@ class ProjectInventoryService:
         return {
             key: value
             for key, value in snapshot.items()
-            if key not in {"assets", "code_files"}
+            if key not in {"assets", "code_files", "level_actors", "material_instances"}
         }
 
     def summary(self, project_id: str | None = None) -> dict[str, Any]:
@@ -114,25 +132,41 @@ class ProjectInventoryService:
                 "has_snapshot": False,
                 "asset_count": 0,
                 "code_file_count": 0,
+                "level_actor_count": 0,
+                "material_instance_count": 0,
                 "asset_type_counts": {},
                 "code_file_type_counts": {},
+                "level_actor_class_counts": {},
+                "level_actor_level_counts": {},
+                "material_instance_parent_counts": {},
+                "material_parameter_count": 0,
             }
-        asset_type_counts = self._count_by(snapshot["assets"], "asset_type")
-        code_file_type_counts = self._count_by(snapshot["code_files"], "file_type")
+        assets = list(snapshot.get("assets") or [])
+        code_files = list(snapshot.get("code_files") or [])
+        level_actors = list(snapshot.get("level_actors") or [])
+        material_instances = list(snapshot.get("material_instances") or [])
+        asset_type_counts = self._count_by(assets, "asset_type")
+        code_file_type_counts = self._count_by(code_files, "file_type")
         return {
             "has_snapshot": True,
             "snapshot_id": snapshot["snapshot_id"],
             "project_id": snapshot["project_id"],
             "project_name": snapshot["project_name"],
             "created_at": snapshot["created_at"],
-            "asset_count": len(snapshot["assets"]),
-            "code_file_count": len(snapshot["code_files"]),
+            "asset_count": len(assets),
+            "code_file_count": len(code_files),
+            "level_actor_count": len(level_actors),
+            "material_instance_count": len(material_instances),
             "asset_type_counts": asset_type_counts,
             "code_file_type_counts": code_file_type_counts,
-            "blueprint_count": sum(1 for item in snapshot["assets"] if self._is_blueprint_asset(item)),
-            "static_mesh_count": sum(1 for item in snapshot["assets"] if str(item.get("asset_type") or "") == "StaticMesh"),
-            "map_count": sum(1 for item in snapshot["assets"] if str(item.get("asset_type") or "") in {"World", "Map"}),
-            "blueprint_parent_class_counts": self._count_blueprint_parent_classes(snapshot["assets"]),
+            "level_actor_class_counts": self._count_by(level_actors, "actor_class"),
+            "level_actor_level_counts": self._count_by(level_actors, "level_name"),
+            "material_instance_parent_counts": self._count_by(material_instances, "parent_material"),
+            "material_parameter_count": sum(int(item.get("parameter_count") or 0) for item in material_instances),
+            "blueprint_count": sum(1 for item in assets if self._is_blueprint_asset(item)),
+            "static_mesh_count": sum(1 for item in assets if str(item.get("asset_type") or "") == "StaticMesh"),
+            "map_count": sum(1 for item in assets if str(item.get("asset_type") or "") in {"World", "Map"}),
+            "blueprint_parent_class_counts": self._count_blueprint_parent_classes(assets),
             "source": snapshot.get("source"),
             "plugin_version": snapshot.get("plugin_version"),
             "scan_diagnostics": snapshot.get("scan_diagnostics", {}),
@@ -189,6 +223,46 @@ class ProjectInventoryService:
             items = [item for item in items if _contains_text(item, needle)]
         return items[:limit]
 
+    def list_level_actors(
+        self,
+        *,
+        project_id: str | None = None,
+        query: str | None = None,
+        level_name: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        snapshot = self._resolve_snapshot(project_id)
+        if not snapshot:
+            return []
+        items = list(snapshot.get("level_actors") or [])
+        if level_name:
+            expected = level_name.lower()
+            items = [item for item in items if str(item.get("level_name") or "").lower() == expected]
+        if query:
+            needle = query.lower()
+            items = [item for item in items if self._level_actor_matches(item, needle)]
+        return items[:limit]
+
+    def list_material_instances(
+        self,
+        *,
+        project_id: str | None = None,
+        query: str | None = None,
+        parent_material: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        snapshot = self._resolve_snapshot(project_id)
+        if not snapshot:
+            return []
+        items = list(snapshot.get("material_instances") or [])
+        if parent_material:
+            expected = parent_material.lower()
+            items = [item for item in items if str(item.get("parent_material") or "").lower() == expected]
+        if query:
+            needle = query.lower()
+            items = [item for item in items if self._material_instance_matches(item, needle)]
+        return items[:limit]
+
     def query(
         self,
         *,
@@ -203,10 +277,12 @@ class ProjectInventoryService:
         needle = query.lower().strip()
         inferred_type = asset_type or self._infer_asset_type(needle)
         is_code_query = self._looks_like_code_query(needle)
+        is_level_actor_query = self._looks_like_level_actor_query(needle)
+        is_material_instance_query = self._looks_like_material_instance_query(needle)
         is_asset_query = inferred_type is not None or self._mentions_asset_domain(needle)
         requested_fields = self._normalize_requested_fields(fields or self._infer_requested_fields(needle))
         assets: list[dict[str, Any]] = []
-        if not is_code_query or is_asset_query:
+        if (not is_code_query or is_asset_query) and not is_level_actor_query:
             if asset_path:
                 asset = self.get_asset(asset_path, project_id)
                 assets = [asset] if asset else []
@@ -256,16 +332,50 @@ class ProjectInventoryService:
                 ][:limit]
             if not code_files and listing_query:
                 code_files = self.list_code_files(project_id=project_id, limit=limit)
+        level_actors: list[dict[str, Any]] = []
+        if is_level_actor_query:
+            level_actors = self.list_level_actors(project_id=project_id, query=query, limit=limit)
+            if not level_actors and query.strip():
+                query_terms = self._query_terms(needle, inferred_type)
+                candidates = self.list_level_actors(project_id=project_id, limit=10000)
+                level_actors = [
+                    item
+                    for item in candidates
+                    if any(self._level_actor_matches(item, term) for term in query_terms)
+                ][:limit]
+            if not level_actors and self._looks_like_inventory_listing(needle):
+                level_actors = self.list_level_actors(project_id=project_id, limit=limit)
+        material_instances: list[dict[str, Any]] = []
+        if is_material_instance_query:
+            material_instances = self.list_material_instances(project_id=project_id, query=query, limit=limit)
+            if not material_instances and query.strip():
+                query_terms = self._query_terms(needle, inferred_type)
+                candidates = self.list_material_instances(project_id=project_id, limit=10000)
+                material_instances = [
+                    item
+                    for item in candidates
+                    if any(self._material_instance_matches(item, term) for term in query_terms)
+                ][:limit]
+            if not material_instances and self._looks_like_inventory_listing(needle):
+                material_instances = self.list_material_instances(project_id=project_id, limit=limit)
         summary = self.summary(project_id)
         empty_reason = ""
         if not summary.get("has_snapshot"):
             empty_reason = "no_project_inventory_snapshot"
-        elif not assets and not code_files:
+        elif not assets and not code_files and not level_actors and not material_instances:
             empty_reason = "no_matching_inventory_items"
         items = [self._inventory_asset_result_item(item, requested_fields) for item in assets]
         items.extend(
             self._inventory_code_result_item(item, requested_fields)
             for item in code_files
+        )
+        items.extend(
+            self._inventory_level_actor_result_item(item, requested_fields)
+            for item in level_actors
+        )
+        items.extend(
+            self._inventory_material_instance_result_item(item, requested_fields)
+            for item in material_instances
         )
         return {
             "items": items[:limit],
@@ -275,6 +385,8 @@ class ProjectInventoryService:
                 "inferred_asset_type": inferred_type,
                 "asset_match_count": len(assets),
                 "code_file_match_count": len(code_files),
+                "level_actor_match_count": len(level_actors),
+                "material_instance_match_count": len(material_instances),
                 "empty_reason": empty_reason,
                 "requested_asset_path": asset_path or "",
                 "requested_fields": requested_fields,
@@ -303,6 +415,8 @@ class ProjectInventoryService:
                 "current_file": None,
                 "top_assets": [],
                 "top_code_files": [],
+                "top_level_actors": [],
+                "top_material_instances": [],
             }
 
         selected_items = []
@@ -327,8 +441,15 @@ class ProjectInventoryService:
             "summary": self.summary(project_id),
             "selected_assets": selected_items[:limit],
             "current_file": current_file_item,
-            "top_assets": [self._compact_asset(item) for item in snapshot["assets"][:limit]],
-            "top_code_files": [self._compact_code_file(item) for item in snapshot["code_files"][:limit]],
+            "top_assets": [self._compact_asset(item) for item in list(snapshot.get("assets") or [])[:limit]],
+            "top_code_files": [self._compact_code_file(item) for item in list(snapshot.get("code_files") or [])[:limit]],
+            "top_level_actors": [
+                self._compact_level_actor(item) for item in list(snapshot.get("level_actors") or [])[:limit]
+            ],
+            "top_material_instances": [
+                self._compact_material_instance(item)
+                for item in list(snapshot.get("material_instances") or [])[:limit]
+            ],
         }
 
     def _normalize_assets(self, assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -458,6 +579,107 @@ class ProjectInventoryService:
             )
         return normalized
 
+    def _normalize_level_actors(self, actors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for raw in actors:
+            if not isinstance(raw, dict):
+                continue
+            actor_label = str(raw.get("actor_label") or raw.get("label") or raw.get("name") or "").strip()
+            actor_name = str(raw.get("actor_name") or raw.get("object_name") or actor_label).strip()
+            actor_path = str(raw.get("actor_path") or raw.get("object_path") or raw.get("path") or "").strip()
+            actor_class = str(raw.get("actor_class") or raw.get("class_path") or raw.get("class") or "").strip()
+            if not any((actor_label, actor_name, actor_path, actor_class)):
+                continue
+            level_name = str(raw.get("level_name") or raw.get("map_name") or raw.get("level") or "").strip()
+            merge_source = actor_path or "|".join([level_name, actor_label, actor_name, actor_class])
+            normalized.append(
+                {
+                    "actor_id": str(raw.get("actor_id") or raw.get("id") or _stable_id("actor", merge_source)).strip(),
+                    "actor_label": actor_label,
+                    "actor_name": actor_name,
+                    "actor_class": actor_class or "Unknown",
+                    "actor_path": actor_path,
+                    "level_name": level_name or "PersistentLevel",
+                    "folder_path": str(raw.get("folder_path") or raw.get("folder") or "").strip(),
+                    "blueprint_path": str(raw.get("blueprint_path") or raw.get("asset_path") or "").strip(),
+                    "transform": _as_dict(raw.get("transform")),
+                    "components": _as_list(raw.get("components")),
+                    "tags": raw.get("tags") if isinstance(raw.get("tags"), (dict, list)) else {},
+                    "mobility": str(raw.get("mobility") or "").strip(),
+                    "hidden_in_game": raw.get("hidden_in_game"),
+                    "selected": raw.get("selected"),
+                    "properties": _as_dict(raw.get("properties")),
+                    "metadata": _as_dict(raw.get("metadata")),
+                }
+            )
+        return normalized
+
+    def _normalize_material_instances(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for raw in items:
+            if not isinstance(raw, dict):
+                continue
+            material_path = str(
+                raw.get("material_instance_path") or raw.get("asset_path") or raw.get("path") or ""
+            ).strip()
+            material_name = str(raw.get("material_instance_name") or raw.get("asset_name") or raw.get("name") or "").strip()
+            if not material_path and not material_name:
+                continue
+            parent_material = str(raw.get("parent_material") or raw.get("parent") or "").strip()
+            scalar_parameters = _as_list(raw.get("scalar_parameters"))
+            vector_parameters = _as_list(raw.get("vector_parameters"))
+            texture_parameters = _as_list(raw.get("texture_parameters"))
+            static_switch_parameters = _as_list(raw.get("static_switch_parameters"))
+            parameters = _as_list(raw.get("parameters")) or self._flatten_material_parameters(
+                scalar_parameters=scalar_parameters,
+                vector_parameters=vector_parameters,
+                texture_parameters=texture_parameters,
+                static_switch_parameters=static_switch_parameters,
+            )
+            merge_source = material_path or material_name
+            normalized.append(
+                {
+                    "material_instance_id": str(
+                        raw.get("material_instance_id") or raw.get("id") or _stable_id("material", merge_source)
+                    ).strip(),
+                    "material_instance_path": material_path,
+                    "material_instance_name": material_name or _asset_name(material_path),
+                    "parent_material": parent_material or "Unknown",
+                    "parameters": parameters,
+                    "parameter_count": len(parameters),
+                    "scalar_parameters": scalar_parameters,
+                    "vector_parameters": vector_parameters,
+                    "texture_parameters": texture_parameters,
+                    "static_switch_parameters": static_switch_parameters,
+                    "overrides": _as_dict(raw.get("overrides")),
+                    "properties": _as_dict(raw.get("properties")),
+                    "metadata": _as_dict(raw.get("metadata")),
+                }
+            )
+        return normalized
+
+    @staticmethod
+    def _flatten_material_parameters(
+        *,
+        scalar_parameters: list[Any],
+        vector_parameters: list[Any],
+        texture_parameters: list[Any],
+        static_switch_parameters: list[Any],
+    ) -> list[dict[str, Any]]:
+        flattened: list[dict[str, Any]] = []
+        for parameter_type, values in (
+            ("scalar", scalar_parameters),
+            ("vector", vector_parameters),
+            ("texture", texture_parameters),
+            ("static_switch", static_switch_parameters),
+        ):
+            for value in values:
+                if isinstance(value, dict):
+                    flattened.append({"parameter_type": parameter_type, **value})
+                else:
+                    flattened.append({"parameter_type": parameter_type, "name": str(value)})
+        return flattened
+
     def _load_store(self) -> dict[str, Any]:
         if not self.inventory_path.exists():
             return {"latest_snapshot_id": None, "latest_by_project": {}, "snapshots": {}}
@@ -494,11 +716,28 @@ class ProjectInventoryService:
         return snapshot if isinstance(snapshot, dict) else None
 
     def _merge_by_id(self, existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        merged = {str(item.get("asset_id") or item.get("file_id")): item for item in existing}
+        merged = {self._merge_key(item): item for item in existing}
         for item in incoming:
-            key = str(item.get("asset_id") or item.get("file_id"))
+            key = self._merge_key(item)
             merged[key] = item
         return list(merged.values())
+
+    @staticmethod
+    def _merge_key(item: dict[str, Any]) -> str:
+        for key in (
+            "asset_id",
+            "file_id",
+            "actor_id",
+            "material_instance_id",
+            "asset_path",
+            "file_path",
+            "actor_path",
+            "material_instance_path",
+        ):
+            value = item.get(key)
+            if value not in (None, ""):
+                return str(value)
+        return _stable_id("item", json.dumps(item, sort_keys=True, ensure_ascii=False))
 
     def _count_by(self, items: list[dict[str, Any]], key: str) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -593,6 +832,36 @@ class ProjectInventoryService:
             "modified_at": item.get("modified_at") or item.get("last_modified"),
         }
 
+    @staticmethod
+    def _compact_level_actor(item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "actor_id": item.get("actor_id"),
+            "actor_label": item.get("actor_label"),
+            "actor_name": item.get("actor_name"),
+            "actor_class": item.get("actor_class"),
+            "actor_path": item.get("actor_path"),
+            "level_name": item.get("level_name"),
+            "folder_path": item.get("folder_path"),
+            "blueprint_path": item.get("blueprint_path"),
+            "transform": item.get("transform") or {},
+            "component_count": len(item.get("components") or []),
+            "mobility": item.get("mobility"),
+        }
+
+    @staticmethod
+    def _compact_material_instance(item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "material_instance_id": item.get("material_instance_id"),
+            "material_instance_name": item.get("material_instance_name"),
+            "material_instance_path": item.get("material_instance_path"),
+            "parent_material": item.get("parent_material"),
+            "parameter_count": item.get("parameter_count"),
+            "scalar_parameter_count": len(item.get("scalar_parameters") or []),
+            "vector_parameter_count": len(item.get("vector_parameters") or []),
+            "texture_parameter_count": len(item.get("texture_parameters") or []),
+            "static_switch_parameter_count": len(item.get("static_switch_parameters") or []),
+        }
+
     def _inventory_asset_result_item(
         self,
         item: dict[str, Any],
@@ -611,6 +880,30 @@ class ProjectInventoryService:
         result = {"kind": "code_file", "score_reason": "code_inventory_match", **item}
         if requested_fields:
             result["field_view"] = self._code_file_field_view(item, requested_fields)
+        return result
+
+    def _inventory_level_actor_result_item(
+        self,
+        item: dict[str, Any],
+        requested_fields: list[str],
+    ) -> dict[str, Any]:
+        result = {"kind": "level_actor", "score_reason": "level_actor_inventory_match", **item}
+        if requested_fields:
+            result["field_view"] = self._generic_field_view(item, requested_fields)
+        return result
+
+    def _inventory_material_instance_result_item(
+        self,
+        item: dict[str, Any],
+        requested_fields: list[str],
+    ) -> dict[str, Any]:
+        result = {
+            "kind": "material_instance",
+            "score_reason": "material_instance_inventory_match",
+            **item,
+        }
+        if requested_fields:
+            result["field_view"] = self._generic_field_view(item, requested_fields)
         return result
 
     def _asset_field_view(self, item: dict[str, Any], requested_fields: list[str]) -> dict[str, Any]:
@@ -659,6 +952,10 @@ class ProjectInventoryService:
         }
         return {field: item.get(field) for field in requested_fields if field in allowed}
 
+    @staticmethod
+    def _generic_field_view(item: dict[str, Any], requested_fields: list[str]) -> dict[str, Any]:
+        return {field: item.get(field) for field in requested_fields if field in item}
+
     def _asset_referenced_by_query(self, item: dict[str, Any], query: str) -> bool:
         candidates = [
             str(item.get("asset_name") or "").lower(),
@@ -688,6 +985,43 @@ class ProjectInventoryService:
             if value in query or leaf in query or (stem and stem in query):
                 return True
         return False
+
+    def _level_actor_matches(self, item: dict[str, Any], needle: str) -> bool:
+        return any(
+            _contains_text(item.get(key), needle)
+            for key in (
+                "actor_label",
+                "actor_name",
+                "actor_class",
+                "actor_path",
+                "level_name",
+                "folder_path",
+                "blueprint_path",
+                "components",
+                "tags",
+                "transform",
+                "properties",
+                "metadata",
+            )
+        )
+
+    def _material_instance_matches(self, item: dict[str, Any], needle: str) -> bool:
+        return any(
+            _contains_text(item.get(key), needle)
+            for key in (
+                "material_instance_path",
+                "material_instance_name",
+                "parent_material",
+                "parameters",
+                "scalar_parameters",
+                "vector_parameters",
+                "texture_parameters",
+                "static_switch_parameters",
+                "overrides",
+                "properties",
+                "metadata",
+            )
+        )
 
     def _infer_asset_type(self, query: str) -> str | None:
         mapping = {
@@ -751,6 +1085,87 @@ class ProjectInventoryService:
             )
         )
 
+    def _looks_like_inventory_listing(self, query: str) -> bool:
+        return self._looks_like_asset_listing(query) or any(
+            token in query
+            for token in (
+                "actor",
+                "actors",
+                "level actor",
+                "level actors",
+                "material instance",
+                "material instances",
+                "parameter",
+                "parameters",
+                "current level",
+                "current scene",
+                "level",
+                "scene",
+                "map",
+                "有哪些",
+                "哪些",
+                "列出",
+                "列表",
+                "查看",
+                "查询",
+                "参数",
+                "关卡",
+                "场景",
+            )
+        )
+
+    @staticmethod
+    def _looks_like_level_actor_query(query: str) -> bool:
+        actor_hint = any(token in query for token in ("actor", "actors", "pawn", "character", "bp_"))
+        level_hint = any(
+            token in query
+            for token in (
+                "current level",
+                "current scene",
+                "level actor",
+                "level actors",
+                "in level",
+                "in scene",
+                "placed",
+                "spawned",
+                "关卡",
+                "场景",
+                "当前地图",
+                "当前关卡",
+                "当前场景",
+                "摆放",
+                "放置",
+            )
+        )
+        return actor_hint and level_hint
+
+    @staticmethod
+    def _looks_like_material_instance_query(query: str) -> bool:
+        material_hint = any(
+            token in query
+            for token in (
+                "material instance",
+                "material instances",
+                "mi_",
+                "材质实例",
+            )
+        )
+        parameter_hint = any(
+            token in query
+            for token in (
+                "parameter",
+                "parameters",
+                "scalar",
+                "vector",
+                "texture",
+                "static switch",
+                "参数",
+                "贴图",
+                "开关",
+            )
+        )
+        return material_hint and parameter_hint
+
     def _looks_like_selected_asset_query(self, query: str) -> bool:
         return any(
             token in query
@@ -805,10 +1220,20 @@ class ProjectInventoryService:
             "that",
             "assets",
             "asset",
+            "actor",
+            "actors",
+            "level",
+            "scene",
+            "map",
+            "material",
+            "instance",
+            "parameter",
+            "parameters",
             "list",
             "show",
             "which",
             "what",
+            "where",
             "please",
             "当前项目",
             "当前工程",
@@ -829,6 +1254,13 @@ class ProjectInventoryService:
             "资产",
             "设置",
             "属性",
+            "关卡",
+            "场景",
+            "地图",
+            "材质",
+            "实例",
+            "材质实例",
+            "参数",
         }
         if inferred_asset_type:
             stopwords.add(inferred_asset_type.lower())
@@ -858,6 +1290,17 @@ class ProjectInventoryService:
             "module_name": ("module", "模块"),
             "classes": ("class", "类"),
             "symbols": ("symbol", "符号"),
+            "actor_class": ("actor class", "actor_class", "类型"),
+            "actor_label": ("actor label", "actor_label", "label", "标签"),
+            "transform": ("transform", "location", "rotation", "scale", "位置", "旋转", "缩放"),
+            "level_name": ("level", "map", "关卡", "地图"),
+            "folder_path": ("folder", "文件夹"),
+            "parent_material": ("parent material", "parent_material", "父材质"),
+            "parameters": ("parameter", "parameters", "参数"),
+            "scalar_parameters": ("scalar", "标量"),
+            "vector_parameters": ("vector", "向量", "颜色"),
+            "texture_parameters": ("texture", "贴图"),
+            "static_switch_parameters": ("static switch", "开关"),
         }
         fields: list[str] = []
         for field, hints in field_hints.items():
@@ -898,6 +1341,32 @@ class ProjectInventoryService:
             "class": "classes",
             "symbols": "symbols",
             "symbol": "symbols",
+            "actor_class": "actor_class",
+            "actorclass": "actor_class",
+            "actor_label": "actor_label",
+            "actorlabel": "actor_label",
+            "label": "actor_label",
+            "transform": "transform",
+            "location": "transform",
+            "rotation": "transform",
+            "scale": "transform",
+            "level": "level_name",
+            "map": "level_name",
+            "level_name": "level_name",
+            "folder": "folder_path",
+            "folder_path": "folder_path",
+            "parent_material": "parent_material",
+            "parentmaterial": "parent_material",
+            "parameters": "parameters",
+            "parameter": "parameters",
+            "scalar": "scalar_parameters",
+            "scalar_parameters": "scalar_parameters",
+            "vector": "vector_parameters",
+            "vector_parameters": "vector_parameters",
+            "texture": "texture_parameters",
+            "texture_parameters": "texture_parameters",
+            "static_switch": "static_switch_parameters",
+            "static_switch_parameters": "static_switch_parameters",
         }
         normalized: list[str] = []
         for raw_field in fields:

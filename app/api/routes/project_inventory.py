@@ -71,6 +71,37 @@ def list_inventory_code_files(
     return ProjectInventoryItemsResponse(success=True, items=items, summary=service.summary(project_id))
 
 
+@router.get("/level-actors", response_model=ProjectInventoryItemsResponse)
+def list_inventory_level_actors(
+    project_id: str | None = None,
+    query: str | None = None,
+    level_name: str | None = None,
+    limit: int = Query(default=200, ge=1, le=2000),
+    settings: Settings = Depends(get_app_settings),
+) -> ProjectInventoryItemsResponse:
+    service = ProjectInventoryService(settings)
+    items = service.list_level_actors(project_id=project_id, query=query, level_name=level_name, limit=limit)
+    return ProjectInventoryItemsResponse(success=True, items=items, summary=service.summary(project_id))
+
+
+@router.get("/material-instances", response_model=ProjectInventoryItemsResponse)
+def list_inventory_material_instances(
+    project_id: str | None = None,
+    query: str | None = None,
+    parent_material: str | None = None,
+    limit: int = Query(default=200, ge=1, le=2000),
+    settings: Settings = Depends(get_app_settings),
+) -> ProjectInventoryItemsResponse:
+    service = ProjectInventoryService(settings)
+    items = service.list_material_instances(
+        project_id=project_id,
+        query=query,
+        parent_material=parent_material,
+        limit=limit,
+    )
+    return ProjectInventoryItemsResponse(success=True, items=items, summary=service.summary(project_id))
+
+
 @router.post("/query", response_model=ProjectInventoryQueryResponse)
 def query_inventory(
     request: ProjectInventoryQueryRequest,
@@ -79,7 +110,9 @@ def query_inventory(
     result = ProjectInventoryService(settings).query(
         query=request.query,
         project_id=request.project_id,
+        asset_path=request.asset_path,
         asset_type=request.asset_type,
+        fields=request.fields,
         selected_assets=request.selected_assets,
         limit=request.limit,
     )

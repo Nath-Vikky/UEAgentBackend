@@ -187,6 +187,29 @@ class TaskService:
             )
         inventory_lines: list[str] = []
         for index, item in enumerate(qa_result.get("inventory_items", [])[:6], start=1):
+            if item.get("kind") == "level_actor":
+                inventory_lines.append(
+                    "\n".join(
+                        [
+                            f"[I{index}] Level actor: {item.get('actor_label') or item.get('actor_name')}",
+                            f"Class: {item.get('actor_class') or 'Unknown'}",
+                            f"Level: {item.get('level_name') or 'n/a'}",
+                            f"Transform: {dumps_pretty(item.get('transform') or {})[:260]}",
+                        ]
+                    )
+                )
+                continue
+            if item.get("kind") == "material_instance":
+                inventory_lines.append(
+                    "\n".join(
+                        [
+                            f"[I{index}] Material instance: {item.get('material_instance_name') or item.get('material_instance_path')}",
+                            f"Parent: {item.get('parent_material') or 'Unknown'}",
+                            f"Parameters: {dumps_pretty(item.get('parameters') or [])[:350]}",
+                        ]
+                    )
+                )
+                continue
             if item.get("kind") == "code_file":
                 inventory_lines.append(
                     "\n".join(
@@ -294,6 +317,29 @@ class TaskService:
             )
         ]
         for item in items[:8]:
+            if item.get("kind") == "level_actor":
+                transform = item.get("transform") if isinstance(item.get("transform"), dict) else {}
+                location = transform.get("location") or transform.get("translation") or {}
+                location_text = dumps_pretty(location) if location else "n/a"
+                lines.append(
+                    f"- {item.get('actor_label') or item.get('actor_name')} | "
+                    f"class={item.get('actor_class') or 'Unknown'} | "
+                    f"level={item.get('level_name') or 'n/a'} | location={location_text[:120]}"
+                )
+                continue
+            if item.get("kind") == "material_instance":
+                params = item.get("parameters") if isinstance(item.get("parameters"), list) else []
+                preview = ", ".join(
+                    str(param.get("name") or param.get("parameter_name") or param)
+                    for param in params[:6]
+                    if isinstance(param, dict) or param
+                )
+                lines.append(
+                    f"- {item.get('material_instance_name') or item.get('material_instance_path')} | "
+                    f"parent={item.get('parent_material') or 'Unknown'} | "
+                    f"parameters={preview or item.get('parameter_count') or 0}"
+                )
+                continue
             if item.get("kind") == "code_file":
                 classes = ", ".join(item.get("classes") or [])
                 lines.append(

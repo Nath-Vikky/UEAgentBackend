@@ -835,6 +835,25 @@ Code Review collector，成功时 `data.review_scope.read_status = "ok"` 或 `in
       "file_type": "cpp",
       "classes": ["ARBPlayerCharacter"]
     }
+  ],
+  "level_actors": [
+    {
+      "actor_label": "BP_EnemySpawner_1",
+      "actor_class": "BP_EnemySpawner_C",
+      "level_name": "L_Test",
+      "blueprint_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
+      "transform": {"location": {"x": 100, "y": 0, "z": 20}},
+      "components": ["SceneRoot", "Billboard"]
+    }
+  ],
+  "material_instances": [
+    {
+      "material_instance_path": "/Game/Materials/MI_Rock.MI_Rock",
+      "material_instance_name": "MI_Rock",
+      "parent_material": "/Game/Materials/M_Rock.M_Rock",
+      "scalar_parameters": [{"name": "Roughness", "value": 0.6}],
+      "texture_parameters": [{"name": "BaseColor", "texture_path": "/Game/Textures/T_Rock_D"}]
+    }
   ]
 }
 ```
@@ -845,9 +864,17 @@ Code Review collector，成功时 `data.review_scope.read_status = "ok"` 或 `in
 - `GET /api/v1/project-inventory/assets?asset_type=StaticMesh`：按资产类型查询
 - `GET /api/v1/project-inventory/assets/{asset_id}`：查看单个资产详情
 - `GET /api/v1/project-inventory/code-files?module_name=RushBa`：查询代码文件索引
+- `GET /api/v1/project-inventory/level-actors?level_name=L_Test`：查询当前快照里的关卡 Actor 摘要
+- `GET /api/v1/project-inventory/material-instances?parent_material=/Game/Materials/M_Rock.M_Rock`：查询材质实例参数摘要
 - `POST /api/v1/project-inventory/query`：按自然语言关键词查询资产或代码索引
 
-Project Inventory 已经最小接入 Agent Chat / Project QA。用户问“工程里有哪些资产”“有哪些开启 Nanite 的静态网格体”“某模块有哪些 C++ 文件”这类项目事实问题时，后端会先查询项目快照，并把命中的资产 / 代码摘要并入回答上下文。LLM 不可用时也会返回基于快照的基础回答。
+Project Inventory 已经接入 Agent Chat / Project QA。用户问“工程里有哪些资产”“有哪些开启 Nanite 的静态网格体”“某模块有哪些 C++ 文件”“当前关卡有哪些 Actor”“MI_Player 有哪些材质参数”这类项目事实问题时，后端会先查询项目快照，并把命中的资产 / 代码 / 关卡 Actor / 材质实例摘要并入回答上下文。LLM 不可用时也会返回基于快照的基础回答。
+
+兼容边界：
+
+- 旧版 UE 插件只提交 `assets` 和 `code_files` 仍然完全可用。
+- `level_actors` 和 `material_instances` 是可选增强字段；前端后续补采集后，自由聊天才能回答“当前关卡摆了哪些对象”“某个材质实例参数值是多少”等更具体问题。
+- 后端只信任快照字段，不直接读取 `.umap`、`.uasset`，也不会推断快照里没有的 Actor 或材质参数。
 
 ## 16. 用户可见语言与 Code Review 输出质量
 
@@ -2694,6 +2721,8 @@ POST /api/v1/project-inventory/snapshot
 - Static Mesh：`settings.nanite_enabled`、`lod_count`、`collision_complexity`、`lightmap_resolution`。
 - Blueprint：`blueprint.parent_class`、`components`、`variables`、`functions`、`graphs`、`interfaces`、`editor_flags`。
 - 代码文件：`file_path`、`module_name`、`file_type`、`classes`、`symbols`、`modified_at`。
+- 关卡 Actor：`level_actors[].actor_label`、`actor_class`、`level_name`、`blueprint_path`、`transform`、`components`。
+- 材质实例：`material_instances[].material_instance_path`、`parent_material`、`scalar_parameters`、`vector_parameters`、`texture_parameters`、`static_switch_parameters`。
 
 提交后，`GET /api/v1/project-inventory/summary` 会额外返回：
 
@@ -2701,6 +2730,12 @@ POST /api/v1/project-inventory/snapshot
 - `static_mesh_count`
 - `map_count`
 - `blueprint_parent_class_counts`
+- `level_actor_count`
+- `level_actor_class_counts`
+- `level_actor_level_counts`
+- `material_instance_count`
+- `material_instance_parent_counts`
+- `material_parameter_count`
 
 Agent Chat / Project QA 会把最近项目快照注入：
 
@@ -2708,8 +2743,10 @@ Agent Chat / Project QA 会把最近项目快照注入：
 - `debug_view.active_context.inventory`
 - `debug_view.active_context.asset.selected_asset_details`
 - `debug_view.active_context.code.current_file_inventory`
+- `debug_view.context_bundle.project_inventory_context.top_level_actors`
+- `debug_view.context_bundle.project_inventory_context.top_material_instances`
 
-因此用户问“当前项目有哪些蓝图资产”“这个蓝图有哪些组件/变量”“当前文件属于哪个模块”时，后端可以优先用项目快照回答；如果问题包含“为什么、怎么做、建议、风险”，再组合知识库和 LLM 综合。
+因此用户问“当前项目有哪些蓝图资产”“这个蓝图有哪些组件/变量”“当前文件属于哪个模块”“当前关卡有哪些 Actor”“某个材质实例有哪些参数”时，后端可以优先用项目快照回答；如果问题包含“为什么、怎么做、建议、风险”，再组合知识库和 LLM 综合。
 
 `POST /api/v1/project-inventory/query` 也支持可选 `selected_assets`：
 
@@ -2721,7 +2758,17 @@ Agent Chat / Project QA 会把最近项目快照注入：
 }
 ```
 
-当问题包含 `this asset / selected asset / components / variables / functions / graphs` 这类上下文词时，后端会优先返回选中资产，而不是列出全项目资产。
+也可以请求更聚焦的字段视图：
+
+```json
+{
+  "project_id": "RushBa",
+  "query": "Show material instance parameters",
+  "fields": ["parent_material", "parameters"]
+}
+```
+
+当问题包含 `this asset / selected asset / components / variables / functions / graphs` 这类上下文词时，后端会优先返回选中资产，而不是列出全项目资产。关卡 Actor 和材质实例字段是可选增强；旧前端不提交时，summary 会显示数量为 0，问答不会编造缺失信息。
 
 边界：
 

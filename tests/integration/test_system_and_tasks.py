@@ -280,6 +280,25 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
                     "last_modified": "2026-04-23T09:59:00Z",
                 }
             ],
+            "level_actors": [
+                {
+                    "actor_label": "BP_EnemySpawner_1",
+                    "actor_class": "BP_EnemySpawner_C",
+                    "level_name": "L_Test",
+                    "blueprint_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
+                    "transform": {"location": {"x": 100, "y": 0, "z": 20}},
+                    "components": ["SceneRoot", "Billboard"],
+                }
+            ],
+            "material_instances": [
+                {
+                    "material_instance_path": "/Game/Materials/MI_Rock.MI_Rock",
+                    "material_instance_name": "MI_Rock",
+                    "parent_material": "/Game/Materials/M_Rock.M_Rock",
+                    "scalar_parameters": [{"name": "Roughness", "value": 0.6}],
+                    "texture_parameters": [{"name": "BaseColor", "texture_path": "/Game/Textures/T_Rock_D"}],
+                }
+            ],
         },
     )
     summary = client.get("/api/v1/project-inventory/summary", params={"project_id": "RushBa"})
@@ -311,12 +330,39 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
             "query": "\u67e5\u770bRBPlayerCharacter.cpp\u7684\u4ee3\u7801\u6587\u4ef6\u4fe1\u606f",
         },
     )
+    level_actors = client.get(
+        "/api/v1/project-inventory/level-actors",
+        params={"project_id": "RushBa", "level_name": "L_Test"},
+    )
+    material_instances = client.get(
+        "/api/v1/project-inventory/material-instances",
+        params={"project_id": "RushBa", "parent_material": "/Game/Materials/M_Rock.M_Rock"},
+    )
+    level_actor_query = client.post(
+        "/api/v1/project-inventory/query",
+        json={
+            "project_id": "RushBa",
+            "query": "List current level actors",
+            "fields": ["actor_class", "transform", "components"],
+        },
+    )
+    material_param_query = client.post(
+        "/api/v1/project-inventory/query",
+        json={
+            "project_id": "RushBa",
+            "query": "Show material instance parameters",
+            "fields": ["parent_material", "parameters"],
+        },
+    )
 
     assert snapshot.status_code == 200
     assert snapshot.json()["snapshot"]["status"] == "saved"
     assert snapshot.json()["snapshot"]["asset_count"] == 2
     assert snapshot.json()["snapshot"]["summary"]["asset_count"] == 2
     assert snapshot.json()["snapshot"]["summary"]["code_file_count"] == 1
+    assert snapshot.json()["snapshot"]["summary"]["level_actor_count"] == 1
+    assert snapshot.json()["snapshot"]["summary"]["material_instance_count"] == 1
+    assert snapshot.json()["snapshot"]["summary"]["material_parameter_count"] == 2
     assert snapshot.json()["snapshot"]["summary"]["blueprint_count"] == 1
     assert snapshot.json()["snapshot"]["summary"]["blueprint_parent_class_counts"]["ACharacter"] == 1
     assert snapshot.json()["snapshot"]["scan_diagnostics"]["asset_count_from_editor"] == 2
@@ -330,6 +376,16 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert code_files.status_code == 200
     assert code_files.json()["items"][0]["classes"] == ["ARBPlayerCharacter"]
     assert code_files.json()["items"][0]["last_modified"] == "2026-04-23T09:59:00Z"
+    assert level_actors.status_code == 200
+    assert level_actors.json()["items"][0]["actor_label"] == "BP_EnemySpawner_1"
+    assert material_instances.status_code == 200
+    assert material_instances.json()["items"][0]["material_instance_name"] == "MI_Rock"
+    assert level_actor_query.status_code == 200
+    assert level_actor_query.json()["items"][0]["kind"] == "level_actor"
+    assert level_actor_query.json()["items"][0]["field_view"]["actor_class"] == "BP_EnemySpawner_C"
+    assert material_param_query.status_code == 200
+    assert material_param_query.json()["items"][0]["kind"] == "material_instance"
+    assert material_param_query.json()["items"][0]["field_view"]["parameters"][0]["name"] == "Roughness"
     assert asset_detail.status_code == 200
     assert asset_detail.json()["item"]["asset_path"] == "/Game/Environment/SM_Rock.SM_Rock"
     assert asset_name_query.status_code == 200

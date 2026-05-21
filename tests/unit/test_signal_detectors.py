@@ -70,3 +70,22 @@ def test_signal_detectors_build_scoring_shadow_recommendation() -> None:
     assert result["recommendation"]["route_hint"] == "project_qa"
     assert result["recommendation"]["selected_tool_id"] == "query_project_inventory"
     assert result["recommendation"]["override_applied"] is False
+
+
+def test_signal_detectors_can_rank_level_actor_inventory_question() -> None:
+    request = _request("List current level actors")
+
+    result = evaluate_signal_detectors("List current level actors", request)
+
+    assert result["top"]["detector"] == "inventory_query"
+    assert result["top"]["selected_tool_id"] == "query_project_inventory"
+
+
+def test_signal_detectors_can_rank_chinese_level_actor_inventory_question() -> None:
+    content = "\u5f53\u524d\u5173\u5361\u6709\u54ea\u4e9bActor"
+    request = _request(content)
+
+    result = evaluate_signal_detectors(content, request)
+
+    assert result["top"]["detector"] == "inventory_query"
+    assert result["top"]["selected_tool_id"] == "query_project_inventory"
