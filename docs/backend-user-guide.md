@@ -241,11 +241,14 @@ LLM 排查补充：
 .\.venv\Scripts\python.exe scripts\run_rag_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75 --output storage\artifacts\evals\local-rag-eval-smoke.json --markdown-output storage\artifacts\evals\local-rag-eval-smoke.md
 .\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output storage\artifacts\evals\hallucination-guard-latest.md
 .\.venv\Scripts\python.exe scripts\run_router_signal_eval.py --output storage\artifacts\evals\router-signal-eval-latest.json --markdown-output storage\artifacts\evals\router-signal-eval-latest.md
+.\.venv\Scripts\python.exe scripts\run_blueprint_graph_operation_smoke.py
 ```
 
 GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行。日常验证以本地 Ruff、pytest 和 RAG eval 为准；CI 只用于需要时手动复核，不做部署。
 
 `storage/artifacts/evals/*.md` 是本地生成的 Markdown 评估报告，展示 `hit_at_k`、`mrr`、`route_accuracy`、`citation_coverage` 等核心指标。当前评估是 smoke 级别，用于证明“可测、可复现、可继续优化”，不是企业级大规模 benchmark。
+
+`scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它只调用 `POST /api/v1/editor-operations/proposals`，验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
@@ -2791,6 +2794,14 @@ compile_blueprint
 - `template_id=enhanced_input_action_event`：UE 插件会根据已有 `UInputAction` 资产创建 `Enhanced Input Action` 事件节点。当前只创建事件源节点，不自动连线；后续可通过 `get_blueprint_graph` 读取 `Triggered / Started / Completed` 等 pin，再用 `connect_blueprint_nodes` 显式连接。
 
 执行后可选编译一次 Blueprint，并把 `created_nodes`、`linked_nodes`、`linked_pins`、`branch_path`、`condition_default`、`sequence_output_count`、`messages`、`variable_name`、`variable_scope`、`variable_value`、`function_name`、`function_target`、`input_action_path`、`input_action_name`、`compile_status`、`dirty_packages`、`applied_fields` 回传后端。后续模板会继续按白名单扩展，不开放任意节点类名。
+
+后端契约 smoke：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_blueprint_graph_operation_smoke.py
+```
+
+这个命令不启动 UE，不执行编辑器写入，也不调用 LLM；它用于检查后端 Proposal 契约、白名单模板、显式 Pin 连接和拒绝用例是否仍然稳定。真正的节点生成、连线、编译和 Undo 行为仍需要在 UEAgentTool 侧实机验证。
 
 Branch + PrintString 示例：
 
