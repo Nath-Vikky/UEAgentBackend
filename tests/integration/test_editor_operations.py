@@ -781,6 +781,22 @@ def test_blueprint_node_template_result_summary_flags_missing_expected_links(
     assert result.json()["item"]["result_summary"]["needs_user_attention"] is True
     assert result.json()["item"]["result_summary"]["repair_advice"]["status"] == "suggested"
 
+    follow_ups = client.get(f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups")
+    assert follow_ups.status_code == 200
+    follow_up = follow_ups.json()["follow_up"]
+    assert follow_up["schema_version"] == "editor_operation_follow_up_candidates_v1"
+    assert follow_up["status"] == "suggested"
+    assert follow_up["candidate_count"] == 1
+    assert follow_up["ready_candidate_count"] == 1
+    candidate = follow_up["candidates"][0]
+    assert candidate["candidate_id"] == "connect_expected_exec_pins"
+    assert candidate["operation_type"] == "connect_blueprint_nodes"
+    assert candidate["proposal_ready"] is True
+    assert candidate["auto_execute"] is False
+    assert candidate["payload"]["source_node_id"] == "EventBeginPlay"
+    assert candidate["payload"]["target_node_id"] == "K2Node_CallFunction_0"
+    assert candidate["create_request_hint"]["json"]["context"]["source_proposal_id"] == proposal_id
+
     attention_history = client.get(
         "/api/v1/editor-operations/history",
         params={
@@ -926,6 +942,39 @@ def test_blueprint_compile_failed_result_includes_repair_advice(client: TestClie
     assert "inspect_ue_execution_errors" in action_ids
     assert "open_blueprint_compile_results" in action_ids
     assert summary["repair_advice"]["safe_next_step"] == "manual_review"
+
+    follow_ups = client.get(f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups")
+    assert follow_ups.status_code == 200
+    follow_up = follow_ups.json()["follow_up"]
+    assert follow_up["status"] == "suggested"
+    assert follow_up["ready_candidate_count"] == 1
+    candidate = follow_up["candidates"][0]
+    assert candidate["candidate_id"] == "retry_compile_blueprint"
+    assert candidate["operation_type"] == "compile_blueprint"
+    assert candidate["proposal_ready"] is True
+    assert candidate["payload"]["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
+    assert candidate["create_request_hint"]["json"]["operation_type"] == "compile_blueprint"
+
+
+def test_editor_operation_follow_ups_require_result_before_suggesting(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "compile_blueprint",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+            },
+        },
+    )
+    assert created.status_code == 200
+    proposal_id = created.json()["item"]["proposal_id"]
+
+    response = client.get(f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups")
+    assert response.status_code == 200
+    follow_up = response.json()["follow_up"]
+    assert follow_up["status"] == "not_ready"
+    assert follow_up["reason"] == "operation_result_missing"
+    assert follow_up["candidates"] == []
 
 
 def test_blueprint_compile_proposal_contract(client: TestClient) -> None:

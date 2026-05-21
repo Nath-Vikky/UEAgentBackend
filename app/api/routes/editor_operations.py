@@ -77,6 +77,14 @@ def create_editor_operation_proposal(
     return EditorOperationProposalResponse(success=True, **payload)
 
 
+@router.get("/proposals/{proposal_id}/follow-ups")
+def get_editor_operation_follow_ups(proposal_id: str, db: Session = Depends(get_db)) -> dict:
+    payload = EditorOperationService(db).operation_follow_up_candidates(proposal_id)
+    if not payload:
+        raise APIError(404, "proposal_not_found", f"Proposal `{proposal_id}` was not found.")
+    return {"success": True, **payload, "errors": []}
+
+
 @router.get("/proposals/{proposal_id}")
 def get_editor_operation_proposal(proposal_id: str, db: Session = Depends(get_db)) -> dict:
     payload = ProposalService(db).get_detail(proposal_id)

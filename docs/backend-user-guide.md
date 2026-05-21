@@ -2859,6 +2859,24 @@ GET /api/v1/editor-operations/diagnostics?operation_type=add_blueprint_node_temp
 
 当前建议仍然是“诊断辅助”，不是自动修复系统。`can_auto_retry=false` 表示后端不会擅自重试写操作；用户仍需在 UE 前端确认新的 proposal，或在编辑器里手动检查图表、编译结果、dirty package。
 
+如果需要把诊断建议转换成下一步候选，可以查看：
+
+```http
+GET /api/v1/editor-operations/proposals/{proposal_id}/follow-ups
+```
+
+返回的 `follow_up.candidates[]` 只包含“候选 proposal 请求体”，例如：
+
+- `connect_expected_exec_pins`：为上一次未连线的 Blueprint 节点生成 `connect_blueprint_nodes` 候选。
+- `retry_compile_blueprint`：为上一次编译失败或缺少编译状态的 Blueprint 生成 `compile_blueprint` 候选。
+
+重要边界：
+
+- 后端不会自动执行 follow-up。
+- 后端也不会自动创建新的 proposal；接口只返回 `create_request_hint`，调用方仍需显式 `POST /api/v1/editor-operations/proposals`。
+- 所有 follow-up 写操作仍然必须走用户确认和 UEAgentTool 执行。
+- 如果缺少 node id / Blueprint path 等必要信息，`proposal_ready=false` 且 `missing_inputs` 会说明还需要什么。
+
 这两个查询参数都是可选的；旧版 `GET /api/v1/editor-operations/history` 行为不变。
 
 Branch + PrintString 示例：

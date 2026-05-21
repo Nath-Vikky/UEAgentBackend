@@ -4095,6 +4095,197 @@ class EditorOperationService:
             },
         }
 
+    @staticmethod
+    def _node_identifier(value: Any) -> str:
+        if isinstance(value, dict):
+            for key in ("node_id", "id", "guid", "node_name", "name", "source", "target"):
+                text = str(value.get(key) or "").strip()
+                if text:
+                    return text
+            return ""
+        return str(value or "").strip()
+
+    @staticmethod
+    def _first_node_identifier(value: Any) -> str:
+        if isinstance(value, list):
+            for item in value:
+                identifier = EditorOperationService._node_identifier(item)
+                if identifier:
+                    return identifier
+            return ""
+        return EditorOperationService._node_identifier(value)
+
+    @staticmethod
+    def _entry_event_node_hint(entry_event: str) -> str:
+        if not entry_event:
+            return ""
+        if entry_event == "BeginPlay":
+            return "EventBeginPlay"
+        if entry_event == "Tick":
+            return "EventTick"
+        if entry_event.startswith("Actor"):
+            return f"Event{entry_event}"
+        return f"Event{entry_event}"
+
+    def operation_follow_up_candidates(self, proposal_id: str) -> dict[str, Any] | None:
+        proposal = get_proposal(self.db, proposal_id)
+        if not proposal:
+            return None
+        if proposal.proposal_type != EDITOR_OPERATION_PROPOSAL_TYPE:
+            return {
+                "follow_up": {
+                    "schema_version": "editor_operation_follow_up_candidates_v1",
+                    "proposal_id": proposal_id,
+                    "status": "not_applicable",
+                    "reason": "proposal_is_not_editor_operation",
+                    "candidates": [],
+                }
+            }
+
+        preview = dict(proposal.dry_run_preview_json or {})
+        operation_result = dict(preview.get("operation_result") or {})
+        if not operation_result:
+            return {
+                "follow_up": {
+                    "schema_version": "editor_operation_follow_up_candidates_v1",
+                    "proposal_id": proposal_id,
+                    "source_operation_type": preview.get("operation_type"),
+                    "status": "not_ready",
+                    "reason": "operation_result_missing",
+                    "candidates": [],
+                }
+            }
+
+        result = dict(operation_result.get("result") or {})
+        result_summary = dict(operation_result.get("result_summary") or {})
+        operation_diagnostics = dict(result_summary.get("operation_diagnostics") or {})
+        repair_advice = dict(operation_diagnostics.get("repair_advice") or result_summary.get("repair_advice") or {})
+        actions = [dict(item) for item in repair_advice.get("actions") or [] if isinstance(item, dict)]
+        action_ids = {str(item.get("action_id") or "") for item in actions}
+        payload = dict(preview.get("operation_payload") or {})
+        blueprint_path = self._first_non_empty_text(result.get("blueprint_path"), payload.get("blueprint_path"))
+        graph_name = self._first_non_empty_text(result.get("graph_name"), payload.get("graph_name"), "EventGraph")
+        entry_event = self._first_non_empty_text(result.get("entry_event"), payload.get("entry_event"))
+
+        candidates: list[dict[str, Any]] = []
+        if "connect_expected_exec_pins" in action_ids:
+            source_node_id = self._first_non_empty_text(
+                result.get("source_node_id"),
+                result.get("entry_node_id"),
+                result.get("event_node_id"),
+                payload.get("source_node_id"),
+                self._entry_event_node_hint(entry_event),
+            )
+            target_node_id = self._first_non_empty_text(
+                result.get("target_node_id"),
+                result.get("created_node_id"),
+                self._first_node_identifier(result.get("created_nodes")),
+                payload.get("target_node_id"),
+            )
+            follow_payload = {
+                "blueprint_path": blueprint_path,
+                "graph_name": graph_name,
+                "source_node_id": source_node_id,
+                "source_pin_name": str(result.get("source_pin_name") or payload.get("source_pin_name") or "then"),
+                "target_node_id": target_node_id,
+                "target_pin_name": str(result.get("target_pin_name") or payload.get("target_pin_name") or "execute"),
+                "compile_after_edit": True,
+            }
+            missing_inputs = [
+                key
+                for key in ("blueprint_path", "graph_name", "source_node_id", "target_node_id")
+                if not str(follow_payload.get(key) or "").strip()
+            ]
+            candidates.append(
+                {
+                    "candidate_id": "connect_expected_exec_pins",
+                    "source_action_id": "connect_expected_exec_pins",
+                    "operation_type": "connect_blueprint_nodes",
+                    "proposal_ready": not missing_inputs,
+                    "missing_inputs": missing_inputs,
+                    "confidence": "medium" if not missing_inputs else "low",
+                    "reason": "Connect the execution pins that the previous Blueprint node template expected.",
+                    "payload": follow_payload,
+                    "create_request_hint": {
+                        "method": "POST",
+                        "path": "/api/v1/editor-operations/proposals",
+                        "json": {
+                            "operation_type": "connect_blueprint_nodes",
+                            "payload": follow_payload,
+                            "reason": f"Follow up from proposal {proposal_id}: connect expected execution pins.",
+                            "requested_by": "editor_operation_follow_up",
+                            "context": {"source_proposal_id": proposal_id},
+                        },
+                    },
+                    "requires_confirmation": True,
+                    "auto_execute": False,
+                    "safety_notes": [
+                        "This candidate is only a proposal body; UEAgentTool still needs user confirmation.",
+                        "Verify the node identifiers in the Blueprint graph before confirming.",
+                    ],
+                }
+            )
+
+        if "open_blueprint_compile_results" in action_ids or "report_compile_status" in action_ids:
+            follow_payload = {
+                "blueprint_path": blueprint_path,
+                "compile_mode": "default",
+            }
+            missing_inputs = [
+                key for key in ("blueprint_path",) if not str(follow_payload.get(key) or "").strip()
+            ]
+            candidates.append(
+                {
+                    "candidate_id": "retry_compile_blueprint",
+                    "source_action_id": "open_blueprint_compile_results",
+                    "operation_type": "compile_blueprint",
+                    "proposal_ready": not missing_inputs,
+                    "missing_inputs": missing_inputs,
+                    "confidence": "medium" if not missing_inputs else "low",
+                    "reason": "Run a confirmed Blueprint compile after the user inspects or fixes the compile issue.",
+                    "payload": follow_payload,
+                    "create_request_hint": {
+                        "method": "POST",
+                        "path": "/api/v1/editor-operations/proposals",
+                        "json": {
+                            "operation_type": "compile_blueprint",
+                            "payload": follow_payload,
+                            "reason": f"Follow up from proposal {proposal_id}: retry Blueprint compile.",
+                            "requested_by": "editor_operation_follow_up",
+                            "context": {"source_proposal_id": proposal_id},
+                        },
+                    },
+                    "requires_confirmation": True,
+                    "auto_execute": False,
+                    "safety_notes": [
+                        "Do not retry compile blindly; inspect the Blueprint compiler messages first.",
+                        "This candidate only creates a new confirmed-write proposal.",
+                    ],
+                }
+            )
+
+        status = "suggested" if candidates else "not_needed"
+        if candidates and not any(bool(item.get("proposal_ready")) for item in candidates):
+            status = "needs_manual_input"
+        return {
+            "follow_up": {
+                "schema_version": "editor_operation_follow_up_candidates_v1",
+                "proposal_id": proposal_id,
+                "source_operation_type": preview.get("operation_type"),
+                "source_tool_id": preview.get("tool_id"),
+                "source_result_success": operation_result.get("success"),
+                "source_execution_state": operation_result.get("execution_state"),
+                "status": status,
+                "candidate_count": len(candidates),
+                "ready_candidate_count": sum(1 for item in candidates if bool(item.get("proposal_ready"))),
+                "auto_execute": False,
+                "requires_user_confirmation": True,
+                "repair_advice_status": repair_advice.get("status"),
+                "diagnostic_flags": list(operation_diagnostics.get("diagnostic_flags") or []),
+                "candidates": candidates,
+            }
+        }
+
     def record_operation_result(self, request: EditorOperationResultRequest) -> dict[str, Any] | None:
         proposal = get_proposal(self.db, request.proposal_id)
         if not proposal:
