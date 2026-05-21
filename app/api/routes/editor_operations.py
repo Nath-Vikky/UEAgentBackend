@@ -51,6 +51,19 @@ def editor_operation_history(
     return {"success": True, **payload, "errors": []}
 
 
+@router.get("/diagnostics")
+def editor_operation_diagnostics(
+    operation_type: str | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = EditorOperationService(db).operation_diagnostics_summary(
+        limit=limit,
+        operation_type=operation_type,
+    )
+    return {"success": True, **payload, "errors": []}
+
+
 @router.post("/proposals", response_model=EditorOperationProposalResponse)
 def create_editor_operation_proposal(
     request: EditorOperationProposalRequest,

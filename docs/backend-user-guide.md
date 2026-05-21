@@ -2822,6 +2822,22 @@ GET /api/v1/editor-operations/history?needs_user_attention=true
 GET /api/v1/editor-operations/history?operation_type=add_blueprint_node_template&diagnostic_flag=expected_linked_pins_missing
 ```
 
+如果你想在一次实机测试后快速看整体健康度，可以直接请求汇总接口：
+
+```http
+GET /api/v1/editor-operations/diagnostics
+GET /api/v1/editor-operations/diagnostics?operation_type=add_blueprint_node_template
+```
+
+返回的 `summary` 会包含：
+- `executed_count` / `pending_count`：最近 proposal 里已经回传执行结果和仍未回传的数量。
+- `success_count` / `failed_count`：UE 侧执行成功与失败数量。
+- `needs_user_attention_count` / `attention_rate`：需要人工关注的比例。
+- `diagnostic_flag_counts`：例如 `expected_linked_pins_missing`、`compile_failed`、`dirty_packages_missing` 的分布。
+- `recent_attention_items`：最近最多 10 条需要关注的 proposal，便于直接跳回 history 或 Debug View 排查。
+
+这个接口不改变旧版 history 行为，也不要求 UE 前端立刻修改；它主要服务后端调试、实机 smoke 后巡检，以及未来前端想做“最近编辑器操作健康概览”时接入。
+
 这两个查询参数都是可选的；旧版 `GET /api/v1/editor-operations/history` 行为不变。
 
 Branch + PrintString 示例：
