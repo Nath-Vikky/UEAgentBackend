@@ -2563,6 +2563,14 @@ GET /api/v1/editor-operations/capabilities
 - `items[].result_contract_fields`：UE 插件执行后建议回传的结果字段。
 - `safety_policy.auto_execute_follow_ups=false`：后端不会自动执行 follow-up。
 
+公开工具目录可以从同一个后端声明生成：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_editor_operation_catalog.py --output docs\editor-operation-catalog.md
+```
+
+这样新增工具时，维护顺序是：更新后端 `OPERATION_SPECS` / result contract -> 运行导出脚本 -> 检查 `docs/editor-operation-catalog.md` -> 补测试和交接说明。
+
 创建提案：
 
 ```http
