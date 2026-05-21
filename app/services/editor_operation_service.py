@@ -3657,6 +3657,15 @@ class EditorOperationService:
         if request.success and "dirty_packages" in result_fields and not dirty_packages:
             diagnostic_flags.append("dirty_packages_missing")
 
+        repair_advice = EditorOperationService._blueprint_graph_repair_advice(
+            operation_type=operation_type,
+            diagnostic_flags=diagnostic_flags,
+            request=request,
+            payload=payload,
+            result=result,
+            template_id=template_id,
+            compile_status=compile_status,
+        )
         return {
             "schema_version": "blueprint_graph_operation_diagnostics_v1",
             "category": "blueprint_graph",
@@ -3682,6 +3691,169 @@ class EditorOperationService:
             "has_graph_changes": created_node_count > 0 or linked_pin_count > 0,
             "diagnostic_flags": diagnostic_flags,
             "needs_user_attention": (not request.success) or bool(diagnostic_flags),
+            "repair_advice": repair_advice,
+        }
+
+    @staticmethod
+    def _blueprint_graph_repair_advice(
+        *,
+        operation_type: str,
+        diagnostic_flags: list[str],
+        request: EditorOperationResultRequest,
+        payload: dict[str, Any],
+        result: dict[str, Any],
+        template_id: str,
+        compile_status: str,
+    ) -> dict[str, Any]:
+        actions: list[dict[str, Any]] = []
+        flag_set = set(diagnostic_flags)
+        blueprint_path = EditorOperationService._first_non_empty_text(
+            result.get("blueprint_path"),
+            payload.get("blueprint_path"),
+        )
+        graph_name = EditorOperationService._first_non_empty_text(
+            result.get("graph_name"),
+            payload.get("graph_name"),
+        )
+        entry_event = EditorOperationService._first_non_empty_text(
+            result.get("entry_event"),
+            payload.get("entry_event"),
+        )
+
+        if not request.success:
+            actions.append(
+                {
+                    "action_id": "inspect_ue_execution_errors",
+                    "severity": "error",
+                    "title": "Inspect UE execution errors",
+                    "details": (
+                        "UEAgentTool reported that the editor operation did not complete successfully. "
+                        "Check result.errors, Unreal Output Log, and the selected target before retrying."
+                    ),
+                    "next_step": "Fix the UE-side error or select a valid target, then create a new proposal.",
+                }
+            )
+        if "created_nodes_missing" in flag_set:
+            actions.append(
+                {
+                    "action_id": "verify_blueprint_graph_target",
+                    "severity": "warning",
+                    "title": "Verify Blueprint graph target",
+                    "details": (
+                        "The backend expected a Blueprint node to be created, but the UE result did not "
+                        "report any created_nodes."
+                    ),
+                    "next_step": "Open the target Blueprint graph and confirm the graph exists before retrying.",
+                    "context": {
+                        "blueprint_path": blueprint_path,
+                        "graph_name": graph_name,
+                        "template_id": template_id,
+                    },
+                }
+            )
+        if "expected_linked_pins_missing" in flag_set:
+            actions.append(
+                {
+                    "action_id": "connect_expected_exec_pins",
+                    "severity": "warning",
+                    "title": "Connect expected execution pins",
+                    "details": (
+                        "A graph template that normally connects execution pins reported zero linked_pins. "
+                        "This usually means the entry node, graph name, or created node handle was not resolved."
+                    ),
+                    "next_step": (
+                        "If UE returned node ids, create a connect_blueprint_nodes proposal; otherwise retry "
+                        "after opening the graph and using an explicit event or graph name."
+                    ),
+                    "context": {
+                        "blueprint_path": blueprint_path,
+                        "graph_name": graph_name,
+                        "entry_event": entry_event,
+                        "template_id": template_id,
+                    },
+                }
+            )
+        if "compile_status_missing" in flag_set:
+            actions.append(
+                {
+                    "action_id": "report_compile_status",
+                    "severity": "warning",
+                    "title": "Report Blueprint compile status",
+                    "details": (
+                        "The proposal requested compile_after_edit, but the UE result did not include compile_status."
+                    ),
+                    "next_step": "Make the UE execution path report compile_status and compile messages after compile.",
+                }
+            )
+        if "compile_failed" in flag_set:
+            actions.append(
+                {
+                    "action_id": "open_blueprint_compile_results",
+                    "severity": "error",
+                    "title": "Inspect Blueprint compile results",
+                    "details": f"Blueprint compile status was `{compile_status}`.",
+                    "next_step": (
+                        "Open the Blueprint compiler messages, fix broken pins or missing references, then retry compile."
+                    ),
+                    "context": {
+                        "blueprint_path": blueprint_path,
+                        "graph_name": graph_name,
+                    },
+                }
+            )
+        if "dirty_packages_missing" in flag_set:
+            actions.append(
+                {
+                    "action_id": "report_dirty_packages",
+                    "severity": "info",
+                    "title": "Report dirty package paths",
+                    "details": (
+                        "The operation succeeded, but UE did not report dirty_packages, so the backend cannot "
+                        "tell which package needs saving."
+                    ),
+                    "next_step": "Return dirty_packages or an explicit save_policy from UEAgentTool.",
+                }
+            )
+
+        known_flags = {
+            "created_nodes_missing",
+            "expected_linked_pins_missing",
+            "compile_status_missing",
+            "compile_failed",
+            "dirty_packages_missing",
+        }
+        unknown_flags = sorted(flag_set - known_flags)
+        if unknown_flags:
+            actions.append(
+                {
+                    "action_id": "inspect_unknown_diagnostic_flags",
+                    "severity": "warning",
+                    "title": "Inspect unknown diagnostic flags",
+                    "details": "The result included diagnostic flags without a dedicated repair rule.",
+                    "next_step": "Check Debug View and update backend repair advice rules if this case is common.",
+                    "context": {"unknown_flags": unknown_flags},
+                }
+            )
+
+        if not actions:
+            return {
+                "schema_version": "blueprint_graph_repair_advice_v1",
+                "status": "not_needed",
+                "severity": "info",
+                "can_auto_retry": False,
+                "safe_next_step": "none",
+                "actions": [],
+            }
+
+        severity = "error" if any(item["severity"] == "error" for item in actions) else "warning"
+        return {
+            "schema_version": "blueprint_graph_repair_advice_v1",
+            "status": "suggested",
+            "severity": severity,
+            "can_auto_retry": False,
+            "safe_next_step": "manual_review",
+            "operation_type": operation_type,
+            "actions": actions,
         }
 
     @staticmethod
@@ -3739,6 +3911,7 @@ class EditorOperationService:
             "error_count": len(error_codes),
             "error_codes": error_codes,
             "operation_diagnostics": operation_diagnostics,
+            "repair_advice": dict(operation_diagnostics.get("repair_advice") or {}),
             "needs_user_attention": (
                 (not request.success)
                 or bool(error_codes)
@@ -3838,6 +4011,8 @@ class EditorOperationService:
         needs_user_attention_count = 0
         operation_type_counts: Counter[str] = Counter()
         diagnostic_flag_counts: Counter[str] = Counter()
+        repair_action_counts: Counter[str] = Counter()
+        repair_status_counts: Counter[str] = Counter()
         execution_state_counts: Counter[str] = Counter()
         confirmation_state_counts: Counter[str] = Counter()
         recent_attention_items: list[dict[str, Any]] = []
@@ -3856,6 +4031,11 @@ class EditorOperationService:
             operation_diagnostics = dict(result_summary.get("operation_diagnostics") or {})
             diagnostic_flags = [str(item) for item in operation_diagnostics.get("diagnostic_flags") or []]
             diagnostic_flag_counts.update(diagnostic_flags)
+            repair_advice = dict(operation_diagnostics.get("repair_advice") or result_summary.get("repair_advice") or {})
+            repair_status = str(repair_advice.get("status") or "unknown")
+            repair_status_counts[repair_status] += 1
+            repair_actions = [str(item.get("action_id") or "") for item in repair_advice.get("actions") or []]
+            repair_action_counts.update(item for item in repair_actions if item)
 
             if operation_result:
                 executed_count += 1
@@ -3884,6 +4064,7 @@ class EditorOperationService:
                             "updated_at": proposal.updated_at.isoformat() if proposal.updated_at else None,
                             "diagnostic_flags": diagnostic_flags,
                             "error_codes": list(result_summary.get("error_codes") or []),
+                            "repair_advice": repair_advice,
                             "result_summary": result_summary,
                         }
                     )
@@ -3906,6 +4087,8 @@ class EditorOperationService:
                 "attention_rate": round(attention_rate, 4),
                 "operation_type_counts": dict(operation_type_counts),
                 "diagnostic_flag_counts": dict(diagnostic_flag_counts),
+                "repair_status_counts": dict(repair_status_counts),
+                "repair_action_counts": dict(repair_action_counts),
                 "execution_state_counts": dict(execution_state_counts),
                 "confirmation_state_counts": dict(confirmation_state_counts),
                 "recent_attention_items": recent_attention_items,

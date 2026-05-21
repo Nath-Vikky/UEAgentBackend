@@ -2834,9 +2834,30 @@ GET /api/v1/editor-operations/diagnostics?operation_type=add_blueprint_node_temp
 - `success_count` / `failed_count`：UE 侧执行成功与失败数量。
 - `needs_user_attention_count` / `attention_rate`：需要人工关注的比例。
 - `diagnostic_flag_counts`：例如 `expected_linked_pins_missing`、`compile_failed`、`dirty_packages_missing` 的分布。
+- `repair_status_counts` / `repair_action_counts`：后端基于诊断 flag 生成的固定修复建议分布。
 - `recent_attention_items`：最近最多 10 条需要关注的 proposal，便于直接跳回 history 或 Debug View 排查。
 
 这个接口不改变旧版 history 行为，也不要求 UE 前端立刻修改；它主要服务后端调试、实机 smoke 后巡检，以及未来前端想做“最近编辑器操作健康概览”时接入。
+
+每条 Blueprint Graph 执行结果的 `result_summary.operation_diagnostics.repair_advice` 也会给出轻量建议：
+
+```json
+{
+  "schema_version": "blueprint_graph_repair_advice_v1",
+  "status": "suggested",
+  "severity": "warning",
+  "can_auto_retry": false,
+  "safe_next_step": "manual_review",
+  "actions": [
+    {
+      "action_id": "connect_expected_exec_pins",
+      "title": "Connect expected execution pins"
+    }
+  ]
+}
+```
+
+当前建议仍然是“诊断辅助”，不是自动修复系统。`can_auto_retry=false` 表示后端不会擅自重试写操作；用户仍需在 UE 前端确认新的 proposal，或在编辑器里手动检查图表、编译结果、dirty package。
 
 这两个查询参数都是可选的；旧版 `GET /api/v1/editor-operations/history` 行为不变。
 

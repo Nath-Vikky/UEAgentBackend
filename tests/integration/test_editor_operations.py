@@ -715,6 +715,8 @@ def test_blueprint_node_template_result_summary_includes_graph_diagnostics(
     assert diagnostics["compile_status"] == "succeeded"
     assert diagnostics["diagnostic_flags"] == []
     assert diagnostics["needs_user_attention"] is False
+    assert diagnostics["repair_advice"]["status"] == "not_needed"
+    assert summary["repair_advice"]["status"] == "not_needed"
     assert summary["needs_user_attention"] is False
 
     history = client.get(
@@ -773,7 +775,11 @@ def test_blueprint_node_template_result_summary_flags_missing_expected_links(
     assert diagnostics["linked_pin_count"] == 0
     assert diagnostics["diagnostic_flags"] == ["expected_linked_pins_missing"]
     assert diagnostics["needs_user_attention"] is True
+    assert diagnostics["repair_advice"]["status"] == "suggested"
+    assert diagnostics["repair_advice"]["actions"][0]["action_id"] == "connect_expected_exec_pins"
+    assert diagnostics["repair_advice"]["can_auto_retry"] is False
     assert result.json()["item"]["result_summary"]["needs_user_attention"] is True
+    assert result.json()["item"]["result_summary"]["repair_advice"]["status"] == "suggested"
 
     attention_history = client.get(
         "/api/v1/editor-operations/history",
@@ -868,11 +874,58 @@ def test_editor_operation_diagnostics_summary_counts_attention_flags(client: Tes
     assert summary["attention_rate"] == 0.5
     assert summary["operation_type_counts"]["add_blueprint_node_template"] == 2
     assert summary["diagnostic_flag_counts"]["expected_linked_pins_missing"] == 1
+    assert summary["repair_status_counts"]["not_needed"] == 1
+    assert summary["repair_status_counts"]["suggested"] == 1
+    assert summary["repair_action_counts"]["connect_expected_exec_pins"] == 1
     assert summary["execution_state_counts"]["completed"] == 2
     assert summary["confirmation_state_counts"]["confirmed"] == 2
     attention_item = summary["recent_attention_items"][0]
     assert attention_item["proposal_id"] == attention_proposal_id
     assert attention_item["diagnostic_flags"] == ["expected_linked_pins_missing"]
+    assert attention_item["repair_advice"]["actions"][0]["action_id"] == "connect_expected_exec_pins"
+
+
+def test_blueprint_compile_failed_result_includes_repair_advice(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "compile_blueprint",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+            },
+        },
+    )
+    assert created.status_code == 200
+    proposal_id = created.json()["item"]["proposal_id"]
+    assert client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm").status_code == 200
+
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "compile_blueprint",
+            "execution_state": "failed",
+            "success": False,
+            "executed_by": "ue_plugin",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "compile_status": "failed",
+                "messages": ["Broken execution pin"],
+            },
+            "errors": [{"code": "compile_failed", "message": "Blueprint compile failed"}],
+        },
+    )
+    assert result.status_code == 200
+    summary = result.json()["item"]["result_summary"]
+    diagnostics = summary["operation_diagnostics"]
+    action_ids = [item["action_id"] for item in diagnostics["repair_advice"]["actions"]]
+    assert diagnostics["diagnostic_flags"] == ["compile_failed"]
+    assert diagnostics["needs_user_attention"] is True
+    assert diagnostics["repair_advice"]["status"] == "suggested"
+    assert diagnostics["repair_advice"]["severity"] == "error"
+    assert "inspect_ue_execution_errors" in action_ids
+    assert "open_blueprint_compile_results" in action_ids
+    assert summary["repair_advice"]["safe_next_step"] == "manual_review"
 
 
 def test_blueprint_compile_proposal_contract(client: TestClient) -> None:
