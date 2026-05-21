@@ -276,6 +276,7 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
                     "module_name": "RushBa",
                     "file_type": "cpp",
                     "classes": ["ARBPlayerCharacter"],
+                    "symbols": ["ARBPlayerCharacter", "SetupPlayerInputComponent"],
                     "size_bytes": 4096,
                     "last_modified": "2026-04-23T09:59:00Z",
                 }
@@ -375,6 +376,7 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert nanite_query.json()["items"][0]["asset_name"] == "SM_Rock"
     assert code_files.status_code == 200
     assert code_files.json()["items"][0]["classes"] == ["ARBPlayerCharacter"]
+    assert code_files.json()["items"][0]["symbols"] == ["ARBPlayerCharacter", "SetupPlayerInputComponent"]
     assert code_files.json()["items"][0]["last_modified"] == "2026-04-23T09:59:00Z"
     assert level_actors.status_code == 200
     assert level_actors.json()["items"][0]["actor_label"] == "BP_EnemySpawner_1"

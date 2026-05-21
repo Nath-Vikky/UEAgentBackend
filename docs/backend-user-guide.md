@@ -873,7 +873,7 @@ Project Inventory 已经接入 Agent Chat / Project QA。用户问“工程里�
 兼容边界：
 
 - 旧版 UE 插件只提交 `assets` 和 `code_files` 仍然完全可用。
-- `level_actors` 和 `material_instances` 是可选增强字段；前端后续补采集后，自由聊天才能回答“当前关卡摆了哪些对象”“某个材质实例参数值是多少”等更具体问题。
+- `level_actors` 和 `material_instances` 是可选增强字段；新版 UEAgentTool 打开面板时会自动静默提交一次 Inventory，也可以通过 `Submit Inventory` 手动重试。它会补采集当前已加载关卡 Actor 和 Material Instance 参数，自由聊天才能回答“当前关卡摆了哪些对象”“某个材质实例参数值是多少”等更具体问题。
 - 后端只信任快照字段，不直接读取 `.umap`、`.uasset`，也不会推断快照里没有的 Actor 或材质参数。
 
 ## 16. 用户可见语言与 Code Review 输出质量
@@ -2768,7 +2768,7 @@ Agent Chat / Project QA 会把最近项目快照注入：
 }
 ```
 
-当问题包含 `this asset / selected asset / components / variables / functions / graphs` 这类上下文词时，后端会优先返回选中资产，而不是列出全项目资产。关卡 Actor 和材质实例字段是可选增强；旧前端不提交时，summary 会显示数量为 0，问答不会编造缺失信息。
+当问题包含 `this asset / selected asset / components / variables / functions / graphs` 这类上下文词时，后端会优先返回选中资产，而不是列出全项目资产。关卡 Actor 和材质实例字段来自 UEAgentTool 的 Inventory 采集；旧前端不提交时，summary 会显示数量为 0，问答不会编造缺失信息。
 
 边界：
 

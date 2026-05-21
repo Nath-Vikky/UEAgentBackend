@@ -47,6 +47,14 @@ def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _normalize_symbols(value: Any) -> dict[str, Any] | list[Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, list):
+        return list(value)
+    return {}
+
+
 def _first_present(*values: Any) -> Any:
     for value in values:
         if value not in (None, "", [], {}):
@@ -573,7 +581,7 @@ class ProjectInventoryService:
                     "modified_at": modified_at,
                     "last_modified": modified_at,
                     "classes": list(raw.get("classes") or []),
-                    "symbols": dict(raw.get("symbols") or {}),
+                    "symbols": _normalize_symbols(raw.get("symbols")),
                     "metadata": dict(raw.get("metadata") or {}),
                 }
             )
