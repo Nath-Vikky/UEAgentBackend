@@ -1,0 +1,96 @@
+# Demo Checklist
+
+This checklist helps you run a local UEAgentCraft demo with the backend and
+UEAgentTool plugin.
+
+## 1. Start The Backend
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+copy .env.example .env
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Check:
+
+```http
+GET http://127.0.0.1:8000/api/v1/system/health
+GET http://127.0.0.1:8000/api/v1/system/capabilities
+GET http://127.0.0.1:8000/api/v1/editor-operations/capabilities
+```
+
+## 2. Prepare The UE Plugin
+
+Plugin repository:
+
+```text
+https://github.com/Nath-Vikky/UEAgentTool
+```
+
+Checklist:
+
+- Enable the plugin in an Unreal project.
+- Compile the plugin in Rider or Unreal Editor.
+- Set backend URL to `http://127.0.0.1:8000`.
+- Open the plugin panel and verify backend connection status.
+
+## 3. Run Backend-Only Smoke Checks
+
+These checks do not launch Unreal Editor, call an LLM, or write a project.
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check app tests scripts
+.\.venv\Scripts\python.exe -m pytest tests\unit tests\contract -q
+.\.venv\Scripts\python.exe scripts\run_blueprint_graph_operation_smoke.py
+.\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py
+```
+
+Expected:
+
+- Blueprint graph proposal smoke: `12/12 passed`
+- Agent Chat editor-operation smoke: `6/6 passed`
+
+## 4. Demo The Agent Features
+
+Recommended order:
+
+1. Project QA: ask a general Unreal project question and check citations or tool context.
+2. Code Review: scan C++ files, select one file, run review, and open the structured result.
+3. Code Generate: ask for a common UE C++ snippet, such as Enhanced Input setup.
+4. Logs Analyze: paste a short error log or provide a safe log file path.
+5. Assets Inspect: select one asset in Content Browser and run inspection.
+
+## 5. Demo Confirmed Editor Operations
+
+Keep the first demo project disposable. The backend does not auto-save, but the
+UE editor operation still changes the open project after confirmation.
+
+Suggested low-risk demos:
+
+- Rename one test asset.
+- Create one test Blueprint under `/Game/AgentDemo`.
+- Add a `Print String` Blueprint node template.
+- Compile the test Blueprint.
+- Set one TextBlock text in a test Widget Blueprint.
+- Set one scalar parameter on a test Material Instance.
+
+Safety checks:
+
+- The plugin shows a Proposal before execution.
+- The user can reject the Proposal.
+- The operation result is posted back to the backend.
+- `GET /api/v1/editor-operations/history` shows the operation.
+- `GET /api/v1/editor-operations/diagnostics` summarizes recent operation health.
+
+## 6. Regenerate The Tool Catalog
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_editor_operation_catalog.py --output docs\editor-operation-catalog.md
+```
+
+Use this after adding or changing editor operations.
+

@@ -166,5 +166,7 @@ Agent 判断意图
 
 - [User Guide](./docs/backend-user-guide.md)
 - [Editor Operation Catalog](./docs/editor-operation-catalog.md)
+- [Demo Checklist](./docs/demo-checklist.md)
+- [FAQ](./docs/faq.md)
 - [Release Notes](./docs/release-notes/)
 - [Contributing Guide](./CONTRIBUTING.md)
