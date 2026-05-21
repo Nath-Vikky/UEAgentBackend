@@ -242,6 +242,7 @@ LLM 排查补充：
 .\.venv\Scripts\python.exe scripts\run_hallucination_eval.py --source-path .\README.md --source-path .\docs --source-path .\knowledge --min-grounding-accuracy 1.0 --max-unsupported-answer-rate 0.0 --output storage\artifacts\evals\hallucination-guard-latest.json --markdown-output storage\artifacts\evals\hallucination-guard-latest.md
 .\.venv\Scripts\python.exe scripts\run_router_signal_eval.py --output storage\artifacts\evals\router-signal-eval-latest.json --markdown-output storage\artifacts\evals\router-signal-eval-latest.md
 .\.venv\Scripts\python.exe scripts\run_blueprint_graph_operation_smoke.py
+.\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py
 ```
 
 GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行。日常验证以本地 Ruff、pytest 和 RAG eval 为准；CI 只用于需要时手动复核，不做部署。
@@ -249,6 +250,8 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 `storage/artifacts/evals/*.md` 是本地生成的 Markdown 评估报告，展示 `hit_at_k`、`mrr`、`route_accuracy`、`citation_coverage` 等核心指标。当前评估是 smoke 级别，用于证明“可测、可复现、可继续优化”，不是企业级大规模 benchmark。
 
 `scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它只调用 `POST /api/v1/editor-operations/proposals`，验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
+
+`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_umg_widget_text` 和 `set_material_instance_parameter` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
