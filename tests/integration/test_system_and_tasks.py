@@ -355,6 +355,21 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
             "fields": ["parent_material", "parameters"],
         },
     )
+    level_object_query = client.post(
+        "/api/v1/project-inventory/query",
+        json={
+            "project_id": "RushBa",
+            "query": "当前关卡摆了哪些物体？",
+            "fields": ["actor_class", "components"],
+        },
+    )
+    material_value_query = client.post(
+        "/api/v1/project-inventory/query",
+        json={
+            "project_id": "RushBa",
+            "query": "MI_Rock 的 Roughness 是多少？",
+        },
+    )
 
     assert snapshot.status_code == 200
     assert snapshot.json()["snapshot"]["status"] == "saved"
@@ -388,6 +403,12 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert material_param_query.status_code == 200
     assert material_param_query.json()["items"][0]["kind"] == "material_instance"
     assert material_param_query.json()["items"][0]["field_view"]["parameters"][0]["name"] == "Roughness"
+    assert level_object_query.status_code == 200
+    assert level_object_query.json()["items"][0]["kind"] == "level_actor"
+    assert level_object_query.json()["items"][0]["actor_label"] == "BP_EnemySpawner_1"
+    assert material_value_query.status_code == 200
+    assert material_value_query.json()["items"][0]["kind"] == "material_instance"
+    assert material_value_query.json()["items"][0]["field_view"]["scalar_parameters"][0]["value"] == 0.6
     assert asset_detail.status_code == 200
     assert asset_detail.json()["item"]["asset_path"] == "/Game/Environment/SM_Rock.SM_Rock"
     assert asset_name_query.status_code == 200
@@ -687,6 +708,92 @@ def test_agent_chat_project_asset_listing_supports_compact_chinese_query(client:
     assert len(body["data"]["inventory"]["items"]) == 2
     assert "BP_PlayerCharacter" in body["assistant_message"]
     assert "BP_EnemySpawner" in body["assistant_message"]
+
+
+def test_agent_chat_project_inventory_answers_level_objects_and_material_values(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "InventoryDetailsProject",
+            "project_name": "InventoryDetailsProject",
+            "level_actors": [
+                {
+                    "actor_label": "BP_EnemySpawner_1",
+                    "actor_class": "BP_EnemySpawner_C",
+                    "level_name": "L_Test",
+                    "blueprint_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
+                    "transform": {"location": {"x": 100, "y": 0, "z": 20}},
+                    "components": [
+                        {"component_name": "SceneRoot", "component_class": "SceneComponent"},
+                        {"component_name": "Billboard", "component_class": "BillboardComponent"},
+                    ],
+                }
+            ],
+            "material_instances": [
+                {
+                    "material_instance_path": "/Game/Materials/MI_Rock.MI_Rock",
+                    "material_instance_name": "MI_Rock",
+                    "parent_material": "/Game/Materials/M_Rock.M_Rock",
+                    "scalar_parameters": [{"name": "Roughness", "value": 0.6}],
+                    "texture_parameters": [{"name": "BaseColor", "texture_path": "/Game/Textures/T_Rock_D"}],
+                }
+            ],
+        },
+    )
+    actor_response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_level_object_answer_session",
+                "messages": [{"role": "user", "content": "当前关卡摆了哪些物体？", "language": "auto"}],
+            },
+            "context": {"project_name": "InventoryDetailsProject", "active_panel": "AgentChat"},
+            "payload": {"user_query": "当前关卡摆了哪些物体？"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    material_response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_material_value_answer_session",
+                "messages": [{"role": "user", "content": "当前项目 MI_Rock 的 Roughness 是多少？", "language": "auto"}],
+            },
+            "context": {"project_name": "InventoryDetailsProject", "active_panel": "AgentChat"},
+            "payload": {"user_query": "当前项目 MI_Rock 的 Roughness 是多少？"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    actor_body = actor_response.json()
+    material_body = material_response.json()
+
+    assert snapshot.status_code == 200
+    assert actor_response.status_code == 200
+    assert actor_body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
+    assert actor_body["data"]["inventory"]["items"][0]["kind"] == "level_actor"
+    assert "BP_EnemySpawner_1" in actor_body["assistant_message"]
+    assert "SceneRoot" in actor_body["assistant_message"]
+    assert material_response.status_code == 200
+    assert material_body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
+    assert material_body["data"]["inventory"]["items"][0]["kind"] == "material_instance"
+    assert "Roughness" in material_body["assistant_message"]
+    assert "0.6" in material_body["assistant_message"]
 
 
 def test_agent_chat_project_qa_can_read_current_project_file(client: TestClient) -> None:

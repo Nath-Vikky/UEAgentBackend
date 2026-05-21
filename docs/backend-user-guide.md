@@ -2748,6 +2748,15 @@ Agent Chat / Project QA 会把最近项目快照注入：
 
 因此用户问“当前项目有哪些蓝图资产”“这个蓝图有哪些组件/变量”“当前文件属于哪个模块”“当前关卡有哪些 Actor”“某个材质实例有哪些参数”时，后端可以优先用项目快照回答；如果问题包含“为什么、怎么做、建议、风险”，再组合知识库和 LLM 综合。
 
+自然语言问法现在会尽量兼容更口语的项目事实查询，例如：
+
+- `当前关卡摆了哪些物体？`
+- `当前场景里有什么对象？`
+- `当前项目 MI_Rock 的 Roughness 是多少？`
+- `这个材质实例有哪些贴图参数？`
+
+这些问题会进入 `query_project_inventory`，而不是普通知识库检索。LLM 未配置或调用失败时，后端也会用 Inventory 兜底生成摘要，Actor 会包含 class、level、location、blueprint、components；Material Instance 会包含 parent material 和参数名/参数值预览。
+
 `POST /api/v1/project-inventory/query` 也支持可选 `selected_assets`：
 
 ```json

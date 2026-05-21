@@ -70,6 +70,65 @@ def _localized(language: str, zh_text: str, en_text: str) -> str:
     return zh_text if language.startswith("zh") else en_text
 
 
+def _compact_value(value: Any, *, max_len: int = 120) -> str:
+    if value in (None, "", [], {}):
+        return "n/a"
+    if isinstance(value, (dict, list)):
+        text = dumps_pretty(value)
+    else:
+        text = str(value)
+    return text if len(text) <= max_len else f"{text[: max_len - 3]}..."
+
+
+def _component_preview(components: Any, *, limit: int = 5) -> str:
+    if not isinstance(components, list) or not components:
+        return "n/a"
+    preview: list[str] = []
+    for component in components[:limit]:
+        if isinstance(component, dict):
+            name = component.get("component_name") or component.get("name") or component.get("label")
+            class_name = component.get("component_class") or component.get("class") or component.get("type")
+            mobility = component.get("mobility")
+            bits = [str(part) for part in (name, class_name) if part]
+            text = ":".join(bits) if bits else _compact_value(component, max_len=60)
+            if mobility:
+                text += f"({mobility})"
+            preview.append(text)
+        else:
+            preview.append(str(component))
+    suffix = "" if len(components) <= limit else f" (+{len(components) - limit})"
+    return ", ".join(preview) + suffix
+
+
+def _material_parameter_value(param: dict[str, Any]) -> Any:
+    for key in ("value", "texture_path", "texture", "default_value", "default", "asset_path"):
+        if key in param and param[key] not in (None, "", [], {}):
+            return param[key]
+    if all(key in param for key in ("r", "g", "b")):
+        return {"r": param.get("r"), "g": param.get("g"), "b": param.get("b"), "a": param.get("a", 1)}
+    return None
+
+
+def _material_parameter_preview(params: Any, *, limit: int = 6, include_values: bool = True) -> str:
+    if not isinstance(params, list) or not params:
+        return "n/a"
+    preview: list[str] = []
+    for param in params[:limit]:
+        if isinstance(param, dict):
+            name = param.get("name") or param.get("parameter_name") or param.get("display_name") or "Unknown"
+            param_type = param.get("parameter_type") or param.get("type")
+            label = f"{name}({param_type})" if param_type else str(name)
+            if include_values:
+                value = _material_parameter_value(param)
+                if value not in (None, "", [], {}):
+                    label += f"={_compact_value(value, max_len=80)}"
+            preview.append(label)
+        else:
+            preview.append(str(param))
+    suffix = "" if len(params) <= limit else f" (+{len(params) - limit})"
+    return ", ".join(preview) + suffix
+
+
 class TaskService:
     def __init__(self, db: Session, settings: Settings):
         self.db = db
@@ -194,18 +253,27 @@ class TaskService:
                             f"[I{index}] Level actor: {item.get('actor_label') or item.get('actor_name')}",
                             f"Class: {item.get('actor_class') or 'Unknown'}",
                             f"Level: {item.get('level_name') or 'n/a'}",
+                            f"Path: {item.get('actor_path') or 'n/a'}",
+                            f"Blueprint: {item.get('blueprint_path') or 'n/a'}",
+                            f"Components: {_component_preview(item.get('components'))}",
                             f"Transform: {dumps_pretty(item.get('transform') or {})[:260]}",
                         ]
                     )
                 )
                 continue
             if item.get("kind") == "material_instance":
+                params = item.get("parameters") or []
                 inventory_lines.append(
                     "\n".join(
                         [
                             f"[I{index}] Material instance: {item.get('material_instance_name') or item.get('material_instance_path')}",
+                            f"Path: {item.get('material_instance_path') or 'n/a'}",
                             f"Parent: {item.get('parent_material') or 'Unknown'}",
-                            f"Parameters: {dumps_pretty(item.get('parameters') or [])[:350]}",
+                            f"Parameters: {_material_parameter_preview(params, include_values=True)}",
+                            f"Scalar parameters: {_material_parameter_preview(item.get('scalar_parameters'), include_values=True)}",
+                            f"Vector parameters: {_material_parameter_preview(item.get('vector_parameters'), include_values=True)}",
+                            f"Texture parameters: {_material_parameter_preview(item.get('texture_parameters'), include_values=True)}",
+                            f"Static switches: {_material_parameter_preview(item.get('static_switch_parameters'), include_values=True)}",
                         ]
                     )
                 )
@@ -320,24 +388,24 @@ class TaskService:
             if item.get("kind") == "level_actor":
                 transform = item.get("transform") if isinstance(item.get("transform"), dict) else {}
                 location = transform.get("location") or transform.get("translation") or {}
-                location_text = dumps_pretty(location) if location else "n/a"
+                location_text = _compact_value(location, max_len=120)
+                components = _component_preview(item.get("components"))
+                blueprint_path = str(item.get("blueprint_path") or "").strip()
                 lines.append(
                     f"- {item.get('actor_label') or item.get('actor_name')} | "
                     f"class={item.get('actor_class') or 'Unknown'} | "
-                    f"level={item.get('level_name') or 'n/a'} | location={location_text[:120]}"
+                    f"level={item.get('level_name') or 'n/a'} | location={location_text}"
+                    + (f" | blueprint={blueprint_path}" if blueprint_path else "")
+                    + (f" | components={components}" if components != "n/a" else "")
                 )
                 continue
             if item.get("kind") == "material_instance":
                 params = item.get("parameters") if isinstance(item.get("parameters"), list) else []
-                preview = ", ".join(
-                    str(param.get("name") or param.get("parameter_name") or param)
-                    for param in params[:6]
-                    if isinstance(param, dict) or param
-                )
+                preview = _material_parameter_preview(params, include_values=True)
                 lines.append(
                     f"- {item.get('material_instance_name') or item.get('material_instance_path')} | "
                     f"parent={item.get('parent_material') or 'Unknown'} | "
-                    f"parameters={preview or item.get('parameter_count') or 0}"
+                    f"parameters={preview if preview != 'n/a' else item.get('parameter_count') or 0}"
                 )
                 continue
             if item.get("kind") == "code_file":

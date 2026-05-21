@@ -1124,7 +1124,24 @@ class ProjectInventoryService:
 
     @staticmethod
     def _looks_like_level_actor_query(query: str) -> bool:
-        actor_hint = any(token in query for token in ("actor", "actors", "pawn", "character", "bp_"))
+        actor_hint = any(
+            token in query
+            for token in (
+                "actor",
+                "actors",
+                "pawn",
+                "character",
+                "bp_",
+                "object",
+                "objects",
+                "placed object",
+                "placed objects",
+                "对象",
+                "物体",
+                "物件",
+                "实例",
+            )
+        )
         level_hint = any(
             token in query
             for token in (
@@ -1141,21 +1158,48 @@ class ProjectInventoryService:
                 "当前地图",
                 "当前关卡",
                 "当前场景",
+                "关卡里",
+                "关卡中",
+                "场景里",
+                "场景中",
+                "地图里",
+                "地图中",
                 "摆放",
                 "放置",
             )
         )
-        return actor_hint and level_hint
+        listing_hint = any(
+            token in query
+            for token in (
+                "list",
+                "show",
+                "which",
+                "what",
+                "how many",
+                "有哪些",
+                "有什么",
+                "哪些",
+                "列出",
+                "列一下",
+                "列举",
+                "多少",
+            )
+        )
+        return level_hint and (actor_hint or listing_hint)
 
     @staticmethod
     def _looks_like_material_instance_query(query: str) -> bool:
         material_hint = any(
             token in query
             for token in (
+                "material",
+                "materials",
                 "material instance",
                 "material instances",
                 "mi_",
                 "材质实例",
+                "材质参数",
+                "材质",
             )
         )
         parameter_hint = any(
@@ -1170,9 +1214,29 @@ class ProjectInventoryService:
                 "参数",
                 "贴图",
                 "开关",
+                "roughness",
+                "metallic",
+                "base color",
+                "basecolor",
+                "albedo",
+                "normal",
+                "emissive",
+                "opacity",
+                "tint",
+                "color",
+                "value",
+                "值",
+                "颜色",
+                "粗糙",
+                "粗糙度",
+                "金属",
+                "金属度",
+                "法线",
+                "发光",
+                "透明",
             )
         )
-        return material_hint and parameter_hint
+        return material_hint and (parameter_hint or "mi_" in query)
 
     def _looks_like_selected_asset_query(self, query: str) -> bool:
         return any(
@@ -1305,9 +1369,9 @@ class ProjectInventoryService:
             "folder_path": ("folder", "文件夹"),
             "parent_material": ("parent material", "parent_material", "父材质"),
             "parameters": ("parameter", "parameters", "参数"),
-            "scalar_parameters": ("scalar", "标量"),
-            "vector_parameters": ("vector", "向量", "颜色"),
-            "texture_parameters": ("texture", "贴图"),
+            "scalar_parameters": ("scalar", "roughness", "metallic", "标量", "粗糙", "金属"),
+            "vector_parameters": ("vector", "color", "base color", "basecolor", "tint", "向量", "颜色"),
+            "texture_parameters": ("texture", "albedo", "normal", "贴图", "法线"),
             "static_switch_parameters": ("static switch", "开关"),
         }
         fields: list[str] = []

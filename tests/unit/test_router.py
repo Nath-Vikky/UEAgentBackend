@@ -166,6 +166,38 @@ def test_agent_chat_with_chinese_level_actor_list_routes_to_inventory() -> None:
     assert routing["route"]["project_inventory_query"] is True
 
 
+def test_agent_chat_with_chinese_level_object_list_routes_to_inventory() -> None:
+    request = _request(
+        content="当前关卡摆了哪些物体？",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["project_inventory_query"] is True
+
+
+def test_agent_chat_with_material_parameter_value_routes_to_inventory() -> None:
+    request = _request(
+        content="当前项目 MI_Rock 的 Roughness 是多少？",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["project_inventory_query"] is True
+
+
 def test_router_keeps_existing_decision_while_exposing_signal_trace() -> None:
     request = _request(
         content="Explain how this file initializes the subsystem.",
