@@ -2933,6 +2933,7 @@ Agent Chat 自然语言桥接会做一层轻量图谱语义识别：
 - 文本包含 `EventBeginPlay`、`BeginPlay`、`开始播放` 时，会把 `entry_event` 规范化为 `BeginPlay`，而不是把它误当成 graph 名。
 - 文本包含 `ConstructionScript`、`construction script`、`构造脚本` 时，会把 `graph_name` 设为 `ConstructionScript`。
 - 文本包含 `EventGraph`、`event graph`、`事件图表` 时，会把 `graph_name` 设为 `EventGraph`。
+- 文本包含 `compile / recompile / 编译 / 重新编译` 且能从 payload、Project Inventory、选中资产或最近操作中解析到 Blueprint 时，会生成 `compile_blueprint` Proposal。
 
 这仍然不是“自动猜整张蓝图怎么连”的能力；它只是把常见口语表达转成更稳定的 Proposal payload。Graph 是否真实存在、Pin 是否可连接，仍由 UEAgentTool 执行时验证并回传结果。
 

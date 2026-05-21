@@ -254,6 +254,22 @@ def _cases() -> list[dict[str, Any]]:
             "expected_result_fields": ["linked_pins", "compile_status"],
         },
         {
+            "case_id": "compile_blueprint",
+            "request": _proposal_payload(
+                "compile_blueprint",
+                {
+                    "blueprint_path": blueprint_path,
+                },
+            ),
+            "expected_status": 200,
+            "expected_tool_id": "editor_compile_blueprint",
+            "expected_payload": {
+                "blueprint_path": blueprint_path,
+                "compile_mode": "default",
+            },
+            "expected_result_fields": ["compile_status", "messages"],
+        },
+        {
             "case_id": "reject_unknown_template",
             "request": _proposal_payload(
                 "add_blueprint_node_template",

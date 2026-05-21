@@ -1274,13 +1274,34 @@ class EditorOperationService:
             return None
         query_lower = query_text.lower()
 
-        wants_place_actor = any(
-            token in query_lower or token in query_text
-            for token in ("place", "spawn", "add to level", "put", "放置", "摆放", "放到", "放入", "加入关卡")
-        ) and any(
-            token in query_lower or token in query_text
-            for token in ("actor", "blueprint", "bp_", "level", "world", "map", "蓝图", "关卡", "场景", "灯光", "相机")
+        place_action_signal = (
+            re.search(r"\b(?:place|spawn|put)\b", query_lower) is not None
+            or "add to level" in query_lower
+            or any(
+                token in query_text
+                for token in (
+                    "放置",
+                    "摆放",
+                    "放到",
+                    "放入",
+                    "加入关卡",
+                    "鏀剧疆",
+                    "鎽嗘斁",
+                    "鏀惧埌",
+                    "鏀惧叆",
+                    "鍔犲叆鍏冲崱",
+                )
+            )
         )
+        place_target_signal = (
+            re.search(r"\b(?:actor|blueprint|level|world|map)\b", query_lower) is not None
+            or "bp_" in query_lower
+            or any(
+                token in query_text
+                for token in ("蓝图", "关卡", "场景", "灯光", "相机", "钃濆浘", "鍏冲崱", "鍦烘櫙", "鐏厜", "鐩告満")
+            )
+        )
+        wants_place_actor = place_action_signal and place_target_signal
         if wants_place_actor:
             actor_class = EditorOperationService._detect_actor_class_from_request(
                 request,
@@ -1846,13 +1867,30 @@ class EditorOperationService:
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
             )
-        wants_blueprint_compile = selected_asset and (
-            "blueprint" in query_lower or "蓝图" in query_text or str(selected_asset).lower().endswith("_c")
-        ) and any(token in query_lower or token in query_text for token in ("compile", "编译"))
+        compile_signal = any(
+            token in query_lower or token in query_text
+            for token in ("compile", "recompile", "build blueprint", "编译", "重新编译")
+        )
+        blueprint_compile_path = (
+            EditorOperationService._detect_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            if compile_signal
+            else None
+        )
+        wants_blueprint_compile = compile_signal and (
+            bool(blueprint_compile_path)
+            or "blueprint" in query_lower
+            or "bp_" in query_lower
+            or "蓝图" in query_text
+            or (bool(selected_asset) and str(selected_asset).lower().endswith("_c"))
+        )
         if wants_blueprint_compile:
             return EditorOperationProposalRequest(
                 operation_type="compile_blueprint",
-                payload={"blueprint_path": selected_asset},
+                payload={"blueprint_path": blueprint_compile_path or selected_asset or ""},
                 reason=query_text,
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
