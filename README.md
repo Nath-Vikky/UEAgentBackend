@@ -61,6 +61,12 @@ OpenAPI：
 http://127.0.0.1:8000/docs
 ```
 
+UE 插件：
+
+- 插件仓库：<https://github.com/Nath-Vikky/UEAgentTool>
+- 后端默认监听：`http://127.0.0.1:8000`
+- 插件侧只负责编辑器 UI、用户确认和真实 Editor API 执行；后端负责 Agent 管线、Proposal、知识库、评测和记录。
+
 ## 最小配置
 
 复制 `.env.example` 为 `.env`，至少配置 LLM：
@@ -124,6 +130,17 @@ Agent 判断意图
 
 后端负责推理、校验和记录，真正修改 UE 工程的动作由插件在用户确认后执行。
 
+当前编辑器操作目录：
+
+- [Editor Operation Catalog](./docs/editor-operation-catalog.md)
+- `GET /api/v1/editor-operations/capabilities`
+
+如需重新生成公开目录：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_editor_operation_catalog.py --output docs\editor-operation-catalog.md
+```
+
 ## 本地验证
 
 快速检查：
@@ -139,6 +156,8 @@ Agent 判断意图
 .\.venv\Scripts\python.exe -m pytest tests\unit tests\contract tests\eval tests\integration
 .\.venv\Scripts\python.exe scripts\run_project_benchmark.py --output storage\artifacts\evals\project-benchmark-latest.json --markdown-output storage\artifacts\evals\project-benchmark-latest.md
 .\.venv\Scripts\python.exe scripts\run_code_review_benchmark.py --min-recall 0.85 --min-precision 0.85
+.\.venv\Scripts\python.exe scripts\run_blueprint_graph_operation_smoke.py
+.\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py
 ```
 
 评测报告默认生成到 `storage/artifacts/`，不作为公开文档提交。
@@ -146,5 +165,6 @@ Agent 判断意图
 ## 公开文档
 
 - [User Guide](./docs/backend-user-guide.md)
+- [Editor Operation Catalog](./docs/editor-operation-catalog.md)
 - [Release Notes](./docs/release-notes/)
 - [Contributing Guide](./CONTRIBUTING.md)

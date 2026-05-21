@@ -46,6 +46,24 @@ Broader local checks:
 Write tools as `read_only` by default. Any editor/project write must use a
 Proposal and require user confirmation.
 
+## Adding An Editor Operation
+
+Editor operations are confirmed-write tools that are planned by the backend and
+executed by UEAgentTool after user confirmation.
+
+1. Add or update `OPERATION_SPECS` in `app/services/editor_operation_service.py`.
+2. Add payload normalization and result contract fields.
+3. Add or update the UEAgentTool executor in the plugin repository.
+4. Add backend integration tests for proposal creation, result handling, and
+   capabilities metadata.
+5. Run the catalog exporter:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_editor_operation_catalog.py --output docs\editor-operation-catalog.md
+```
+
+6. Update user docs or frontend handoff notes if the UI contract changes.
+
 ## Adding A Skill
 
 1. Add a `BuiltInSkillSpec` in `app/skills/registry.py`.
