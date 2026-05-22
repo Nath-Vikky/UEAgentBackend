@@ -94,6 +94,7 @@ class EditorOperationProposalRequest(BaseModel):
         "set_umg_widget_text",
         "set_umg_widget_layout",
         "set_umg_widget_visibility",
+        "set_umg_widget_appearance",
         "place_actor_in_level",
         "set_actor_transform",
         "set_actor_metadata",

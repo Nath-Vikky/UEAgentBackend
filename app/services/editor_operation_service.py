@@ -278,6 +278,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["widget_blueprint_path", "widget_name", "visibility"],
         "frontend_status": "implemented_v1",
     },
+    "set_umg_widget_appearance": {
+        "tool_id": "editor_set_umg_widget_appearance",
+        "title": "Set UMG Widget Appearance",
+        "risk_flags": "MEDIUM",
+        "summary": "Set safe visual fields such as render opacity, enabled state, TextBlock color, or font size.",
+        "required_fields": ["widget_blueprint_path", "widget_name", "appearance"],
+        "frontend_status": "implemented_v1",
+    },
     "place_actor_in_level": {
         "tool_id": "editor_place_actor_in_level",
         "title": "Place Actor In Level",
@@ -360,6 +368,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "set_umg_widget_text",
             "set_umg_widget_layout",
             "set_umg_widget_visibility",
+            "set_umg_widget_appearance",
         ],
     },
     "level": {
@@ -406,15 +415,6 @@ READ_ONLY_INSPECTION_SPECS: dict[str, dict[str, Any]] = {
 }
 
 OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
-    "set_umg_widget_appearance": {
-        "group": "umg",
-        "title": "Set UMG Widget Appearance",
-        "summary": "Set safe visual fields such as render opacity, enabled state, tint color, or font size.",
-        "side_effect_level": "confirmed_write",
-        "frontend_status": "planned_v2",
-        "required_fields": ["widget_blueprint_path", "widget_name", "appearance"],
-        "boundary": "No animation editing, binding generation, or complex style inheritance.",
-    },
     "set_umg_widget_brush": {
         "group": "umg",
         "title": "Set UMG Widget Brush",
@@ -1491,6 +1491,49 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_umg_appearance_from_request(request: UnifiedTaskRequest, query_text: str) -> dict[str, Any]:
+        appearance: dict[str, Any] = {}
+        payload_appearance = request.payload.get("appearance")
+        if isinstance(payload_appearance, dict):
+            appearance.update(payload_appearance)
+        for key in ("render_opacity", "opacity", "is_enabled", "enabled", "color_and_opacity", "font_size"):
+            if key in request.payload:
+                appearance[key] = request.payload[key]
+        if appearance:
+            return appearance
+
+        opacity_match = re.search(
+            r"(?:render\s*)?opacity\s*(?:to|=|:)?\s*(\d+(?:\.\d+)?%?)",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if opacity_match:
+            raw_opacity = opacity_match.group(1)
+            appearance["render_opacity"] = float(raw_opacity.rstrip("%")) / 100.0 if raw_opacity.endswith("%") else float(raw_opacity)
+
+        font_size_match = re.search(r"font\s*size\s*(?:to|=|:)?\s*(\d{1,3})", query_text, flags=re.IGNORECASE)
+        if font_size_match:
+            appearance["font_size"] = int(font_size_match.group(1))
+
+        query_lower = query_text.lower()
+        if any(token in query_lower for token in ("disable", "disabled", "not enabled")):
+            appearance["is_enabled"] = False
+        elif any(token in query_lower for token in ("enable", "enabled")):
+            appearance["is_enabled"] = True
+
+        color_match = re.search(r"#([0-9a-fA-F]{6})([0-9a-fA-F]{2})?", query_text)
+        if color_match:
+            rgb = color_match.group(1)
+            alpha = color_match.group(2) or "FF"
+            appearance["color_and_opacity"] = {
+                "r": int(rgb[0:2], 16) / 255.0,
+                "g": int(rgb[2:4], 16) / 255.0,
+                "b": int(rgb[4:6], 16) / 255.0,
+                "a": int(alpha, 16) / 255.0,
+            }
+        return appearance
+
+    @staticmethod
     def _detect_actor_metadata_from_request(request: UnifiedTaskRequest, query_text: str) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
         payload_metadata = request.payload.get("metadata")
@@ -1899,6 +1942,44 @@ class EditorOperationService:
                     "widget_blueprint_path": widget_blueprint_path or "",
                     "widget_name": widget_name or "",
                     "visibility": visibility or "",
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_umg_appearance = any(
+            token in query_lower
+            for token in ("umg", "widget", "textblock", "text block", "hud", "wbp_")
+        ) and any(
+            token in query_lower
+            for token in (
+                "appearance",
+                "opacity",
+                "render opacity",
+                "enabled",
+                "disable",
+                "font size",
+                "color",
+                "tint",
+            )
+        ) and any(
+            token in query_lower
+            for token in ("set", "change", "update", "make", "enable", "disable")
+        )
+        if wants_umg_appearance:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="set_umg_widget_appearance",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
+                    "appearance": EditorOperationService._detect_umg_appearance_from_request(request, query_text),
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -2963,6 +3044,59 @@ class EditorOperationService:
             raise EditorOperationValidationError("layout_requires_position_size_alignment_or_anchors")
         return normalized
 
+    def _normalize_color_value(self, value: Any, field_name: str) -> dict[str, float]:
+        if isinstance(value, list | tuple) and len(value) in {3, 4}:
+            raw_values = {
+                "r": value[0],
+                "g": value[1],
+                "b": value[2],
+                "a": value[3] if len(value) == 4 else 1.0,
+            }
+        elif isinstance(value, dict):
+            raw_values = {
+                "r": value.get("r", value.get("x", 0.0)),
+                "g": value.get("g", value.get("y", 0.0)),
+                "b": value.get("b", value.get("z", 0.0)),
+                "a": value.get("a", value.get("w", 1.0)),
+            }
+        else:
+            raise EditorOperationValidationError(f"{field_name}_must_be_color_object_or_array")
+        return {
+            component: self._normalize_finite_float(
+                raw_value,
+                f"{field_name}_{component}",
+                min_value=0.0,
+                max_value=1.0,
+            )
+            for component, raw_value in raw_values.items()
+        }
+
+    def _normalize_umg_appearance(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError("appearance_must_be_object")
+        normalized: dict[str, Any] = {}
+        if "render_opacity" in value or "opacity" in value:
+            normalized["render_opacity"] = self._normalize_finite_float(
+                value.get("render_opacity", value.get("opacity")),
+                "render_opacity",
+                min_value=0.0,
+                max_value=1.0,
+            )
+        if "is_enabled" in value or "enabled" in value:
+            normalized["is_enabled"] = self._normalize_bool(value.get("is_enabled", value.get("enabled")), "is_enabled")
+        if "color_and_opacity" in value or "tint_color" in value or "color" in value:
+            normalized["color_and_opacity"] = self._normalize_color_value(
+                value.get("color_and_opacity", value.get("tint_color", value.get("color"))),
+                "color_and_opacity",
+            )
+        if "font_size" in value:
+            normalized["font_size"] = int(
+                self._normalize_finite_float(value.get("font_size"), "font_size", min_value=6.0, max_value=256.0)
+            )
+        if not normalized:
+            raise EditorOperationValidationError("appearance_requires_opacity_enabled_color_or_font_size")
+        return normalized
+
     def _normalize_actor_transform(self, value: Any) -> dict[str, dict[str, float]]:
         if value is None:
             value = {}
@@ -3394,6 +3528,21 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_umg_widget_appearance":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            appearance_input = payload.get("appearance") if isinstance(payload.get("appearance"), dict) else {
+                key: payload.get(key)
+                for key in ("render_opacity", "opacity", "is_enabled", "enabled", "color_and_opacity", "font_size")
+                if key in payload
+            }
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "appearance": self._normalize_umg_appearance(appearance_input),
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "place_actor_in_level":
             actor_class = self._normalize_class_path(payload.get("actor_class"))
             actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
@@ -3601,6 +3750,12 @@ class EditorOperationService:
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Set widget `{payload['widget_name']}` visibility to `{payload['visibility']}`. The package is not auto-saved.",
             )
+        if operation_type == "set_umg_widget_appearance":
+            fields = ", ".join(sorted(payload["appearance"].keys()))
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Set widget `{payload['widget_name']}` appearance fields: {fields}. The package is not auto-saved.",
+            )
         if operation_type == "place_actor_in_level":
             location = payload["transform"]["location"]
             label = payload.get("actor_label") or "(default label)"
@@ -3727,6 +3882,7 @@ class EditorOperationService:
             "set_umg_widget_text",
             "set_umg_widget_layout",
             "set_umg_widget_visibility",
+            "set_umg_widget_appearance",
         }:
             target = {
                 "kind": "umg_widget",
@@ -3737,6 +3893,8 @@ class EditorOperationService:
             for key in ("widget_class", "slot_type", "visibility"):
                 if payload.get(key):
                     target[key] = payload[key]
+            if payload.get("appearance"):
+                target["appearance_fields"] = sorted(payload["appearance"].keys())
             return [target]
         if operation_type == "place_actor_in_level":
             return [
@@ -3836,6 +3994,16 @@ class EditorOperationService:
             "set_umg_widget_text": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
             "set_umg_widget_layout": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
             "set_umg_widget_visibility": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
+            "set_umg_widget_appearance": [
+                "widget_blueprint_path",
+                "widget_name",
+                "render_opacity",
+                "is_enabled",
+                "color_and_opacity",
+                "font_size",
+                "dirty",
+                "dirty_packages",
+            ],
             "place_actor_in_level": ["actor_label", "actor_path", "level_dirty", "dirty_packages"],
             "set_actor_transform": ["actor_reference", "transform_mode", "level_dirty", "dirty_packages"],
             "set_actor_metadata": ["actor_reference", "actor_label", "folder_path", "tags", "level_dirty", "dirty_packages"],

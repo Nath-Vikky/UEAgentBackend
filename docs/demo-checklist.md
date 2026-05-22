@@ -76,6 +76,7 @@ Suggested low-risk demos:
 - Add a `Print String` Blueprint node template.
 - Compile the test Blueprint.
 - Set one TextBlock text in a test Widget Blueprint.
+- Set one TextBlock opacity or font size through `set_umg_widget_appearance`.
 - Set one scalar parameter on a test Material Instance.
 - Rename or tag one level Actor through a confirmed `set_actor_metadata` proposal.
 

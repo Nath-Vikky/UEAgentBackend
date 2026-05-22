@@ -57,6 +57,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "set_umg_widget_text",
         "set_umg_widget_layout",
         "set_umg_widget_visibility",
+        "set_umg_widget_appearance",
         "place_actor_in_level",
         "set_actor_transform",
         "set_actor_metadata",
@@ -71,10 +72,10 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert body["capabilities"]["summary"]["operation_count"] >= 18
     assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
     assert body["capabilities"]["summary"]["read_only_operation_count"] >= 2
-    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 4
+    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 3
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
-    assert body["capabilities"]["summary"]["roadmap_group_counts"]["umg"] >= 3
+    assert body["capabilities"]["summary"]["roadmap_group_counts"]["umg"] >= 2
     group_ids = {item["group_id"] for item in body["capabilities"]["groups"]}
     assert {"asset", "blueprint", "umg", "level", "material"}.issubset(group_ids)
     roadmap_items = {
@@ -85,7 +86,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         item["operation_type"]: item
         for item in body["capabilities"]["read_only_items"]
     }
-    assert "set_umg_widget_appearance" in roadmap_items
+    assert "set_umg_widget_appearance" not in roadmap_items
     assert "set_actor_metadata" not in roadmap_items
     assert read_only_items["inspect_level_actors"]["side_effect_level"] == "read_only"
     assert read_only_items["inspect_level_actors"]["requires_confirmation"] is False
@@ -109,6 +110,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["set_umg_widget_text"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_layout"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_visibility"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_umg_widget_appearance"]["frontend_status"] == "implemented_v1"
     assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_metadata"]["frontend_status"] == "implemented_v1"
@@ -138,6 +140,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_set_umg_widget_text" in tool_ids
     assert "editor_set_umg_widget_layout" in tool_ids
     assert "editor_set_umg_widget_visibility" in tool_ids
+    assert "editor_set_umg_widget_appearance" in tool_ids
     assert "editor_place_actor_in_level" in tool_ids
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_actor_metadata" in tool_ids
@@ -1347,6 +1350,57 @@ def test_set_umg_widget_visibility_rejects_unknown_value(client: TestClient) -> 
     assert body["errors"][0]["code"] == "widget_visibility_not_supported_in_v1"
 
 
+def test_set_umg_widget_appearance_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_widget_appearance",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "appearance": {
+                    "render_opacity": 0.65,
+                    "is_enabled": True,
+                    "color_and_opacity": {"r": 0.1, "g": 0.8, "b": 0.3, "a": 1.0},
+                    "font_size": 28,
+                },
+            },
+            "reason": "Tune the HUD title appearance.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_umg_widget_appearance"
+    assert body["operation"]["tool_id"] == "editor_set_umg_widget_appearance"
+    payload = body["operation"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "TitleText"
+    assert payload["appearance"]["render_opacity"] == 0.65
+    assert payload["appearance"]["is_enabled"] is True
+    assert payload["appearance"]["color_and_opacity"]["g"] == 0.8
+    assert payload["appearance"]["font_size"] == 28
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_set_umg_widget_appearance_rejects_empty_appearance(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_widget_appearance",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "appearance": {},
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "appearance_requires_opacity_enabled_color_or_font_size"
+
+
 def test_place_actor_in_level_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -2399,6 +2453,64 @@ def test_agent_chat_resolves_umg_visibility_from_project_inventory(client: TestC
     assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
     assert payload["widget_name"] == "TitleText"
     assert payload["visibility"] == "collapsed"
+
+
+def test_agent_chat_resolves_umg_appearance_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/UI/WBP_MainHUD.WBP_MainHUD",
+                    "asset_name": "WBP_MainHUD",
+                    "asset_type": "WidgetBlueprint",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_umg_appearance_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Set WBP_MainHUD TitleText opacity to 0.5",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Set WBP_MainHUD TitleText opacity to 0.5"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_umg_widget_appearance"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "TitleText"
+    assert payload["appearance"]["render_opacity"] == 0.5
 
 
 def test_agent_chat_can_set_selected_material_instance_parameter(client: TestClient) -> None:

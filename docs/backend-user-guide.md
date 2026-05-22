@@ -251,7 +251,7 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它只调用 `POST /api/v1/editor-operations/proposals`，验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
-`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
+`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
@@ -3261,7 +3261,8 @@ UMG 写操作边界：
 - `set_umg_widget_text` 只修改已有 `TextBlock` 的文本；如果目标控件不存在或不是 `TextBlock`，UE 执行器会 blocked。
 - `set_umg_widget_layout` 只修改挂在 `CanvasPanel` 下的控件，也就是目标控件必须拥有 `CanvasPanelSlot`；v1 只支持 `position`、`size`、`alignment`、`anchors`。
 - `set_umg_widget_visibility` 只修改已有控件的 `Visibility`，白名单为 `visible`、`collapsed`、`hidden`、`hit_test_invisible`、`self_hit_test_invisible`。
-- 不设置颜色、字体、动画、绑定和复杂 slot 参数；这些放到后续 UMG v2。
+- `set_umg_widget_appearance` 支持单控件安全外观字段：`render_opacity`、`is_enabled`，以及 TextBlock 专属 `color_and_opacity` 和 `font_size`。
+- 不设置动画、绑定、复杂 style 继承和复杂 slot 参数；这些仍放到后续 UMG v2+。
 
 ### 26.2 Level / Material 低风险编辑器操作 v1
 
@@ -5081,6 +5082,42 @@ Validation:
 ```
 
 UE frontend impact: add `set_umg_widget_visibility` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
+
+## 2026-05-22 UMG Widget Appearance Proposal
+
+`Editor Operation Bridge` now includes `set_umg_widget_appearance`, a confirmed-write proposal for changing safe appearance fields on one existing UMG widget.
+
+Supported request forms:
+
+- Explicit proposal API: `operation_type=set_umg_widget_appearance`.
+- Agent Chat: `Set WBP_MainHUD TitleText opacity to 0.5`.
+- Agent Chat: `Set WBP_MainHUD TitleText font size to 28`.
+- Hex color can be parsed from chat, for example `Set WBP_MainHUD TitleText color to #33CC66`.
+- Inventory-assisted resolution: when `selected_assets` is empty, Project Inventory can provide the `WBP_...` Widget Blueprint path.
+
+Payload shape:
+
+```json
+{
+  "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+  "widget_name": "TitleText",
+  "appearance": {
+    "render_opacity": 0.65,
+    "is_enabled": true,
+    "color_and_opacity": {"r": 0.1, "g": 0.8, "b": 0.3, "a": 1.0},
+    "font_size": 28
+  }
+}
+```
+
+Boundary:
+
+- `render_opacity` and `is_enabled` apply to any UMG `UWidget`.
+- `color_and_opacity` and `font_size` currently apply only to `UTextBlock`.
+- The UE plugin marks the Widget Blueprint package dirty but does not auto-save.
+- Animation editing, binding generation, dynamic style inheritance, and bulk widget tree rewrites remain out of scope.
+
+UE frontend impact: add `set_umg_widget_appearance` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
 
 ## 2026-05-19 Editor Operation Preview and History v1
 

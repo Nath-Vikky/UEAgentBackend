@@ -215,6 +215,19 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_umg_appearance",
+            "request": _chat_request(
+                case_id="chat_umg_appearance",
+                query="Set WBP_MainHUD TitleText opacity to 0.5",
+            ),
+            "expected_operation_type": "set_umg_widget_appearance",
+            "expected_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "appearance.render_opacity": 0.5,
+            },
+        },
+        {
             "case_id": "chat_material_scalar",
             "request": _chat_request(
                 case_id="chat_material_scalar",
