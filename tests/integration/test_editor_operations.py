@@ -59,6 +59,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "set_umg_widget_visibility",
         "place_actor_in_level",
         "set_actor_transform",
+        "set_actor_metadata",
         "set_material_instance_parameter",
         "set_material_instance_texture_parameter",
         "set_material_instance_static_switch",
@@ -70,7 +71,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert body["capabilities"]["summary"]["operation_count"] >= 18
     assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
     assert body["capabilities"]["summary"]["read_only_operation_count"] >= 2
-    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 5
+    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 4
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
     assert body["capabilities"]["summary"]["roadmap_group_counts"]["umg"] >= 3
@@ -85,7 +86,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         for item in body["capabilities"]["read_only_items"]
     }
     assert "set_umg_widget_appearance" in roadmap_items
-    assert roadmap_items["set_actor_metadata"]["proposal_enabled"] is False
+    assert "set_actor_metadata" not in roadmap_items
     assert read_only_items["inspect_level_actors"]["side_effect_level"] == "read_only"
     assert read_only_items["inspect_level_actors"]["requires_confirmation"] is False
     assert read_only_items["inspect_level_actors"]["proposal_enabled"] is False
@@ -110,6 +111,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["set_umg_widget_visibility"]["frontend_status"] == "implemented_v1"
     assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_actor_metadata"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_material_instance_parameter"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_material_instance_texture_parameter"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_material_instance_static_switch"]["frontend_status"] == "implemented_v1"
@@ -138,6 +140,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_set_umg_widget_visibility" in tool_ids
     assert "editor_place_actor_in_level" in tool_ids
     assert "editor_set_actor_transform" in tool_ids
+    assert "editor_set_actor_metadata" in tool_ids
     assert "editor_set_material_instance_parameter" in tool_ids
     assert "editor_set_material_instance_texture_parameter" in tool_ids
     assert "editor_set_material_instance_static_switch" in tool_ids
@@ -1432,6 +1435,54 @@ def test_set_actor_transform_rejects_missing_transform(client: TestClient) -> No
     assert body["errors"][0]["code"] == "transform_requires_location_rotation_or_scale"
 
 
+def test_set_actor_metadata_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_actor_metadata",
+            "payload": {
+                "actor_reference": "BP_EnemySpawner_1",
+                "metadata": {
+                    "actor_label": "EnemySpawn_A",
+                    "folder_path": "Gameplay/Spawners",
+                    "tags": ["Spawner", "Enemy"],
+                    "tag_mode": "append",
+                },
+            },
+            "reason": "Organize the selected level actor.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_actor_metadata"
+    assert body["operation"]["tool_id"] == "editor_set_actor_metadata"
+    payload = body["operation"]["operation_payload"]
+    assert payload["actor_reference"] == "BP_EnemySpawner_1"
+    assert payload["metadata"]["actor_label"] == "EnemySpawn_A"
+    assert payload["metadata"]["folder_path"] == "Gameplay/Spawners"
+    assert payload["metadata"]["tags"] == ["Spawner", "Enemy"]
+    assert payload["metadata"]["tag_mode"] == "append"
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_set_actor_metadata_rejects_empty_metadata(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_actor_metadata",
+            "payload": {
+                "actor_reference": "BP_EnemySpawner_1",
+                "metadata": {},
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "metadata_requires_actor_label_folder_path_or_tags"
+
+
 def test_set_material_instance_scalar_parameter_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -1703,6 +1754,60 @@ def test_agent_chat_can_place_selected_blueprint_in_level(client: TestClient) ->
     payload = proposal["dry_run_preview"]["operation_payload"]
     assert payload["actor_class"] == "/Game/Blueprints/BP_TestActor.BP_TestActor_C"
     assert payload["transform"]["location"] == {"x": 0.0, "y": 0.0, "z": 100.0}
+
+
+def test_agent_chat_can_prepare_actor_metadata_operation_from_inventory(client: TestClient) -> None:
+    inventory = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "level_actors": [
+                {
+                    "actor_label": "BP_EnemySpawner_1",
+                    "actor_name": "BP_EnemySpawner_C_1",
+                    "actor_class": "BP_EnemySpawner_C",
+                    "level_name": "TestMap",
+                    "folder_path": "Gameplay",
+                    "tags": ["Spawner"],
+                }
+            ],
+        },
+    )
+    assert inventory.status_code == 200
+
+    query = "Rename actor BP_EnemySpawner_1 label to EnemySpawn_A"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_actor_metadata_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_actor_metadata"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["actor_reference"] == "BP_EnemySpawner_1"
+    assert payload["metadata"]["actor_label"] == "EnemySpawn_A"
 
 
 def test_agent_chat_builds_print_string_template_for_beginplay_text(client: TestClient) -> None:

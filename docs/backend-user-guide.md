@@ -251,7 +251,7 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它只调用 `POST /api/v1/editor-operations/proposals`，验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
-`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_umg_widget_text`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
+`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
@@ -4360,6 +4360,43 @@ Safety boundary:
 - UE frontend finds the Actor by exact actor label, object name, or object path.
 - The operation uses editor transaction/undo and marks the level dirty, but does not auto-save.
 - Deleting actors, batch transform, snapping, navigation/light rebuild, and procedural placement remain out of scope for this slice.
+
+## 2026-05-22 Level Actor Metadata Proposal
+
+`Editor Operation Bridge` now includes `set_actor_metadata`, a confirmed-write proposal for organizing one existing Actor in the current editor level.
+
+Supported fields:
+
+- `actor_label`: rename the editor label of one Actor.
+- `folder_path`: move the Actor into an editor outliner folder path.
+- `tags`: replace, append, or remove Actor tags with `tag_mode=replace|append|remove`.
+
+Payload shape:
+
+```json
+{
+  "actor_reference": "BP_EnemySpawner_1",
+  "metadata": {
+    "actor_label": "EnemySpawn_A",
+    "folder_path": "Gameplay/Spawners",
+    "tags": ["Spawner", "Enemy"],
+    "tag_mode": "append"
+  }
+}
+```
+
+Agent Chat can also build the same Proposal from Project Inventory, for example:
+
+```text
+Rename actor BP_EnemySpawner_1 label to EnemySpawn_A
+```
+
+Safety boundary:
+
+- Only one Actor is edited per Proposal.
+- Actor lookup uses exact actor label, object name, or object path.
+- The UE plugin uses an editor transaction and marks the level dirty, but does not auto-save.
+- Actor deletion, asset rename/move, batch organization, World Partition operations, and procedural placement are out of scope for this operation.
 
 ## 2026-05-17 Knowledge Curation Artifact Export
 

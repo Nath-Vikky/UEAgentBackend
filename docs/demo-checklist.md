@@ -77,6 +77,7 @@ Suggested low-risk demos:
 - Compile the test Blueprint.
 - Set one TextBlock text in a test Widget Blueprint.
 - Set one scalar parameter on a test Material Instance.
+- Rename or tag one level Actor through a confirmed `set_actor_metadata` proposal.
 
 Safety checks:
 

@@ -4,8 +4,8 @@ This catalog is generated from the backend editor operation registry.
 
 ## Summary
 
-- Operation count: `20`
-- Implemented frontend count: `20`
+- Operation count: `21`
+- Implemented frontend count: `21`
 - Read-only inspection count: `2`
 - Transport: `http`
 - Proposal type: `editor_operation`
@@ -13,7 +13,7 @@ This catalog is generated from the backend editor operation registry.
 - LLM direct execution: `False`
 - Auto execute follow-ups: `False`
 - Auto save: `False`
-- Roadmap operation count: `5`
+- Roadmap operation count: `4`
 
 ## Groups
 
@@ -69,6 +69,7 @@ Place actors and adjust transforms in the current editor level.
 | --- | --- | --- | --- |
 | `place_actor_in_level` | `MEDIUM` | `actor_class` | `actor_label`, `actor_path`, `level_dirty`, `dirty_packages` |
 | `set_actor_transform` | `MEDIUM` | `actor_reference`, `transform_mode` | `actor_reference`, `transform_mode`, `level_dirty`, `dirty_packages` |
+| `set_actor_metadata` | `MEDIUM` | `actor_reference`, `metadata` | `actor_reference`, `actor_label`, `folder_path`, `tags`, `level_dirty`, `dirty_packages` |
 
 Read-only inspections:
 
@@ -80,7 +81,6 @@ Roadmap:
 
 | Planned Operation | Side Effect | Required Fields | Boundary |
 | --- | --- | --- | --- |
-| `set_actor_metadata` | `confirmed_write` | `actor_reference`, `metadata` | No actor deletion and no hidden batch edits. |
 | `arrange_actors_pattern` | `confirmed_write` | `actor_references`, `pattern` | Batch operations require preview, item limits, and user confirmation. |
 
 ### Material Operations

@@ -96,6 +96,7 @@ class EditorOperationProposalRequest(BaseModel):
         "set_umg_widget_visibility",
         "place_actor_in_level",
         "set_actor_transform",
+        "set_actor_metadata",
         "set_material_instance_parameter",
         "set_material_instance_texture_parameter",
         "set_material_instance_static_switch",

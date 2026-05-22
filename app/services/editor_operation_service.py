@@ -294,6 +294,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["actor_reference", "transform_mode"],
         "frontend_status": "implemented_v1",
     },
+    "set_actor_metadata": {
+        "tool_id": "editor_set_actor_metadata",
+        "title": "Set Actor Metadata",
+        "risk_flags": "MEDIUM",
+        "summary": "Set one Actor label, folder, or tags after user confirmation.",
+        "required_fields": ["actor_reference", "metadata"],
+        "frontend_status": "implemented_v1",
+    },
     "set_material_instance_parameter": {
         "tool_id": "editor_set_material_instance_parameter",
         "title": "Set Material Instance Parameter",
@@ -360,6 +368,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
         "operation_types": [
             "place_actor_in_level",
             "set_actor_transform",
+            "set_actor_metadata",
         ],
     },
     "material": {
@@ -423,15 +432,6 @@ OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
         "frontend_status": "planned_v2",
         "required_fields": ["widget_blueprint_path", "widget_name", "slot_type", "layout"],
         "boundary": "No responsive layout generation and no complex container restructuring.",
-    },
-    "set_actor_metadata": {
-        "group": "level",
-        "title": "Set Actor Metadata",
-        "summary": "Set one Actor label, folder, or tags after user confirmation.",
-        "side_effect_level": "confirmed_write",
-        "frontend_status": "planned_v2",
-        "required_fields": ["actor_reference", "metadata"],
-        "boundary": "No actor deletion and no hidden batch edits.",
     },
     "arrange_actors_pattern": {
         "group": "level",
@@ -920,6 +920,31 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _inventory_actor_reference(
+        context_bundle: dict[str, Any] | None,
+        query_text: str,
+    ) -> str | None:
+        if not context_bundle:
+            return None
+        inventory_context = context_bundle.get("project_inventory_context")
+        if not isinstance(inventory_context, dict):
+            return None
+        candidates: list[dict[str, Any]] = []
+        for key in ("query_candidates", "top_level_actors"):
+            values = inventory_context.get(key) or []
+            if isinstance(values, list):
+                candidates.extend(item for item in values if isinstance(item, dict))
+        query_lower = query_text.lower()
+        for item in candidates:
+            if item.get("kind") not in {None, "", "level_actor"}:
+                continue
+            for key in ("actor_label", "actor_name", "actor_path"):
+                value = str(item.get(key) or "").strip()
+                if value and value.lower() in query_lower:
+                    return value
+        return None
+
+    @staticmethod
     def _detect_actor_reference_from_request(
         request: UnifiedTaskRequest,
         query_text: str,
@@ -943,10 +968,14 @@ class EditorOperationService:
             if value:
                 return value
 
+        inventory_actor = EditorOperationService._inventory_actor_reference(context_bundle, query_text)
+        if inventory_actor:
+            return inventory_actor
+
         if EditorOperationService._references_recent_target(query_text):
             recent_actor = EditorOperationService._recent_editor_operation_value(
                 context_bundle=context_bundle,
-                operation_types={"place_actor_in_level", "set_actor_transform"},
+                operation_types={"place_actor_in_level", "set_actor_transform", "set_actor_metadata"},
                 keys=("actor_reference", "actor_label", "actor_name"),
             )
             if recent_actor:
@@ -1462,6 +1491,56 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_actor_metadata_from_request(request: UnifiedTaskRequest, query_text: str) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        payload_metadata = request.payload.get("metadata")
+        if isinstance(payload_metadata, dict):
+            metadata.update(payload_metadata)
+        for key in ("actor_label", "folder_path", "tags", "tag_mode"):
+            if key in request.payload:
+                metadata[key] = request.payload[key]
+        if metadata:
+            return metadata
+
+        label_match = re.search(
+            r"(?:label|name)\s*(?:to|=|:)\s*['\"]?([A-Za-z0-9_ \-]{1,120})",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if not label_match:
+            label_match = re.search(
+                r"(?:标签|名字|名称)\s*(?:改成|改为|设置为|设为|为)\s*([A-Za-z0-9_ \-]{1,120})",
+                query_text,
+            )
+        if label_match:
+            metadata["actor_label"] = label_match.group(1).strip().strip("'\"")
+
+        folder_match = re.search(
+            r"(?:folder|folder path)\s*(?:to|=|:)\s*['\"]?([A-Za-z0-9_ /\-]{1,200})",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if not folder_match:
+            folder_match = re.search(r"(?:文件夹|目录)\s*(?:改成|改为|设置为|设为|为)\s*([A-Za-z0-9_ /\-]{1,200})", query_text)
+        if folder_match:
+            metadata["folder_path"] = folder_match.group(1).strip().strip("'\"")
+
+        tag_mode = "replace"
+        query_lower = query_text.lower()
+        if any(token in query_lower or token in query_text for token in ("add tag", "append tag", "添加标签", "增加标签")):
+            tag_mode = "append"
+        if any(token in query_lower or token in query_text for token in ("remove tag", "delete tag", "移除标签", "删除标签")):
+            tag_mode = "remove"
+        tag_match = re.search(r"(?:tags?|标签)\s*(?:to|=|:|为|是)?\s*['\"]?([A-Za-z0-9_,，;； \-]{1,200})", query_text, flags=re.IGNORECASE)
+        if tag_match:
+            tags_text = tag_match.group(1).strip().strip("'\"")
+            tags = [item.strip() for item in re.split(r"[,，;； ]+", tags_text) if item.strip()]
+            if tags:
+                metadata["tags"] = tags
+                metadata["tag_mode"] = tag_mode
+        return metadata
+
+    @staticmethod
     def _detect_material_parameter_name(query_text: str) -> str | None:
         for known_name in (
             "Roughness",
@@ -1680,6 +1759,56 @@ class EditorOperationService:
             return EditorOperationProposalRequest(
                 operation_type="set_actor_transform",
                 payload=payload,
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_actor_metadata = any(
+            token in query_lower or token in query_text
+            for token in (
+                "actor",
+                "that actor",
+                "selected actor",
+                "level actor",
+                "bp_",
+                "场景物体",
+                "关卡对象",
+                "这个actor",
+                "那个actor",
+            )
+        ) and any(
+            token in query_lower or token in query_text
+            for token in (
+                "label",
+                "name",
+                "folder",
+                "tag",
+                "tags",
+                "metadata",
+                "rename",
+                "标签",
+                "名称",
+                "名字",
+                "文件夹",
+                "目录",
+            )
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("set", "change", "rename", "add", "remove", "update", "设置", "改成", "改为", "添加", "移除", "删除")
+        )
+        if wants_actor_metadata:
+            actor_reference = EditorOperationService._detect_actor_reference_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            return EditorOperationProposalRequest(
+                operation_type="set_actor_metadata",
+                payload={
+                    "actor_reference": actor_reference or "",
+                    "metadata": EditorOperationService._detect_actor_metadata_from_request(request, query_text),
+                },
                 reason=query_text,
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
@@ -2932,6 +3061,47 @@ class EditorOperationService:
         )
 
     @staticmethod
+    def _normalize_string_list(value: Any, field_name: str, *, max_items: int = 32, max_length: int = 80) -> list[str]:
+        if isinstance(value, str):
+            raw_values = [item.strip() for item in re.split(r"[,，;；]", value) if item.strip()]
+        elif isinstance(value, list | tuple):
+            raw_values = [str(item).strip() for item in value if str(item).strip()]
+        else:
+            raise EditorOperationValidationError(f"{field_name}_must_be_string_or_array")
+        normalized: list[str] = []
+        for item in raw_values:
+            if len(item) > max_length:
+                raise EditorOperationValidationError(f"{field_name}_item_too_long", {"item": item, "max_length": max_length})
+            if item not in normalized:
+                normalized.append(item)
+        if len(normalized) > max_items:
+            raise EditorOperationValidationError(f"{field_name}_too_many_items", {"max_items": max_items})
+        return normalized
+
+    def _normalize_actor_metadata(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError("metadata_must_be_object")
+        metadata: dict[str, Any] = {}
+        actor_label = self._normalize_optional_string(value.get("actor_label") or value.get("label") or "", max_length=120)
+        if actor_label:
+            metadata["actor_label"] = actor_label
+        folder_path = self._normalize_optional_string(value.get("folder_path") or value.get("folder") or "", max_length=200)
+        if folder_path:
+            metadata["folder_path"] = folder_path.replace("\\", "/").strip("/")
+        if "tags" in value:
+            metadata["tags"] = self._normalize_string_list(value.get("tags"), "tags", max_items=24, max_length=64)
+            tag_mode = str(value.get("tag_mode") or "replace").strip().lower()
+            if tag_mode not in {"replace", "append", "remove"}:
+                raise EditorOperationValidationError(
+                    "tag_mode_not_supported",
+                    {"tag_mode": tag_mode, "allowed_modes": ["replace", "append", "remove"]},
+                )
+            metadata["tag_mode"] = tag_mode
+        if not metadata:
+            raise EditorOperationValidationError("metadata_requires_actor_label_folder_path_or_tags")
+        return metadata
+
+    @staticmethod
     def _normalize_parameter_name(value: Any) -> str:
         parameter_name = str(value or "").strip()
         if not _PARAMETER_NAME_RE.match(parameter_name):
@@ -3253,6 +3423,22 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_actor_metadata":
+            actor_reference = self._normalize_optional_string(payload.get("actor_reference") or "", max_length=120)
+            if not actor_reference:
+                raise EditorOperationValidationError("actor_reference_required")
+            metadata_input = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {
+                key: payload.get(key)
+                for key in ("actor_label", "folder_path", "tags", "tag_mode")
+                if key in payload
+            }
+            metadata = self._normalize_actor_metadata(metadata_input)
+            return {
+                "actor_reference": actor_reference,
+                "metadata": metadata,
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "set_material_instance_parameter":
             material_instance_path = self._normalize_asset_path(payload.get("material_instance_path"))
             parameter_name = self._normalize_parameter_name(payload.get("parameter_name"))
@@ -3429,6 +3615,12 @@ class EditorOperationService:
                 f"Actor before change: {payload['actor_reference']}",
                 f"Apply {payload['transform_mode']} transform fields: {fields}. The level is marked dirty, not auto-saved.",
             )
+        if operation_type == "set_actor_metadata":
+            fields = ", ".join(sorted(payload["metadata"].keys()))
+            return (
+                f"Actor before change: {payload['actor_reference']}",
+                f"Update Actor metadata fields: {fields}. The level is marked dirty, not auto-saved.",
+            )
         if operation_type == "set_material_instance_parameter":
             return (
                 f"Material Instance before change: {payload['material_instance_path']}",
@@ -3564,6 +3756,15 @@ class EditorOperationService:
                     "transform_mode": payload["transform_mode"],
                 }
             ]
+        if operation_type == "set_actor_metadata":
+            return [
+                {
+                    "kind": "level_actor",
+                    "action": "set_metadata",
+                    "actor_reference": payload["actor_reference"],
+                    "metadata_fields": sorted(payload["metadata"].keys()),
+                }
+            ]
         if operation_type in {
             "set_material_instance_parameter",
             "set_material_instance_texture_parameter",
@@ -3637,6 +3838,7 @@ class EditorOperationService:
             "set_umg_widget_visibility": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
             "place_actor_in_level": ["actor_label", "actor_path", "level_dirty", "dirty_packages"],
             "set_actor_transform": ["actor_reference", "transform_mode", "level_dirty", "dirty_packages"],
+            "set_actor_metadata": ["actor_reference", "actor_label", "folder_path", "tags", "level_dirty", "dirty_packages"],
             "set_material_instance_parameter": ["material_instance_path", "parameter_name", "dirty", "dirty_packages"],
             "set_material_instance_texture_parameter": [
                 "material_instance_path",

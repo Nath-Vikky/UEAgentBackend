@@ -101,6 +101,16 @@ def _seed_inventory(client: TestClient) -> dict[str, Any]:
                     "asset_type": "Texture2D",
                 },
             ],
+            "level_actors": [
+                {
+                    "actor_label": "BP_EnemySpawner_1",
+                    "actor_name": "BP_EnemySpawner_C_1",
+                    "actor_class": "BP_EnemySpawner_C",
+                    "level_name": "TestMap",
+                    "folder_path": "Gameplay",
+                    "tags": ["Spawner"],
+                }
+            ],
         },
     )
     return {
@@ -231,6 +241,18 @@ def _cases() -> list[dict[str, Any]]:
                 "value": True,
             },
         },
+        {
+            "case_id": "chat_actor_metadata",
+            "request": _chat_request(
+                case_id="chat_actor_metadata",
+                query="Rename actor BP_EnemySpawner_1 label to EnemySpawn_A",
+            ),
+            "expected_operation_type": "set_actor_metadata",
+            "expected_payload": {
+                "actor_reference": "BP_EnemySpawner_1",
+                "metadata.actor_label": "EnemySpawn_A",
+            },
+        },
     ]
 
 
@@ -275,12 +297,13 @@ def _evaluate_case(client: TestClient, case: dict[str, Any]) -> dict[str, Any]:
         },
     ]
     for key, expected_value in case.get("expected_payload", {}).items():
+        actual_value = _nested_get(payload, key)
         checks.append(
             {
                 "name": f"payload.{key}",
-                "ok": payload.get(key) == expected_value,
+                "ok": actual_value == expected_value,
                 "expected": expected_value,
-                "actual": payload.get(key),
+                "actual": actual_value,
             }
         )
     return {
