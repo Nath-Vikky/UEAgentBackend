@@ -310,6 +310,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["material_instance_path", "parameter_name", "texture_path"],
         "frontend_status": "implemented_v1",
     },
+    "set_material_instance_static_switch": {
+        "tool_id": "editor_set_material_instance_static_switch",
+        "title": "Set Material Instance Static Switch",
+        "risk_flags": "MEDIUM",
+        "summary": "Set one static switch parameter on a Material Instance after user confirmation.",
+        "required_fields": ["material_instance_path", "parameter_name", "value"],
+        "frontend_status": "implemented_v1",
+    },
 }
 
 OPERATION_GROUPS: dict[str, dict[str, Any]] = {
@@ -360,6 +368,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
         "operation_types": [
             "set_material_instance_parameter",
             "set_material_instance_texture_parameter",
+            "set_material_instance_static_switch",
         ],
     },
 }
@@ -414,15 +423,6 @@ OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
         "frontend_status": "planned_v2",
         "required_fields": ["widget_blueprint_path", "widget_name", "slot_type", "layout"],
         "boundary": "No responsive layout generation and no complex container restructuring.",
-    },
-    "set_material_instance_static_switch": {
-        "group": "material",
-        "title": "Set Material Instance Static Switch",
-        "summary": "Set one static switch parameter on a Material Instance with explicit confirmation.",
-        "side_effect_level": "confirmed_write",
-        "frontend_status": "planned_v2",
-        "required_fields": ["material_instance_path", "parameter_name", "value"],
-        "boundary": "No parent material graph changes and no shader optimization pass.",
     },
     "set_actor_metadata": {
         "group": "level",
@@ -1236,7 +1236,11 @@ class EditorOperationService:
         if EditorOperationService._references_recent_target(query_text):
             recent_material_path = EditorOperationService._recent_editor_operation_value(
                 context_bundle=context_bundle,
-                operation_types={"set_material_instance_parameter", "set_material_instance_texture_parameter"},
+                operation_types={
+                    "set_material_instance_parameter",
+                    "set_material_instance_texture_parameter",
+                    "set_material_instance_static_switch",
+                },
                 keys=("material_instance_path", "asset_path", "final_asset_path"),
             )
             if recent_material_path:
@@ -1476,15 +1480,39 @@ class EditorOperationService:
             "Mask",
             "Tint Color",
             "Tint",
+            "UseDetail",
+            "Use Detail",
+            "UseNormal",
+            "Use Normal",
+            "UseEmissive",
+            "Use Emissive",
         ):
             if known_name.lower() in query_text.lower():
                 return known_name
         match = re.search(
-            r"(?:参数|parameter)\s*[:：]?\s*([A-Za-z][A-Za-z0-9_ ]{0,79})",
+            r"(?:参数|parameter|switch|开关)\s*[:：]?\s*([A-Za-z][A-Za-z0-9_ ]{0,79})",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group(1).strip()
+        match = re.search(
+            r"(?:的|the)\s*([A-Za-z][A-Za-z0-9_ ]{0,79})\s*(?:switch|开关|参数)",
             query_text,
             flags=re.IGNORECASE,
         )
         return match.group(1).strip() if match else None
+
+    @staticmethod
+    def _detect_bool_value(query_text: str) -> bool | None:
+        query_lower = query_text.lower()
+        false_tokens = ("false", "off", "disable", "disabled", "0", "关闭", "关掉", "禁用", "取消", "不启用")
+        true_tokens = ("true", "on", "enable", "enabled", "1", "打开", "开启", "启用", "勾选", "使用")
+        if any(token in query_lower or token in query_text for token in false_tokens):
+            return False
+        if any(token in query_lower or token in query_text for token in true_tokens):
+            return True
+        return None
 
     @staticmethod
     def _detect_material_value(query_text: str, parameter_name: str | None) -> tuple[str, Any] | None:
@@ -1742,6 +1770,49 @@ class EditorOperationService:
                     "widget_blueprint_path": widget_blueprint_path or "",
                     "widget_name": widget_name or "",
                     "visibility": visibility or "",
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_material_static_switch = any(
+            token in query_lower or token in query_text
+            for token in (
+                "static switch",
+                "switch parameter",
+                "switch",
+                "开关参数",
+                "静态开关",
+                "开关",
+            )
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("material", "material instance", "mi_", "材质", "材质实例")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("set", "adjust", "change", "enable", "disable", "turn", "设置", "调整", "改成", "打开", "关闭", "启用", "禁用")
+        )
+        if wants_material_static_switch:
+            material_path = EditorOperationService._detect_material_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            parameter_name = str(request.payload.get("parameter_name") or "").strip() or (
+                EditorOperationService._detect_material_parameter_name(query_text) or ""
+            )
+            value = (
+                request.payload.get("value")
+                if "value" in request.payload
+                else EditorOperationService._detect_bool_value(query_text)
+            )
+            return EditorOperationProposalRequest(
+                operation_type="set_material_instance_static_switch",
+                payload={
+                    "material_instance_path": material_path or "",
+                    "parameter_name": parameter_name,
+                    "value": value,
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -2845,6 +2916,22 @@ class EditorOperationService:
         return parameter_type
 
     @staticmethod
+    def _normalize_bool(value: Any, field_name: str) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int | float) and value in {0, 1}:
+            return bool(value)
+        text = str(value or "").strip().lower()
+        if text in {"true", "1", "on", "enable", "enabled", "yes", "y", "打开", "开启", "启用", "是"}:
+            return True
+        if text in {"false", "0", "off", "disable", "disabled", "no", "n", "关闭", "禁用", "否"}:
+            return False
+        raise EditorOperationValidationError(
+            f"{field_name}_must_be_boolean",
+            {"value": value, "allowed_values": ["true", "false", "on", "off", "1", "0"]},
+        )
+
+    @staticmethod
     def _normalize_parameter_name(value: Any) -> str:
         parameter_name = str(value or "").strip()
         if not _PARAMETER_NAME_RE.match(parameter_name):
@@ -3195,6 +3282,17 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_material_instance_static_switch":
+            material_instance_path = self._normalize_asset_path(payload.get("material_instance_path"))
+            parameter_name = self._normalize_parameter_name(payload.get("parameter_name"))
+            value = self._normalize_bool(payload.get("value"), "static_switch_value")
+            return {
+                "material_instance_path": material_instance_path,
+                "parameter_name": parameter_name,
+                "value": value,
+                "save_policy": "mark_dirty_only",
+            }
+
         raise EditorOperationValidationError("unsupported_editor_operation", {"operation_type": operation_type})
 
     def _build_summaries(self, operation_type: str, payload: dict[str, Any]) -> tuple[str, str]:
@@ -3341,6 +3439,11 @@ class EditorOperationService:
                 f"Material Instance before change: {payload['material_instance_path']}",
                 f"Set texture parameter `{payload['parameter_name']}` to `{payload['texture_path']}`. The package is marked dirty, not auto-saved.",
             )
+        if operation_type == "set_material_instance_static_switch":
+            return (
+                f"Material Instance before change: {payload['material_instance_path']}",
+                f"Set static switch `{payload['parameter_name']}` to `{payload['value']}`. The package is marked dirty, not auto-saved.",
+            )
         return ("", "")
 
     @staticmethod
@@ -3461,7 +3564,11 @@ class EditorOperationService:
                     "transform_mode": payload["transform_mode"],
                 }
             ]
-        if operation_type in {"set_material_instance_parameter", "set_material_instance_texture_parameter"}:
+        if operation_type in {
+            "set_material_instance_parameter",
+            "set_material_instance_texture_parameter",
+            "set_material_instance_static_switch",
+        }:
             target = {
                 "kind": "material_instance",
                 "action": operation_type,
@@ -3472,6 +3579,8 @@ class EditorOperationService:
                 target["parameter_type"] = payload["parameter_type"]
             if payload.get("texture_path"):
                 target["texture_path"] = payload["texture_path"]
+            if "value" in payload:
+                target["value"] = payload["value"]
             return [target]
         return [{"kind": "editor_operation", "action": operation_type}]
 
@@ -3533,6 +3642,13 @@ class EditorOperationService:
                 "material_instance_path",
                 "parameter_name",
                 "texture_path",
+                "dirty",
+                "dirty_packages",
+            ],
+            "set_material_instance_static_switch": [
+                "material_instance_path",
+                "parameter_name",
+                "value",
                 "dirty",
                 "dirty_packages",
             ],

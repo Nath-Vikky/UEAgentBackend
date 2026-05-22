@@ -218,6 +218,19 @@ def _cases() -> list[dict[str, Any]]:
                 "value": 0.25,
             },
         },
+        {
+            "case_id": "chat_material_static_switch",
+            "request": _chat_request(
+                case_id="chat_material_static_switch",
+                query="Enable MI_Player material UseDetail static switch",
+            ),
+            "expected_operation_type": "set_material_instance_static_switch",
+            "expected_payload": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "UseDetail",
+                "value": True,
+            },
+        },
     ]
 
 

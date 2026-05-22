@@ -4,8 +4,8 @@ This catalog is generated from the backend editor operation registry.
 
 ## Summary
 
-- Operation count: `19`
-- Implemented frontend count: `19`
+- Operation count: `20`
+- Implemented frontend count: `20`
 - Read-only inspection count: `2`
 - Transport: `http`
 - Proposal type: `editor_operation`
@@ -13,7 +13,7 @@ This catalog is generated from the backend editor operation registry.
 - LLM direct execution: `False`
 - Auto execute follow-ups: `False`
 - Auto save: `False`
-- Roadmap operation count: `6`
+- Roadmap operation count: `5`
 
 ## Groups
 
@@ -91,18 +91,13 @@ Edit safe Material Instance parameters.
 | --- | --- | --- | --- |
 | `set_material_instance_parameter` | `MEDIUM` | `material_instance_path`, `parameter_name`, `parameter_type`, `value` | `material_instance_path`, `parameter_name`, `dirty`, `dirty_packages` |
 | `set_material_instance_texture_parameter` | `MEDIUM` | `material_instance_path`, `parameter_name`, `texture_path` | `material_instance_path`, `parameter_name`, `texture_path`, `dirty`, `dirty_packages` |
+| `set_material_instance_static_switch` | `MEDIUM` | `material_instance_path`, `parameter_name`, `value` | `material_instance_path`, `parameter_name`, `value`, `dirty`, `dirty_packages` |
 
 Read-only inspections:
 
 | Inspection | Endpoint | Required Fields | Boundary |
 | --- | --- | --- | --- |
 | `inspect_material_instance_parameters` | `/api/v1/editor-operations/inspect/material-instance-parameters` | `material_instance_path` | Read-only inspection; parent Material graph editing remains out of scope. |
-
-Roadmap:
-
-| Planned Operation | Side Effect | Required Fields | Boundary |
-| --- | --- | --- | --- |
-| `set_material_instance_static_switch` | `confirmed_write` | `material_instance_path`, `parameter_name`, `value` | No parent material graph changes and no shader optimization pass. |
 
 ## Safety Boundary
 

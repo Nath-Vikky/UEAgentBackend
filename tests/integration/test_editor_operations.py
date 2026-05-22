@@ -61,6 +61,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "set_actor_transform",
         "set_material_instance_parameter",
         "set_material_instance_texture_parameter",
+        "set_material_instance_static_switch",
     }.issubset(operation_types)
     operation_items = {
         item["operation_type"]: item
@@ -69,7 +70,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert body["capabilities"]["summary"]["operation_count"] >= 18
     assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
     assert body["capabilities"]["summary"]["read_only_operation_count"] >= 2
-    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 6
+    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 5
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
     assert body["capabilities"]["summary"]["roadmap_group_counts"]["umg"] >= 3
@@ -111,6 +112,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_material_instance_parameter"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_material_instance_texture_parameter"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_material_instance_static_switch"]["frontend_status"] == "implemented_v1"
     assert body["capabilities"]["safety_policy"]["requires_frontend_confirmation"] is True
 
     capabilities = client.get("/api/v1/system/capabilities").json()
@@ -138,6 +140,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_material_instance_parameter" in tool_ids
     assert "editor_set_material_instance_texture_parameter" in tool_ids
+    assert "editor_set_material_instance_static_switch" in tool_ids
     tools_by_id = {
         item["tool_id"]: item
         for item in capabilities["capabilities"]["tool_registry"]["tools"]
@@ -1501,6 +1504,32 @@ def test_set_material_instance_texture_parameter_proposal_contract(client: TestC
     assert body["item"]["confirmation"]["state"] == "pending"
 
 
+def test_set_material_instance_static_switch_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_material_instance_static_switch",
+            "payload": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "UseDetail",
+                "value": True,
+            },
+            "reason": "Enable the detail layer for this material instance.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_material_instance_static_switch"
+    assert body["operation"]["tool_id"] == "editor_set_material_instance_static_switch"
+    payload = body["operation"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "UseDetail"
+    assert payload["value"] is True
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert "value" in body["operation"]["expected_result_contract"]["operation_result_fields"]
+
+
 def test_set_material_instance_rejects_unknown_parameter_type(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -2428,6 +2457,64 @@ def test_agent_chat_resolves_material_texture_from_project_inventory(client: Tes
     assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
     assert payload["parameter_name"] == "BaseTexture"
     assert payload["texture_path"] == "/Game/Textures/T_Player_D"
+
+
+def test_agent_chat_resolves_material_static_switch_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Materials/MI_Player.MI_Player",
+                    "asset_name": "MI_Player",
+                    "asset_type": "MaterialInstanceConstant",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_material_static_switch_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Enable MI_Player material UseDetail static switch",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Enable MI_Player material UseDetail static switch"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_material_instance_static_switch"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "UseDetail"
+    assert payload["value"] is True
 
 
 def test_agent_chat_reuses_recent_material_operation_context(client: TestClient) -> None:
