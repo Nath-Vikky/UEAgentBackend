@@ -77,6 +77,7 @@ Suggested low-risk demos:
 - Compile the test Blueprint.
 - Set one TextBlock text in a test Widget Blueprint.
 - Set one TextBlock opacity or font size through `set_umg_widget_appearance`.
+- Set one Image or Border texture/material through `set_umg_widget_brush`.
 - Set one scalar parameter on a test Material Instance.
 - Rename or tag one level Actor through a confirmed `set_actor_metadata` proposal.
 

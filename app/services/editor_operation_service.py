@@ -286,6 +286,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["widget_blueprint_path", "widget_name", "appearance"],
         "frontend_status": "implemented_v1",
     },
+    "set_umg_widget_brush": {
+        "tool_id": "editor_set_umg_widget_brush",
+        "title": "Set UMG Widget Brush",
+        "risk_flags": "MEDIUM",
+        "summary": "Set a safe Image or Border brush texture/material reference on one widget.",
+        "required_fields": ["widget_blueprint_path", "widget_name", "brush"],
+        "frontend_status": "implemented_v1",
+    },
     "place_actor_in_level": {
         "tool_id": "editor_place_actor_in_level",
         "title": "Place Actor In Level",
@@ -369,6 +377,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "set_umg_widget_layout",
             "set_umg_widget_visibility",
             "set_umg_widget_appearance",
+            "set_umg_widget_brush",
         ],
     },
     "level": {
@@ -415,15 +424,6 @@ READ_ONLY_INSPECTION_SPECS: dict[str, dict[str, Any]] = {
 }
 
 OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
-    "set_umg_widget_brush": {
-        "group": "umg",
-        "title": "Set UMG Widget Brush",
-        "summary": "Set a safe Image or Border brush texture/material reference on one widget.",
-        "side_effect_level": "confirmed_write",
-        "frontend_status": "planned_v2",
-        "required_fields": ["widget_blueprint_path", "widget_name", "brush"],
-        "boundary": "No dynamic binding, no atlas editing, and no bulk widget tree rewrite.",
-    },
     "set_umg_slot_layout_v2": {
         "group": "umg",
         "title": "Set UMG Slot Layout v2",
@@ -1319,6 +1319,49 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_material_resource_path_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None = None,
+    ) -> str | None:
+        brush = request.payload.get("brush") if isinstance(request.payload.get("brush"), dict) else {}
+        explicit_path = str(
+            brush.get("material_path")
+            or brush.get("resource_path")
+            or request.payload.get("material_path")
+            or ""
+        ).strip()
+        if explicit_path:
+            return explicit_path
+
+        for path in EditorOperationService._extract_unreal_paths_from_text(query_text):
+            asset_name = EditorOperationService._asset_name_from_path(path)
+            if asset_name.lower().startswith(("m_", "mi_")) or "/materials/" in path.lower():
+                return path
+
+        named_candidate = EditorOperationService._find_named_candidate_path(
+            request,
+            query_text,
+            prefixes=("MI_", "M_"),
+        )
+        if named_candidate:
+            return named_candidate
+
+        inventory_candidate = EditorOperationService._find_inventory_candidate_path(
+            context_bundle=context_bundle,
+            query_text=query_text,
+            accepted_type_tokens=("material", "materialinstance", "material instance"),
+            prefixes=("MI_", "M_"),
+        )
+        if inventory_candidate:
+            return inventory_candidate
+
+        for selected_asset in EditorOperationService._candidate_asset_paths(request):
+            if re.search(r"(^|[/._])(MI_|M_)[A-Za-z0-9_]+", selected_asset):
+                return selected_asset
+        return None
+
+    @staticmethod
     def _detect_blueprint_path_from_request(
         request: UnifiedTaskRequest,
         query_text: str,
@@ -1418,7 +1461,7 @@ class EditorOperationService:
         if explicit_name:
             return explicit_name
         for match in re.finditer(
-            r"\b([A-Za-z][A-Za-z0-9_]*(?:Text|TextBlock|Label|Title|Name|Value))\b",
+            r"\b([A-Za-z][A-Za-z0-9_]*(?:Text|TextBlock|Label|Title|Name|Value|Image|Icon|Border|Button|Panel|Box|Widget))\b",
             query_text,
             flags=re.IGNORECASE,
         ):
@@ -1532,6 +1575,41 @@ class EditorOperationService:
                 "a": int(alpha, 16) / 255.0,
             }
         return appearance
+
+    @staticmethod
+    def _detect_umg_brush_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        payload_brush = request.payload.get("brush")
+        if isinstance(payload_brush, dict) and payload_brush:
+            return dict(payload_brush)
+
+        brush: dict[str, Any] = {}
+        for key in ("resource_type", "resource_path", "texture_path", "material_path"):
+            if key in request.payload:
+                brush[key] = request.payload[key]
+        if brush:
+            return brush
+
+        query_lower = query_text.lower()
+        wants_material = any(token in query_lower for token in ("material", "mi_", "m_"))
+        if wants_material:
+            brush["resource_type"] = "material"
+            brush["resource_path"] = EditorOperationService._detect_material_resource_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+        else:
+            brush["resource_type"] = "texture"
+            brush["resource_path"] = EditorOperationService._detect_texture_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+        return brush
 
     @staticmethod
     def _detect_actor_metadata_from_request(request: UnifiedTaskRequest, query_text: str) -> dict[str, Any]:
@@ -1980,6 +2058,35 @@ class EditorOperationService:
                     "widget_blueprint_path": widget_blueprint_path or "",
                     "widget_name": widget_name or "",
                     "appearance": EditorOperationService._detect_umg_appearance_from_request(request, query_text),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_umg_brush = any(
+            token in query_lower
+            for token in ("umg", "widget", "image", "border", "icon", "hud", "wbp_")
+        ) and any(
+            token in query_lower
+            for token in ("brush", "texture", "material", "image", "icon", "background", "border", "t_", "tx_", "mi_", "m_")
+        ) and any(
+            token in query_lower
+            for token in ("set", "change", "update", "assign", "use")
+        )
+        if wants_umg_brush:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="set_umg_widget_brush",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
+                    "brush": EditorOperationService._detect_umg_brush_from_request(request, query_text, context_bundle),
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -3097,6 +3204,40 @@ class EditorOperationService:
             raise EditorOperationValidationError("appearance_requires_opacity_enabled_color_or_font_size")
         return normalized
 
+    def _normalize_umg_brush(self, value: Any) -> dict[str, str]:
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError("brush_must_be_object")
+        resource_type = str(value.get("resource_type") or value.get("type") or "").strip().lower()
+        if not resource_type:
+            if value.get("texture_path"):
+                resource_type = "texture"
+            elif value.get("material_path"):
+                resource_type = "material"
+        resource_type = {
+            "image": "texture",
+            "texture2d": "texture",
+            "material_instance": "material",
+            "materialinstance": "material",
+            "mat": "material",
+        }.get(resource_type, resource_type)
+        if resource_type not in {"texture", "material"}:
+            raise EditorOperationValidationError(
+                "brush_resource_type_not_supported",
+                {"resource_type": resource_type, "allowed_types": ["texture", "material"]},
+            )
+        resource_path = (
+            value.get("resource_path")
+            or value.get("asset_path")
+            or value.get("texture_path")
+            or value.get("material_path")
+        )
+        if not resource_path:
+            raise EditorOperationValidationError("brush_resource_path_required")
+        return {
+            "resource_type": resource_type,
+            "resource_path": self._normalize_asset_path(resource_path),
+        }
+
     def _normalize_actor_transform(self, value: Any) -> dict[str, dict[str, float]]:
         if value is None:
             value = {}
@@ -3543,6 +3684,16 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_umg_widget_brush":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "brush": self._normalize_umg_brush(payload.get("brush")),
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "place_actor_in_level":
             actor_class = self._normalize_class_path(payload.get("actor_class"))
             actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
@@ -3756,6 +3907,12 @@ class EditorOperationService:
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Set widget `{payload['widget_name']}` appearance fields: {fields}. The package is not auto-saved.",
             )
+        if operation_type == "set_umg_widget_brush":
+            brush = payload["brush"]
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Set widget `{payload['widget_name']}` brush {brush['resource_type']} to `{brush['resource_path']}`. The package is not auto-saved.",
+            )
         if operation_type == "place_actor_in_level":
             location = payload["transform"]["location"]
             label = payload.get("actor_label") or "(default label)"
@@ -3883,6 +4040,7 @@ class EditorOperationService:
             "set_umg_widget_layout",
             "set_umg_widget_visibility",
             "set_umg_widget_appearance",
+            "set_umg_widget_brush",
         }:
             target = {
                 "kind": "umg_widget",
@@ -3895,6 +4053,8 @@ class EditorOperationService:
                     target[key] = payload[key]
             if payload.get("appearance"):
                 target["appearance_fields"] = sorted(payload["appearance"].keys())
+            if payload.get("brush"):
+                target["brush"] = dict(payload["brush"])
             return [target]
         if operation_type == "place_actor_in_level":
             return [
@@ -4001,6 +4161,14 @@ class EditorOperationService:
                 "is_enabled",
                 "color_and_opacity",
                 "font_size",
+                "dirty",
+                "dirty_packages",
+            ],
+            "set_umg_widget_brush": [
+                "widget_blueprint_path",
+                "widget_name",
+                "resource_type",
+                "resource_path",
                 "dirty",
                 "dirty_packages",
             ],

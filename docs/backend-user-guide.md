@@ -251,7 +251,7 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它只调用 `POST /api/v1/editor-operations/proposals`，验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
-`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
+`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
@@ -3262,6 +3262,7 @@ UMG 写操作边界：
 - `set_umg_widget_layout` 只修改挂在 `CanvasPanel` 下的控件，也就是目标控件必须拥有 `CanvasPanelSlot`；v1 只支持 `position`、`size`、`alignment`、`anchors`。
 - `set_umg_widget_visibility` 只修改已有控件的 `Visibility`，白名单为 `visible`、`collapsed`、`hidden`、`hit_test_invisible`、`self_hit_test_invisible`。
 - `set_umg_widget_appearance` 支持单控件安全外观字段：`render_opacity`、`is_enabled`，以及 TextBlock 专属 `color_and_opacity` 和 `font_size`。
+- `set_umg_widget_brush` 支持给单个 `Image` 或 `Border` 控件设置 Brush 资源，资源类型限定为 `texture` 或 `material`。
 - 不设置动画、绑定、复杂 style 继承和复杂 slot 参数；这些仍放到后续 UMG v2+。
 
 ### 26.2 Level / Material 低风险编辑器操作 v1
@@ -5118,6 +5119,42 @@ Boundary:
 - Animation editing, binding generation, dynamic style inheritance, and bulk widget tree rewrites remain out of scope.
 
 UE frontend impact: add `set_umg_widget_appearance` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
+
+## 2026-05-22 UMG Widget Brush Proposal
+
+`Editor Operation Bridge` now includes `set_umg_widget_brush`, a confirmed-write proposal for assigning one safe Brush resource to an existing UMG `Image` or `Border` widget.
+
+Supported request forms:
+
+- Explicit proposal API: `operation_type=set_umg_widget_brush`.
+- Agent Chat: `Set WBP_MainHUD IconImage brush texture to T_Player_D`.
+- Agent Chat: `Set WBP_MainHUD BackgroundBorder brush material to MI_HUD_Background`.
+- Inventory-assisted resolution: Project Inventory can provide both the `WBP_...` Widget Blueprint path and the referenced `T_...` / `M_...` / `MI_...` resource path.
+
+Payload:
+
+```json
+{
+  "operation_type": "set_umg_widget_brush",
+  "payload": {
+    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+    "widget_name": "IconImage",
+    "brush": {
+      "resource_type": "texture",
+      "resource_path": "/Game/Textures/T_Player_D"
+    }
+  }
+}
+```
+
+Boundary:
+
+- Only `resource_type=texture` and `resource_type=material` are accepted.
+- The UE executor only applies the Brush to `UImage` or `UBorder`.
+- It does not create widgets, edit animations, generate bindings, edit atlases, or rewrite inherited style systems.
+- The Widget Blueprint package is marked dirty but not auto-saved.
+
+UE frontend impact: add `set_umg_widget_brush` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
 
 ## 2026-05-19 Editor Operation Preview and History v1
 

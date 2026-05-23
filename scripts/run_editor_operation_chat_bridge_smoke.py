@@ -228,6 +228,20 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_umg_brush",
+            "request": _chat_request(
+                case_id="chat_umg_brush",
+                query="Set WBP_MainHUD IconImage brush texture to T_Player_D",
+            ),
+            "expected_operation_type": "set_umg_widget_brush",
+            "expected_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage",
+                "brush.resource_type": "texture",
+                "brush.resource_path": "/Game/Textures/T_Player_D",
+            },
+        },
+        {
             "case_id": "chat_material_scalar",
             "request": _chat_request(
                 case_id="chat_material_scalar",

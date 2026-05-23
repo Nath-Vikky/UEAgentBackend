@@ -4,8 +4,8 @@ This catalog is generated from the backend editor operation registry.
 
 ## Summary
 
-- Operation count: `22`
-- Implemented frontend count: `22`
+- Operation count: `23`
+- Implemented frontend count: `23`
 - Read-only inspection count: `2`
 - Transport: `http`
 - Proposal type: `editor_operation`
@@ -13,7 +13,7 @@ This catalog is generated from the backend editor operation registry.
 - LLM direct execution: `False`
 - Auto execute follow-ups: `False`
 - Auto save: `False`
-- Roadmap operation count: `3`
+- Roadmap operation count: `2`
 
 ## Groups
 
@@ -53,12 +53,12 @@ Inspect and edit simple Widget Blueprint structure and properties.
 | `set_umg_widget_layout` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `layout` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
 | `set_umg_widget_visibility` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `visibility` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
 | `set_umg_widget_appearance` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `appearance` | `widget_blueprint_path`, `widget_name`, `render_opacity`, `is_enabled`, `color_and_opacity`, `font_size`, `dirty`, `dirty_packages` |
+| `set_umg_widget_brush` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `brush` | `widget_blueprint_path`, `widget_name`, `resource_type`, `resource_path`, `dirty`, `dirty_packages` |
 
 Roadmap:
 
 | Planned Operation | Side Effect | Required Fields | Boundary |
 | --- | --- | --- | --- |
-| `set_umg_widget_brush` | `confirmed_write` | `widget_blueprint_path`, `widget_name`, `brush` | No dynamic binding, no atlas editing, and no bulk widget tree rewrite. |
 | `set_umg_slot_layout_v2` | `confirmed_write` | `widget_blueprint_path`, `widget_name`, `slot_type`, `layout` | No responsive layout generation and no complex container restructuring. |
 
 ### Level Operations
