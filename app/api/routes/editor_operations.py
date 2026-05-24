@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_app_settings, get_db
@@ -20,10 +21,19 @@ from app.services.editor_operation_service import (
     EditorOperationService,
     EditorOperationValidationError,
 )
+from app.services.editor_workflow_planner_service import EditorWorkflowPlannerService
 from app.services.project_inventory_service import ProjectInventoryService
 from app.services.proposal_service import ProposalService
 
 router = APIRouter(prefix="/editor-operations", tags=["editor-operations"])
+
+
+class EditorWorkflowPlanRequest(BaseModel):
+    goal: str = Field(default="")
+    workflow_type: str | None = None
+    payload: dict = Field(default_factory=dict)
+    context: dict = Field(default_factory=dict)
+    requested_by: str = "workflow_planner"
 
 
 @router.get("/capabilities")
@@ -63,6 +73,18 @@ def editor_operation_diagnostics(
         operation_type=operation_type,
     )
     return {"success": True, **payload, "errors": []}
+
+
+@router.post("/workflows/plan")
+def plan_editor_operation_workflow(request: EditorWorkflowPlanRequest) -> dict:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal=request.goal,
+        workflow_type=request.workflow_type,
+        payload=request.payload,
+        context=request.context,
+        requested_by=request.requested_by,
+    )
+    return {"success": plan["status"] != "unsupported", "workflow_plan": plan, "errors": []}
 
 
 @router.get("/inspect/level-actors")

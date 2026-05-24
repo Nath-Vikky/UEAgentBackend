@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from app.services.editor_workflow_planner_service import EditorWorkflowPlannerService
+
+
+def test_blueprint_workflow_plan_emits_two_confirmed_steps() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal='Add "Ready" Print String on BeginPlay and compile it',
+        workflow_type="blueprint_print_then_compile",
+        payload={"blueprint_path": "/Game/Blueprints/BP_Player"},
+    )
+
+    assert plan["schema_version"] == "editor_workflow_plan_v1"
+    assert plan["status"] == "planned"
+    assert plan["step_count"] == 2
+    assert plan["ready_step_count"] == 2
+    assert plan["auto_execute"] is False
+    assert plan["requires_user_confirmation_per_step"] is True
+
+    first, second = plan["steps"]
+    assert first["operation_type"] == "add_blueprint_node_template"
+    assert first["payload"]["template_id"] == "print_string"
+    assert first["payload"]["entry_event"] == "BeginPlay"
+    assert first["payload"]["message"] == "Ready"
+    assert first["payload"]["compile_after_edit"] is False
+    assert second["operation_type"] == "compile_blueprint"
+    assert second["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]
+
+
+def test_umg_text_workflow_reports_missing_inputs_without_executing() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal="Create HUD title text",
+        workflow_type="umg_text_widget",
+        payload={"widget_name": "TitleText"},
+    )
+
+    assert plan["status"] == "needs_more_input"
+    assert plan["ready_step_count"] == 0
+    assert plan["steps"][0]["operation_type"] == "add_umg_widget"
+    assert "widget_blueprint_path" in plan["steps"][0]["missing_inputs"]
+    assert "text" in plan["steps"][0]["missing_inputs"]
+    assert plan["steps"][0]["auto_execute"] is False
+
+
+def test_arrange_and_tag_workflow_creates_one_metadata_step_per_actor() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal="Arrange these actors and add Patrol tag",
+        workflow_type="arrange_and_tag_actors",
+        payload={
+            "actor_references": ["BP_A_1", "BP_B_1"],
+            "pattern": {"type": "line", "spacing": 250},
+            "metadata": {"tags": ["Patrol"], "tag_mode": "append"},
+        },
+    )
+
+    assert plan["status"] == "planned"
+    assert [step["operation_type"] for step in plan["steps"]] == [
+        "arrange_actors_pattern",
+        "set_actor_metadata",
+        "set_actor_metadata",
+    ]
+    assert plan["steps"][1]["payload"]["actor_reference"] == "BP_A_1"
+    assert plan["steps"][2]["payload"]["actor_reference"] == "BP_B_1"
+    assert all(step["create_request_hint"]["path"] == "/api/v1/editor-operations/proposals" for step in plan["steps"])

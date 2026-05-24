@@ -3178,3 +3178,37 @@ def test_agent_chat_reuses_recent_material_operation_context(client: TestClient)
     active_context = followup_body["debug_view"]["active_context"]
     last_operation = active_context["editor_operation"]["last_successful"]
     assert last_operation["target"]["material_instance_path"] == "/Game/Materials/MI_Player"
+
+
+def test_editor_workflow_plan_api_returns_proposal_steps(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Create HUD status text and place it",
+            "workflow_type": "umg_text_widget",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "StatusText",
+                "text": "Ready",
+                "layout": {"position": {"x": 32, "y": 48}},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    plan = body["workflow_plan"]
+    assert plan["schema_version"] == "editor_workflow_plan_v1"
+    assert plan["status"] == "planned"
+    assert plan["auto_execute"] is False
+    assert plan["requires_user_confirmation_per_step"] is True
+    assert [step["operation_type"] for step in plan["steps"]] == [
+        "add_umg_widget",
+        "set_umg_widget_text",
+        "set_umg_widget_layout",
+    ]
+    assert all(
+        step["create_request_hint"]["path"] == "/api/v1/editor-operations/proposals"
+        for step in plan["steps"]
+    )

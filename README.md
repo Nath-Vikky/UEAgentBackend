@@ -134,6 +134,7 @@ Agent 判断意图
 
 - [Editor Operation Catalog](./docs/editor-operation-catalog.md)
 - `GET /api/v1/editor-operations/capabilities`
+- `POST /api/v1/editor-operations/workflows/plan`
 - `GET /api/v1/mcp/tool-registry/manifest`
 
 如需重新生成公开目录：

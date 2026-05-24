@@ -5383,3 +5383,57 @@ Export command:
 Frontend impact: no mandatory change. A future debug/tools panel can use this
 manifest to group tools, show side-effect levels, and explain why editor writes
 require Proposal confirmation.
+
+## 2026-05-24 Multi-step Editor Workflow Planner v1
+
+The backend now exposes a plan-only endpoint for multi-step editor workflows:
+
+```http
+POST /api/v1/editor-operations/workflows/plan
+```
+
+This endpoint does not create proposals and does not execute UE writes. It
+returns a workflow plan with `steps[]`; each step includes a
+`create_request_hint` that can be submitted later to
+`POST /api/v1/editor-operations/proposals`.
+
+Example request:
+
+```json
+{
+  "goal": "Create HUD status text and place it",
+  "workflow_type": "umg_text_widget",
+  "payload": {
+    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+    "widget_name": "StatusText",
+    "text": "Ready",
+    "layout": {"position": {"x": 32, "y": 48}}
+  }
+}
+```
+
+Supported workflow types in v1:
+
+- `blueprint_print_then_compile`: add a BeginPlay Print String template, then compile the Blueprint as a separate confirmed step.
+- `umg_text_widget`: add a TextBlock, set text, and optionally apply CanvasPanelSlot layout or visibility.
+- `arrange_and_tag_actors`: arrange a bounded Actor set, then optionally apply the same metadata to each Actor.
+
+Returned plan fields:
+
+- `workflow_plan.schema_version = editor_workflow_plan_v1`
+- `workflow_plan.status = planned | partial | needs_more_input | unsupported`
+- `workflow_plan.program_counter`
+- `workflow_plan.steps[].operation_type`
+- `workflow_plan.steps[].proposal_ready`
+- `workflow_plan.steps[].missing_inputs`
+- `workflow_plan.steps[].create_request_hint`
+
+Safety boundary:
+
+- `auto_execute` is always `false`.
+- Every write step still requires a normal Proposal and user confirmation.
+- The planner does not hide follow-up writes in the background.
+- It is deterministic and template-based in v1; it is not a full autonomous task scheduler.
+
+Frontend impact: no mandatory change. A future Workflow UI can show the plan,
+let the user submit one step at a time, and stop/skip steps safely.
