@@ -5281,3 +5281,62 @@ Boundary:
 - It is intended to support safer future graph editing because later write proposals can refer to explicit graph/node/pin identifiers instead of vague names.
 
 Frontend impact: no mandatory change. If Debug View displays raw MCP structured content, the new fields will appear automatically.
+
+## 2026-05-24 Level Actor Arrangement Pattern Proposal
+
+`Editor Operation Bridge` now includes `arrange_actors_pattern`, a confirmed-write
+proposal for arranging existing Level Actors into a simple line, grid, or circle.
+
+Use it when Agent Chat needs to prepare a safe layout operation such as:
+
+- `Arrange BP_EnemySpawner_1 and BP_PatrolPoint_1 in a line spacing 250`
+- `Put selected patrol points into a grid`
+- `Arrange these actors in a circle with radius 600`
+
+Explicit proposal API:
+
+```json
+{
+  "operation_type": "arrange_actors_pattern",
+  "payload": {
+    "actor_references": ["BP_EnemySpawner_1", "BP_PatrolPoint_1"],
+    "pattern": {
+      "type": "line",
+      "spacing": 250,
+      "axis": "x"
+    }
+  }
+}
+```
+
+Supported pattern fields:
+
+- `type`: `line`, `grid`, or `circle`.
+- `spacing`: distance between line/grid items. Default: `200`.
+- `axis`: `x` or `y` for line layout. Default: `x`.
+- `columns`: optional grid column count.
+- `radius`: optional circle radius.
+- `origin`: optional `{ "x": 0, "y": 0, "z": 0 }`; UEAgentTool uses the first actor location when omitted.
+
+Safety boundary:
+
+- Requires user confirmation like all editor writes.
+- Only arranges existing actors found in the current level.
+- Accepts 2 to 12 actor references per proposal.
+- Only changes actor location through UEAgentTool.
+- Does not create, delete, duplicate, rotate, scale, attach, save, or stream actors.
+- Marks touched levels dirty but does not auto-save.
+
+Expected UE result callback fields:
+
+- `arranged_actors`
+- `pattern_type`
+- `item_count`
+- `origin`
+- `save_policy`
+- `dirty`
+- `dirty_packages`
+
+Frontend impact: add `arrange_actors_pattern` to any local operation whitelist or
+title map if one exists. The existing Proposal confirmation and result callback
+flow is reused.

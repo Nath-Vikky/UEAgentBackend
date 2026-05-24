@@ -52,7 +52,7 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 Expected:
 
 - Blueprint graph proposal smoke: `12/12 passed`
-- Agent Chat editor-operation smoke: `7/7 passed`
+- Agent Chat editor-operation smoke: `12/12 passed`
 
 ## 4. Demo The Agent Features
 
@@ -81,6 +81,7 @@ Suggested low-risk demos:
 - Set one HorizontalBox/VerticalBox/Overlay slot padding or alignment through `set_umg_slot_layout_v2`.
 - Set one scalar parameter on a test Material Instance.
 - Rename or tag one level Actor through a confirmed `set_actor_metadata` proposal.
+- Arrange 2 or 3 safe test level Actors through `arrange_actors_pattern`.
 
 Safety checks:
 

@@ -109,6 +109,14 @@ def _seed_inventory(client: TestClient) -> dict[str, Any]:
                     "level_name": "TestMap",
                     "folder_path": "Gameplay",
                     "tags": ["Spawner"],
+                },
+                {
+                    "actor_label": "BP_PatrolPoint_1",
+                    "actor_name": "BP_PatrolPoint_C_1",
+                    "actor_class": "BP_PatrolPoint_C",
+                    "level_name": "TestMap",
+                    "folder_path": "Gameplay",
+                    "tags": ["Patrol"],
                 }
             ],
         },
@@ -296,6 +304,19 @@ def _cases() -> list[dict[str, Any]]:
             "expected_payload": {
                 "actor_reference": "BP_EnemySpawner_1",
                 "metadata.actor_label": "EnemySpawn_A",
+            },
+        },
+        {
+            "case_id": "chat_arrange_actors_pattern",
+            "request": _chat_request(
+                case_id="chat_arrange_actors_pattern",
+                query="Arrange actors BP_EnemySpawner_1 and BP_PatrolPoint_1 in a line spacing 250",
+            ),
+            "expected_operation_type": "arrange_actors_pattern",
+            "expected_payload": {
+                "actor_references": ["BP_EnemySpawner_1", "BP_PatrolPoint_1"],
+                "pattern.type": "line",
+                "pattern.spacing": 250.0,
             },
         },
     ]

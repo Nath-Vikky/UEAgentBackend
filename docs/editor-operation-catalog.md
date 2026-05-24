@@ -4,8 +4,8 @@ This catalog is generated from the backend editor operation registry.
 
 ## Summary
 
-- Operation count: `24`
-- Implemented frontend count: `24`
+- Operation count: `25`
+- Implemented frontend count: `25`
 - Read-only inspection count: `2`
 - Transport: `http`
 - Proposal type: `editor_operation`
@@ -13,7 +13,7 @@ This catalog is generated from the backend editor operation registry.
 - LLM direct execution: `False`
 - Auto execute follow-ups: `False`
 - Auto save: `False`
-- Roadmap operation count: `1`
+- Roadmap operation count: `0`
 
 ## Groups
 
@@ -65,18 +65,13 @@ Place actors and adjust transforms in the current editor level.
 | `place_actor_in_level` | `MEDIUM` | `actor_class` | `actor_label`, `actor_path`, `level_dirty`, `dirty_packages` |
 | `set_actor_transform` | `MEDIUM` | `actor_reference`, `transform_mode` | `actor_reference`, `transform_mode`, `level_dirty`, `dirty_packages` |
 | `set_actor_metadata` | `MEDIUM` | `actor_reference`, `metadata` | `actor_reference`, `actor_label`, `folder_path`, `tags`, `level_dirty`, `dirty_packages` |
+| `arrange_actors_pattern` | `MEDIUM` | `actor_references`, `pattern` | `arranged_actors`, `pattern_type`, `item_count`, `level_dirty`, `dirty_packages` |
 
 Read-only inspections:
 
 | Inspection | Endpoint | Required Fields | Boundary |
 | --- | --- | --- | --- |
 | `inspect_level_actors` | `/api/v1/editor-operations/inspect/level-actors` | - | Read-only inventory; no level streaming, World Partition editing, or Actor mutation. |
-
-Roadmap:
-
-| Planned Operation | Side Effect | Required Fields | Boundary |
-| --- | --- | --- | --- |
-| `arrange_actors_pattern` | `confirmed_write` | `actor_references`, `pattern` | Batch operations require preview, item limits, and user confirmation. |
 
 ### Material Operations
 

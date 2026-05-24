@@ -326,6 +326,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["actor_reference", "metadata"],
         "frontend_status": "implemented_v1",
     },
+    "arrange_actors_pattern": {
+        "tool_id": "editor_arrange_actors_pattern",
+        "title": "Arrange Actors Pattern",
+        "risk_flags": "MEDIUM",
+        "summary": "Arrange a bounded Actor set with line, grid, or circle placement templates.",
+        "required_fields": ["actor_references", "pattern"],
+        "frontend_status": "implemented_v1",
+    },
     "set_material_instance_parameter": {
         "tool_id": "editor_set_material_instance_parameter",
         "title": "Set Material Instance Parameter",
@@ -396,6 +404,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "place_actor_in_level",
             "set_actor_transform",
             "set_actor_metadata",
+            "arrange_actors_pattern",
         ],
     },
     "material": {
@@ -433,15 +442,6 @@ READ_ONLY_INSPECTION_SPECS: dict[str, dict[str, Any]] = {
 }
 
 OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
-    "arrange_actors_pattern": {
-        "group": "level",
-        "title": "Arrange Actors Pattern",
-        "summary": "Arrange a bounded actor set with simple grid, line, or circle placement templates.",
-        "side_effect_level": "confirmed_write",
-        "frontend_status": "planned_v2",
-        "required_fields": ["actor_references", "pattern"],
-        "boundary": "Batch operations require preview, item limits, and user confirmation.",
-    },
 }
 
 
@@ -945,6 +945,49 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _inventory_actor_references(
+        context_bundle: dict[str, Any] | None,
+        query_text: str,
+    ) -> list[str]:
+        if not context_bundle:
+            return []
+        inventory_context = context_bundle.get("project_inventory_context")
+        if not isinstance(inventory_context, dict):
+            return []
+        candidates: list[dict[str, Any]] = []
+        for key in ("query_candidates", "top_level_actors"):
+            values = inventory_context.get(key) or []
+            if isinstance(values, list):
+                candidates.extend(item for item in values if isinstance(item, dict))
+        query_lower = query_text.lower()
+        references: list[str] = []
+        for item in candidates:
+            if item.get("kind") not in {None, "", "level_actor"}:
+                continue
+            label = str(item.get("actor_label") or "").strip()
+            name = str(item.get("actor_name") or "").strip()
+            path = str(item.get("actor_path") or "").strip()
+            mentioned = any(value and value.lower() in query_lower for value in (label, name, path))
+            if mentioned:
+                references.append(label or name or path)
+        return EditorOperationService._dedupe_strings(references)
+
+    @staticmethod
+    def _dedupe_strings(values: list[str]) -> list[str]:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            normalized = str(value or "").strip()
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(normalized)
+        return deduped
+
+    @staticmethod
     def _detect_actor_reference_from_request(
         request: UnifiedTaskRequest,
         query_text: str,
@@ -981,6 +1024,73 @@ class EditorOperationService:
             if recent_actor:
                 return str(recent_actor)
         return None
+
+    @staticmethod
+    def _detect_actor_references_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None,
+    ) -> list[str]:
+        explicit_references = request.payload.get("actor_references")
+        if isinstance(explicit_references, list):
+            return EditorOperationService._dedupe_strings([str(item) for item in explicit_references])
+
+        references: list[str] = []
+        editor_state = dict(request.context.editor_state or {})
+        selected_actors = editor_state.get("selected_actors") or request.payload.get("selected_actors") or []
+        if isinstance(selected_actors, list):
+            for item in selected_actors:
+                if isinstance(item, dict):
+                    for key in ("actor_label", "actor_name", "name", "label"):
+                        value = str(item.get(key) or "").strip()
+                        if value:
+                            references.append(value)
+                            break
+                else:
+                    value = str(item or "").strip()
+                    if value:
+                        references.append(value)
+
+        references.extend(EditorOperationService._inventory_actor_references(context_bundle, query_text))
+        references.extend(
+            match.group(1)
+            for match in re.finditer(r"\b([A-Za-z][A-Za-z0-9_]*_\d+)\b", query_text)
+            if not match.group(1).lower().startswith(("x_", "y_", "z_"))
+        )
+        return EditorOperationService._dedupe_strings(references)
+
+    @staticmethod
+    def _detect_arrange_pattern_from_request(request: UnifiedTaskRequest, query_text: str) -> dict[str, Any]:
+        pattern_payload = request.payload.get("pattern")
+        if isinstance(pattern_payload, dict):
+            return dict(pattern_payload)
+
+        query_lower = query_text.lower()
+        pattern: dict[str, Any] = {}
+        if "circle" in query_lower or "圆" in query_text or "环" in query_text:
+            pattern["type"] = "circle"
+        elif "grid" in query_lower or "矩阵" in query_text or "网格" in query_text:
+            pattern["type"] = "grid"
+        else:
+            pattern["type"] = "line"
+
+        spacing_match = re.search(r"(?:spacing|space|间距)\s*(?:to|=|:)?\s*(-?\d+(?:\.\d+)?)", query_text, flags=re.IGNORECASE)
+        if spacing_match:
+            pattern["spacing"] = float(spacing_match.group(1))
+        columns_match = re.search(r"(?:columns?|cols?|列)\s*(?:to|=|:)?\s*(\d+)", query_text, flags=re.IGNORECASE)
+        if columns_match:
+            pattern["columns"] = int(columns_match.group(1))
+        radius_match = re.search(r"(?:radius|半径)\s*(?:to|=|:)?\s*(-?\d+(?:\.\d+)?)", query_text, flags=re.IGNORECASE)
+        if radius_match:
+            pattern["radius"] = float(radius_match.group(1))
+        if "axis y" in query_lower or "along y" in query_lower or "y axis" in query_lower:
+            pattern["axis"] = "y"
+        elif "axis x" in query_lower or "along x" in query_lower or "x axis" in query_lower:
+            pattern["axis"] = "x"
+        origin = EditorOperationService._extract_transform_from_text(query_text).get("location")
+        if origin:
+            pattern["origin"] = origin
+        return pattern
 
     @staticmethod
     def _directional_delta_from_text(query_text: str) -> dict[str, dict[str, float]]:
@@ -2001,6 +2111,29 @@ class EditorOperationService:
                 payload={
                     "actor_reference": actor_reference or "",
                     "metadata": EditorOperationService._detect_actor_metadata_from_request(request, query_text),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_arrange_actors = any(
+            token in query_lower or token in query_text
+            for token in ("arrange", "layout actors", "line up", "grid", "circle", "摆放", "排列", "阵列", "排成")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("actor", "actors", "level", "场景", "关卡")
+        )
+        if wants_arrange_actors:
+            return EditorOperationProposalRequest(
+                operation_type="arrange_actors_pattern",
+                payload={
+                    "actor_references": EditorOperationService._detect_actor_references_from_request(
+                        request,
+                        query_text,
+                        context_bundle,
+                    ),
+                    "pattern": EditorOperationService._detect_arrange_pattern_from_request(request, query_text),
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -3515,6 +3648,47 @@ class EditorOperationService:
             raise EditorOperationValidationError(f"{field_name}_requires_location_rotation_or_scale")
         return normalized
 
+    def _normalize_actor_references(self, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            raise EditorOperationValidationError("actor_references_must_be_list")
+        references = self._dedupe_strings([str(item) for item in value])
+        if len(references) < 2:
+            raise EditorOperationValidationError("actor_references_require_at_least_two")
+        if len(references) > 12:
+            raise EditorOperationValidationError("actor_references_limit_exceeded", {"max_items": 12})
+        return references
+
+    def _normalize_arrange_pattern(self, value: Any, *, actor_count: int) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError("pattern_must_be_object")
+        pattern_type = str(value.get("type") or value.get("pattern_type") or "line").strip().lower()
+        if pattern_type not in {"line", "grid", "circle"}:
+            raise EditorOperationValidationError(
+                "arrange_pattern_type_not_supported",
+                {"allowed_types": ["line", "grid", "circle"]},
+            )
+        pattern: dict[str, Any] = {"type": pattern_type}
+        if "origin" in value:
+            pattern["origin"] = self._normalize_vector3(
+                value.get("origin"),
+                field_name="arrange_origin",
+                defaults=(0.0, 0.0, 0.0),
+            )
+        axis = str(value.get("axis") or "x").strip().lower()
+        if axis not in {"x", "y"}:
+            raise EditorOperationValidationError("arrange_axis_not_supported", {"allowed_axes": ["x", "y"]})
+        pattern["axis"] = axis
+        spacing = self._normalize_finite_float(value.get("spacing", 200.0), "arrange_spacing", min_value=1.0, max_value=100_000.0)
+        pattern["spacing"] = spacing
+        if pattern_type == "grid":
+            raw_columns = value.get("columns", value.get("cols", 0))
+            columns = int(self._normalize_finite_float(raw_columns or max(2, math.ceil(math.sqrt(actor_count))), "arrange_columns", min_value=1.0, max_value=12.0))
+            pattern["columns"] = min(max(columns, 1), actor_count)
+        if pattern_type == "circle":
+            default_radius = max(spacing, actor_count * spacing / math.tau)
+            pattern["radius"] = self._normalize_finite_float(value.get("radius", default_radius), "arrange_radius", min_value=1.0, max_value=100_000.0)
+        return pattern
+
     @staticmethod
     def _normalize_transform_mode(value: Any) -> str:
         mode = str(value or "absolute").strip().lower()
@@ -3967,6 +4141,15 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "arrange_actors_pattern":
+            actor_references = self._normalize_actor_references(payload.get("actor_references"))
+            return {
+                "actor_references": actor_references,
+                "pattern": self._normalize_arrange_pattern(payload.get("pattern"), actor_count=len(actor_references)),
+                "item_count": len(actor_references),
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "set_material_instance_parameter":
             material_instance_path = self._normalize_asset_path(payload.get("material_instance_path"))
             parameter_name = self._normalize_parameter_name(payload.get("parameter_name"))
@@ -4167,6 +4350,12 @@ class EditorOperationService:
                 f"Actor before change: {payload['actor_reference']}",
                 f"Update Actor metadata fields: {fields}. The level is marked dirty, not auto-saved.",
             )
+        if operation_type == "arrange_actors_pattern":
+            pattern = payload["pattern"]
+            return (
+                f"Arrange {payload['item_count']} existing Actors. No Actor is moved before confirmation.",
+                f"Apply `{pattern['type']}` pattern with spacing `{pattern['spacing']}`. The level is marked dirty, not auto-saved.",
+            )
         if operation_type == "set_material_instance_parameter":
             return (
                 f"Material Instance before change: {payload['material_instance_path']}",
@@ -4320,6 +4509,16 @@ class EditorOperationService:
                     "metadata_fields": sorted(payload["metadata"].keys()),
                 }
             ]
+        if operation_type == "arrange_actors_pattern":
+            return [
+                {
+                    "kind": "level_actor",
+                    "action": "arrange_pattern",
+                    "actor_reference": actor_reference,
+                    "pattern_type": payload["pattern"]["type"],
+                }
+                for actor_reference in payload["actor_references"]
+            ]
         if operation_type in {
             "set_material_instance_parameter",
             "set_material_instance_texture_parameter",
@@ -4423,6 +4622,13 @@ class EditorOperationService:
             "place_actor_in_level": ["actor_label", "actor_path", "level_dirty", "dirty_packages"],
             "set_actor_transform": ["actor_reference", "transform_mode", "level_dirty", "dirty_packages"],
             "set_actor_metadata": ["actor_reference", "actor_label", "folder_path", "tags", "level_dirty", "dirty_packages"],
+            "arrange_actors_pattern": [
+                "arranged_actors",
+                "pattern_type",
+                "item_count",
+                "level_dirty",
+                "dirty_packages",
+            ],
             "set_material_instance_parameter": ["material_instance_path", "parameter_name", "dirty", "dirty_packages"],
             "set_material_instance_texture_parameter": [
                 "material_instance_path",

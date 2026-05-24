@@ -12,7 +12,9 @@ def test_render_editor_operation_catalog_contains_groups_and_safety_boundary() -
     assert "`connect_blueprint_nodes`" in markdown
     assert "### UMG Operations" in markdown
     assert "`set_umg_widget_text`" in markdown
-    assert "Roadmap:" in markdown
     assert "`set_umg_widget_appearance`" in markdown
+    assert "`set_umg_slot_layout_v2`" in markdown
+    assert "### Level Operations" in markdown
+    assert "`arrange_actors_pattern`" in markdown
     assert "`inspect_level_actors`" in markdown
     assert "Follow-up candidates are drafts and are never auto-executed." in markdown

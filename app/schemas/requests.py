@@ -100,6 +100,7 @@ class EditorOperationProposalRequest(BaseModel):
         "place_actor_in_level",
         "set_actor_transform",
         "set_actor_metadata",
+        "arrange_actors_pattern",
         "set_material_instance_parameter",
         "set_material_instance_texture_parameter",
         "set_material_instance_static_switch",
