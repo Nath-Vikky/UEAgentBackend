@@ -74,3 +74,23 @@ def test_mcp_tools_api_blocks_unlisted_tool(client: TestClient) -> None:
     body = response.json()
     assert body["success"] is False
     assert body["reason"] == "tool_not_in_mcp_allowed_tools"
+
+
+def test_tool_registry_manifest_api_exposes_proposal_boundary(client: TestClient) -> None:
+    response = client.get("/api/v1/mcp/tool-registry/manifest?side_effect_level=confirmed_write")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    manifest = body["manifest"]
+    assert manifest["schema_version"] == "mcp_tools_list_compatible_v1"
+    assert manifest["safety_policy"]["confirmed_write_direct_mcp_call_allowed"] is False
+    tools = {
+        item["annotations"]["tool_id"]: item
+        for item in manifest["tools"]
+    }
+    assert "editor_arrange_actors_pattern" in tools
+    boundary = tools["editor_arrange_actors_pattern"]["annotations"]["execution_boundary"]
+    assert boundary["mode"] == "confirmed_write_proposal"
+    assert boundary["direct_mcp_call_allowed"] is False
+    assert boundary["write_path"] == "POST /api/v1/editor-operations/proposals"

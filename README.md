@@ -134,11 +134,13 @@ Agent 判断意图
 
 - [Editor Operation Catalog](./docs/editor-operation-catalog.md)
 - `GET /api/v1/editor-operations/capabilities`
+- `GET /api/v1/mcp/tool-registry/manifest`
 
 如需重新生成公开目录：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\export_editor_operation_catalog.py --output docs\editor-operation-catalog.md
+.\.venv\Scripts\python.exe scripts\export_tool_manifest.py --output storage\artifacts\tool-registry-manifest.json
 ```
 
 ## 本地验证

@@ -5340,3 +5340,46 @@ Expected UE result callback fields:
 Frontend impact: add `arrange_actors_pattern` to any local operation whitelist or
 title map if one exists. The existing Proposal confirmation and result callback
 flow is reused.
+
+## 2026-05-24 Tool Registry Manifest for MCP-compatible Transport
+
+The backend now exposes a descriptive Tool Registry manifest:
+
+```http
+GET /api/v1/mcp/tool-registry/manifest
+```
+
+This endpoint converts `app.tools.registry.ToolSpec` entries into an
+MCP `tools/list`-compatible shape:
+
+- `tools[].name`
+- `tools[].description`
+- `tools[].inputSchema`
+- `tools[].annotations`
+
+Useful filters:
+
+```http
+GET /api/v1/mcp/tool-registry/manifest?side_effect_level=confirmed_write
+GET /api/v1/mcp/tool-registry/manifest?category=write
+GET /api/v1/mcp/tool-registry/manifest?transport=mcp_tcp
+GET /api/v1/mcp/tool-registry/manifest?include_disabled=false
+```
+
+Safety boundary:
+
+- The manifest is descriptive metadata, not a new write execution path.
+- Read-only MCP tools can still be called only through the explicit MCP debug API when the adapter is enabled.
+- `confirmed_write` tools expose `execution_boundary.mode=confirmed_write_proposal`.
+- `confirmed_write` tools always use `POST /api/v1/editor-operations/proposals`; MCP cannot directly mutate Unreal assets or levels.
+- The UE frontend still remains HTTP + Proposal confirmation.
+
+Export command:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_tool_manifest.py --output storage\artifacts\tool-registry-manifest.json
+```
+
+Frontend impact: no mandatory change. A future debug/tools panel can use this
+manifest to group tools, show side-effect levels, and explain why editor writes
+require Proposal confirmation.
