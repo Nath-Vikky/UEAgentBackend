@@ -27,6 +27,22 @@ def test_blueprint_workflow_plan_emits_two_confirmed_steps() -> None:
     assert second["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]
 
 
+def test_workflow_templates_describe_plan_only_safety() -> None:
+    templates = EditorWorkflowPlannerService.workflow_templates()
+
+    assert templates["schema_version"] == "editor_workflow_templates_v1"
+    assert templates["auto_execute"] is False
+    assert templates["requires_user_confirmation_per_step"] is True
+    assert templates["safety_policy"]["planner_creates_proposals"] is False
+    assert templates["safety_policy"]["planner_executes_editor_writes"] is False
+    workflow_types = {item["workflow_type"] for item in templates["templates"]}
+    assert workflow_types == {
+        "blueprint_print_then_compile",
+        "umg_text_widget",
+        "arrange_and_tag_actors",
+    }
+
+
 def test_umg_text_workflow_reports_missing_inputs_without_executing() -> None:
     plan = EditorWorkflowPlannerService().plan_workflow(
         goal="Create HUD title text",

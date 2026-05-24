@@ -87,6 +87,15 @@ def plan_editor_operation_workflow(request: EditorWorkflowPlanRequest) -> dict:
     return {"success": plan["status"] != "unsupported", "workflow_plan": plan, "errors": []}
 
 
+@router.get("/workflows/templates")
+def editor_operation_workflow_templates() -> dict:
+    return {
+        "success": True,
+        "workflow_templates": EditorWorkflowPlannerService.workflow_templates(),
+        "errors": [],
+    }
+
+
 @router.get("/inspect/level-actors")
 def inspect_level_actors(
     project_id: str | None = None,

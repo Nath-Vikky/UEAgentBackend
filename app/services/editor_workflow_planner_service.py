@@ -46,6 +46,62 @@ def _as_string_list(value: Any) -> list[str]:
 class EditorWorkflowPlannerService:
     """Builds multi-step editor workflow plans without executing writes."""
 
+    @staticmethod
+    def workflow_templates() -> dict[str, Any]:
+        return {
+            "schema_version": "editor_workflow_templates_v1",
+            "mode": "plan_only_confirmed_step_workflows",
+            "auto_execute": False,
+            "requires_user_confirmation_per_step": True,
+            "template_count": 3,
+            "templates": [
+                {
+                    "workflow_type": "blueprint_print_then_compile",
+                    "title": "Blueprint Print String Then Compile",
+                    "description": "Add a BeginPlay Print String template, then compile the Blueprint as a second Proposal step.",
+                    "required_payload_fields": ["blueprint_path"],
+                    "optional_payload_fields": ["graph_name", "message"],
+                    "emitted_operation_types": ["add_blueprint_node_template", "compile_blueprint"],
+                    "boundary": "Template-based graph edit only; does not create arbitrary Blueprint nodes.",
+                },
+                {
+                    "workflow_type": "umg_text_widget",
+                    "title": "UMG Text Widget",
+                    "description": "Add a TextBlock, set its text, and optionally apply safe CanvasPanelSlot layout or visibility.",
+                    "required_payload_fields": ["widget_blueprint_path", "text"],
+                    "optional_payload_fields": [
+                        "widget_name",
+                        "widget_class",
+                        "parent_widget_name",
+                        "layout",
+                        "visibility",
+                    ],
+                    "emitted_operation_types": [
+                        "add_umg_widget",
+                        "set_umg_widget_text",
+                        "set_umg_widget_layout",
+                        "set_umg_widget_visibility",
+                    ],
+                    "boundary": "Safe UMG widget/template fields only; no animations, bindings, or complex widget-tree rewrites.",
+                },
+                {
+                    "workflow_type": "arrange_and_tag_actors",
+                    "title": "Arrange And Tag Actors",
+                    "description": "Arrange existing Level Actors, then optionally apply the same metadata to each Actor.",
+                    "required_payload_fields": ["actor_references"],
+                    "optional_payload_fields": ["pattern", "metadata"],
+                    "emitted_operation_types": ["arrange_actors_pattern", "set_actor_metadata"],
+                    "boundary": "Existing Actors only; no create/delete/attach/stream/save operations.",
+                },
+            ],
+            "safety_policy": {
+                "planner_creates_proposals": False,
+                "planner_executes_editor_writes": False,
+                "step_submission_endpoint": "POST /api/v1/editor-operations/proposals",
+                "ue_execution_requires_user_confirmation": True,
+            },
+        }
+
     def plan_workflow(
         self,
         *,

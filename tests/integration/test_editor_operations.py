@@ -3212,3 +3212,19 @@ def test_editor_workflow_plan_api_returns_proposal_steps(client: TestClient) -> 
         step["create_request_hint"]["path"] == "/api/v1/editor-operations/proposals"
         for step in plan["steps"]
     )
+
+
+def test_editor_workflow_templates_api_lists_supported_plan_only_templates(client: TestClient) -> None:
+    response = client.get("/api/v1/editor-operations/workflows/templates")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    templates = body["workflow_templates"]
+    assert templates["schema_version"] == "editor_workflow_templates_v1"
+    assert templates["auto_execute"] is False
+    assert templates["safety_policy"]["planner_executes_editor_writes"] is False
+    workflow_types = {item["workflow_type"] for item in templates["templates"]}
+    assert "blueprint_print_then_compile" in workflow_types
+    assert "umg_text_widget" in workflow_types
+    assert "arrange_and_tag_actors" in workflow_types

@@ -134,6 +134,7 @@ Agent 判断意图
 
 - [Editor Operation Catalog](./docs/editor-operation-catalog.md)
 - `GET /api/v1/editor-operations/capabilities`
+- `GET /api/v1/editor-operations/workflows/templates`
 - `POST /api/v1/editor-operations/workflows/plan`
 - `GET /api/v1/mcp/tool-registry/manifest`
 

@@ -5389,6 +5389,7 @@ require Proposal confirmation.
 The backend now exposes a plan-only endpoint for multi-step editor workflows:
 
 ```http
+GET  /api/v1/editor-operations/workflows/templates
 POST /api/v1/editor-operations/workflows/plan
 ```
 
@@ -5417,6 +5418,10 @@ Supported workflow types in v1:
 - `blueprint_print_then_compile`: add a BeginPlay Print String template, then compile the Blueprint as a separate confirmed step.
 - `umg_text_widget`: add a TextBlock, set text, and optionally apply CanvasPanelSlot layout or visibility.
 - `arrange_and_tag_actors`: arrange a bounded Actor set, then optionally apply the same metadata to each Actor.
+
+Use `GET /api/v1/editor-operations/workflows/templates` to list the same
+templates with required fields, optional fields, emitted operation types, and
+safety boundaries.
 
 Returned plan fields:
 
