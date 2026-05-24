@@ -125,6 +125,8 @@ def build_tool_manifest(
             "external_mcp_discovery": "GET /api/v1/mcp/tools",
             "external_mcp_readonly_call": "POST /api/v1/mcp/tools/{tool_name}/call",
             "local_manifest": "GET /api/v1/mcp/tool-registry/manifest",
+            "confirmed_write_proposal_prepare": "POST /api/v1/mcp/tool-registry/proposals/prepare",
+            "confirmed_write_proposal_create": "POST /api/v1/mcp/tool-registry/proposals",
             "confirmed_write_proposal": "POST /api/v1/editor-operations/proposals",
         },
         "safety_policy": {

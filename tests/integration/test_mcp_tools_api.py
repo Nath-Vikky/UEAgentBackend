@@ -94,3 +94,67 @@ def test_tool_registry_manifest_api_exposes_proposal_boundary(client: TestClient
     assert boundary["mode"] == "confirmed_write_proposal"
     assert boundary["direct_mcp_call_allowed"] is False
     assert boundary["write_path"] == "POST /api/v1/editor-operations/proposals"
+
+
+def test_tool_registry_proposal_prepare_api_maps_confirmed_write_tool(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/mcp/tool-registry/proposals/prepare",
+        json={
+            "tool_id": "editor_arrange_actors_pattern",
+            "arguments": {
+                "actor_references": ["BP_EnemySpawner_1", "BP_PatrolPoint_1", "BP_PatrolPoint_2"],
+                "pattern": {"type": "grid", "spacing": 250, "columns": 2},
+            },
+            "reason": "Arrange patrol actors.",
+            "requested_by": "integration_test",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    bridge = body["bridge"]
+    assert bridge["status"] == "prepared"
+    assert bridge["operation_type"] == "arrange_actors_pattern"
+    assert bridge["auto_execute"] is False
+    assert bridge["proposal_request_hint"]["path"] == "/api/v1/editor-operations/proposals"
+    assert bridge["proposal_request"]["payload"]["pattern"]["type"] == "grid"
+
+
+def test_tool_registry_proposal_api_creates_pending_editor_proposal(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/mcp/tool-registry/proposals",
+        json={
+            "tool_id": "editor_arrange_actors_pattern",
+            "arguments": {
+                "actor_references": ["BP_EnemySpawner_1", "BP_PatrolPoint_1", "BP_PatrolPoint_2"],
+                "pattern": {"type": "grid", "spacing": 250, "columns": 2},
+            },
+            "requested_by": "integration_test",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["bridge"]["status"] == "prepared"
+    proposal = body["proposal"]
+    assert proposal["item"]["confirmation"]["state"] == "pending"
+    assert proposal["operation"]["operation_type"] == "arrange_actors_pattern"
+    assert proposal["operation"]["tool_id"] == "editor_arrange_actors_pattern"
+
+
+def test_tool_registry_proposal_prepare_api_blocks_readonly_tool(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/mcp/tool-registry/proposals/prepare",
+        json={
+            "tool_id": "mcp_get_blueprint_graph",
+            "arguments": {"blueprint_path": "/Game/BP_Test"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is False
+    assert body["bridge"]["status"] == "blocked"
+    assert body["errors"][0]["code"] == "tool_is_not_confirmed_write"

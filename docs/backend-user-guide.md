@@ -5442,3 +5442,47 @@ Safety boundary:
 
 Frontend impact: no mandatory change. A future Workflow UI can show the plan,
 let the user submit one step at a time, and stop/skip steps safely.
+
+## 2026-05-24 Tool Registry Proposal Bridge
+
+The backend now exposes a safe bridge from Tool Registry ids to pending editor
+operation Proposals:
+
+```http
+POST /api/v1/mcp/tool-registry/proposals/prepare
+POST /api/v1/mcp/tool-registry/proposals
+```
+
+`/prepare` is dry-run style metadata. It validates that the requested `tool_id`
+is a registered `confirmed_write` editor tool and returns a
+`proposal_request_hint` for `POST /api/v1/editor-operations/proposals`.
+
+`/proposals` uses the same mapping and then creates a normal pending Proposal
+row. It still does not execute UE Editor APIs. The UE plugin must display the
+Proposal and execute only after the user confirms.
+
+Example request:
+
+```json
+{
+  "tool_id": "editor_arrange_actors_pattern",
+  "arguments": {
+    "actor_references": ["BP_EnemySpawner_1", "BP_PatrolPoint_1"],
+    "pattern": {"type": "line", "spacing": 250}
+  },
+  "reason": "Arrange two actors for a quick layout pass.",
+  "requested_by": "tool_registry_proposal_bridge"
+}
+```
+
+Safety boundary:
+
+- Only `confirmed_write` ToolSpec entries mapped to `OPERATION_SPECS` are accepted.
+- Read-only tools are blocked by this bridge because they should use read-only routes.
+- Unknown or disabled tools are blocked.
+- `auto_execute` is always `false`.
+- The bridge creates or describes a pending Proposal only; the UE frontend still owns confirmation and editor execution.
+
+Frontend impact: no mandatory change. Existing Proposal cards keep working. A
+future MCP-compatible tool panel can call `/prepare` to preview the operation or
+`/proposals` to create the same Proposal card the current UI already understands.

@@ -137,6 +137,8 @@ Agent 判断意图
 - `GET /api/v1/editor-operations/workflows/templates`
 - `POST /api/v1/editor-operations/workflows/plan`
 - `GET /api/v1/mcp/tool-registry/manifest`
+- `POST /api/v1/mcp/tool-registry/proposals/prepare`
+- `POST /api/v1/mcp/tool-registry/proposals`
 
 如需重新生成公开目录：
 
