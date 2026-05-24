@@ -3349,3 +3349,12 @@ def test_agent_chat_can_return_plan_only_editor_workflow(client: TestClient) -> 
         "compile_blueprint",
     ]
     assert body["user_view"]["blocks"][0]["block_type"] == "editor_workflow_plan"
+    assert body["user_view"]["quick_actions"]
+    first_action = body["user_view"]["quick_actions"][0]
+    assert first_action["payload"]["action_type"] == "create_workflow_step_proposal"
+    assert first_action["payload"]["endpoint"] == "/api/v1/editor-operations/workflows/steps/proposal"
+    assert first_action["payload"]["safety"]["auto_execute"] is False
+    assert first_action["payload"]["safety"]["creates_pending_proposal_only"] is True
+    assert first_action["payload"]["request"]["workflow_plan_id"] == plan["plan_id"]
+    assert first_action["payload"]["request"]["step"]["step_id"] == plan["steps"][0]["step_id"]
+    assert any(block["block_type"] == "workflow_ready_actions" for block in body["user_view"]["blocks"])

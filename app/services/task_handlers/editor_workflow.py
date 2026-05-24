@@ -4,7 +4,7 @@ from typing import Any
 
 from app.agent.context_builder import build_context_summary
 from app.i18n.language import localized as _localized
-from app.schemas.common import UserViewBlock
+from app.schemas.common import QuickAction, UserViewBlock
 from app.services.editor_workflow_planner_service import EditorWorkflowPlannerService
 from app.services.task_handlers.base import TaskExecutionContext
 
@@ -53,6 +53,7 @@ class EditorWorkflowPlanHandler:
             for step in plan.get("steps", [])
             if step.get("missing_inputs")
         ]
+        ready_actions = self._build_step_quick_actions(plan=plan, output_language=output_language)
         step_results = [
             {
                 "step_id": step.get("step_id"),
@@ -89,9 +90,18 @@ class EditorWorkflowPlanHandler:
                 ).model_dump(mode="json"),
             ],
             "citations_preview": [],
-            "quick_actions": [],
+            "quick_actions": ready_actions,
             "status_hint": "workflow_plan",
         }
+        if ready_actions:
+            user_view["blocks"].append(
+                UserViewBlock(
+                    block_type="workflow_ready_actions",
+                    title="Ready Proposal Actions",
+                    text="Ready workflow steps can be converted into one pending Proposal at a time.",
+                    data={"actions": ready_actions},
+                ).model_dump(mode="json")
+            )
         if missing_steps:
             user_view["blocks"].append(
                 UserViewBlock(
@@ -109,6 +119,7 @@ class EditorWorkflowPlanHandler:
         data = {
             "answer": text,
             "editor_workflow_plan": plan,
+            "editor_workflow_quick_actions": ready_actions,
             "workflow_request": self.workflow_request,
             "context_summary": build_context_summary(request),
             "context_bundle": context.context_bundle,
@@ -161,3 +172,47 @@ class EditorWorkflowPlanHandler:
             "artifacts": [],
             "usage": {},
         }
+
+    @staticmethod
+    def _build_step_quick_actions(*, plan: dict[str, Any], output_language: str) -> list[dict[str, Any]]:
+        actions: list[dict[str, Any]] = []
+        plan_id = str(plan.get("plan_id") or "")
+        for step in plan.get("steps", []):
+            if len(actions) >= 5:
+                break
+            if not isinstance(step, dict):
+                continue
+            if not bool(step.get("proposal_ready")) or step.get("missing_inputs"):
+                continue
+
+            step_id = str(step.get("step_id") or f"step_{len(actions)}")
+            title = str(step.get("title") or step.get("operation_type") or step_id)
+            action = QuickAction(
+                action_id=f"create_workflow_step_proposal_{step_id}",
+                label=_localized(
+                    output_language,
+                    f"Create Proposal: {title}",
+                    f"Create Proposal: {title}",
+                ),
+                payload={
+                    "action_type": "create_workflow_step_proposal",
+                    "method": "POST",
+                    "endpoint": "/api/v1/editor-operations/workflows/steps/proposal",
+                    "workflow_plan_id": plan_id,
+                    "workflow_step_id": step_id,
+                    "step_index": step.get("step_index"),
+                    "operation_type": step.get("operation_type"),
+                    "request": {
+                        "workflow_plan_id": plan_id,
+                        "step": step,
+                        "requested_by": "agent_chat_workflow_quick_action",
+                    },
+                    "safety": {
+                        "auto_execute": False,
+                        "creates_pending_proposal_only": True,
+                        "requires_user_confirmation": True,
+                    },
+                },
+            )
+            actions.append(action.model_dump(mode="json"))
+        return actions
