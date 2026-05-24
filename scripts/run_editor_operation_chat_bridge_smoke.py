@@ -242,6 +242,24 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_umg_slot_layout_v2",
+            "request": _chat_request(
+                case_id="chat_umg_slot_layout_v2",
+                query="Set WBP_MainHUD IconImage HorizontalBoxSlot padding to 8 4 8 4 and horizontal alignment to center",
+            ),
+            "expected_operation_type": "set_umg_slot_layout_v2",
+            "expected_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage",
+                "slot_type": "HorizontalBoxSlot",
+                "layout.padding.left": 8.0,
+                "layout.padding.top": 4.0,
+                "layout.padding.right": 8.0,
+                "layout.padding.bottom": 4.0,
+                "layout.horizontal_alignment": "center",
+            },
+        },
+        {
             "case_id": "chat_material_scalar",
             "request": _chat_request(
                 case_id="chat_material_scalar",

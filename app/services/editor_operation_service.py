@@ -294,6 +294,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["widget_blueprint_path", "widget_name", "brush"],
         "frontend_status": "implemented_v1",
     },
+    "set_umg_slot_layout_v2": {
+        "tool_id": "editor_set_umg_slot_layout_v2",
+        "title": "Set UMG Slot Layout v2",
+        "risk_flags": "MEDIUM",
+        "summary": "Set safe HorizontalBox, VerticalBox, or Overlay slot layout fields on one widget.",
+        "required_fields": ["widget_blueprint_path", "widget_name", "slot_type", "layout"],
+        "frontend_status": "implemented_v1",
+    },
     "place_actor_in_level": {
         "tool_id": "editor_place_actor_in_level",
         "title": "Place Actor In Level",
@@ -378,6 +386,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "set_umg_widget_visibility",
             "set_umg_widget_appearance",
             "set_umg_widget_brush",
+            "set_umg_slot_layout_v2",
         ],
     },
     "level": {
@@ -424,15 +433,6 @@ READ_ONLY_INSPECTION_SPECS: dict[str, dict[str, Any]] = {
 }
 
 OPERATION_ROADMAP: dict[str, dict[str, Any]] = {
-    "set_umg_slot_layout_v2": {
-        "group": "umg",
-        "title": "Set UMG Slot Layout v2",
-        "summary": "Support basic VerticalBox, HorizontalBox, and Overlay slot layout fields.",
-        "side_effect_level": "confirmed_write",
-        "frontend_status": "planned_v2",
-        "required_fields": ["widget_blueprint_path", "widget_name", "slot_type", "layout"],
-        "boundary": "No responsive layout generation and no complex container restructuring.",
-    },
     "arrange_actors_pattern": {
         "group": "level",
         "title": "Arrange Actors Pattern",
@@ -1612,6 +1612,78 @@ class EditorOperationService:
         return brush
 
     @staticmethod
+    def _detect_umg_slot_type_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
+        explicit_slot = str(request.payload.get("slot_type") or request.payload.get("slot") or "").strip()
+        if explicit_slot:
+            return explicit_slot
+        query_lower = query_text.lower()
+        if any(token in query_lower for token in ("horizontalbox", "horizontal box", "hbox")):
+            return "HorizontalBoxSlot"
+        if any(token in query_lower for token in ("verticalbox", "vertical box", "vbox")):
+            return "VerticalBoxSlot"
+        if "overlay" in query_lower:
+            return "OverlaySlot"
+        return None
+
+    @staticmethod
+    def _detect_umg_slot_layout_from_request(request: UnifiedTaskRequest, query_text: str) -> dict[str, Any]:
+        payload_layout = request.payload.get("layout")
+        if isinstance(payload_layout, dict):
+            return dict(payload_layout)
+
+        detected: dict[str, Any] = {}
+        for key in ("padding", "horizontal_alignment", "vertical_alignment", "size"):
+            if key in request.payload:
+                detected[key] = request.payload[key]
+
+        padding_match = re.search(
+            r"(?:padding|margin)\s*(?:to|=|:)?\s*\(?\s*(-?\d+(?:\.\d+)?)(?:\s*[, ]\s*(-?\d+(?:\.\d+)?))?(?:\s*[, ]\s*(-?\d+(?:\.\d+)?))?(?:\s*[, ]\s*(-?\d+(?:\.\d+)?))?",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if padding_match:
+            values = [padding_match.group(index) for index in range(1, 5)]
+            numbers = [float(value) for value in values if value is not None]
+            if len(numbers) == 1:
+                detected["padding"] = numbers[0]
+            elif len(numbers) == 2:
+                detected["padding"] = {
+                    "left": numbers[0],
+                    "top": numbers[1],
+                    "right": numbers[0],
+                    "bottom": numbers[1],
+                }
+            elif len(numbers) >= 4:
+                detected["padding"] = {
+                    "left": numbers[0],
+                    "top": numbers[1],
+                    "right": numbers[2],
+                    "bottom": numbers[3],
+                }
+
+        query_lower = query_text.lower()
+        for alignment in ("fill", "left", "center", "right"):
+            if re.search(rf"(?:horizontal\s+alignment|halign|h-align)\s*(?:to|=|:)?\s*{alignment}\b", query_lower):
+                detected["horizontal_alignment"] = alignment
+                break
+        for alignment in ("fill", "top", "center", "bottom"):
+            if re.search(rf"(?:vertical\s+alignment|valign|v-align)\s*(?:to|=|:)?\s*{alignment}\b", query_lower):
+                detected["vertical_alignment"] = alignment
+                break
+
+        size_match = re.search(
+            r"(?:slot\s+size|size rule|size)\s*(?:to|=|:)?\s*(auto|fill)(?:\s+(-?\d+(?:\.\d+)?))?",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if size_match:
+            size: dict[str, Any] = {"rule": size_match.group(1).lower()}
+            if size_match.group(2) is not None:
+                size["value"] = float(size_match.group(2))
+            detected["size"] = size
+        return detected
+
+    @staticmethod
     def _detect_actor_metadata_from_request(request: UnifiedTaskRequest, query_text: str) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
         payload_metadata = request.payload.get("metadata")
@@ -1975,6 +2047,9 @@ class EditorOperationService:
         ) and any(
             token in query_lower
             for token in ("set", "change", "update", "move", "resize")
+        ) and not any(
+            token in query_lower
+            for token in ("slot", "padding", "margin", "horizontalbox", "verticalbox", "overlay")
         )
         if wants_umg_layout:
             widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
@@ -1990,6 +2065,36 @@ class EditorOperationService:
                     "widget_blueprint_path": widget_blueprint_path or "",
                     "widget_name": widget_name or "",
                     "layout": layout,
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_umg_slot_layout_v2 = any(
+            token in query_lower
+            for token in ("umg", "widget", "textblock", "image", "button", "hud", "wbp_")
+        ) and any(
+            token in query_lower
+            for token in ("slot", "padding", "margin", "horizontalbox", "verticalbox", "overlay", "halign", "valign")
+        ) and any(
+            token in query_lower
+            for token in ("set", "change", "update", "adjust", "make")
+        )
+        if wants_umg_slot_layout_v2:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="set_umg_slot_layout_v2",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
+                    "slot_type": EditorOperationService._detect_umg_slot_type_from_request(request, query_text) or "",
+                    "layout": EditorOperationService._detect_umg_slot_layout_from_request(request, query_text),
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -3151,6 +3256,117 @@ class EditorOperationService:
             raise EditorOperationValidationError("layout_requires_position_size_alignment_or_anchors")
         return normalized
 
+    def _normalize_margin(self, value: Any, *, field_name: str = "padding") -> dict[str, float]:
+        if isinstance(value, int | float | str):
+            uniform = self._normalize_finite_float(value, field_name, min_value=-10_000.0, max_value=10_000.0)
+            return {"left": uniform, "top": uniform, "right": uniform, "bottom": uniform}
+        if isinstance(value, list | tuple):
+            if len(value) == 2:
+                horizontal = self._normalize_finite_float(value[0], f"{field_name}_horizontal", min_value=-10_000.0, max_value=10_000.0)
+                vertical = self._normalize_finite_float(value[1], f"{field_name}_vertical", min_value=-10_000.0, max_value=10_000.0)
+                return {"left": horizontal, "top": vertical, "right": horizontal, "bottom": vertical}
+            if len(value) == 4:
+                return {
+                    component: self._normalize_finite_float(raw, f"{field_name}_{component}", min_value=-10_000.0, max_value=10_000.0)
+                    for component, raw in zip(("left", "top", "right", "bottom"), value, strict=True)
+                }
+        if isinstance(value, dict):
+            return {
+                "left": self._normalize_finite_float(value.get("left", 0.0), f"{field_name}_left", min_value=-10_000.0, max_value=10_000.0),
+                "top": self._normalize_finite_float(value.get("top", 0.0), f"{field_name}_top", min_value=-10_000.0, max_value=10_000.0),
+                "right": self._normalize_finite_float(value.get("right", 0.0), f"{field_name}_right", min_value=-10_000.0, max_value=10_000.0),
+                "bottom": self._normalize_finite_float(value.get("bottom", 0.0), f"{field_name}_bottom", min_value=-10_000.0, max_value=10_000.0),
+            }
+        raise EditorOperationValidationError(f"{field_name}_must_be_number_array_or_object")
+
+    @staticmethod
+    def _normalize_umg_slot_type(value: Any) -> str:
+        raw = str(value or "").strip().replace(" ", "").replace("-", "_").lower()
+        aliases = {
+            "horizontalboxslot": "HorizontalBoxSlot",
+            "horizontal_box_slot": "HorizontalBoxSlot",
+            "hboxslot": "HorizontalBoxSlot",
+            "hbox": "HorizontalBoxSlot",
+            "verticalboxslot": "VerticalBoxSlot",
+            "vertical_box_slot": "VerticalBoxSlot",
+            "vboxslot": "VerticalBoxSlot",
+            "vbox": "VerticalBoxSlot",
+            "overlayslot": "OverlaySlot",
+            "overlay_slot": "OverlaySlot",
+            "overlay": "OverlaySlot",
+        }
+        normalized = aliases.get(raw)
+        if not normalized:
+            raise EditorOperationValidationError(
+                "slot_type_not_supported",
+                {"allowed_types": ["HorizontalBoxSlot", "VerticalBoxSlot", "OverlaySlot"]},
+            )
+        return normalized
+
+    @staticmethod
+    def _normalize_umg_alignment(value: Any, *, axis: str) -> str:
+        raw = str(value or "").strip().replace(" ", "_").replace("-", "_").lower()
+        if axis == "horizontal":
+            aliases = {
+                "fill": "fill",
+                "left": "left",
+                "center": "center",
+                "centre": "center",
+                "right": "right",
+            }
+        else:
+            aliases = {
+                "fill": "fill",
+                "top": "top",
+                "center": "center",
+                "centre": "center",
+                "bottom": "bottom",
+            }
+        if raw not in aliases:
+            raise EditorOperationValidationError(f"{axis}_alignment_not_supported")
+        return aliases[raw]
+
+    def _normalize_umg_slot_size(self, value: Any) -> dict[str, float | str]:
+        if isinstance(value, str):
+            raw_rule = value.strip().lower()
+            raw_value = 1.0
+        elif isinstance(value, dict):
+            raw_rule = str(value.get("rule") or value.get("size_rule") or value.get("type") or "").strip().lower()
+            raw_value = value.get("value", value.get("weight", 1.0))
+        else:
+            raise EditorOperationValidationError("slot_size_must_be_string_or_object")
+        raw_rule = {"automatic": "auto", "auto": "auto", "fill": "fill"}.get(raw_rule, raw_rule)
+        if raw_rule not in {"auto", "fill"}:
+            raise EditorOperationValidationError("slot_size_rule_not_supported", {"allowed_rules": ["auto", "fill"]})
+        return {
+            "rule": raw_rule,
+            "value": self._normalize_finite_float(raw_value, "slot_size_value", min_value=0.0, max_value=1000.0),
+        }
+
+    def _normalize_umg_slot_layout_v2(self, value: Any, slot_type: str) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError("layout_must_be_object")
+        normalized: dict[str, Any] = {}
+        if "padding" in value or "margin" in value:
+            normalized["padding"] = self._normalize_margin(value.get("padding", value.get("margin")))
+        if "horizontal_alignment" in value or "halign" in value:
+            normalized["horizontal_alignment"] = self._normalize_umg_alignment(
+                value.get("horizontal_alignment", value.get("halign")),
+                axis="horizontal",
+            )
+        if "vertical_alignment" in value or "valign" in value:
+            normalized["vertical_alignment"] = self._normalize_umg_alignment(
+                value.get("vertical_alignment", value.get("valign")),
+                axis="vertical",
+            )
+        if "size" in value:
+            if slot_type not in {"HorizontalBoxSlot", "VerticalBoxSlot"}:
+                raise EditorOperationValidationError("slot_size_only_supported_for_box_slots")
+            normalized["size"] = self._normalize_umg_slot_size(value.get("size"))
+        if not normalized:
+            raise EditorOperationValidationError("slot_layout_requires_padding_alignment_or_size")
+        return normalized
+
     def _normalize_color_value(self, value: Any, field_name: str) -> dict[str, float]:
         if isinstance(value, list | tuple) and len(value) in {3, 4}:
             raw_values = {
@@ -3694,6 +3910,18 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "set_umg_slot_layout_v2":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            slot_type = self._normalize_umg_slot_type(payload.get("slot_type"))
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "slot_type": slot_type,
+                "layout": self._normalize_umg_slot_layout_v2(payload.get("layout"), slot_type),
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "place_actor_in_level":
             actor_class = self._normalize_class_path(payload.get("actor_class"))
             actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
@@ -3913,6 +4141,12 @@ class EditorOperationService:
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Set widget `{payload['widget_name']}` brush {brush['resource_type']} to `{brush['resource_path']}`. The package is not auto-saved.",
             )
+        if operation_type == "set_umg_slot_layout_v2":
+            fields = ", ".join(sorted(payload["layout"].keys()))
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Set `{payload['slot_type']}` layout for `{payload['widget_name']}` fields: {fields}. The package is not auto-saved.",
+            )
         if operation_type == "place_actor_in_level":
             location = payload["transform"]["location"]
             label = payload.get("actor_label") or "(default label)"
@@ -4041,6 +4275,7 @@ class EditorOperationService:
             "set_umg_widget_visibility",
             "set_umg_widget_appearance",
             "set_umg_widget_brush",
+            "set_umg_slot_layout_v2",
         }:
             target = {
                 "kind": "umg_widget",
@@ -4055,6 +4290,8 @@ class EditorOperationService:
                 target["appearance_fields"] = sorted(payload["appearance"].keys())
             if payload.get("brush"):
                 target["brush"] = dict(payload["brush"])
+            if payload.get("layout"):
+                target["layout_fields"] = sorted(payload["layout"].keys())
             return [target]
         if operation_type == "place_actor_in_level":
             return [
@@ -4169,6 +4406,17 @@ class EditorOperationService:
                 "widget_name",
                 "resource_type",
                 "resource_path",
+                "dirty",
+                "dirty_packages",
+            ],
+            "set_umg_slot_layout_v2": [
+                "widget_blueprint_path",
+                "widget_name",
+                "slot_type",
+                "padding",
+                "horizontal_alignment",
+                "vertical_alignment",
+                "size",
                 "dirty",
                 "dirty_packages",
             ],

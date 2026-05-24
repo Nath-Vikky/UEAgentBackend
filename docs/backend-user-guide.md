@@ -251,7 +251,7 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它只调用 `POST /api/v1/editor-operations/proposals`，验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
-`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
+`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
@@ -3260,6 +3260,7 @@ UMG 写操作边界：
 - `text` 只对 `TextBlock` 生效；传给其他控件时不会失败整个操作，但会在 `failed_fields` 中说明没有应用。
 - `set_umg_widget_text` 只修改已有 `TextBlock` 的文本；如果目标控件不存在或不是 `TextBlock`，UE 执行器会 blocked。
 - `set_umg_widget_layout` 只修改挂在 `CanvasPanel` 下的控件，也就是目标控件必须拥有 `CanvasPanelSlot`；v1 只支持 `position`、`size`、`alignment`、`anchors`。
+- `set_umg_slot_layout_v2` 只修改 `HorizontalBoxSlot`、`VerticalBoxSlot` 或 `OverlaySlot` 的安全字段；v2 支持 `padding`、`horizontal_alignment`、`vertical_alignment`，Box Slot 额外支持 `size`。
 - `set_umg_widget_visibility` 只修改已有控件的 `Visibility`，白名单为 `visible`、`collapsed`、`hidden`、`hit_test_invisible`、`self_hit_test_invisible`。
 - `set_umg_widget_appearance` 支持单控件安全外观字段：`render_opacity`、`is_enabled`，以及 TextBlock 专属 `color_and_opacity` 和 `font_size`。
 - `set_umg_widget_brush` 支持给单个 `Image` 或 `Border` 控件设置 Brush 资源，资源类型限定为 `texture` 或 `material`。
@@ -5036,6 +5037,44 @@ Validation:
 ```
 
 UE frontend impact: add `set_umg_widget_layout` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
+
+## 2026-05-23 UMG Slot Layout v2 Proposal
+
+`Editor Operation Bridge` now includes `set_umg_slot_layout_v2`, a confirmed-write proposal for changing safe slot layout fields on one existing UMG widget that already lives in a `HorizontalBox`, `VerticalBox`, or `Overlay`.
+
+Supported request forms:
+
+- Explicit proposal API: `operation_type=set_umg_slot_layout_v2`.
+- Agent Chat: `Set WBP_MainHUD IconImage HorizontalBoxSlot padding to 8 4 8 4 and horizontal alignment to center`.
+- Supported `slot_type`: `HorizontalBoxSlot`, `VerticalBoxSlot`, `OverlaySlot`.
+
+Payload:
+
+```json
+{
+  "operation_type": "set_umg_slot_layout_v2",
+  "payload": {
+    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+    "widget_name": "IconImage",
+    "slot_type": "HorizontalBoxSlot",
+    "layout": {
+      "padding": {"left": 8, "top": 4, "right": 8, "bottom": 4},
+      "horizontal_alignment": "center",
+      "vertical_alignment": "fill",
+      "size": {"rule": "fill", "value": 1}
+    }
+  }
+}
+```
+
+Boundary:
+
+- The target widget must already exist and must already have the requested slot type.
+- `padding`, `horizontal_alignment`, and `vertical_alignment` work for all three supported slots.
+- `size` only works for `HorizontalBoxSlot` and `VerticalBoxSlot`.
+- It does not create parent containers, move widgets between panels, generate responsive layouts, or rewrite complex widget trees.
+
+UE frontend impact: add `set_umg_slot_layout_v2` to any operation whitelist/card label map if one exists. The existing proposal confirmation and result callback flow can be reused.
 
 ## 2026-05-18 UMG Widget Visibility Proposal
 

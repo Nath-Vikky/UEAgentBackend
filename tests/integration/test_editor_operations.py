@@ -59,6 +59,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "set_umg_widget_visibility",
         "set_umg_widget_appearance",
         "set_umg_widget_brush",
+        "set_umg_slot_layout_v2",
         "place_actor_in_level",
         "set_actor_transform",
         "set_actor_metadata",
@@ -73,10 +74,10 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert body["capabilities"]["summary"]["operation_count"] >= 18
     assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
     assert body["capabilities"]["summary"]["read_only_operation_count"] >= 2
-    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 2
+    assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 1
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
-    assert body["capabilities"]["summary"]["roadmap_group_counts"]["umg"] >= 1
+    assert body["capabilities"]["summary"]["roadmap_group_counts"]["level"] >= 1
     group_ids = {item["group_id"] for item in body["capabilities"]["groups"]}
     assert {"asset", "blueprint", "umg", "level", "material"}.issubset(group_ids)
     roadmap_items = {
@@ -88,6 +89,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         for item in body["capabilities"]["read_only_items"]
     }
     assert "set_umg_widget_appearance" not in roadmap_items
+    assert "set_umg_slot_layout_v2" not in roadmap_items
     assert "set_actor_metadata" not in roadmap_items
     assert read_only_items["inspect_level_actors"]["side_effect_level"] == "read_only"
     assert read_only_items["inspect_level_actors"]["requires_confirmation"] is False
@@ -113,6 +115,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["set_umg_widget_visibility"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_appearance"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_brush"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_umg_slot_layout_v2"]["frontend_status"] == "implemented_v1"
     assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_metadata"]["frontend_status"] == "implemented_v1"
@@ -144,6 +147,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_set_umg_widget_visibility" in tool_ids
     assert "editor_set_umg_widget_appearance" in tool_ids
     assert "editor_set_umg_widget_brush" in tool_ids
+    assert "editor_set_umg_slot_layout_v2" in tool_ids
     assert "editor_place_actor_in_level" in tool_ids
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_actor_metadata" in tool_ids
@@ -1453,6 +1457,59 @@ def test_set_umg_widget_brush_rejects_unknown_resource_type(client: TestClient) 
     assert body["errors"][0]["code"] == "brush_resource_type_not_supported"
 
 
+def test_set_umg_slot_layout_v2_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_slot_layout_v2",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage",
+                "slot_type": "HorizontalBoxSlot",
+                "layout": {
+                    "padding": {"left": 8, "top": 4, "right": 8, "bottom": 4},
+                    "horizontal_alignment": "center",
+                    "vertical_alignment": "fill",
+                    "size": {"rule": "fill", "value": 1},
+                },
+            },
+            "reason": "Tune icon slot spacing in HUD.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_umg_slot_layout_v2"
+    assert body["operation"]["tool_id"] == "editor_set_umg_slot_layout_v2"
+    payload = body["operation"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "IconImage"
+    assert payload["slot_type"] == "HorizontalBoxSlot"
+    assert payload["layout"]["padding"] == {"left": 8.0, "top": 4.0, "right": 8.0, "bottom": 4.0}
+    assert payload["layout"]["horizontal_alignment"] == "center"
+    assert payload["layout"]["vertical_alignment"] == "fill"
+    assert payload["layout"]["size"] == {"rule": "fill", "value": 1.0}
+    assert payload["save_policy"] == "mark_dirty_only"
+
+
+def test_set_umg_slot_layout_v2_rejects_unknown_slot_type(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_slot_layout_v2",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage",
+                "slot_type": "GridSlot",
+                "layout": {"padding": 8},
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "slot_type_not_supported"
+
+
 def test_place_actor_in_level_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -2626,6 +2683,68 @@ def test_agent_chat_resolves_umg_brush_from_project_inventory(client: TestClient
     assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
     assert payload["widget_name"] == "IconImage"
     assert payload["brush"] == {"resource_type": "texture", "resource_path": "/Game/Textures/T_Player_D"}
+
+
+def test_agent_chat_resolves_umg_slot_layout_v2_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/UI/WBP_MainHUD.WBP_MainHUD",
+                    "asset_name": "WBP_MainHUD",
+                    "asset_type": "WidgetBlueprint",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_umg_slot_layout_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Set WBP_MainHUD IconImage HorizontalBoxSlot padding to 8 4 8 4 and horizontal alignment to center",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {
+                "user_query": "Set WBP_MainHUD IconImage HorizontalBoxSlot padding to 8 4 8 4 and horizontal alignment to center"
+            },
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_umg_slot_layout_v2"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "IconImage"
+    assert payload["slot_type"] == "HorizontalBoxSlot"
+    assert payload["layout"]["padding"] == {"left": 8.0, "top": 4.0, "right": 8.0, "bottom": 4.0}
+    assert payload["layout"]["horizontal_alignment"] == "center"
 
 
 def test_agent_chat_can_set_selected_material_instance_parameter(client: TestClient) -> None:
