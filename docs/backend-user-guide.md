@@ -5645,3 +5645,36 @@ Frontend impact: no mandatory change. Existing follow-up debug cards can remain
 read-only. If the UI adds a "Create follow-up Proposal" button, call this
 endpoint with exactly one candidate and render the returned Proposal with the
 existing Proposal card.
+
+## 2026-05-24 Workflow Materialization Smoke
+
+The backend now includes a deterministic smoke test for the two materialization
+paths added in Improv4 finalization:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_editor_workflow_materialization_smoke.py
+```
+
+It writes a JSON report to:
+
+```text
+storage/artifacts/smoke/editor-workflow-materialization-smoke-latest.json
+```
+
+Covered cases:
+
+- `workflow_step_to_proposal`: workflow plan step becomes a pending Proposal.
+- `workflow_step_rejects_missing_inputs`: non-ready workflow step is rejected.
+- `follow_up_candidate_to_proposal`: Blueprint repair follow-up candidate becomes a pending Proposal.
+
+Expected result:
+
+```text
+overall_ok = true
+case_count = 3
+passed = 3
+failed = 0
+```
+
+This smoke test does not launch UE, execute editor writes, compile Blueprints,
+or call an LLM. It only verifies backend contracts and safety boundaries.
