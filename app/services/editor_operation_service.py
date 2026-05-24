@@ -24,6 +24,7 @@ from app.utils.time import now_utc
 
 EDITOR_OPERATION_PROTOCOL_VERSION = "editor_operation_bridge_v1"
 EDITOR_OPERATION_PROPOSAL_TYPE = "editor_operation"
+EDITOR_OPERATION_FOLLOW_UP_MATERIALIZATION_VERSION = "editor_operation_follow_up_materialization_v1"
 
 _ASSET_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{1,63}$")
 _CLASS_NAME_RE = re.compile(r"^[A-Za-z_/][A-Za-z0-9_./:]*$")
@@ -5622,6 +5623,71 @@ class EditorOperationService:
                 "diagnostic_flags": list(operation_diagnostics.get("diagnostic_flags") or []),
                 "candidates": candidates,
             }
+        }
+
+    @staticmethod
+    def prepare_follow_up_proposal_request(
+        *,
+        source_proposal_id: str,
+        candidate: dict[str, Any] | None = None,
+        create_request: dict[str, Any] | None = None,
+        requested_by: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        safe_candidate = dict(candidate or {})
+        if isinstance(safe_candidate.get("candidates"), list) or isinstance(create_request, list):
+            raise ValueError("follow_up_materialization_accepts_one_candidate_only")
+
+        missing_inputs = list(safe_candidate.get("missing_inputs") or [])
+        if safe_candidate and (safe_candidate.get("proposal_ready") is False or missing_inputs):
+            raise ValueError("follow_up_candidate_not_ready_for_proposal")
+
+        hint = dict(safe_candidate.get("create_request_hint") or {})
+        request_json = dict(create_request or hint.get("json") or {})
+        if not request_json:
+            raise ValueError("follow_up_create_request_missing")
+
+        operation_type = str(request_json.get("operation_type") or "").strip()
+        if operation_type not in OPERATION_SPECS:
+            raise ValueError("follow_up_operation_type_invalid")
+
+        payload = request_json.get("payload")
+        if not isinstance(payload, dict):
+            raise ValueError("follow_up_payload_must_be_object")
+
+        base_context = dict(request_json.get("context") or {})
+        external_context = dict(context or {})
+        candidate_id = str(safe_candidate.get("candidate_id") or base_context.get("candidate_id") or "").strip()
+        materialized_context = {
+            **base_context,
+            **external_context,
+            "follow_up_materialization": {
+                "schema_version": EDITOR_OPERATION_FOLLOW_UP_MATERIALIZATION_VERSION,
+                "source_proposal_id": source_proposal_id,
+                "candidate_id": candidate_id,
+                "source": "editor_operation_follow_up_materialization",
+                "auto_execute": False,
+            },
+        }
+        proposal_request = EditorOperationProposalRequest(
+            operation_type=operation_type,  # type: ignore[arg-type]
+            payload=dict(payload),
+            reason=str(request_json.get("reason") or "").strip()
+            or f"Create a follow-up Proposal from {source_proposal_id}.",
+            source_task_id=str(request_json.get("source_task_id") or "").strip() or None,
+            requested_by=requested_by or str(request_json.get("requested_by") or "").strip() or "editor_operation_follow_up",
+            context=materialized_context,
+        )
+        return {
+            "schema_version": EDITOR_OPERATION_FOLLOW_UP_MATERIALIZATION_VERSION,
+            "source_proposal_id": source_proposal_id,
+            "candidate_id": candidate_id,
+            "operation_type": operation_type,
+            "tool_id": OPERATION_SPECS[operation_type]["tool_id"],
+            "proposal_ready": True,
+            "auto_execute": False,
+            "requires_user_confirmation": True,
+            "proposal_request": proposal_request.model_dump(mode="json"),
         }
 
     def record_operation_result(self, request: EditorOperationResultRequest) -> dict[str, Any] | None:

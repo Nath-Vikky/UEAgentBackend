@@ -44,6 +44,13 @@ class EditorWorkflowStepProposalRequest(BaseModel):
     context: dict = Field(default_factory=dict)
 
 
+class EditorOperationFollowUpProposalRequest(BaseModel):
+    candidate: dict = Field(default_factory=dict)
+    create_request: dict = Field(default_factory=dict)
+    requested_by: str | None = None
+    context: dict = Field(default_factory=dict)
+
+
 @router.get("/capabilities")
 def editor_operation_capabilities() -> dict:
     return {
@@ -253,6 +260,49 @@ def get_editor_operation_follow_ups(proposal_id: str, db: Session = Depends(get_
     if not payload:
         raise APIError(404, "proposal_not_found", f"Proposal `{proposal_id}` was not found.")
     return {"success": True, **payload, "errors": []}
+
+
+@router.post("/proposals/{proposal_id}/follow-ups/proposal")
+def create_editor_operation_follow_up_proposal(
+    proposal_id: str,
+    request: EditorOperationFollowUpProposalRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    source = get_editor_operation_follow_ups(proposal_id, db)
+    follow_up = dict(source.get("follow_up") or {})
+    if follow_up.get("status") in {"not_ready", "not_applicable"}:
+        raise APIError(
+            400,
+            str(follow_up.get("reason") or "follow_up_not_ready"),
+            "Follow-up candidates are not ready for this proposal.",
+            {"proposal_id": proposal_id, "status": follow_up.get("status")},
+        )
+    try:
+        materialized = EditorOperationService.prepare_follow_up_proposal_request(
+            source_proposal_id=proposal_id,
+            candidate=request.candidate,
+            create_request=request.create_request,
+            requested_by=request.requested_by,
+            context=request.context,
+        )
+        proposal = EditorOperationService(db).create_operation_proposal(
+            EditorOperationProposalRequest(**materialized["proposal_request"])
+        )
+    except ValueError as exc:
+        raise APIError(
+            400,
+            str(exc),
+            "Follow-up candidate could not be converted into an editor operation Proposal.",
+            {"proposal_id": proposal_id, "candidate_id": request.candidate.get("candidate_id")},
+        ) from exc
+    except EditorOperationValidationError as exc:
+        raise APIError(400, exc.reason, "Editor operation proposal validation failed.", exc.details) from exc
+    return {
+        "success": True,
+        "follow_up_step": materialized,
+        "proposal": proposal,
+        "errors": [],
+    }
 
 
 @router.get("/proposals/{proposal_id}")

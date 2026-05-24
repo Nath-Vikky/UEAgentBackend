@@ -893,6 +893,25 @@ def test_blueprint_node_template_result_summary_flags_missing_expected_links(
     assert candidate["payload"]["target_node_id"] == "K2Node_CallFunction_0"
     assert candidate["create_request_hint"]["json"]["context"]["source_proposal_id"] == proposal_id
 
+    materialized = client.post(
+        f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal",
+        json={"candidate": candidate, "requested_by": "integration_test"},
+    )
+    assert materialized.status_code == 200
+    materialized_body = materialized.json()
+    assert materialized_body["success"] is True
+    assert materialized_body["follow_up_step"]["schema_version"] == "editor_operation_follow_up_materialization_v1"
+    assert materialized_body["follow_up_step"]["source_proposal_id"] == proposal_id
+    assert materialized_body["follow_up_step"]["candidate_id"] == "connect_expected_exec_pins"
+    assert materialized_body["follow_up_step"]["operation_type"] == "connect_blueprint_nodes"
+    assert materialized_body["follow_up_step"]["auto_execute"] is False
+    assert materialized_body["proposal"]["item"]["confirmation"]["state"] == "pending"
+    assert materialized_body["proposal"]["operation"]["operation_type"] == "connect_blueprint_nodes"
+    assert (
+        materialized_body["proposal"]["operation"]["context"]["follow_up_materialization"]["source_proposal_id"]
+        == proposal_id
+    )
+
     attention_history = client.get(
         "/api/v1/editor-operations/history",
         params={

@@ -5579,3 +5579,69 @@ Safety boundary:
 Frontend impact: no mandatory change. If a Workflow UI is added, it can show a
 "Create Proposal" button per ready step and call this endpoint. Existing
 Proposal cards remain the only execution UI.
+
+## 2026-05-24 Follow-up Candidate Materialization
+
+Blueprint graph diagnostics and other editor-operation repair advice can produce
+follow-up candidates. A ready candidate can now be converted into a normal
+pending Proposal:
+
+```http
+POST /api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal
+```
+
+Typical flow:
+
+```text
+1. UEAgentTool reports an editor-operation result.
+2. Backend records operation_diagnostics and repair_advice.
+3. Frontend or caller reads:
+   GET /api/v1/editor-operations/proposals/{proposal_id}/follow-ups
+4. User chooses one ready candidate.
+5. Caller submits that one candidate to:
+   POST /api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal
+6. Backend creates a new pending Proposal.
+7. UE frontend shows the normal confirmation card.
+```
+
+Example request:
+
+```json
+{
+  "candidate": {
+    "candidate_id": "connect_expected_exec_pins",
+    "proposal_ready": true,
+    "missing_inputs": [],
+    "create_request_hint": {
+      "json": {
+        "operation_type": "connect_blueprint_nodes",
+        "payload": {
+          "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+          "graph_name": "EventGraph",
+          "source_node_id": "EventBeginPlay",
+          "source_pin_name": "then",
+          "target_node_id": "K2Node_CallFunction_0",
+          "target_pin_name": "execute",
+          "compile_after_edit": true
+        },
+        "reason": "Follow up: connect expected execution pins.",
+        "requested_by": "editor_operation_follow_up"
+      }
+    }
+  },
+  "requested_by": "workflow_ui"
+}
+```
+
+Safety boundary:
+
+- Only one follow-up candidate can be materialized per request.
+- `proposal_ready=false` or non-empty `missing_inputs` is rejected.
+- The endpoint creates a pending Proposal only.
+- It does not confirm, execute, reconnect pins, or compile automatically.
+- The returned Proposal uses the same confirmation and result callback flow as all editor writes.
+
+Frontend impact: no mandatory change. Existing follow-up debug cards can remain
+read-only. If the UI adds a "Create follow-up Proposal" button, call this
+endpoint with exactly one candidate and render the returned Proposal with the
+existing Proposal card.
