@@ -4,7 +4,8 @@ import re
 import uuid
 from typing import Any
 
-from app.services.editor_operation_service import OPERATION_SPECS
+from app.schemas.requests import UnifiedTaskRequest
+from app.services.editor_operation_service import EditorOperationService, OPERATION_SPECS
 
 WORKFLOW_PLAN_SCHEMA_VERSION = "editor_workflow_plan_v1"
 
@@ -45,6 +46,101 @@ def _as_string_list(value: Any) -> list[str]:
 
 class EditorWorkflowPlannerService:
     """Builds multi-step editor workflow plans without executing writes."""
+
+    @staticmethod
+    def detect_chat_workflow_request(
+        request: UnifiedTaskRequest,
+        context_bundle: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        payload = dict(request.payload or {})
+        explicit_workflow_type = _clean_text(
+            payload.get("workflow_type")
+            or payload.get("editor_workflow_type")
+            or payload.get("workflow_plan_type")
+        )
+        goal = _clean_text(
+            payload.get("goal")
+            or payload.get("user_query")
+            or payload.get("requirement_description")
+            or (request.session.messages[-1].content if request.session.messages else "")
+        )
+        if not goal and not explicit_workflow_type:
+            return None
+
+        query_lower = goal.lower()
+        has_multistep_signal = explicit_workflow_type or any(
+            token in query_lower or token in goal
+            for token in (
+                "workflow",
+                "plan",
+                "multi-step",
+                "step by step",
+                "then",
+                "after that",
+                "and then",
+                "先",
+                "然后",
+                "再",
+                "步骤",
+                "流程",
+                "计划",
+            )
+        )
+        if not has_multistep_signal:
+            return None
+
+        workflow_type = explicit_workflow_type or EditorWorkflowPlannerService._detect_workflow_type(goal, payload)
+        if not workflow_type:
+            return None
+
+        safe_context = request.context.model_dump(mode="json")
+        active_context = dict((context_bundle or {}).get("active_context") or {})
+        editor_context = dict((context_bundle or {}).get("editor_context_structured") or {})
+        plan_payload = dict(payload)
+        if workflow_type == "blueprint_print_then_compile":
+            plan_payload.setdefault(
+                "blueprint_path",
+                EditorOperationService._detect_blueprint_path_from_request(request, goal, context_bundle) or "",
+            )
+            plan_payload.setdefault("graph_name", EditorOperationService._detect_blueprint_graph_name_from_request(request, goal))
+        elif workflow_type == "umg_text_widget":
+            plan_payload.setdefault(
+                "widget_blueprint_path",
+                EditorOperationService._detect_widget_blueprint_path_from_request(request, goal, context_bundle) or "",
+            )
+            detected_widget_name = EditorOperationService._detect_widget_name_from_request(request, goal)
+            detected_text = EditorOperationService._detect_umg_text_from_request(request, goal)
+            detected_layout = EditorOperationService._detect_umg_layout_from_request(request, goal)
+            detected_visibility = EditorOperationService._detect_umg_visibility_from_request(request, goal)
+            if detected_widget_name:
+                plan_payload.setdefault("widget_name", detected_widget_name)
+            if detected_text:
+                plan_payload.setdefault("text", detected_text)
+            if detected_layout:
+                plan_payload.setdefault("layout", detected_layout)
+            if detected_visibility:
+                plan_payload.setdefault("visibility", detected_visibility)
+        elif workflow_type == "arrange_and_tag_actors":
+            plan_payload.setdefault(
+                "actor_references",
+                EditorOperationService._detect_actor_references_from_request(request, goal, context_bundle),
+            )
+            plan_payload.setdefault("pattern", EditorOperationService._detect_arrange_pattern_from_request(request, goal))
+            metadata = EditorOperationService._detect_actor_metadata_from_request(request, goal)
+            if metadata:
+                plan_payload.setdefault("metadata", metadata)
+
+        return {
+            "goal": goal,
+            "workflow_type": workflow_type,
+            "payload": plan_payload,
+            "context": {
+                **safe_context,
+                "active_context": active_context,
+                "editor_context": editor_context,
+            },
+            "requested_by": "agent_chat_workflow_planner",
+        }
 
     @staticmethod
     def workflow_templates() -> dict[str, Any]:

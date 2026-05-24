@@ -5486,3 +5486,31 @@ Safety boundary:
 Frontend impact: no mandatory change. Existing Proposal cards keep working. A
 future MCP-compatible tool panel can call `/prepare` to preview the operation or
 `/proposals` to create the same Proposal card the current UI already understands.
+
+## 2026-05-24 Agent Chat Workflow Plan Integration
+
+Agent Chat can now return the same plan-only editor workflow structure when the
+user clearly asks for a multi-step editor plan, for example:
+
+- "Plan a workflow: add a Print String node to `/Game/Blueprints/BP_PlayerCharacter` then compile it."
+- "Create HUD status text, set the copy, then apply layout."
+- "Arrange these actors, then apply the same tag."
+
+The handler uses the existing `EditorWorkflowPlannerService`; it does not create
+Proposals automatically and does not execute UE writes. The response appears in:
+
+- `user_view.blocks[]` with `block_type=editor_workflow_plan`.
+- `data.editor_workflow_plan`.
+- `debug_view.workflow_trace`.
+
+Detection boundary:
+
+- Explicit `payload.workflow_type`, `payload.editor_workflow_type`, or `payload.workflow_plan_type` always opts into workflow planning.
+- Natural language detection requires a multi-step signal such as `workflow`, `plan`, `then`, `after that`, `先`, `然后`, or `步骤`.
+- A normal single-step request such as "add a Print String node" still creates one Proposal and is not converted into a workflow plan.
+- Unsupported workflow goals fall back to the existing task handlers.
+
+Frontend impact: no mandatory change. The normal chat panel can display the
+assistant text and optional `user_view.blocks`. A future Workflow UI can read
+`data.editor_workflow_plan.steps[].create_request_hint` and let users submit one
+step at a time.

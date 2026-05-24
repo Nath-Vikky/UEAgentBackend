@@ -10,11 +10,13 @@ from app.services.task_handlers.config_generate import ConfigGenerateHandler
 from app.services.task_handlers.config_validate import ConfigValidateHandler
 from app.services.task_handlers.direct_answer import DirectAnswerHandler
 from app.services.task_handlers.editor_operation import EditorOperationProposalHandler
+from app.services.task_handlers.editor_workflow import EditorWorkflowPlanHandler
 from app.services.task_handlers.logs_analyze import LogsAnalyzeHandler
 from app.services.task_handlers.placeholder import PlaceholderTaskHandler
 from app.services.task_handlers.perf_analyze import PerfAnalyzeHandler
 from app.services.task_handlers.project_qa import ProjectQAHandler
 from app.services.editor_operation_service import EditorOperationService
+from app.services.editor_workflow_planner_service import EditorWorkflowPlannerService
 
 
 class RouteExecutionDispatcher:
@@ -45,6 +47,13 @@ class RouteExecutionDispatcher:
         return result
 
     def select_handler(self, host: Any, context: TaskExecutionContext) -> TaskHandler:
+        editor_workflow_request = EditorWorkflowPlannerService.detect_chat_workflow_request(
+            context.request,
+            context.context_bundle,
+        )
+        if editor_workflow_request:
+            return EditorWorkflowPlanHandler(editor_workflow_request)
+
         editor_operation_request = EditorOperationService.detect_request(
             context.request,
             context.context_bundle,

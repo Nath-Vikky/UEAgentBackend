@@ -3228,3 +3228,45 @@ def test_editor_workflow_templates_api_lists_supported_plan_only_templates(clien
     assert "blueprint_print_then_compile" in workflow_types
     assert "umg_text_widget" in workflow_types
     assert "arrange_and_tag_actors" in workflow_types
+
+
+def test_agent_chat_can_return_plan_only_editor_workflow(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_editor_workflow_plan",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Plan a workflow: add a Print String node to "
+                            "/Game/Blueprints/BP_PlayerCharacter then compile it"
+                        ),
+                    }
+                ],
+            },
+            "payload": {
+                "user_query": (
+                    "Plan a workflow: add a Print String node to "
+                    "/Game/Blueprints/BP_PlayerCharacter then compile it"
+                ),
+                "message": "Ready",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "completed"
+    assert body["action_proposals"] == []
+    plan = body["data"]["editor_workflow_plan"]
+    assert plan["schema_version"] == "editor_workflow_plan_v1"
+    assert plan["workflow_type"] == "blueprint_print_then_compile"
+    assert plan["auto_execute"] is False
+    assert [step["operation_type"] for step in plan["steps"]] == [
+        "add_blueprint_node_template",
+        "compile_blueprint",
+    ]
+    assert body["user_view"]["blocks"][0]["block_type"] == "editor_workflow_plan"

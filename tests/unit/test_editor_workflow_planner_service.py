@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.schemas.requests import SessionInput, SessionMessageInput, UnifiedTaskRequest
 from app.services.editor_workflow_planner_service import EditorWorkflowPlannerService
 
 
@@ -78,3 +79,54 @@ def test_arrange_and_tag_workflow_creates_one_metadata_step_per_actor() -> None:
     assert plan["steps"][1]["payload"]["actor_reference"] == "BP_A_1"
     assert plan["steps"][2]["payload"]["actor_reference"] == "BP_B_1"
     assert all(step["create_request_hint"]["path"] == "/api/v1/editor-operations/proposals" for step in plan["steps"])
+
+
+def test_detect_chat_workflow_request_requires_multistep_signal() -> None:
+    request = UnifiedTaskRequest(
+        task_type="agent_chat",
+        session=SessionInput(
+            session_id="workflow_detect",
+            messages=[
+                SessionMessageInput(
+                    role="user",
+                    content="Add a Print String node to /Game/Blueprints/BP_PlayerCharacter",
+                )
+            ],
+        ),
+        payload={
+            "user_query": "Add a Print String node to /Game/Blueprints/BP_PlayerCharacter",
+        },
+    )
+
+    assert EditorWorkflowPlannerService.detect_chat_workflow_request(request) is None
+
+
+def test_detect_chat_workflow_request_extracts_blueprint_plan() -> None:
+    request = UnifiedTaskRequest(
+        task_type="agent_chat",
+        session=SessionInput(
+            session_id="workflow_detect",
+            messages=[
+                SessionMessageInput(
+                    role="user",
+                    content=(
+                        "Plan a workflow: add a Print String node to "
+                        "/Game/Blueprints/BP_PlayerCharacter then compile it"
+                    ),
+                )
+            ],
+        ),
+        payload={
+            "user_query": (
+                "Plan a workflow: add a Print String node to "
+                "/Game/Blueprints/BP_PlayerCharacter then compile it"
+            ),
+            "message": "Ready",
+        },
+    )
+
+    detected = EditorWorkflowPlannerService.detect_chat_workflow_request(request)
+
+    assert detected is not None
+    assert detected["workflow_type"] == "blueprint_print_then_compile"
+    assert detected["payload"]["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
