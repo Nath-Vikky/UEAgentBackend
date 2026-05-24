@@ -36,6 +36,14 @@ class EditorWorkflowPlanRequest(BaseModel):
     requested_by: str = "workflow_planner"
 
 
+class EditorWorkflowStepProposalRequest(BaseModel):
+    workflow_plan_id: str | None = None
+    step: dict = Field(default_factory=dict)
+    create_request: dict = Field(default_factory=dict)
+    requested_by: str | None = None
+    context: dict = Field(default_factory=dict)
+
+
 @router.get("/capabilities")
 def editor_operation_capabilities() -> dict:
     return {
@@ -92,6 +100,43 @@ def editor_operation_workflow_templates() -> dict:
     return {
         "success": True,
         "workflow_templates": EditorWorkflowPlannerService.workflow_templates(),
+        "errors": [],
+    }
+
+
+@router.post("/workflows/steps/proposal")
+def create_editor_operation_workflow_step_proposal(
+    request: EditorWorkflowStepProposalRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        materialized = EditorWorkflowPlannerService.prepare_step_proposal_request(
+            workflow_plan_id=request.workflow_plan_id,
+            step=request.step,
+            create_request=request.create_request,
+            requested_by=request.requested_by,
+            context=request.context,
+        )
+        proposal = EditorOperationService(db).create_operation_proposal(
+            EditorOperationProposalRequest(**materialized["proposal_request"])
+        )
+    except ValueError as exc:
+        reason = str(exc)
+        raise APIError(
+            400,
+            reason,
+            "Workflow step could not be converted into an editor operation Proposal.",
+            {
+                "workflow_plan_id": request.workflow_plan_id,
+                "step_id": request.step.get("step_id") if isinstance(request.step, dict) else "",
+            },
+        ) from exc
+    except EditorOperationValidationError as exc:
+        raise APIError(400, exc.reason, "Editor operation proposal validation failed.", exc.details) from exc
+    return {
+        "success": True,
+        "workflow_step": materialized,
+        "proposal": proposal,
         "errors": [],
     }
 

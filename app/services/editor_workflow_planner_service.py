@@ -4,10 +4,11 @@ import re
 import uuid
 from typing import Any
 
-from app.schemas.requests import UnifiedTaskRequest
+from app.schemas.requests import EditorOperationProposalRequest, UnifiedTaskRequest
 from app.services.editor_operation_service import EditorOperationService, OPERATION_SPECS
 
 WORKFLOW_PLAN_SCHEMA_VERSION = "editor_workflow_plan_v1"
+WORKFLOW_STEP_MATERIALIZATION_SCHEMA_VERSION = "editor_workflow_step_materialization_v1"
 
 
 def _clean_text(value: Any) -> str:
@@ -46,6 +47,70 @@ def _as_string_list(value: Any) -> list[str]:
 
 class EditorWorkflowPlannerService:
     """Builds multi-step editor workflow plans without executing writes."""
+
+    @staticmethod
+    def prepare_step_proposal_request(
+        *,
+        step: dict[str, Any] | None = None,
+        create_request: dict[str, Any] | None = None,
+        workflow_plan_id: str | None = None,
+        requested_by: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        safe_step = dict(step or {})
+        if isinstance(safe_step.get("steps"), list) or isinstance(create_request, list):
+            raise ValueError("workflow_step_materialization_accepts_one_step_only")
+
+        missing_inputs = list(safe_step.get("missing_inputs") or [])
+        if safe_step and (safe_step.get("proposal_ready") is False or missing_inputs):
+            raise ValueError("workflow_step_not_ready_for_proposal")
+
+        hint = dict(safe_step.get("create_request_hint") or {})
+        request_json = dict(create_request or hint.get("json") or {})
+        if not request_json:
+            raise ValueError("workflow_step_create_request_missing")
+
+        operation_type = _clean_text(request_json.get("operation_type"))
+        if operation_type not in OPERATION_SPECS:
+            raise ValueError("workflow_step_operation_type_invalid")
+
+        payload = request_json.get("payload")
+        if not isinstance(payload, dict):
+            raise ValueError("workflow_step_payload_must_be_object")
+
+        step_context = dict(request_json.get("context") or {})
+        external_context = dict(context or {})
+        workflow_step_id = _clean_text(safe_step.get("step_id") or step_context.get("workflow_step_id"))
+        materialized_context = {
+            **step_context,
+            **external_context,
+            "workflow_materialization": {
+                "schema_version": WORKFLOW_STEP_MATERIALIZATION_SCHEMA_VERSION,
+                "workflow_plan_id": _clean_text(workflow_plan_id),
+                "workflow_step_id": workflow_step_id,
+                "source": "editor_workflow_step_materialization",
+                "auto_execute": False,
+            },
+        }
+        proposal_request = EditorOperationProposalRequest(
+            operation_type=operation_type,  # type: ignore[arg-type]
+            payload=dict(payload),
+            reason=_clean_text(request_json.get("reason")) or "Create a Proposal from one workflow step.",
+            source_task_id=_clean_text(request_json.get("source_task_id")) or None,
+            requested_by=requested_by or _clean_text(request_json.get("requested_by")) or "workflow_step_materialization",
+            context=materialized_context,
+        )
+        return {
+            "schema_version": WORKFLOW_STEP_MATERIALIZATION_SCHEMA_VERSION,
+            "workflow_plan_id": _clean_text(workflow_plan_id),
+            "workflow_step_id": workflow_step_id,
+            "operation_type": operation_type,
+            "tool_id": OPERATION_SPECS[operation_type]["tool_id"],
+            "proposal_ready": True,
+            "auto_execute": False,
+            "requires_user_confirmation": True,
+            "proposal_request": proposal_request.model_dump(mode="json"),
+        }
 
     @staticmethod
     def detect_chat_workflow_request(

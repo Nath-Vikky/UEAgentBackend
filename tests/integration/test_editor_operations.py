@@ -3214,6 +3214,66 @@ def test_editor_workflow_plan_api_returns_proposal_steps(client: TestClient) -> 
     )
 
 
+def test_editor_workflow_step_can_materialize_pending_proposal(client: TestClient) -> None:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add Ready Print String and compile",
+            "workflow_type": "blueprint_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "message": "Ready",
+            },
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()["workflow_plan"]
+
+    response = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan["plan_id"],
+            "step": plan["steps"][0],
+            "requested_by": "integration_test",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["workflow_step"]["schema_version"] == "editor_workflow_step_materialization_v1"
+    assert body["workflow_step"]["operation_type"] == "add_blueprint_node_template"
+    assert body["workflow_step"]["auto_execute"] is False
+    assert body["proposal"]["item"]["confirmation"]["state"] == "pending"
+    assert body["proposal"]["operation"]["operation_type"] == "add_blueprint_node_template"
+    assert (
+        body["proposal"]["operation"]["context"]["workflow_materialization"]["workflow_plan_id"]
+        == plan["plan_id"]
+    )
+
+
+def test_editor_workflow_step_materialization_rejects_not_ready_step(client: TestClient) -> None:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Create HUD title text",
+            "workflow_type": "umg_text_widget",
+            "payload": {"widget_name": "TitleText"},
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()["workflow_plan"]
+
+    response = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={"workflow_plan_id": plan["plan_id"], "step": plan["steps"][0]},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "workflow_step_not_ready_for_proposal"
+
+
 def test_editor_workflow_templates_api_lists_supported_plan_only_templates(client: TestClient) -> None:
     response = client.get("/api/v1/editor-operations/workflows/templates")
 

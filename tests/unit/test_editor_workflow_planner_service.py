@@ -130,3 +130,41 @@ def test_detect_chat_workflow_request_extracts_blueprint_plan() -> None:
     assert detected is not None
     assert detected["workflow_type"] == "blueprint_print_then_compile"
     assert detected["payload"]["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
+
+
+def test_prepare_step_proposal_request_materializes_single_ready_step() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal='Add "Ready" Print String on BeginPlay and compile it',
+        workflow_type="blueprint_print_then_compile",
+        payload={"blueprint_path": "/Game/Blueprints/BP_Player"},
+    )
+
+    materialized = EditorWorkflowPlannerService.prepare_step_proposal_request(
+        workflow_plan_id=plan["plan_id"],
+        step=plan["steps"][0],
+        requested_by="unit_test",
+    )
+
+    assert materialized["schema_version"] == "editor_workflow_step_materialization_v1"
+    assert materialized["workflow_plan_id"] == plan["plan_id"]
+    assert materialized["workflow_step_id"] == "step_0_add_blueprint_node_template"
+    assert materialized["operation_type"] == "add_blueprint_node_template"
+    assert materialized["auto_execute"] is False
+    assert materialized["requires_user_confirmation"] is True
+    assert materialized["proposal_request"]["requested_by"] == "unit_test"
+    assert materialized["proposal_request"]["context"]["workflow_materialization"]["auto_execute"] is False
+
+
+def test_prepare_step_proposal_request_rejects_missing_inputs() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal="Create HUD title text",
+        workflow_type="umg_text_widget",
+        payload={"widget_name": "TitleText"},
+    )
+
+    try:
+        EditorWorkflowPlannerService.prepare_step_proposal_request(step=plan["steps"][0])
+    except ValueError as exc:
+        assert str(exc) == "workflow_step_not_ready_for_proposal"
+    else:
+        raise AssertionError("Expected workflow_step_not_ready_for_proposal")

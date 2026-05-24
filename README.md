@@ -136,6 +136,7 @@ Agent 判断意图
 - `GET /api/v1/editor-operations/capabilities`
 - `GET /api/v1/editor-operations/workflows/templates`
 - `POST /api/v1/editor-operations/workflows/plan`
+- `POST /api/v1/editor-operations/workflows/steps/proposal`
 - `POST /api/v1/chat/runs` with explicit multi-step workflow intent
 - `GET /api/v1/mcp/tool-registry/manifest`
 - `POST /api/v1/mcp/tool-registry/proposals/prepare`

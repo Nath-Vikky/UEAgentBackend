@@ -5514,3 +5514,68 @@ Frontend impact: no mandatory change. The normal chat panel can display the
 assistant text and optional `user_view.blocks`. A future Workflow UI can read
 `data.editor_workflow_plan.steps[].create_request_hint` and let users submit one
 step at a time.
+
+## 2026-05-24 Workflow Step Materialization
+
+Workflow plans can now be materialized one step at a time into normal pending
+editor-operation Proposals:
+
+```http
+POST /api/v1/editor-operations/workflows/steps/proposal
+```
+
+This endpoint accepts either a full workflow `step` object returned by
+`/workflows/plan` or a direct `create_request` object shaped like
+`steps[].create_request_hint.json`.
+
+Example request:
+
+```json
+{
+  "workflow_plan_id": "workflow_plan_xxx",
+  "step": {
+    "step_id": "step_0_add_blueprint_node_template",
+    "proposal_ready": true,
+    "missing_inputs": [],
+    "create_request_hint": {
+      "method": "POST",
+      "path": "/api/v1/editor-operations/proposals",
+      "json": {
+        "operation_type": "add_blueprint_node_template",
+        "payload": {
+          "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+          "template_id": "print_string",
+          "entry_event": "BeginPlay",
+          "message": "Ready"
+        },
+        "reason": "Create the Blueprint graph node first.",
+        "requested_by": "workflow_planner"
+      }
+    }
+  },
+  "requested_by": "workflow_ui"
+}
+```
+
+Response shape:
+
+- `workflow_step.schema_version = editor_workflow_step_materialization_v1`
+- `workflow_step.workflow_plan_id`
+- `workflow_step.workflow_step_id`
+- `workflow_step.operation_type`
+- `workflow_step.proposal_request`
+- `proposal.item`
+- `proposal.operation`
+
+Safety boundary:
+
+- Only one workflow step can be materialized per request.
+- `proposal_ready=false` or non-empty `missing_inputs` is rejected.
+- The endpoint creates a pending Proposal only.
+- It does not confirm the Proposal.
+- It does not execute UEAgentTool or Unreal Editor APIs.
+- The resulting Proposal uses the same confirmation card and result callback as every other editor operation.
+
+Frontend impact: no mandatory change. If a Workflow UI is added, it can show a
+"Create Proposal" button per ready step and call this endpoint. Existing
+Proposal cards remain the only execution UI.
