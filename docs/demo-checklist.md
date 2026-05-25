@@ -52,7 +52,7 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 Expected:
 
 - Blueprint graph proposal/result smoke: `14/14 passed`
-- Agent Chat editor-operation smoke: `12/12 passed`
+- Agent Chat editor-operation smoke: `13/13 passed`
 
 ## 4. Demo The Agent Features
 

@@ -187,6 +187,22 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_delay_print_string_beginplay",
+            "request": _chat_request(
+                case_id="chat_delay_print_string_beginplay",
+                query="给 BP_TestActor 的 BeginPlay 延迟 2 秒后添加 Print String 节点",
+                selected_assets=["/Game/Blueprints/BP_TestActor"],
+                language="zh-CN",
+            ),
+            "expected_operation_type": "add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "delay_print_string",
+                "blueprint_path": "/Game/Blueprints/BP_TestActor",
+                "entry_event": "BeginPlay",
+                "delay_seconds": 2.0,
+            },
+        },
+        {
             "case_id": "chat_event_stub_tick",
             "request": _chat_request(
                 case_id="chat_event_stub_tick",
