@@ -5431,7 +5431,7 @@ Example request:
 
 Supported workflow types in v1:
 
-- `blueprint_print_then_compile`: add a BeginPlay Print String template, then compile the Blueprint as a separate confirmed step.
+- `blueprint_print_then_compile`: add a BeginPlay Print String or Delay -> PrintString template, then compile the Blueprint as a separate confirmed step.
 - `umg_text_widget`: add a TextBlock, set text, and optionally apply CanvasPanelSlot layout or visibility.
 - `arrange_and_tag_actors`: arrange a bounded Actor set, then optionally apply the same metadata to each Actor.
 
@@ -5509,8 +5509,13 @@ Agent Chat can now return the same plan-only editor workflow structure when the
 user clearly asks for a multi-step editor plan, for example:
 
 - "Plan a workflow: add a Print String node to `/Game/Blueprints/BP_PlayerCharacter` then compile it."
+- "Plan a workflow: add a Print String after 2 seconds to `/Game/Blueprints/BP_PlayerCharacter` then compile it."
 - "Create HUD status text, set the copy, then apply layout."
 - "Arrange these actors, then apply the same tag."
+
+Blueprint graph workflow planning still uses fixed templates only. If the goal
+mentions delay/wait/after, the first step uses `template_id=delay_print_string`
+and carries `delay_seconds`; otherwise it uses `template_id=print_string`.
 
 The handler uses the existing `EditorWorkflowPlannerService`; it does not create
 Proposals automatically and does not execute UE writes. The response appears in:

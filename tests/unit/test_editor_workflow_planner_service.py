@@ -28,6 +28,24 @@ def test_blueprint_workflow_plan_emits_two_confirmed_steps() -> None:
     assert second["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]
 
 
+def test_blueprint_workflow_can_use_delay_print_template() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal='Add "Ready" Print String after 2 seconds on BeginPlay and compile it',
+        workflow_type="blueprint_print_then_compile",
+        payload={"blueprint_path": "/Game/Blueprints/BP_Player"},
+    )
+
+    first, second = plan["steps"]
+    assert plan["status"] == "planned"
+    assert first["operation_type"] == "add_blueprint_node_template"
+    assert first["title"] == "Add BeginPlay Delay -> Print String nodes"
+    assert first["payload"]["template_id"] == "delay_print_string"
+    assert first["payload"]["delay_seconds"] == 2.0
+    assert first["payload"]["compile_after_edit"] is False
+    assert second["operation_type"] == "compile_blueprint"
+    assert second["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]
+
+
 def test_workflow_templates_describe_plan_only_safety() -> None:
     templates = EditorWorkflowPlannerService.workflow_templates()
 

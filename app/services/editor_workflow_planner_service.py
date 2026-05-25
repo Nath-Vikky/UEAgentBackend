@@ -219,9 +219,9 @@ class EditorWorkflowPlannerService:
                 {
                     "workflow_type": "blueprint_print_then_compile",
                     "title": "Blueprint Print String Then Compile",
-                    "description": "Add a BeginPlay Print String template, then compile the Blueprint as a second Proposal step.",
+                    "description": "Add a BeginPlay Print String or Delay -> PrintString template, then compile the Blueprint as a second Proposal step.",
                     "required_payload_fields": ["blueprint_path"],
-                    "optional_payload_fields": ["graph_name", "message"],
+                    "optional_payload_fields": ["graph_name", "message", "delay_seconds"],
                     "emitted_operation_types": ["add_blueprint_node_template", "compile_blueprint"],
                     "boundary": "Template-based graph edit only; does not create arbitrary Blueprint nodes.",
                 },
@@ -340,19 +340,46 @@ class EditorWorkflowPlannerService:
         )
         graph_name = _first_non_empty(payload.get("graph_name"), "EventGraph")
         message = _first_non_empty(payload.get("message"), _quoted_text(goal), "Hello from UEAgentCraft")
+        goal_lower = goal.lower()
+        delay_requested = bool(
+            _clean_text(payload.get("delay_seconds"))
+            or _clean_text(payload.get("delay"))
+            or any(
+                token in goal_lower or token in goal
+                for token in (
+                    "delay",
+                    "wait",
+                    "after",
+                    "later",
+                    "延迟",
+                    "等待",
+                    "秒后",
+                    "之后",
+                )
+            )
+        )
+        template_id = "delay_print_string" if delay_requested else "print_string"
+        node_title = "Add BeginPlay Delay -> Print String nodes" if delay_requested else "Add BeginPlay Print String node"
+        node_payload: dict[str, Any] = {
+            "blueprint_path": blueprint_path,
+            "graph_name": graph_name,
+            "template_id": template_id,
+            "entry_event": "BeginPlay",
+            "message": message,
+            "compile_after_edit": False,
+        }
+        if delay_requested:
+            node_payload["delay_seconds"] = (
+                payload.get("delay_seconds")
+                or payload.get("delay")
+                or EditorOperationService._extract_delay_seconds_from_text(goal, default=1.0)
+            )
         steps = [
             self._step(
                 index=0,
                 operation_type="add_blueprint_node_template",
-                title="Add BeginPlay Print String node",
-                payload={
-                    "blueprint_path": blueprint_path,
-                    "graph_name": graph_name,
-                    "template_id": "print_string",
-                    "entry_event": "BeginPlay",
-                    "message": message,
-                    "compile_after_edit": False,
-                },
+                title=node_title,
+                payload=node_payload,
                 missing_inputs=["blueprint_path"] if not blueprint_path else [],
                 reason="Create the Blueprint graph node first, without auto-executing the write.",
                 requested_by=requested_by,
