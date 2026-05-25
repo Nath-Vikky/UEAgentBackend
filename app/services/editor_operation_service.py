@@ -102,6 +102,7 @@ BLUEPRINT_EVENT_NAMES = {
 BLUEPRINT_NODE_TEMPLATE_IDS = {
     "branch_print_string",
     "call_function",
+    "delay_print_string",
     "enhanced_input_action_event",
     "get_variable",
     "print_string",
@@ -652,6 +653,19 @@ class EditorOperationService:
             if match:
                 return match.group(1)
         return ""
+
+    @staticmethod
+    def _extract_delay_seconds_from_text(text: str, default: float = 1.0) -> float:
+        for pattern in (
+            r"(?:delay|after|wait)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:s|sec|second|seconds)?",
+            r"([0-9]+(?:\.[0-9]+)?)\s*(?:s|sec|second|seconds)\s*(?:delay|later|wait)?",
+            r"(?:延迟|等待)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:秒)?",
+            r"([0-9]+(?:\.[0-9]+)?)\s*秒\s*(?:后|以后|之后)?",
+        ):
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return float(match.group(1))
+        return default
 
     @staticmethod
     def _detect_blueprint_graph_name_from_request(
@@ -2564,6 +2578,52 @@ class EditorOperationService:
                 context=request.context.model_dump(mode="json"),
             )
 
+        delay_signal = any(
+            token in query_lower or token in query_text
+            for token in (
+                "delay",
+                "wait",
+                "after",
+                "later",
+                "延迟",
+                "等待",
+                "秒后",
+                "之后",
+            )
+        )
+        if blueprint_signal and print_string_signal and add_signal and delay_signal:
+            blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            return EditorOperationProposalRequest(
+                operation_type="add_blueprint_node_template",
+                payload={
+                    "blueprint_path": blueprint_path or "",
+                    "template_id": "delay_print_string",
+                    "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                        request,
+                        query_text,
+                    ),
+                    "message": request.payload.get("message")
+                    or request.payload.get("string_value")
+                    or "Delayed message from UEAgent",
+                    "delay_seconds": request.payload.get("delay_seconds")
+                    or request.payload.get("delay")
+                    or EditorOperationService._extract_delay_seconds_from_text(query_text, default=1.0),
+                    "entry_event": EditorOperationService._detect_blueprint_entry_event_from_request(
+                        request,
+                        query_text,
+                        default="BeginPlay",
+                    ),
+                    "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
         variable_signal = any(
             token in query_lower or token in query_text
             for token in ("variable", "property", "var ", "\u53d8\u91cf", "\u5c5e\u6027")
@@ -2975,6 +3035,10 @@ class EditorOperationService:
             "branch_print_string": "branch_print_string",
             "call": "call_function",
             "call_function": "call_function",
+            "delay": "delay_print_string",
+            "delay_print": "delay_print_string",
+            "delay_printstring": "delay_print_string",
+            "delay_print_string": "delay_print_string",
             "enhanced_input": "enhanced_input_action_event",
             "enhanced_input_action": "enhanced_input_action_event",
             "enhanced_input_action_event": "enhanced_input_action_event",
@@ -2997,6 +3061,7 @@ class EditorOperationService:
             "set_variable": "set_variable",
             "variable_get": "get_variable",
             "variable_set": "set_variable",
+            "延迟打印": "delay_print_string",
             "打印字符串": "print_string",
             "打印文本": "print_string",
         }
@@ -3902,7 +3967,13 @@ class EditorOperationService:
                 entry_event_raw = ""
             if template_id == "enhanced_input_action_event":
                 entry_event_raw = ""
-            if template_id in {"branch_print_string", "call_function", "sequence_print_strings", "set_variable"} and not str(entry_event_raw or "").strip():
+            if template_id in {
+                "branch_print_string",
+                "call_function",
+                "delay_print_string",
+                "sequence_print_strings",
+                "set_variable",
+            } and not str(entry_event_raw or "").strip():
                 entry_event_raw = "BeginPlay"
             normalized: dict[str, Any] = {
                 "blueprint_path": blueprint_path,
@@ -3913,7 +3984,7 @@ class EditorOperationService:
                 "compile_after_edit": bool(payload.get("compile_after_edit", True)),
                 "save_policy": "mark_dirty_only",
             }
-            if template_id in {"branch_print_string", "print_string", "sequence_print_strings"}:
+            if template_id in {"branch_print_string", "delay_print_string", "print_string", "sequence_print_strings"}:
                 normalized["message"] = self._clean_text(
                     payload.get("message") or payload.get("string_value") or "Hello from UEAgent",
                     max_length=240,
@@ -3926,6 +3997,13 @@ class EditorOperationService:
                 )
                 normalized["print_to_screen"] = bool(payload.get("print_to_screen", True))
                 normalized["print_to_log"] = bool(payload.get("print_to_log", True))
+            if template_id == "delay_print_string":
+                normalized["delay_seconds"] = self._normalize_finite_float(
+                    payload.get("delay_seconds", payload.get("delay", 1.0)),
+                    "delay_seconds",
+                    min_value=0.0,
+                    max_value=60.0,
+                )
             if template_id == "branch_print_string":
                 normalized["condition_default"] = self._normalize_boolean_field(
                     payload.get("condition_default"),
@@ -4230,6 +4308,11 @@ class EditorOperationService:
             details = f"Add `{payload['template_id']}` node template to `{payload['graph_name']}`"
             if payload["template_id"] == "print_string":
                 details += f" with message `{payload['message']}`"
+            if payload["template_id"] == "delay_print_string":
+                details += (
+                    f" as Delay `{payload['delay_seconds']}` seconds"
+                    f" then PrintString `{payload['message']}`"
+                )
             if payload["template_id"] == "branch_print_string":
                 details += (
                     f" with `{payload['branch_path']}` branch path connected to PrintString"
@@ -4425,6 +4508,7 @@ class EditorOperationService:
                 "graph_name",
                 "entry_event",
                 "branch_path",
+                "delay_seconds",
                 "sequence_output_count",
                 "function_name",
                 "function_target",
@@ -4557,6 +4641,7 @@ class EditorOperationService:
                 "entry_event",
                 "branch_path",
                 "condition_default",
+                "delay_seconds",
                 "sequence_output_count",
                 "messages",
                 "variable_name",

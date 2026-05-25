@@ -525,6 +525,36 @@ def test_blueprint_node_template_sequence_print_strings_proposal_contract(client
     assert "linked_pins" in result_fields
 
 
+def test_blueprint_node_template_delay_print_string_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "delay_print_string",
+                "graph_name": "EventGraph",
+                "message": "Delayed print",
+                "delay_seconds": 1.25,
+                "compile_after_edit": True,
+            },
+            "reason": "Add BeginPlay -> Delay -> PrintString for a safe graph smoke test.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    payload = body["operation"]["operation_payload"]
+    assert payload["template_id"] == "delay_print_string"
+    assert payload["entry_event"] == "BeginPlay"
+    assert payload["message"] == "Delayed print"
+    assert payload["delay_seconds"] == 1.25
+    assert body["operation"]["affected_targets"][0]["delay_seconds"] == 1.25
+    result_fields = body["operation"]["expected_result_contract"]["operation_result_fields"]
+    assert "delay_seconds" in result_fields
+    assert "linked_pins" in result_fields
+
+
 def test_blueprint_node_template_set_variable_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -655,6 +685,7 @@ def test_blueprint_node_template_rejects_unknown_template(client: TestClient) ->
     assert body["errors"][0]["details"]["allowed_template_ids"] == [
         "branch_print_string",
         "call_function",
+        "delay_print_string",
         "enhanced_input_action_event",
         "get_variable",
         "print_string",
@@ -2171,6 +2202,43 @@ def test_agent_chat_builds_print_string_template_for_beginplay_text(client: Test
     assert payload["template_id"] == "print_string"
     assert payload["graph_name"] == "EventGraph"
     assert payload["entry_event"] == "BeginPlay"
+
+
+def test_agent_chat_builds_delay_print_string_template(client: TestClient) -> None:
+    query = "给 BP_TestActor 的 BeginPlay 延迟 2 秒后添加 Print String 节点"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_blueprint_delay_print_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "zh-CN",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_TestActor"
+    assert payload["template_id"] == "delay_print_string"
+    assert payload["entry_event"] == "BeginPlay"
+    assert payload["delay_seconds"] == 2.0
 
 
 def test_agent_chat_detects_construction_script_graph_for_blueprint_template(

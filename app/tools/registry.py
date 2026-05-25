@@ -1114,6 +1114,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "message",
             "messages",
             "duration",
+            "delay_seconds",
             "print_to_screen",
             "print_to_log",
             "entry_event",
@@ -1139,6 +1140,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                     "enum": [
                         "branch_print_string",
                         "call_function",
+                        "delay_print_string",
                         "enhanced_input_action_event",
                         "get_variable",
                         "print_string",
@@ -1150,6 +1152,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                 "message": {"type": "string"},
                 "messages": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
                 "duration": {"type": "number"},
+                "delay_seconds": {"type": "number", "minimum": 0, "maximum": 60},
                 "print_to_screen": {"type": "boolean"},
                 "print_to_log": {"type": "boolean"},
                 "entry_event": {"type": "string", "enum": ["BeginPlay", ""]},

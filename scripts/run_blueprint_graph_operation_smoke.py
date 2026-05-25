@@ -168,6 +168,27 @@ def _cases() -> list[dict[str, Any]]:
             "expected_result_fields": ["sequence_output_count", "messages", "linked_pins"],
         },
         {
+            "case_id": "template_delay_print_string",
+            "request": _proposal_payload(
+                "add_blueprint_node_template",
+                {
+                    "blueprint_path": blueprint_path,
+                    "template_id": "delay_print_string",
+                    "graph_name": "EventGraph",
+                    "message": "Delayed smoke",
+                    "delay_seconds": 1.25,
+                },
+            ),
+            "expected_status": 200,
+            "expected_tool_id": "editor_add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "delay_print_string",
+                "entry_event": "BeginPlay",
+                "delay_seconds": 1.25,
+            },
+            "expected_result_fields": ["delay_seconds", "linked_pins"],
+        },
+        {
             "case_id": "template_get_variable",
             "request": _proposal_payload(
                 "add_blueprint_node_template",
