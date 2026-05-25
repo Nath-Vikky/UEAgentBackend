@@ -866,7 +866,8 @@ def test_blueprint_node_template_result_summary_flags_missing_expected_links(
         },
     )
     assert result.status_code == 200
-    diagnostics = result.json()["item"]["result_summary"]["operation_diagnostics"]
+    result_body = result.json()
+    diagnostics = result_body["item"]["result_summary"]["operation_diagnostics"]
     assert diagnostics["created_node_count"] == 1
     assert diagnostics["linked_pin_count"] == 0
     assert diagnostics["diagnostic_flags"] == ["expected_linked_pins_missing"]
@@ -874,8 +875,17 @@ def test_blueprint_node_template_result_summary_flags_missing_expected_links(
     assert diagnostics["repair_advice"]["status"] == "suggested"
     assert diagnostics["repair_advice"]["actions"][0]["action_id"] == "connect_expected_exec_pins"
     assert diagnostics["repair_advice"]["can_auto_retry"] is False
-    assert result.json()["item"]["result_summary"]["needs_user_attention"] is True
-    assert result.json()["item"]["result_summary"]["repair_advice"]["status"] == "suggested"
+    assert result_body["item"]["result_summary"]["needs_user_attention"] is True
+    assert result_body["item"]["result_summary"]["repair_advice"]["status"] == "suggested"
+    assert result_body["user_view"]["status_hint"] == "needs_attention"
+    assert result_body["user_view"]["quick_actions"]
+    follow_up_action = result_body["user_view"]["quick_actions"][0]
+    assert follow_up_action["payload"]["action_type"] == "create_editor_operation_follow_up_proposal"
+    assert follow_up_action["payload"]["source_proposal_id"] == proposal_id
+    assert follow_up_action["payload"]["safety"]["auto_execute"] is False
+    assert follow_up_action["payload"]["safety"]["creates_pending_proposal_only"] is True
+    assert result_body["follow_up"]["ready_candidate_count"] == 1
+    assert result_body["task"]["task_type"] == "editor_operation_result"
 
     follow_ups = client.get(f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups")
     assert follow_ups.status_code == 200

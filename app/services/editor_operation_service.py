@@ -5626,6 +5626,100 @@ class EditorOperationService:
         }
 
     @staticmethod
+    def _follow_up_quick_actions(*, proposal_id: str, follow_up: dict[str, Any]) -> list[dict[str, Any]]:
+        actions: list[dict[str, Any]] = []
+        for candidate in follow_up.get("candidates") or []:
+            if len(actions) >= 5:
+                break
+            if not isinstance(candidate, dict):
+                continue
+            if not bool(candidate.get("proposal_ready")) or candidate.get("missing_inputs"):
+                continue
+
+            candidate_id = str(candidate.get("candidate_id") or f"candidate_{len(actions)}")
+            operation_type = str(candidate.get("operation_type") or "editor_operation")
+            actions.append(
+                {
+                    "action_id": f"create_editor_operation_follow_up_{proposal_id}_{candidate_id}",
+                    "label": f"Create Follow-up Proposal: {operation_type}",
+                    "payload": {
+                        "action_type": "create_editor_operation_follow_up_proposal",
+                        "method": "POST",
+                        "endpoint": f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal",
+                        "source_proposal_id": proposal_id,
+                        "candidate_id": candidate_id,
+                        "operation_type": operation_type,
+                        "request": {
+                            "candidate": candidate,
+                            "requested_by": "editor_operation_result_quick_action",
+                        },
+                        "safety": {
+                            "auto_execute": False,
+                            "creates_pending_proposal_only": True,
+                            "requires_user_confirmation": True,
+                        },
+                    },
+                }
+            )
+        return actions
+
+    @staticmethod
+    def _operation_result_user_view(
+        *,
+        operation_result: dict[str, Any],
+        follow_up: dict[str, Any],
+        quick_actions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        result_summary = dict(operation_result.get("result_summary") or {})
+        operation_type = str(operation_result.get("operation_type") or "editor_operation")
+        needs_attention = bool(result_summary.get("needs_user_attention"))
+        quick_action_count = len(quick_actions)
+        status_hint = "needs_attention" if needs_attention else "completed"
+        if quick_action_count:
+            text = (
+                f"`{operation_type}` result was recorded. The backend found "
+                f"{quick_action_count} safe follow-up Proposal action(s). Review them before execution."
+            )
+        elif needs_attention:
+            text = (
+                f"`{operation_type}` result was recorded and needs attention. "
+                "Check the diagnostics block for missing inputs or repair advice."
+            )
+        else:
+            text = f"`{operation_type}` result was recorded successfully."
+
+        blocks = [
+            {
+                "block_type": "editor_operation_result_summary",
+                "title": "Editor Operation Result",
+                "text": text,
+                "data": result_summary,
+            }
+        ]
+        if follow_up:
+            blocks.append(
+                {
+                    "block_type": "editor_operation_follow_ups",
+                    "title": "Follow-up Candidates",
+                    "text": (
+                        "Ready candidates can be converted into one pending Proposal at a time."
+                        if quick_action_count
+                        else "No ready follow-up Proposal is available yet."
+                    ),
+                    "data": follow_up,
+                }
+            )
+
+        return {
+            "title": "Editor Operation Result",
+            "text": text,
+            "blocks": blocks,
+            "citations_preview": [],
+            "quick_actions": quick_actions,
+            "status_hint": status_hint,
+        }
+
+    @staticmethod
     def prepare_follow_up_proposal_request(
         *,
         source_proposal_id: str,
@@ -5811,7 +5905,23 @@ class EditorOperationService:
                 payload_json=audit_entry["payload"],
             ),
         )
+        follow_up_payload = self.operation_follow_up_candidates(request.proposal_id) or {}
+        follow_up = dict(follow_up_payload.get("follow_up") or {})
+        quick_actions = self._follow_up_quick_actions(proposal_id=request.proposal_id, follow_up=follow_up)
         return {
+            "task": {
+                "task_type": "editor_operation_result",
+                "status": "completed",
+                "finish_reason": "completed",
+                "output_complete": True,
+            },
             "item": operation_result,
             "proposal": self._proposal_payload(proposal),
+            "user_view": self._operation_result_user_view(
+                operation_result=operation_result,
+                follow_up=follow_up,
+                quick_actions=quick_actions,
+            ),
+            "follow_up": follow_up,
+            "follow_up_quick_actions": quick_actions,
         }

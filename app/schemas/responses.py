@@ -229,6 +229,10 @@ class EditorOperationResultResponse(BaseModel):
     success: bool
     item: dict[str, Any]
     proposal: ActionProposal | None = None
+    user_view: dict[str, Any] = Field(default_factory=dict)
+    follow_up: dict[str, Any] = Field(default_factory=dict)
+    follow_up_quick_actions: list[dict[str, Any]] = Field(default_factory=list)
+    task: dict[str, Any] = Field(default_factory=dict)
     errors: list[ErrorDetail] = Field(default_factory=list)
 
 

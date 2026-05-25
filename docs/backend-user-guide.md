@@ -5653,6 +5653,32 @@ read-only. If the UI adds a "Create follow-up Proposal" button, call this
 endpoint with exactly one candidate and render the returned Proposal with the
 existing Proposal card.
 
+## 2026-05-25 Editor Operation Result Follow-up Quick Actions
+
+`POST /api/v1/editor-operations/results` now returns a user-facing result view
+when Blueprint Graph diagnostics or repair advice are available.
+
+Important response fields:
+
+- `user_view.blocks[]` with `block_type=editor_operation_result_summary`.
+- `user_view.blocks[]` with `block_type=editor_operation_follow_ups`.
+- `user_view.quick_actions[]` with
+  `action_type=create_editor_operation_follow_up_proposal` for ready candidates.
+- `follow_up` with the same candidate payload as
+  `GET /api/v1/editor-operations/proposals/{proposal_id}/follow-ups`.
+- `follow_up_quick_actions[]` for clients that prefer data-level access.
+
+Safety boundary:
+
+- Quick actions only create one pending follow-up Proposal.
+- They do not confirm or execute the follow-up.
+- UEAgentTool remains the execution layer after normal user confirmation.
+- If a candidate has missing inputs, no quick action is emitted.
+
+Frontend impact: updated UEAgentTool builds can show the quick-action button
+immediately after reporting an editor-operation result. Older builds can ignore
+the new fields and continue to use the follow-up endpoints manually.
+
 ## 2026-05-24 Workflow Materialization Smoke
 
 The backend now includes a deterministic smoke test for the two materialization
