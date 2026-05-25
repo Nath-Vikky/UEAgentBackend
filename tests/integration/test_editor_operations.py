@@ -857,8 +857,20 @@ def test_blueprint_node_template_result_summary_flags_missing_expected_links(
             "success": True,
             "executed_by": "ue_plugin",
             "result": {
-                "created_nodes": [{"node_name": "K2Node_CallFunction_0"}],
+                "created_node_id": "11111111-2222-3333-4444-555566667777",
+                "created_node_name": "K2Node_CallFunction_0",
+                "entry_node_id": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEFFFFFFFF",
+                "entry_node_name": "EventBeginPlay",
+                "created_nodes": [
+                    {
+                        "node_id": "11111111-2222-3333-4444-555566667777",
+                        "node_name": "K2Node_CallFunction_0",
+                        "node_class": "K2Node_CallFunction",
+                        "role": "print_string",
+                    }
+                ],
                 "linked_pins": [],
+                "linked_pin_summaries": [],
                 "compile_status": "succeeded",
                 "dirty": True,
                 "dirty_packages": ["/Game/Blueprints/BP_PlayerCharacter"],
@@ -899,8 +911,8 @@ def test_blueprint_node_template_result_summary_flags_missing_expected_links(
     assert candidate["operation_type"] == "connect_blueprint_nodes"
     assert candidate["proposal_ready"] is True
     assert candidate["auto_execute"] is False
-    assert candidate["payload"]["source_node_id"] == "EventBeginPlay"
-    assert candidate["payload"]["target_node_id"] == "K2Node_CallFunction_0"
+    assert candidate["payload"]["source_node_id"] == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEFFFFFFFF"
+    assert candidate["payload"]["target_node_id"] == "11111111-2222-3333-4444-555566667777"
     assert candidate["create_request_hint"]["json"]["context"]["source_proposal_id"] == proposal_id
 
     materialized = client.post(

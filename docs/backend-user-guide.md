@@ -5679,6 +5679,34 @@ Frontend impact: updated UEAgentTool builds can show the quick-action button
 immediately after reporting an editor-operation result. Older builds can ignore
 the new fields and continue to use the follow-up endpoints manually.
 
+## 2026-05-25 Blueprint Graph Result Observability v2
+
+UEAgentTool now reports richer structured data for Blueprint Graph operations.
+This improves diagnostics and follow-up proposal generation without expanding
+the write surface.
+
+For `add_blueprint_node_template`, UEAgentTool may now include:
+
+- `created_node_id` and `created_node_name`: the primary created node.
+- `entry_node_id` and `entry_node_name`: the event node used for template links, when applicable.
+- `created_nodes[]`: objects with `node_id`, `node_name`, `node_class`, `title`, `x`, `y`, and `role`.
+- `linked_nodes[]`: objects with the same node shape.
+- `linked_pins[]`: objects with `source` and `target` pin objects. Each pin includes `node_id`, `node_name`, `pin_id`, `pin_name`, `direction`, and `pin_type`.
+- `linked_pin_summaries[]`: readable strings for display-only UI.
+
+For `connect_blueprint_nodes`, UEAgentTool may now include:
+
+- `source_node_id`, `source_node_name`, `source_pin_id`, `source_pin_name`.
+- `target_node_id`, `target_node_name`, `target_pin_id`, `target_pin_name`.
+- `linked_pins[]` and `linked_pin_summaries[]`.
+
+Backend behavior:
+
+- Existing string-only result arrays remain accepted for backward compatibility.
+- Follow-up candidates prefer stable `entry_node_id` and `created_node_id` when present.
+- If stable IDs are missing, the backend still falls back to node names such as `EventBeginPlay` or `K2Node_CallFunction_0`.
+- Result-time quick actions still only create pending Proposals; they never execute graph edits automatically.
+
 ## 2026-05-24 Workflow Materialization Smoke
 
 The backend now includes a deterministic smoke test for the two materialization
