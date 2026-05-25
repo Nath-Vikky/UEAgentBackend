@@ -865,6 +865,7 @@ Code Review collector，成功时 `data.review_scope.read_status = "ok"` 或 `in
 - `GET /api/v1/project-inventory/assets/{asset_id}`：查看单个资产详情
 - `GET /api/v1/project-inventory/code-files?module_name=RushBa`：查询代码文件索引
 - `GET /api/v1/project-inventory/blueprints?parent_class=ACharacter`：查询蓝图资产结构摘要，包括父类、组件、变量、函数、图表、轻量 `graph_summaries` 和接口
+- `GET /api/v1/project-inventory/blueprint-graphs?blueprint_query=Player&graph_name=EventGraph`：聚焦查询蓝图图表摘要，包括 graph/node/pin 只读信息
 - `GET /api/v1/project-inventory/level-actors?level_name=L_Test`：查询当前快照里的关卡 Actor 摘要
 - `GET /api/v1/project-inventory/material-instances?parent_material=/Game/Materials/M_Rock.M_Rock`：查询材质实例参数摘要
 - `POST /api/v1/project-inventory/query`：按自然语言关键词查询资产或代码索引
@@ -2756,9 +2757,12 @@ Agent Chat / Project QA 会把最近项目快照注入：
 GET /api/v1/project-inventory/blueprints
 GET /api/v1/project-inventory/blueprints?query=Player
 GET /api/v1/project-inventory/blueprints?parent_class=ACharacter
+GET /api/v1/project-inventory/blueprint-graphs?blueprint_query=Player&graph_name=EventGraph
 ```
 
 返回项会把 UEAgentTool 快照中的 `blueprint.parent_class`、`components`、`variables`、`functions`、`graphs`、`graph_summaries`、`interfaces`、`editor_flags` 投影为轻量列表，并附带依赖/引用数量预览。`graph_summaries[]` 由 UE 插件自动采集，包含 graph 名称、类型、节点数、pin 数、link 数，以及少量节点/pin 摘要，用于回答“这个蓝图图表里有哪些节点”这类只读项目事实问题。它是只读查询，不经过 Proposal，也不会修改 UE 工程。
+
+如果 UI 或调试脚本只关心图表节点，可以直接使用 `/project-inventory/blueprint-graphs`。它会返回 `kind=blueprint_graph`、`asset_name`、`asset_path`、`graph_name`、`graph_type`、`node_count`、`pin_count`、`link_count` 和可选 `nodes[]`。设置 `include_nodes=false` 可以只拿 graph 级摘要，减少 Debug View 噪声。
 
 自然语言问法现在会尽量兼容更口语的项目事实查询，例如：
 

@@ -342,6 +342,10 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
         "/api/v1/project-inventory/blueprints",
         params={"project_id": "RushBa", "parent_class": "ACharacter"},
     )
+    blueprint_graphs = client.get(
+        "/api/v1/project-inventory/blueprint-graphs",
+        params={"project_id": "RushBa", "blueprint_query": "BP_PlayerCharacter", "graph_name": "EventGraph"},
+    )
     asset_id = static_meshes.json()["items"][0]["asset_id"]
     asset_detail = client.get(f"/api/v1/project-inventory/assets/{asset_id}", params={"project_id": "RushBa"})
     asset_name_query = client.post(
@@ -429,6 +433,12 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert blueprint_item["graph_summaries"][0]["nodes"][0]["title"] == "Event BeginPlay"
     assert blueprint_item["functions"] == ["SetupPlayerInputComponent", "ApplyDamage"]
     assert "FollowCamera" in blueprint_item["components"]
+    assert blueprint_graphs.status_code == 200
+    graph_item = blueprint_graphs.json()["items"][0]
+    assert graph_item["kind"] == "blueprint_graph"
+    assert graph_item["asset_name"] == "BP_PlayerCharacter"
+    assert graph_item["graph_name"] == "EventGraph"
+    assert graph_item["nodes"][1]["title"] == "Print String"
     assert level_actors.status_code == 200
     assert level_actors.json()["items"][0]["actor_label"] == "BP_EnemySpawner_1"
     assert material_instances.status_code == 200

@@ -224,6 +224,59 @@ class ProjectInventoryService:
             ]
         return [self._blueprint_projection(item) for item in items[:limit]]
 
+    def list_blueprint_graphs(
+        self,
+        *,
+        project_id: str | None = None,
+        blueprint_query: str | None = None,
+        graph_name: str | None = None,
+        include_nodes: bool = True,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        blueprints = self.list_blueprints(
+            project_id=project_id,
+            query=blueprint_query,
+            limit=10000,
+        )
+        expected_graph = (graph_name or "").strip().lower()
+        items: list[dict[str, Any]] = []
+        for blueprint in blueprints:
+            graph_items = blueprint.get("graph_summaries") or []
+            if not graph_items:
+                graph_items = [
+                    {"graph_name": str(name), "graph_type": "unknown"}
+                    for name in list(blueprint.get("graphs") or [])
+                    if str(name).strip()
+                ]
+            for graph in graph_items:
+                if not isinstance(graph, dict):
+                    graph = {"graph_name": str(graph), "graph_type": "unknown"}
+                current_name = str(graph.get("graph_name") or graph.get("name") or "").strip()
+                if expected_graph and expected_graph not in current_name.lower():
+                    continue
+                graph_projection = {
+                    "kind": "blueprint_graph",
+                    "asset_id": blueprint.get("asset_id"),
+                    "asset_name": blueprint.get("asset_name"),
+                    "asset_path": blueprint.get("asset_path"),
+                    "asset_type": blueprint.get("asset_type"),
+                    "parent_class": blueprint.get("parent_class"),
+                    "graph_id": graph.get("graph_id"),
+                    "graph_name": current_name,
+                    "graph_type": graph.get("graph_type") or graph.get("type") or "unknown",
+                    "node_count": graph.get("node_count"),
+                    "pin_count": graph.get("pin_count"),
+                    "link_count": graph.get("link_count"),
+                    "max_nodes_returned": graph.get("max_nodes_returned"),
+                    "max_pins_per_node": graph.get("max_pins_per_node"),
+                }
+                if include_nodes:
+                    graph_projection["nodes"] = list(graph.get("nodes") or [])[:32]
+                items.append(graph_projection)
+                if len(items) >= limit:
+                    return items
+        return items
+
     def get_asset(self, asset_id: str, project_id: str | None = None) -> dict[str, Any] | None:
         normalized = asset_id.lower()
         for item in self.list_assets(project_id=project_id, limit=10000):

@@ -89,6 +89,26 @@ def list_inventory_blueprints(
     return ProjectInventoryItemsResponse(success=True, items=items, summary=service.summary(project_id))
 
 
+@router.get("/blueprint-graphs", response_model=ProjectInventoryItemsResponse)
+def list_inventory_blueprint_graphs(
+    project_id: str | None = None,
+    blueprint_query: str | None = None,
+    graph_name: str | None = None,
+    include_nodes: bool = True,
+    limit: int = Query(default=100, ge=1, le=1000),
+    settings: Settings = Depends(get_app_settings),
+) -> ProjectInventoryItemsResponse:
+    service = ProjectInventoryService(settings)
+    items = service.list_blueprint_graphs(
+        project_id=project_id,
+        blueprint_query=blueprint_query,
+        graph_name=graph_name,
+        include_nodes=include_nodes,
+        limit=limit,
+    )
+    return ProjectInventoryItemsResponse(success=True, items=items, summary=service.summary(project_id))
+
+
 @router.get("/level-actors", response_model=ProjectInventoryItemsResponse)
 def list_inventory_level_actors(
     project_id: str | None = None,
