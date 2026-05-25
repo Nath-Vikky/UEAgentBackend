@@ -890,6 +890,15 @@ def test_blueprint_node_template_result_summary_flags_missing_expected_links(
     assert result_body["item"]["result_summary"]["needs_user_attention"] is True
     assert result_body["item"]["result_summary"]["repair_advice"]["status"] == "suggested"
     assert result_body["user_view"]["status_hint"] == "needs_attention"
+    graph_detail_block = next(
+        block
+        for block in result_body["user_view"]["blocks"]
+        if block["block_type"] == "editor_operation_graph_details"
+    )
+    assert graph_detail_block["data"]["schema_version"] == "blueprint_graph_result_details_v1"
+    assert graph_detail_block["data"]["created_node_id"] == "11111111-2222-3333-4444-555566667777"
+    assert graph_detail_block["data"]["entry_node_id"] == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEFFFFFFFF"
+    assert "Primary created node: K2Node_CallFunction_0" in graph_detail_block["data"]["items"][4]
     assert result_body["user_view"]["quick_actions"]
     follow_up_action = result_body["user_view"]["quick_actions"][0]
     assert follow_up_action["payload"]["action_type"] == "create_editor_operation_follow_up_proposal"

@@ -5706,6 +5706,7 @@ Backend behavior:
 - Follow-up candidates prefer stable `entry_node_id` and `created_node_id` when present.
 - If stable IDs are missing, the backend still falls back to node names such as `EventBeginPlay` or `K2Node_CallFunction_0`.
 - Result-time quick actions still only create pending Proposals; they never execute graph edits automatically.
+- Result-time `user_view.blocks[]` can include `block_type=editor_operation_graph_details` with `schema_version=blueprint_graph_result_details_v1`. This block summarizes stable node/pin ids into display-ready `items[]`, while keeping the structured `created_nodes[]`, `linked_pins[]`, and `linked_pin_summaries[]` under `data` for copy/debug use.
 
 ## 2026-05-24 Workflow Materialization Smoke
 
