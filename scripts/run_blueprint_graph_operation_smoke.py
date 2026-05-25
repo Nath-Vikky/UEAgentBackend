@@ -337,6 +337,21 @@ def _error_code(body: dict[str, Any]) -> str | None:
     return str(code) if code else None
 
 
+def _find_user_view_block(body: dict[str, Any], block_type: str) -> dict[str, Any] | None:
+    user_view = body.get("user_view") if isinstance(body, dict) else None
+    blocks = user_view.get("blocks") if isinstance(user_view, dict) else None
+    if not isinstance(blocks, list):
+        return None
+    return next(
+        (
+            block
+            for block in blocks
+            if isinstance(block, dict) and block.get("block_type") == block_type
+        ),
+        None,
+    )
+
+
 def _evaluate_case(client: TestClient, case: dict[str, Any]) -> dict[str, Any]:
     response = client.post("/api/v1/editor-operations/proposals", json=case["request"])
     try:
@@ -407,11 +422,201 @@ def _evaluate_case(client: TestClient, case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _evaluate_result_observability(client: TestClient) -> dict[str, Any]:
+    blueprint_path = "/Game/Blueprints/BP_PlayerCharacter"
+    created_node_id = "11111111-2222-3333-4444-555566667777"
+    entry_node_id = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEFFFFFFFF"
+    created = client.post(
+        "/api/v1/editor-operations/proposals",
+        json=_proposal_payload(
+            "add_blueprint_node_template",
+            {
+                "blueprint_path": blueprint_path,
+                "template_id": "print_string",
+                "graph_name": "EventGraph",
+                "message": "Unlinked diagnostics",
+                "entry_event": "BeginPlay",
+                "compile_after_edit": True,
+            },
+            reason="Blueprint graph result observability smoke check.",
+        ),
+    )
+    try:
+        created_body = created.json()
+    except ValueError:
+        created_body = {"raw_text": created.text}
+
+    proposal_id = (created_body.get("item") or {}).get("proposal_id") if isinstance(created_body, dict) else None
+    checks: list[dict[str, Any]] = [
+        {
+            "name": "proposal.status_code",
+            "ok": created.status_code == 200,
+            "expected": 200,
+            "actual": created.status_code,
+        },
+        {
+            "name": "proposal.proposal_id",
+            "ok": bool(proposal_id),
+            "expected": "present",
+            "actual": "present" if proposal_id else "missing",
+        },
+    ]
+    result_body: dict[str, Any] = {}
+    result_status_code: int | None = None
+    if proposal_id:
+        confirmed = client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm")
+        checks.append(
+            {
+                "name": "confirm.status_code",
+                "ok": confirmed.status_code == 200,
+                "expected": 200,
+                "actual": confirmed.status_code,
+            }
+        )
+        result = client.post(
+            "/api/v1/editor-operations/results",
+            json={
+                "proposal_id": proposal_id,
+                "operation_type": "add_blueprint_node_template",
+                "execution_state": "completed",
+                "success": True,
+                "executed_by": "ue_plugin",
+                "result": {
+                    "created_node_id": created_node_id,
+                    "created_node_name": "K2Node_CallFunction_0",
+                    "entry_node_id": entry_node_id,
+                    "entry_node_name": "EventBeginPlay",
+                    "created_nodes": [
+                        {
+                            "node_id": created_node_id,
+                            "node_name": "K2Node_CallFunction_0",
+                            "node_class": "K2Node_CallFunction",
+                            "role": "print_string",
+                        }
+                    ],
+                    "linked_pins": [],
+                    "linked_pin_summaries": [],
+                    "compile_status": "succeeded",
+                    "dirty": True,
+                    "dirty_packages": [blueprint_path],
+                },
+            },
+        )
+        result_status_code = result.status_code
+        try:
+            result_body = result.json()
+        except ValueError:
+            result_body = {"raw_text": result.text}
+        checks.append(
+            {
+                "name": "result.status_code",
+                "ok": result.status_code == 200,
+                "expected": 200,
+                "actual": result.status_code,
+            }
+        )
+
+    result_summary = ((result_body.get("item") or {}).get("result_summary") or {}) if result_body else {}
+    diagnostics = result_summary.get("operation_diagnostics") or {}
+    graph_detail_block = _find_user_view_block(result_body, "editor_operation_graph_details")
+    graph_detail_data = graph_detail_block.get("data") if isinstance(graph_detail_block, dict) else {}
+    quick_actions = ((result_body.get("user_view") or {}).get("quick_actions") or []) if result_body else []
+    first_quick_action = quick_actions[0] if quick_actions and isinstance(quick_actions[0], dict) else {}
+    first_quick_action_payload = first_quick_action.get("payload") or {}
+    follow_up = result_body.get("follow_up") or {}
+    candidates = follow_up.get("candidates") or []
+    first_candidate = candidates[0] if candidates and isinstance(candidates[0], dict) else {}
+    candidate_payload = first_candidate.get("payload") or {}
+
+    checks.extend(
+        [
+            {
+                "name": "diagnostics.created_node_count",
+                "ok": diagnostics.get("created_node_count") == 1,
+                "expected": 1,
+                "actual": diagnostics.get("created_node_count"),
+            },
+            {
+                "name": "diagnostics.linked_pin_count",
+                "ok": diagnostics.get("linked_pin_count") == 0,
+                "expected": 0,
+                "actual": diagnostics.get("linked_pin_count"),
+            },
+            {
+                "name": "diagnostics.expected_linked_pins_missing",
+                "ok": "expected_linked_pins_missing" in (diagnostics.get("diagnostic_flags") or []),
+                "expected": "present",
+                "actual": diagnostics.get("diagnostic_flags"),
+            },
+            {
+                "name": "graph_detail_block.present",
+                "ok": graph_detail_block is not None,
+                "expected": "present",
+                "actual": "present" if graph_detail_block else "missing",
+            },
+            {
+                "name": "graph_detail_block.schema_version",
+                "ok": graph_detail_data.get("schema_version") == "blueprint_graph_result_details_v1",
+                "expected": "blueprint_graph_result_details_v1",
+                "actual": graph_detail_data.get("schema_version"),
+            },
+            {
+                "name": "graph_detail_block.created_node_id",
+                "ok": graph_detail_data.get("created_node_id") == created_node_id,
+                "expected": created_node_id,
+                "actual": graph_detail_data.get("created_node_id"),
+            },
+            {
+                "name": "graph_detail_block.entry_node_id",
+                "ok": graph_detail_data.get("entry_node_id") == entry_node_id,
+                "expected": entry_node_id,
+                "actual": graph_detail_data.get("entry_node_id"),
+            },
+            {
+                "name": "quick_action.follow_up_proposal",
+                "ok": first_quick_action_payload.get("action_type")
+                == "create_editor_operation_follow_up_proposal",
+                "expected": "create_editor_operation_follow_up_proposal",
+                "actual": first_quick_action_payload.get("action_type"),
+            },
+            {
+                "name": "follow_up.ready_candidate_count",
+                "ok": follow_up.get("ready_candidate_count") == 1,
+                "expected": 1,
+                "actual": follow_up.get("ready_candidate_count"),
+            },
+            {
+                "name": "follow_up.source_node_id",
+                "ok": candidate_payload.get("source_node_id") == entry_node_id,
+                "expected": entry_node_id,
+                "actual": candidate_payload.get("source_node_id"),
+            },
+            {
+                "name": "follow_up.target_node_id",
+                "ok": candidate_payload.get("target_node_id") == created_node_id,
+                "expected": created_node_id,
+                "actual": candidate_payload.get("target_node_id"),
+            },
+        ]
+    )
+    return {
+        "case_id": "result_observability_unlinked_print_string",
+        "ok": all(item["ok"] for item in checks),
+        "status_code": result_status_code,
+        "checks": checks,
+        "proposal_id": proposal_id,
+        "operation_type": "add_blueprint_node_template",
+        "tool_id": "editor_add_blueprint_node_template",
+        "error_code": _error_code(result_body) if result_body else None,
+    }
+
+
 def main() -> int:
     args = _parse_args()
     with _isolated_runtime():
         with TestClient(create_app()) as client:
             results = [_evaluate_case(client, case) for case in _cases()]
+            results.append(_evaluate_result_observability(client))
 
     report = {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -424,7 +629,7 @@ def main() -> int:
         },
         "checks": results,
         "notes": [
-            "This smoke test verifies backend Proposal contracts only.",
+            "This smoke test verifies backend Proposal contracts and one result-time Blueprint graph diagnostics chain.",
             "It does not launch Unreal Editor, execute editor writes, compile Blueprints, or call an LLM.",
             "Rejected cases are intentional guardrail checks.",
         ],

@@ -249,7 +249,7 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `storage/artifacts/evals/*.md` 是本地生成的 Markdown 评估报告，展示 `hit_at_k`、`mrr`、`route_accuracy`、`citation_coverage` 等核心指标。当前评估是 smoke 级别，用于证明“可测、可复现、可继续优化”，不是企业级大规模 benchmark。
 
-`scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它只调用 `POST /api/v1/editor-operations/proposals`，验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
+`scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它会调用 `POST /api/v1/editor-operations/proposals` 验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定；同时会模拟一次 `POST /api/v1/editor-operations/results`，验证 Blueprint Graph 结果诊断、`editor_operation_graph_details` User View block 和 follow-up quick action 是否仍然连通。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
 `scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
