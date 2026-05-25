@@ -864,11 +864,12 @@ Code Review collector，成功时 `data.review_scope.read_status = "ok"` 或 `in
 - `GET /api/v1/project-inventory/assets?asset_type=StaticMesh`：按资产类型查询
 - `GET /api/v1/project-inventory/assets/{asset_id}`：查看单个资产详情
 - `GET /api/v1/project-inventory/code-files?module_name=RushBa`：查询代码文件索引
+- `GET /api/v1/project-inventory/blueprints?parent_class=ACharacter`：查询蓝图资产结构摘要，包括父类、组件、变量、函数、图表和接口
 - `GET /api/v1/project-inventory/level-actors?level_name=L_Test`：查询当前快照里的关卡 Actor 摘要
 - `GET /api/v1/project-inventory/material-instances?parent_material=/Game/Materials/M_Rock.M_Rock`：查询材质实例参数摘要
 - `POST /api/v1/project-inventory/query`：按自然语言关键词查询资产或代码索引
 
-Project Inventory 已经接入 Agent Chat / Project QA。用户问“工程里有哪些资产”“有哪些开启 Nanite 的静态网格体”“某模块有哪些 C++ 文件”“当前关卡有哪些 Actor”“MI_Player 有哪些材质参数”这类项目事实问题时，后端会先查询项目快照，并把命中的资产 / 代码 / 关卡 Actor / 材质实例摘要并入回答上下文。LLM 不可用时也会返回基于快照的基础回答。
+Project Inventory 已经接入 Agent Chat / Project QA。用户问“工程里有哪些资产”“有哪些开启 Nanite 的静态网格体”“某模块有哪些 C++ 文件”“当前项目有哪些蓝图”“BP_PlayerCharacter 有哪些变量/函数/图表”“当前关卡有哪些 Actor”“MI_Player 有哪些材质参数”这类项目事实问题时，后端会先查询项目快照，并把命中的资产 / 代码 / 蓝图结构 / 关卡 Actor / 材质实例摘要并入回答上下文。LLM 不可用时也会返回基于快照的基础回答。
 
 兼容边界：
 
@@ -2748,6 +2749,16 @@ Agent Chat / Project QA 会把最近项目快照注入：
 - `debug_view.context_bundle.project_inventory_context.top_material_instances`
 
 因此用户问“当前项目有哪些蓝图资产”“这个蓝图有哪些组件/变量”“当前文件属于哪个模块”“当前关卡有哪些 Actor”“某个材质实例有哪些参数”时，后端可以优先用项目快照回答；如果问题包含“为什么、怎么做、建议、风险”，再组合知识库和 LLM 综合。
+
+如果 UI 或调试脚本需要直接展示蓝图结构列表，可以使用：
+
+```http
+GET /api/v1/project-inventory/blueprints
+GET /api/v1/project-inventory/blueprints?query=Player
+GET /api/v1/project-inventory/blueprints?parent_class=ACharacter
+```
+
+返回项会把 UEAgentTool 快照中的 `blueprint.parent_class`、`components`、`variables`、`functions`、`graphs`、`interfaces`、`editor_flags` 投影为轻量列表，并附带依赖/引用数量预览。它是只读查询，不经过 Proposal，也不会修改 UE 工程。
 
 自然语言问法现在会尽量兼容更口语的项目事实查询，例如：
 

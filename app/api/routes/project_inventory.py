@@ -71,6 +71,24 @@ def list_inventory_code_files(
     return ProjectInventoryItemsResponse(success=True, items=items, summary=service.summary(project_id))
 
 
+@router.get("/blueprints", response_model=ProjectInventoryItemsResponse)
+def list_inventory_blueprints(
+    project_id: str | None = None,
+    query: str | None = None,
+    parent_class: str | None = None,
+    limit: int = Query(default=200, ge=1, le=2000),
+    settings: Settings = Depends(get_app_settings),
+) -> ProjectInventoryItemsResponse:
+    service = ProjectInventoryService(settings)
+    items = service.list_blueprints(
+        project_id=project_id,
+        query=query,
+        parent_class=parent_class,
+        limit=limit,
+    )
+    return ProjectInventoryItemsResponse(success=True, items=items, summary=service.summary(project_id))
+
+
 @router.get("/level-actors", response_model=ProjectInventoryItemsResponse)
 def list_inventory_level_actors(
     project_id: str | None = None,

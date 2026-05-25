@@ -200,6 +200,30 @@ class ProjectInventoryService:
             items = [item for item in items if self._asset_matches(item, needle)]
         return items[:limit]
 
+    def list_blueprints(
+        self,
+        *,
+        project_id: str | None = None,
+        query: str | None = None,
+        parent_class: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        snapshot = self._resolve_snapshot(project_id)
+        if not snapshot:
+            return []
+        items = [item for item in list(snapshot["assets"]) if self._is_blueprint_asset(item)]
+        if query:
+            needle = query.lower()
+            items = [item for item in items if self._asset_matches(item, needle)]
+        if parent_class:
+            expected = parent_class.lower()
+            items = [
+                item
+                for item in items
+                if expected in str(self._blueprint_parent_class(item) or "").lower()
+            ]
+        return [self._blueprint_projection(item) for item in items[:limit]]
+
     def get_asset(self, asset_id: str, project_id: str | None = None) -> dict[str, Any] | None:
         normalized = asset_id.lower()
         for item in self.list_assets(project_id=project_id, limit=10000):
@@ -785,14 +809,38 @@ class ProjectInventoryService:
         for item in assets:
             if not self._is_blueprint_asset(item):
                 continue
-            parent_class = str(
-                item.get("parent_class")
-                or (_as_dict(item.get("blueprint")).get("parent_class"))
-                or (_as_dict(item.get("settings")).get("parent_class"))
-                or "Unknown"
-            )
+            parent_class = str(self._blueprint_parent_class(item) or "Unknown")
             counts[parent_class] = counts.get(parent_class, 0) + 1
         return counts
+
+    @staticmethod
+    def _blueprint_parent_class(item: dict[str, Any]) -> Any:
+        blueprint = _as_dict(item.get("blueprint"))
+        settings = _as_dict(item.get("settings"))
+        return item.get("parent_class") or blueprint.get("parent_class") or settings.get("parent_class")
+
+    def _blueprint_projection(self, item: dict[str, Any]) -> dict[str, Any]:
+        blueprint = _as_dict(item.get("blueprint"))
+        return {
+            "asset_id": item.get("asset_id"),
+            "asset_name": item.get("asset_name"),
+            "asset_type": item.get("asset_type"),
+            "asset_path": item.get("asset_path"),
+            "package_path": item.get("package_path"),
+            "parent_class": self._blueprint_parent_class(item),
+            "native_class": item.get("native_class") or blueprint.get("native_class"),
+            "generated_class": item.get("generated_class") or blueprint.get("generated_class"),
+            "components": list(item.get("components") or blueprint.get("components") or [])[:64],
+            "variables": list(item.get("variables") or blueprint.get("variables") or [])[:64],
+            "functions": list(item.get("functions") or blueprint.get("functions") or [])[:64],
+            "graphs": list(item.get("graphs") or blueprint.get("graphs") or [])[:32],
+            "interfaces": list(item.get("interfaces") or blueprint.get("interfaces") or [])[:32],
+            "editor_flags": _as_dict(item.get("editor_flags") or blueprint.get("editor_flags")),
+            "dependency_count": len(item.get("dependencies") or []),
+            "referencer_count": len(item.get("referencers") or []),
+            "dependency_preview": list(item.get("dependencies") or [])[:8],
+            "referencer_preview": list(item.get("referencers") or [])[:8],
+        }
 
     def _compact_asset(self, item: dict[str, Any]) -> dict[str, Any]:
         settings = _as_dict(item.get("settings"))
