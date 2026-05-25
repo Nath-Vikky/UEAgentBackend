@@ -267,6 +267,29 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
                         "variables": ["Health", "MoveSpeed"],
                         "functions": ["SetupPlayerInputComponent", "ApplyDamage"],
                         "graphs": ["EventGraph"],
+                        "graph_summaries": [
+                            {
+                                "graph_name": "EventGraph",
+                                "graph_type": "event",
+                                "node_count": 2,
+                                "pin_count": 5,
+                                "link_count": 1,
+                                "nodes": [
+                                    {
+                                        "node_id": "event-begin-play",
+                                        "node_name": "K2Node_Event_0",
+                                        "node_class": "K2Node_Event",
+                                        "title": "Event BeginPlay",
+                                    },
+                                    {
+                                        "node_id": "print-string",
+                                        "node_name": "K2Node_CallFunction_0",
+                                        "node_class": "K2Node_CallFunction",
+                                        "title": "Print String",
+                                    },
+                                ],
+                            }
+                        ],
                     },
                 },
             ],
@@ -402,6 +425,8 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert blueprint_item["asset_name"] == "BP_PlayerCharacter"
     assert blueprint_item["parent_class"] == "ACharacter"
     assert blueprint_item["graphs"] == ["EventGraph"]
+    assert blueprint_item["graph_summaries"][0]["node_count"] == 2
+    assert blueprint_item["graph_summaries"][0]["nodes"][0]["title"] == "Event BeginPlay"
     assert blueprint_item["functions"] == ["SetupPlayerInputComponent", "ApplyDamage"]
     assert "FollowCamera" in blueprint_item["components"]
     assert level_actors.status_code == 200

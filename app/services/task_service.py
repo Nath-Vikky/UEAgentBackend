@@ -100,6 +100,38 @@ def _component_preview(components: Any, *, limit: int = 5) -> str:
     return ", ".join(preview) + suffix
 
 
+def _graph_summary_preview(graphs: Any, *, limit: int = 4) -> str:
+    if not isinstance(graphs, list) or not graphs:
+        return "n/a"
+    preview: list[str] = []
+    for graph in graphs[:limit]:
+        if isinstance(graph, dict):
+            graph_name = graph.get("graph_name") or graph.get("name") or "UnknownGraph"
+            graph_type = graph.get("graph_type") or graph.get("type")
+            node_count = graph.get("node_count")
+            link_count = graph.get("link_count")
+            node_titles: list[str] = []
+            for node in list(graph.get("nodes") or [])[:4]:
+                if isinstance(node, dict):
+                    title = node.get("title") or node.get("node_name") or node.get("node_class")
+                    if title:
+                        node_titles.append(str(title))
+            bits = [str(graph_name)]
+            if graph_type:
+                bits.append(f"type={graph_type}")
+            if node_count is not None:
+                bits.append(f"nodes={node_count}")
+            if link_count is not None:
+                bits.append(f"links={link_count}")
+            if node_titles:
+                bits.append(f"sample_nodes={', '.join(node_titles)}")
+            preview.append(" | ".join(bits))
+        else:
+            preview.append(str(graph))
+    suffix = "" if len(graphs) <= limit else f" (+{len(graphs) - limit})"
+    return "; ".join(preview) + suffix
+
+
 def _material_parameter_value(param: dict[str, Any]) -> Any:
     for key in ("value", "texture_path", "texture", "default_value", "default", "asset_path"):
         if key in param and param[key] not in (None, "", [], {}):
@@ -289,12 +321,14 @@ class TaskService:
                     )
                 )
                 continue
+            blueprint = item.get("blueprint") if isinstance(item.get("blueprint"), dict) else {}
             inventory_lines.append(
                 "\n".join(
                     [
                         f"[I{index}] Asset: {item.get('asset_name') or item.get('asset_path')}",
                         f"Type: {item.get('asset_type') or 'Unknown'}",
                         f"Path: {item.get('asset_path') or 'n/a'}",
+                        f"Blueprint graphs: {_graph_summary_preview(item.get('graph_summaries') or blueprint.get('graph_summaries'))}",
                         f"Settings: {dumps_pretty(item.get('settings') or {})[:350]}",
                         f"Properties: {dumps_pretty(item.get('properties') or {})[:350]}",
                     ]
@@ -442,6 +476,9 @@ class TaskService:
                 if isinstance(value, list) and value:
                     preview = ", ".join(str(entry) for entry in value[:5])
                     setting_bits.append(f"{label}={preview}")
+            graph_summary_preview = _graph_summary_preview(item.get("graph_summaries") or blueprint.get("graph_summaries"))
+            if graph_summary_preview != "n/a":
+                setting_bits.append(f"graph_summaries={graph_summary_preview}")
             lines.append(
                 f"- {item.get('asset_name') or item.get('asset_path')} | "
                 f"type={item.get('asset_type') or 'Unknown'} | path={item.get('asset_path')}"

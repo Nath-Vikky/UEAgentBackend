@@ -520,6 +520,13 @@ class ProjectInventoryService:
                 _first_present(raw.get("functions"), blueprint.get("functions"), properties.get("functions"))
             )
             graphs = _as_list(_first_present(raw.get("graphs"), blueprint.get("graphs"), properties.get("graphs")))
+            graph_summaries = _as_list(
+                _first_present(
+                    raw.get("graph_summaries"),
+                    blueprint.get("graph_summaries"),
+                    properties.get("graph_summaries"),
+                )
+            )
             interfaces = _as_list(
                 _first_present(raw.get("interfaces"), blueprint.get("interfaces"), properties.get("interfaces"))
             )
@@ -545,7 +552,7 @@ class ProjectInventoryService:
                 )
                 or ""
             ).strip()
-            if blueprint or components or variables or functions or graphs or parent_class or native_class:
+            if blueprint or components or variables or functions or graphs or graph_summaries or parent_class or native_class:
                 blueprint = {
                     **blueprint,
                     "parent_class": parent_class or blueprint.get("parent_class"),
@@ -554,6 +561,7 @@ class ProjectInventoryService:
                     "variables": variables,
                     "functions": functions,
                     "graphs": graphs,
+                    "graph_summaries": graph_summaries,
                     "interfaces": interfaces,
                     "editor_flags": editor_flags,
                 }
@@ -575,6 +583,7 @@ class ProjectInventoryService:
                     "variables": variables,
                     "functions": functions,
                     "graphs": graphs,
+                    "graph_summaries": graph_summaries,
                     "interfaces": interfaces,
                     "editor_flags": editor_flags,
                     "parent_class": parent_class,
@@ -794,6 +803,7 @@ class ProjectInventoryService:
                 "variables",
                 "functions",
                 "graphs",
+                "graph_summaries",
                 "interfaces",
                 "parent_class",
                 "native_class",
@@ -834,6 +844,7 @@ class ProjectInventoryService:
             "variables": list(item.get("variables") or blueprint.get("variables") or [])[:64],
             "functions": list(item.get("functions") or blueprint.get("functions") or [])[:64],
             "graphs": list(item.get("graphs") or blueprint.get("graphs") or [])[:32],
+            "graph_summaries": list(item.get("graph_summaries") or blueprint.get("graph_summaries") or [])[:16],
             "interfaces": list(item.get("interfaces") or blueprint.get("interfaces") or [])[:32],
             "editor_flags": _as_dict(item.get("editor_flags") or blueprint.get("editor_flags")),
             "dependency_count": len(item.get("dependencies") or []),
@@ -856,6 +867,7 @@ class ProjectInventoryService:
             "variables": list(item.get("variables") or blueprint.get("variables") or [])[:12],
             "functions": list(item.get("functions") or blueprint.get("functions") or [])[:12],
             "graphs": list(item.get("graphs") or blueprint.get("graphs") or [])[:8],
+            "graph_summaries": list(item.get("graph_summaries") or blueprint.get("graph_summaries") or [])[:4],
             "settings": {
                 key: value
                 for key, value in settings.items()
@@ -975,6 +987,7 @@ class ProjectInventoryService:
             "variables": item.get("variables") or blueprint.get("variables") or [],
             "functions": item.get("functions") or blueprint.get("functions") or [],
             "graphs": item.get("graphs") or blueprint.get("graphs") or [],
+            "graph_summaries": item.get("graph_summaries") or blueprint.get("graph_summaries") or [],
             "interfaces": item.get("interfaces") or blueprint.get("interfaces") or [],
             "dependencies": item.get("dependencies") or [],
             "referencers": item.get("referencers") or [],
@@ -1418,6 +1431,7 @@ class ProjectInventoryService:
             "variables": ("variable", "变量"),
             "functions": ("function", "函数"),
             "graphs": ("graph", "图表", "蓝图图"),
+            "graph_summaries": ("node", "nodes", "pin", "pins", "节点", "连线", "蓝图节点", "图表节点"),
             "interfaces": ("interface", "接口"),
             "parent_class": ("parent class", "parent_class", "父类"),
             "native_class": ("native class", "native_class", "原生类", "生成类"),
