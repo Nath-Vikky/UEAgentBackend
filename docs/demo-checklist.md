@@ -47,12 +47,14 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 .\.venv\Scripts\python.exe -m pytest tests\unit tests\contract -q
 .\.venv\Scripts\python.exe scripts\run_blueprint_graph_operation_smoke.py
 .\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py
+.\.venv\Scripts\python.exe scripts\run_editor_workflow_materialization_smoke.py
 ```
 
 Expected:
 
 - Blueprint graph proposal/result smoke: `14/14 passed`
 - Agent Chat editor-operation smoke: `13/13 passed`
+- Editor workflow materialization smoke: `4/4 passed`
 
 ## 4. Demo The Agent Features
 

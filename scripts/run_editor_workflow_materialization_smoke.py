@@ -109,6 +109,51 @@ def _run_workflow_step_materialization(client: TestClient) -> dict[str, Any]:
     }
 
 
+def _run_delay_workflow_step_materialization(client: TestClient) -> dict[str, Any]:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add a Print String after 2 seconds and compile",
+            "workflow_type": "blueprint_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "message": "Ready after delay",
+                "delay_seconds": 2,
+            },
+        },
+    )
+    plan_body = plan_response.json()
+    plan = dict(plan_body.get("workflow_plan") or {})
+    step = list(plan.get("steps") or [{}])[0]
+    proposal_response = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan.get("plan_id"),
+            "step": step,
+            "requested_by": "workflow_materialization_smoke",
+        },
+    )
+    body = proposal_response.json()
+    operation_payload = body.get("proposal", {}).get("operation", {}).get("operation_payload", {})
+    step_payload = step.get("payload", {})
+    checks = [
+        _check("plan_status_code", 200, plan_response.status_code),
+        _check("proposal_status_code", 200, proposal_response.status_code),
+        _check("step_template_id", "delay_print_string", step_payload.get("template_id")),
+        _check("step_delay_seconds", 2.0, step_payload.get("delay_seconds")),
+        _check("operation_type", "add_blueprint_node_template", body.get("proposal", {}).get("operation", {}).get("operation_type")),
+        _check("proposal_template_id", "delay_print_string", operation_payload.get("template_id")),
+        _check("proposal_delay_seconds", 2.0, operation_payload.get("delay_seconds")),
+        _check("confirmation_state", "pending", body.get("proposal", {}).get("item", {}).get("confirmation", {}).get("state")),
+        _check("auto_execute", False, body.get("workflow_step", {}).get("auto_execute")),
+    ]
+    return {
+        "case_id": "delay_workflow_step_to_proposal",
+        "ok": all(item["ok"] for item in checks),
+        "checks": checks,
+    }
+
+
 def _run_workflow_step_rejection(client: TestClient) -> dict[str, Any]:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",
@@ -201,6 +246,7 @@ def main() -> int:
     with _isolated_runtime(), TestClient(create_app()) as client:
         cases = [
             _run_workflow_step_materialization(client),
+            _run_delay_workflow_step_materialization(client),
             _run_workflow_step_rejection(client),
             _run_follow_up_materialization(client),
         ]

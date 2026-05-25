@@ -5747,6 +5747,7 @@ storage/artifacts/smoke/editor-workflow-materialization-smoke-latest.json
 Covered cases:
 
 - `workflow_step_to_proposal`: workflow plan step becomes a pending Proposal.
+- `delay_workflow_step_to_proposal`: delay-print workflow step keeps `template_id=delay_print_string` and `delay_seconds` when it becomes a pending Proposal.
 - `workflow_step_rejects_missing_inputs`: non-ready workflow step is rejected.
 - `follow_up_candidate_to_proposal`: Blueprint repair follow-up candidate becomes a pending Proposal.
 
@@ -5754,8 +5755,8 @@ Expected result:
 
 ```text
 overall_ok = true
-case_count = 3
-passed = 3
+case_count = 4
+passed = 4
 failed = 0
 ```
 
