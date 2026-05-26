@@ -2766,6 +2766,8 @@ GET /api/v1/project-inventory/blueprint-graphs?blueprint_query=Player&graph_name
 
 UEAgentTool 的 Agent Chat / Project QA 工作区已经提供两个只读辅助按钮：`Sync Inventory Now` 会重新提交 Project Inventory，`Show Blueprint Graphs` 会优先按内容浏览器当前选中的 Blueprint 查询；如果没有选中 Blueprint，则调用 `/api/v1/project-inventory/blueprint-graphs?include_nodes=true&limit=20` 并在聊天区显示全项目图表摘要。它们只读取/提交快照，不创建 Proposal，也不会修改蓝图。
 
+Agent Chat 路由也会把英文图表节点问题识别为 Project Inventory 查询，例如 `In the current project, what nodes are in BP_PlayerCharacter EventGraph?`。这类问题会优先使用 `graph_summaries` 中的节点标题、节点数、pin 数和连线数，而不是让 LLM 根据通用 UE 知识猜测当前工程内容。
+
 自然语言问法现在会尽量兼容更口语的项目事实查询，例如：
 
 - `当前关卡摆了哪些物体？`

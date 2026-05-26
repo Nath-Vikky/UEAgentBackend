@@ -149,6 +149,22 @@ def test_agent_chat_with_current_level_actor_list_routes_to_inventory() -> None:
     assert routing["route"]["project_inventory_query"] is True
 
 
+def test_agent_chat_with_blueprint_graph_node_question_routes_to_inventory() -> None:
+    request = _request(
+        content="In the current project, what nodes are in BP_PlayerCharacter EventGraph?",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["project_inventory_query"] is True
+
+
 def test_agent_chat_with_chinese_level_actor_list_routes_to_inventory() -> None:
     content = "\u5f53\u524d\u5173\u5361\u6709\u54ea\u4e9bActor"
     request = _request(

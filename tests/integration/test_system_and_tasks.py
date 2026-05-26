@@ -595,6 +595,82 @@ def test_agent_chat_project_asset_listing_selects_inventory_tool(client: TestCli
     assert "BP_EnemySpawner" in body["assistant_message"]
 
 
+def test_agent_chat_blueprint_graph_question_uses_inventory_graph_summaries(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "GraphQuestionProject",
+            "project_name": "GraphQuestionProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                    "asset_name": "BP_PlayerCharacter",
+                    "asset_type": "Blueprint",
+                    "blueprint": {
+                        "parent_class": "ACharacter",
+                        "graphs": ["EventGraph"],
+                        "graph_summaries": [
+                            {
+                                "graph_name": "EventGraph",
+                                "graph_type": "event",
+                                "node_count": 2,
+                                "pin_count": 5,
+                                "link_count": 1,
+                                "nodes": [
+                                    {
+                                        "node_id": "event-begin-play",
+                                        "node_name": "K2Node_Event_0",
+                                        "node_class": "K2Node_Event",
+                                        "title": "Event BeginPlay",
+                                    },
+                                    {
+                                        "node_id": "print-string",
+                                        "node_name": "K2Node_CallFunction_0",
+                                        "node_class": "K2Node_CallFunction",
+                                        "title": "Print String",
+                                    },
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+    )
+    query = "In the current project, what nodes are in BP_PlayerCharacter EventGraph?"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_blueprint_graph_question_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {"project_name": "GraphQuestionProject", "active_panel": "AgentChat"},
+            "payload": {"user_query": query},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    assert body["intent"]["route_type"] == "project_qa"
+    assert body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
+    assert body["data"]["inventory"]["items"][0]["asset_name"] == "BP_PlayerCharacter"
+    assert body["data"]["inventory"]["items"][0]["blueprint"]["graph_summaries"][0]["node_count"] == 2
+    assert "EventGraph" in body["assistant_message"]
+    assert "Event BeginPlay" in body["assistant_message"]
+    assert "Print String" in body["assistant_message"]
+
+
 def test_agent_chat_context_bundle_includes_inventory_selected_asset_details(client: TestClient) -> None:
     snapshot = client.post(
         "/api/v1/project-inventory/snapshot",
