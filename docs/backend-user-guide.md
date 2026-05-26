@@ -2764,6 +2764,8 @@ GET /api/v1/project-inventory/blueprint-graphs?blueprint_query=Player&graph_name
 
 如果 UI 或调试脚本只关心图表节点，可以直接使用 `/project-inventory/blueprint-graphs`。它会返回 `kind=blueprint_graph`、`asset_name`、`asset_path`、`graph_name`、`graph_type`、`node_count`、`pin_count`、`link_count` 和可选 `nodes[]`。设置 `include_nodes=false` 可以只拿 graph 级摘要，减少 Debug View 噪声。
 
+UEAgentTool 的 Agent Chat / Project QA 工作区已经提供两个只读辅助按钮：`Sync Inventory Now` 会重新提交 Project Inventory，`Show Blueprint Graphs` 会调用 `/api/v1/project-inventory/blueprint-graphs?include_nodes=true&limit=20` 并在聊天区显示图表摘要。它们只读取/提交快照，不创建 Proposal，也不会修改蓝图。
+
 自然语言问法现在会尽量兼容更口语的项目事实查询，例如：
 
 - `当前关卡摆了哪些物体？`
