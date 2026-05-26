@@ -176,6 +176,21 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_print_string_eventgraph_defaults_beginplay",
+            "request": _chat_request(
+                case_id="chat_print_string_eventgraph_defaults_beginplay",
+                query="Add a Print String node to BP_TestActor EventGraph",
+                selected_assets=["/Game/Blueprints/BP_TestActor"],
+            ),
+            "expected_operation_type": "add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "print_string",
+                "blueprint_path": "/Game/Blueprints/BP_TestActor",
+                "graph_name": "EventGraph",
+                "entry_event": "BeginPlay",
+            },
+        },
+        {
             "case_id": "chat_compile_inventory_blueprint",
             "request": _chat_request(
                 case_id="chat_compile_inventory_blueprint",
