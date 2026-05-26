@@ -724,6 +724,29 @@ class EditorOperationService:
         return default
 
     @staticmethod
+    def _detect_unconnected_blueprint_node_intent(query_text: str) -> bool:
+        query_lower = query_text.lower()
+        compact = query_lower.replace("_", "").replace("-", "").replace(" ", "")
+        return any(
+            token in query_lower or token in compact
+            for token in (
+                "unconnected",
+                "unlinked",
+                "standalone",
+                "without connection",
+                "do not connect",
+                "dont connect",
+                "no link",
+                "no connection",
+                "\u4e0d\u8fde\u63a5",
+                "\u4e0d\u8fde\u7ebf",
+                "\u4ec5\u521b\u5efa",
+                "\u53ea\u521b\u5efa",
+                "\u4e0d\u8981\u8fde",
+            )
+        )
+
+    @staticmethod
     def _detect_blueprint_event_name_from_request(
         request: UnifiedTaskRequest,
         query_text: str,
@@ -2732,21 +2755,29 @@ class EditorOperationService:
                 query_text,
                 context_bundle,
             )
+            graph_name = EditorOperationService._detect_blueprint_graph_name_from_request(
+                request,
+                query_text,
+            )
+            entry_event_default = (
+                "BeginPlay"
+                if graph_name == "EventGraph"
+                and not EditorOperationService._detect_unconnected_blueprint_node_intent(query_text)
+                else ""
+            )
             return EditorOperationProposalRequest(
                 operation_type="add_blueprint_node_template",
                 payload={
                     "blueprint_path": blueprint_path or "",
                     "template_id": "print_string",
-                    "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
-                        request,
-                        query_text,
-                    ),
+                    "graph_name": graph_name,
                     "message": request.payload.get("message")
                     or request.payload.get("string_value")
                     or "Hello from UEAgent",
                     "entry_event": EditorOperationService._detect_blueprint_entry_event_from_request(
                         request,
                         query_text,
+                        default=entry_event_default,
                     ),
                     "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
                 },

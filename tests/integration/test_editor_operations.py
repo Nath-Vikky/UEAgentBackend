@@ -2204,6 +2204,79 @@ def test_agent_chat_builds_print_string_template_for_beginplay_text(client: Test
     assert payload["entry_event"] == "BeginPlay"
 
 
+def test_agent_chat_defaults_eventgraph_print_string_to_beginplay(client: TestClient) -> None:
+    query = "Add a Print String node to BP_TestActor EventGraph"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_blueprint_print_eventgraph_default_beginplay_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_TestActor"
+    assert payload["template_id"] == "print_string"
+    assert payload["graph_name"] == "EventGraph"
+    assert payload["entry_event"] == "BeginPlay"
+
+
+def test_agent_chat_keeps_unconnected_eventgraph_print_string_unlinked(client: TestClient) -> None:
+    query = "Add an unconnected Print String node to BP_TestActor EventGraph"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_blueprint_print_eventgraph_unconnected_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["template_id"] == "print_string"
+    assert payload["graph_name"] == "EventGraph"
+    assert payload["entry_event"] == ""
+
+
 def test_agent_chat_builds_delay_print_string_template(client: TestClient) -> None:
     query = "给 BP_TestActor 的 BeginPlay 延迟 2 秒后添加 Print String 节点"
     response = client.post(
