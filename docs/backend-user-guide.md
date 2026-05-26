@@ -5766,3 +5766,44 @@ failed = 0
 
 This smoke test does not launch UE, execute editor writes, compile Blueprints,
 or call an LLM. It only verifies backend contracts and safety boundaries.
+
+## 2026-05-26 Project Inventory Chat Smoke
+
+The backend also includes a deterministic no-UE/no-LLM smoke test for the
+Project Inventory -> Agent Chat grounding path:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_project_inventory_chat_smoke.py
+```
+
+It seeds an isolated Project Inventory snapshot with one Blueprint graph summary,
+calls:
+
+```http
+GET  /api/v1/project-inventory/blueprint-graphs
+POST /api/v1/chat/runs
+```
+
+and verifies that a natural-language graph question is routed to
+`query_project_inventory` and answered with `EventGraph`, `Event BeginPlay`,
+and `Print String` from the submitted snapshot.
+
+Report output defaults to:
+
+```text
+storage/artifacts/smoke/project-inventory-chat-smoke-latest.json
+```
+
+Expected result:
+
+```text
+overall_ok = true
+case_count = 1
+passed = 1
+failed = 0
+```
+
+This smoke test does not launch Unreal Editor, execute editor writes, compile
+Blueprints, or call an LLM. It only proves that current-project graph facts can
+flow from Project Inventory into Agent Chat without relying on generic UE
+knowledge.

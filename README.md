@@ -173,6 +173,7 @@ still requires normal user confirmation before UEAgentTool executes anything.
 .\.venv\Scripts\python.exe scripts\run_blueprint_graph_operation_smoke.py
 .\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py
 .\.venv\Scripts\python.exe scripts\run_editor_workflow_materialization_smoke.py
+.\.venv\Scripts\python.exe scripts\run_project_inventory_chat_smoke.py
 ```
 
 评测报告默认生成到 `storage/artifacts/`，不作为公开文档提交。
