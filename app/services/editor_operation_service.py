@@ -2106,7 +2106,7 @@ class EditorOperationService:
                 context=request.context.model_dump(mode="json"),
             )
 
-        wants_actor_metadata = any(
+        actor_metadata_target_signal = any(
             token in query_lower or token in query_text
             for token in (
                 "actor",
@@ -2119,25 +2119,27 @@ class EditorOperationService:
                 "这个actor",
                 "那个actor",
             )
-        ) and any(
+        )
+        actor_metadata_field_signal = bool(
+            re.search(r"\b(?:label|name|folder|tag|tags|metadata|rename)\b", query_lower)
+        ) or any(
             token in query_lower or token in query_text
-            for token in (
-                "label",
-                "name",
-                "folder",
-                "tag",
-                "tags",
-                "metadata",
-                "rename",
-                "标签",
-                "名称",
-                "名字",
-                "文件夹",
-                "目录",
+            for token in ("标签", "名称", "名字", "文件夹", "目录")
+        )
+        actor_metadata_action_signal = bool(
+            re.search(r"\b(?:set|change|rename|add|remove|update)\b", query_lower)
+        ) or any(
+            token in query_lower or token in query_text
+            for token in ("设置", "改成", "改为", "添加", "移除", "删除")
+        )
+        wants_actor_metadata = (
+            actor_metadata_target_signal
+            and actor_metadata_field_signal
+            and actor_metadata_action_signal
+            and not any(
+                token in query_lower or token in query_text
+                for token in ("print string", "printstring", "打印字符串", "打印文本")
             )
-        ) and any(
-            token in query_lower or token in query_text
-            for token in ("set", "change", "rename", "add", "remove", "update", "设置", "改成", "改为", "添加", "移除", "删除")
         )
         if wants_actor_metadata:
             actor_reference = EditorOperationService._detect_actor_reference_from_request(
@@ -2504,7 +2506,19 @@ class EditorOperationService:
         )
         add_signal = any(
             token in query_lower or token in query_text
-            for token in ("add", "create", "\u653e", "\u6dfb\u52a0", "\u521b\u5efa")
+            for token in (
+                "add",
+                "create",
+                "insert",
+                "\u653e",
+                "\u6dfb\u52a0",
+                "\u52a0\u4e0a",
+                "\u52a0\u4e00\u4e2a",
+                "\u52a0\u4e2a",
+                "\u589e\u52a0",
+                "\u63d2\u5165",
+                "\u521b\u5efa",
+            )
         )
         branch_signal = any(
             token in query_lower or token in query_text
@@ -2747,7 +2761,22 @@ class EditorOperationService:
         wants_blueprint_print_string = (
             ("蓝图" in query_text or "blueprint" in query_lower or "bp_" in query_lower)
             and any(token in query_lower or token in query_text for token in ("print string", "printstring", "打印字符串", "打印文本"))
-            and any(token in query_lower or token in query_text for token in ("add", "create", "放", "添加", "创建"))
+            and any(
+                token in query_lower or token in query_text
+                for token in (
+                    "add",
+                    "create",
+                    "insert",
+                    "放",
+                    "添加",
+                    "加上",
+                    "加一个",
+                    "加个",
+                    "增加",
+                    "插入",
+                    "创建",
+                )
+            )
         )
         if wants_blueprint_print_string:
             blueprint_path = EditorOperationService._detect_blueprint_path_from_request(

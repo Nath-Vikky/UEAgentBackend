@@ -251,7 +251,7 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它会调用 `POST /api/v1/editor-operations/proposals` 验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`delay_print_string`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定；同时会模拟一次 `POST /api/v1/editor-operations/results`，验证 Blueprint Graph 结果诊断、`editor_operation_graph_details` User View block 和 follow-up quick action 是否仍然连通。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
-`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`（含普通 PrintString 与 Delay -> PrintString 模板）、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
+`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`（含普通 PrintString、Delay -> PrintString，以及中英文 `BP_ProjectSpecificName` 这类真实命名用例）、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
@@ -5808,3 +5808,21 @@ This smoke test does not launch Unreal Editor, execute editor writes, compile
 Blueprints, or call an LLM. It only proves that current-project graph facts can
 flow from Project Inventory into Agent Chat without relying on generic UE
 knowledge.
+
+## 2026-05-27 Agent Chat Editor Operation Routing Fix
+
+本轮修复了自由聊天触发 Blueprint Graph 操作时的两类路由问题：
+
+- 中文请求如 `在BP_ProjectSpecificName加上Print String`、`帮我给BP_ProjectSpecificName的Begin play加上print string` 会稳定进入 `editor_add_blueprint_node_template`，不再退化成 Project QA 的说明性回答。
+- 英文请求如 `Add a Print String node to BP_ProjectSpecificName EventGraph` 不再因为资产名里的 `Name` 被误判为 `set_actor_metadata`，而是生成 `add_blueprint_node_template` Proposal。
+- 如果用户明确写 `unconnected / no connection / 不连接 / 只创建`，后端仍会保持 `entry_event=""`，只创建节点不自动连接 BeginPlay。
+- 当内容浏览器没有选中资产时，后端会优先用 Project Inventory 中的同名 Blueprint 解析 `blueprint_path`；因此 UE 插件打开时自动同步 Inventory 越完整，自由聊天里的编辑器操作解析越稳定。
+
+新增回归覆盖：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py::test_agent_chat_routes_chinese_print_string_action_to_editor_operation_from_inventory tests\integration\test_editor_operations.py::test_agent_chat_english_print_string_does_not_match_actor_metadata_when_bp_name_contains_name tests\integration\test_editor_operations.py::test_agent_chat_unconnected_print_string_from_inventory_keeps_node_unlinked -q
+.\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py
+```
+
+当前 `run_editor_operation_chat_bridge_smoke.py` 基线为 `16/16 passed`。本修复不要求 UE 前端改接口；如果前端没有选中资产，建议保持插件启动后的 Project Inventory 自动同步。

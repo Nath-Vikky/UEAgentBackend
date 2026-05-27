@@ -80,6 +80,12 @@ def _seed_inventory(client: TestClient) -> dict[str, Any]:
                     "settings": {"parent_class": "AActor"},
                 },
                 {
+                    "asset_path": "/Game/Blueprints/BP_ProjectSpecificName.BP_ProjectSpecificName",
+                    "asset_name": "BP_ProjectSpecificName",
+                    "asset_type": "Blueprint",
+                    "settings": {"parent_class": "AActor"},
+                },
+                {
                     "asset_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
                     "asset_name": "BP_EnemySpawner",
                     "asset_type": "Blueprint",
@@ -186,6 +192,34 @@ def _cases() -> list[dict[str, Any]]:
             "expected_payload": {
                 "template_id": "print_string",
                 "blueprint_path": "/Game/Blueprints/BP_TestActor",
+                "graph_name": "EventGraph",
+                "entry_event": "BeginPlay",
+            },
+        },
+        {
+            "case_id": "chat_chinese_print_string_inventory_bp_specific_name",
+            "request": _chat_request(
+                case_id="chat_chinese_print_string_inventory_bp_specific_name",
+                query="帮我给BP_ProjectSpecificName的Begin play加上print string",
+                language="zh-CN",
+            ),
+            "expected_operation_type": "add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "print_string",
+                "blueprint_path": "/Game/Blueprints/BP_ProjectSpecificName",
+                "entry_event": "BeginPlay",
+            },
+        },
+        {
+            "case_id": "chat_english_print_string_bp_specific_name",
+            "request": _chat_request(
+                case_id="chat_english_print_string_bp_specific_name",
+                query="Add a Print String node to BP_ProjectSpecificName EventGraph",
+            ),
+            "expected_operation_type": "add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "print_string",
+                "blueprint_path": "/Game/Blueprints/BP_ProjectSpecificName",
                 "graph_name": "EventGraph",
                 "entry_event": "BeginPlay",
             },

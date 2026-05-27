@@ -37,6 +37,31 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     shutil.rmtree(runtime_root, ignore_errors=True)
 
 
+def _seed_named_blueprint_inventory(
+    client: TestClient,
+    *,
+    project_id: str = "DemoProject",
+    asset_path: str = "/Game/Blueprints/BP_ProjectSpecificName.BP_ProjectSpecificName",
+    asset_name: str = "BP_ProjectSpecificName",
+) -> None:
+    response = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": project_id,
+            "project_name": project_id,
+            "assets": [
+                {
+                    "asset_path": asset_path,
+                    "asset_name": asset_name,
+                    "asset_type": "Blueprint",
+                    "settings": {"parent_class": "AActor"},
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+
+
 def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     response = client.get("/api/v1/editor-operations/capabilities")
     assert response.status_code == 200
@@ -2274,6 +2299,129 @@ def test_agent_chat_keeps_unconnected_eventgraph_print_string_unlinked(client: T
     payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
     assert payload["template_id"] == "print_string"
     assert payload["graph_name"] == "EventGraph"
+    assert payload["entry_event"] == ""
+
+
+def test_agent_chat_routes_chinese_print_string_action_to_editor_operation_from_inventory(
+    client: TestClient,
+) -> None:
+    _seed_named_blueprint_inventory(client)
+    query = "帮我给BP_ProjectSpecificName的Begin play加上print string"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_chinese_bp_specific_name_print_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "zh-CN",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    assert body["planner_diagnostics"]["selected_tool_id"] == "editor_add_blueprint_node_template"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "add_blueprint_node_template"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_ProjectSpecificName"
+    assert payload["template_id"] == "print_string"
+    assert payload["entry_event"] == "BeginPlay"
+
+
+def test_agent_chat_english_print_string_does_not_match_actor_metadata_when_bp_name_contains_name(
+    client: TestClient,
+) -> None:
+    _seed_named_blueprint_inventory(client)
+    query = "Add a Print String node to BP_ProjectSpecificName EventGraph"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_english_bp_specific_name_print_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "add_blueprint_node_template"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_ProjectSpecificName"
+    assert payload["template_id"] == "print_string"
+    assert payload["graph_name"] == "EventGraph"
+    assert payload["entry_event"] == "BeginPlay"
+
+
+def test_agent_chat_unconnected_print_string_from_inventory_keeps_node_unlinked(
+    client: TestClient,
+) -> None:
+    _seed_named_blueprint_inventory(client)
+    query = "Add an unconnected Print String node to BP_ProjectSpecificName EventGraph"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_inventory_unconnected_bp_specific_name_print_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_ProjectSpecificName"
+    assert payload["template_id"] == "print_string"
     assert payload["entry_event"] == ""
 
 

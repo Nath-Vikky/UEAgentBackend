@@ -545,7 +545,29 @@ def _preferred_language(
     )
 
 
+def _looks_like_blueprint_node_template_request(latest_text: str, text_lower: str) -> bool:
+    has_blueprint_target = bool(
+        re.search(
+            r"(?<![A-Za-z0-9_])BP_[A-Za-z][A-Za-z0-9_]{1,63}(?![A-Za-z0-9_])",
+            latest_text,
+            flags=re.IGNORECASE,
+        )
+        or re.search(r"/Game/[A-Za-z0-9_./-]+", latest_text, flags=re.IGNORECASE)
+    )
+    has_print_string = any(
+        token in text_lower or token in latest_text
+        for token in ("print string", "printstring", "\u6253\u5370\u5b57\u7b26\u4e32", "\u6253\u5370\u6587\u672c")
+    )
+    has_action = bool(re.search(r"\b(?:add|create|insert|place)\b", text_lower)) or any(
+        token in latest_text
+        for token in ("\u6dfb\u52a0", "\u52a0\u4e0a", "\u52a0\u4e00\u4e2a", "\u52a0\u4e2a", "\u589e\u52a0", "\u521b\u5efa", "\u63d2\u5165", "\u653e\u7f6e")
+    )
+    return has_blueprint_target and has_print_string and has_action
+
+
 def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
+    if _looks_like_blueprint_node_template_request(latest_text, text_lower):
+        return "editor_add_blueprint_node_template"
     return detect_tool_for_text(latest_text) or detect_tool_for_text(text_lower)
 
 
