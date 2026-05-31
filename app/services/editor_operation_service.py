@@ -329,6 +329,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["widget_blueprint_path", "widget_name", "new_parent_name"],
         "frontend_status": "implemented_v1",
     },
+    "duplicate_umg_widget": {
+        "tool_id": "editor_duplicate_umg_widget",
+        "title": "Duplicate UMG Widget",
+        "risk_flags": "MEDIUM",
+        "summary": "Duplicate one existing non-panel UMG widget under the same parent after user confirmation.",
+        "required_fields": ["widget_blueprint_path", "widget_name", "new_widget_name"],
+        "frontend_status": "implemented_v1",
+    },
     "place_actor_in_level": {
         "tool_id": "editor_place_actor_in_level",
         "title": "Place Actor In Level",
@@ -425,6 +433,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "set_umg_widget_brush",
             "set_umg_slot_layout_v2",
             "reparent_umg_widget",
+            "duplicate_umg_widget",
         ],
     },
     "level": {
@@ -1757,6 +1766,32 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_new_widget_name_from_request(request: UnifiedTaskRequest, query_text: str, source_widget_name: str | None) -> str | None:
+        explicit_name = str(
+            request.payload.get("new_widget_name")
+            or request.payload.get("target_widget_name")
+            or request.payload.get("new_name")
+            or ""
+        ).strip()
+        if explicit_name:
+            return explicit_name
+
+        patterns = (
+            r"(?:as|to|called|named|name it)\s+([A-Za-z][A-Za-z0-9_]{1,79})",
+            r"(?:duplicate|copy|clone)\s+[A-Za-z][A-Za-z0-9_]{1,79}\s+([A-Za-z][A-Za-z0-9_]{1,79})",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, query_text, flags=re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip()
+                if not candidate.lower().startswith(("wbp_", "ui_")):
+                    return candidate
+
+        if source_widget_name:
+            return f"{source_widget_name}_Copy"
+        return None
+
+    @staticmethod
     def _detect_umg_text_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
         explicit_text = request.payload.get("text")
         if explicit_text is not None:
@@ -2312,6 +2347,37 @@ class EditorOperationService:
                         context_bundle,
                     ),
                     "pattern": EditorOperationService._detect_arrange_pattern_from_request(request, query_text),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_umg_duplicate = any(
+            token in query_lower
+            for token in ("umg", "widget", "textblock", "text block", "image", "button", "hud", "wbp_")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("duplicate", "copy", "clone", "复制", "拷贝", "克隆")
+        )
+        if wants_umg_duplicate:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+            new_widget_name = EditorOperationService._detect_new_widget_name_from_request(
+                request,
+                query_text,
+                widget_name,
+            )
+            return EditorOperationProposalRequest(
+                operation_type="duplicate_umg_widget",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
+                    "new_widget_name": new_widget_name or "",
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -4530,6 +4596,23 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "duplicate_umg_widget":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            new_widget_name = self._normalize_asset_name(payload.get("new_widget_name"), "new_widget_name")
+            if widget_name == new_widget_name:
+                raise EditorOperationValidationError(
+                    "new_widget_name_must_differ_from_source",
+                    {"widget_name": widget_name, "new_widget_name": new_widget_name},
+                )
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "source_widget_name": widget_name,
+                "new_widget_name": new_widget_name,
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "place_actor_in_level":
             actor_class = self._normalize_class_path(payload.get("actor_class"))
             actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
@@ -4788,6 +4871,11 @@ class EditorOperationService:
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Move widget `{payload['widget_name']}` under panel `{payload['new_parent_name']}`. The package is not auto-saved.",
             )
+        if operation_type == "duplicate_umg_widget":
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Duplicate widget `{payload['widget_name']}` as `{payload['new_widget_name']}` under the same parent. The package is not auto-saved.",
+            )
         if operation_type == "place_actor_in_level":
             location = payload["transform"]["location"]
             label = payload.get("actor_label") or "(default label)"
@@ -4944,6 +5032,7 @@ class EditorOperationService:
             "set_umg_widget_brush",
             "set_umg_slot_layout_v2",
             "reparent_umg_widget",
+            "duplicate_umg_widget",
         }:
             target = {
                 "kind": "umg_widget",
@@ -4962,6 +5051,8 @@ class EditorOperationService:
                 target["layout_fields"] = sorted(payload["layout"].keys())
             if payload.get("new_parent_name"):
                 target["new_parent_name"] = payload["new_parent_name"]
+            if payload.get("new_widget_name"):
+                target["new_widget_name"] = payload["new_widget_name"]
             return [target]
         if operation_type == "place_actor_in_level":
             return [
@@ -5125,6 +5216,14 @@ class EditorOperationService:
                 "widget_name",
                 "old_parent_name",
                 "new_parent_name",
+                "dirty",
+                "dirty_packages",
+            ],
+            "duplicate_umg_widget": [
+                "widget_blueprint_path",
+                "source_widget_name",
+                "new_widget_name",
+                "parent_widget_name",
                 "dirty",
                 "dirty_packages",
             ],

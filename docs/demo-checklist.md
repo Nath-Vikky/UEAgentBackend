@@ -54,7 +54,7 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 Expected:
 
 - Blueprint graph proposal/result smoke: `14/14 passed`
-- Agent Chat editor-operation smoke: `19/19 passed`
+- Agent Chat editor-operation smoke: `20/20 passed`
 - Editor workflow materialization smoke: `4/4 passed`
 - Project Inventory chat smoke: `1/1 passed`
 
@@ -82,6 +82,7 @@ Suggested low-risk demos:
 - Add a `Print String` Blueprint node template.
 - Compile the test Blueprint.
 - Set one TextBlock text in a test Widget Blueprint.
+- Duplicate one non-panel UMG widget under the same parent with a safe new name.
 - Set one TextBlock opacity or font size through `set_umg_widget_appearance`.
 - Set one Image or Border texture/material through `set_umg_widget_brush`.
 - Set one HorizontalBox/VerticalBox/Overlay slot padding or alignment through `set_umg_slot_layout_v2`.

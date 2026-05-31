@@ -100,6 +100,7 @@ class EditorOperationProposalRequest(BaseModel):
         "set_umg_widget_brush",
         "set_umg_slot_layout_v2",
         "reparent_umg_widget",
+        "duplicate_umg_widget",
         "place_actor_in_level",
         "set_actor_transform",
         "set_actor_metadata",

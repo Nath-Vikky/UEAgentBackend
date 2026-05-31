@@ -88,6 +88,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "set_umg_widget_brush",
         "set_umg_slot_layout_v2",
         "reparent_umg_widget",
+        "duplicate_umg_widget",
         "place_actor_in_level",
         "set_actor_transform",
         "set_actor_metadata",
@@ -149,6 +150,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["set_umg_widget_brush"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_slot_layout_v2"]["frontend_status"] == "implemented_v1"
     assert operation_items["reparent_umg_widget"]["frontend_status"] == "implemented_v1"
+    assert operation_items["duplicate_umg_widget"]["frontend_status"] == "implemented_v1"
     assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_metadata"]["frontend_status"] == "implemented_v1"
@@ -185,6 +187,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_set_umg_widget_brush" in tool_ids
     assert "editor_set_umg_slot_layout_v2" in tool_ids
     assert "editor_reparent_umg_widget" in tool_ids
+    assert "editor_duplicate_umg_widget" in tool_ids
     assert "editor_place_actor_in_level" in tool_ids
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_actor_metadata" in tool_ids
@@ -1786,6 +1789,58 @@ def test_reparent_umg_widget_rejects_same_parent_and_target(client: TestClient) 
     assert response.status_code == 400
     body = response.json()
     assert body["errors"][0]["code"] == "widget_parent_must_differ_from_target"
+
+
+def test_duplicate_umg_widget_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "duplicate_umg_widget",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage",
+                "new_widget_name": "IconImage_Copy",
+            },
+            "reason": "Create a second icon with the same style.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "duplicate_umg_widget"
+    assert body["operation"]["tool_id"] == "editor_duplicate_umg_widget"
+    payload = body["operation"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "IconImage"
+    assert payload["source_widget_name"] == "IconImage"
+    assert payload["new_widget_name"] == "IconImage_Copy"
+    assert body["operation"]["affected_targets"][0]["new_widget_name"] == "IconImage_Copy"
+    assert body["operation"]["expected_result_contract"]["operation_result_fields"] == [
+        "widget_blueprint_path",
+        "source_widget_name",
+        "new_widget_name",
+        "parent_widget_name",
+        "dirty",
+        "dirty_packages",
+    ]
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_duplicate_umg_widget_rejects_same_name(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "duplicate_umg_widget",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage",
+                "new_widget_name": "IconImage",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "new_widget_name_must_differ_from_source"
 
 
 def test_place_actor_in_level_proposal_contract(client: TestClient) -> None:
@@ -3504,6 +3559,64 @@ def test_agent_chat_resolves_umg_reparent_from_project_inventory(client: TestCli
     assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
     assert payload["widget_name"] == "IconImage"
     assert payload["new_parent_name"] == "RootCanvas"
+
+
+def test_agent_chat_resolves_umg_duplicate_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/UI/WBP_MainHUD.WBP_MainHUD",
+                    "asset_name": "WBP_MainHUD",
+                    "asset_type": "WidgetBlueprint",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_umg_duplicate_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Duplicate WBP_MainHUD IconImage widget as IconImage_Copy",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Duplicate WBP_MainHUD IconImage widget as IconImage_Copy"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "duplicate_umg_widget"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "IconImage"
+    assert payload["new_widget_name"] == "IconImage_Copy"
 
 
 def test_agent_chat_can_set_selected_material_instance_parameter(client: TestClient) -> None:

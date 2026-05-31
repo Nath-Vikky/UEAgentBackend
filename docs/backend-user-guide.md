@@ -251,7 +251,7 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它会调用 `POST /api/v1/editor-operations/proposals` 验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`delay_print_string`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定；同时会模拟一次 `POST /api/v1/editor-operations/results`，验证 Blueprint Graph 结果诊断、`editor_operation_graph_details` User View block 和 follow-up quick action 是否仍然连通。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
-`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`（含普通 PrintString、Delay -> PrintString，以及中英文 `BP_ProjectSpecificName` 这类真实命名用例）、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
+`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`（含普通 PrintString、Delay -> PrintString，以及中英文 `BP_ProjectSpecificName` 这类真实命名用例）、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`duplicate_umg_widget`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
@@ -3152,7 +3152,7 @@ required_payload_fields: blueprint_path
 
 ### 26.1 UMG / Asset 批量操作 v1
 
-I4-4 第一版只补低风险能力：批量资产重命名 Proposal、批量移动资产 Proposal、UMG Widget Tree 只读感知，以及添加基础 UMG Widget Proposal。不做删除资产、不做自动修复 Redirectors、不做复杂 Widget 创建/布局。
+I4-4 第一版只补低风险能力：批量资产重命名 Proposal、批量移动资产 Proposal、UMG Widget Tree 只读感知、添加基础 UMG Widget Proposal，以及复制一个已有非 Panel Widget 的 Proposal。不做删除资产、不做自动修复 Redirectors、不做复杂 Widget 生成器或批量重写布局。
 
 批量重命名资产：
 
@@ -3285,6 +3285,7 @@ UMG 写操作边界：
 - `set_umg_widget_visibility` 只修改已有控件的 `Visibility`，白名单为 `visible`、`collapsed`、`hidden`、`hit_test_invisible`、`self_hit_test_invisible`。
 - `set_umg_widget_appearance` 支持单控件安全外观字段：`render_opacity`、`is_enabled`，以及 TextBlock 专属 `color_and_opacity` 和 `font_size`。
 - `set_umg_widget_brush` 支持给单个 `Image` 或 `Border` 控件设置 Brush 资源，资源类型限定为 `texture` 或 `material`。
+- `duplicate_umg_widget` 支持复制一个已有非 Panel 子控件到同一父 Panel 下，并尽量复制常见 slot 布局字段。
 - 不设置动画、绑定、复杂 style 继承和复杂 slot 参数；这些仍放到后续 UMG v2+。
 
 ### 26.2 Level / Material 低风险编辑器操作 v1
@@ -5870,7 +5871,46 @@ Validation:
 Current no-UE smoke baseline:
 
 ```text
-editor-operation-chat-bridge: 19/19 passed
+editor-operation-chat-bridge: 20/20 passed
+```
+
+## 2026-05-31 UMG Duplicate Widget Proposal
+
+`Editor Operation Bridge` now includes `duplicate_umg_widget`, a confirmed-write
+proposal for copying one existing non-panel UMG widget under the same parent.
+
+Use it when the Widget Blueprint already contains a reusable child widget and
+you want a second instance with a new name:
+
+```json
+{
+  "operation_type": "duplicate_umg_widget",
+  "payload": {
+    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+    "widget_name": "IconImage",
+    "new_widget_name": "IconImage_Copy"
+  }
+}
+```
+
+Agent Chat can also create the same Proposal from Project Inventory:
+
+```text
+Duplicate WBP_MainHUD IconImage widget as IconImage_Copy
+```
+
+Safety behavior:
+
+- The backend only creates a pending Proposal; UEAgentTool executes after user confirmation.
+- The source widget and new widget name must be different.
+- UEAgentTool blocks missing widgets, duplicate target names, root widget duplication, panel widget duplication, and widgets without a parent panel.
+- UEAgentTool copies common slot layout fields for `CanvasPanelSlot`, `HorizontalBoxSlot`, `VerticalBoxSlot`, and `OverlaySlot` when source and target slot types match.
+- The Widget Blueprint package is marked dirty but not auto-saved.
+
+Current no-UE smoke baseline:
+
+```text
+editor-operation-chat-bridge: 20/20 passed
 ```
 
 ## 2026-05-31 Asset Duplicate Proposal
@@ -5909,7 +5949,7 @@ Safety behavior:
 Current no-UE smoke baseline:
 
 ```text
-editor-operation-chat-bridge: 19/19 passed
+editor-operation-chat-bridge: 20/20 passed
 ```
 
 ## 2026-05-31 Asset Redirector Fixup Proposal
@@ -5949,5 +5989,5 @@ Safety behavior:
 Current no-UE smoke baseline:
 
 ```text
-editor-operation-chat-bridge: 19/19 passed
+editor-operation-chat-bridge: 20/20 passed
 ```

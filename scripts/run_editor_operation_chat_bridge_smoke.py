@@ -372,6 +372,19 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_umg_duplicate",
+            "request": _chat_request(
+                case_id="chat_umg_duplicate",
+                query="Duplicate WBP_MainHUD IconImage widget as IconImage_Copy",
+            ),
+            "expected_operation_type": "duplicate_umg_widget",
+            "expected_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage",
+                "new_widget_name": "IconImage_Copy",
+            },
+        },
+        {
             "case_id": "chat_material_scalar",
             "request": _chat_request(
                 case_id="chat_material_scalar",
