@@ -25,9 +25,23 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         default="storage/artifacts/smoke/editor-workflow-materialization-smoke-latest.json",
-        help="JSON report output path.",
+        help="JSON report output path. Use '-' to print to stdout without writing a file.",
     )
     return parser.parse_args()
+
+
+def _emit_report(report: dict[str, Any], output: str) -> None:
+    report_json = json.dumps(report, indent=2, ensure_ascii=False)
+    if output == "-":
+        print(report_json)
+        return
+    output_path = Path(output)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(report_json, encoding="utf-8")
+    except OSError as exc:
+        print(f"WARNING: could not write smoke report to {output_path}: {exc}")
+    print(report_json)
 
 
 @contextmanager
@@ -266,10 +280,7 @@ def main() -> int:
             "Materialized items are pending Proposals and still require user confirmation.",
         ],
     }
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(json.dumps(report, indent=2, ensure_ascii=False))
+    _emit_report(report, args.output)
     return 0 if report["overall_ok"] else 1
 
 

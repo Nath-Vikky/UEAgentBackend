@@ -30,6 +30,20 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _emit_report(report: dict[str, Any], output: str) -> None:
+    report_json = json.dumps(report, ensure_ascii=False, indent=2)
+    if output == "-":
+        print(report_json)
+        return
+    output_path = Path(output)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(report_json, encoding="utf-8")
+    except OSError as exc:
+        print(f"WARNING: could not write smoke report to {output_path}: {exc}")
+    print(report_json)
+
+
 @contextmanager
 def _isolated_runtime() -> Iterator[None]:
     runtime_root = Path(".smoke-runtime") / f"editor-chat-bridge-{uuid.uuid4().hex}"
@@ -535,15 +549,7 @@ def main() -> int:
             "It complements run_blueprint_graph_operation_smoke.py, which tests the explicit Proposal API.",
         ],
     }
-    report_json = json.dumps(report, ensure_ascii=False, indent=2)
-    if args.output == "-":
-        print(report_json)
-        return 0 if report["overall_ok"] else 1
-
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(report_json, encoding="utf-8")
-    print(report_json)
+    _emit_report(report, args.output)
     return 0 if report["overall_ok"] else 1
 
 

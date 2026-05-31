@@ -39,6 +39,23 @@ Checklist:
 - Compile the plugin in Rider or Unreal Editor.
 - Set backend URL to `http://127.0.0.1:8000`.
 - Open the plugin panel and verify backend connection status.
+- Wait for automatic Project Inventory sync, or click `Sync Inventory Now`.
+
+Quick read-only views:
+
+- `Show Assets`: list recent project assets from Project Inventory.
+- `Show Selected Asset`: select one Content Browser asset and show its type,
+  path, dependencies, referencers, settings, and properties.
+- `Show Blueprint Graphs`: select one Blueprint when possible and show graph /
+  node summaries.
+- `Show Level Actors`: show recent loaded-level Actor summaries.
+- `Show Materials`: show Material Instance parameter summaries.
+- `Show Activity`: show recent editor-operation proposals, execution states,
+  and diagnostic counts.
+- `Show Inventory Summary`: show compact Project Inventory counts.
+
+All buttons above are read-only. They do not create Proposals and do not modify
+assets, levels, Blueprints, Widgets, or Materials.
 
 ## 3. Run Backend-Only Smoke Checks
 
@@ -52,6 +69,9 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 .\.venv\Scripts\python.exe scripts\run_editor_workflow_materialization_smoke.py
 .\.venv\Scripts\python.exe scripts\run_project_inventory_chat_smoke.py
 ```
+
+If the local shell cannot write smoke report files under `storage/artifacts`,
+pass `--output -` to print the JSON report without writing a file.
 
 Expected:
 
@@ -100,6 +120,8 @@ Safety checks:
 - The operation result is posted back to the backend.
 - `GET /api/v1/editor-operations/history` shows the operation.
 - `GET /api/v1/editor-operations/diagnostics` summarizes recent operation health.
+- The plugin `Show Activity` button displays the same recent activity in the
+  Agent Chat workspace.
 
 ## 6. Regenerate The Tool Catalog
 
