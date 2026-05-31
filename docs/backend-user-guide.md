@@ -2764,7 +2764,7 @@ GET /api/v1/project-inventory/blueprint-graphs?blueprint_query=Player&graph_name
 
 如果 UI 或调试脚本只关心图表节点，可以直接使用 `/project-inventory/blueprint-graphs`。它会返回 `kind=blueprint_graph`、`asset_name`、`asset_path`、`graph_name`、`graph_type`、`node_count`、`pin_count`、`link_count` 和可选 `nodes[]`。设置 `include_nodes=false` 可以只拿 graph 级摘要，减少 Debug View 噪声。
 
-UEAgentTool 的 Agent Chat / Project QA 工作区已经提供三个只读辅助按钮：`Sync Inventory Now` 会重新提交 Project Inventory，`Show Inventory Summary` 会调用 `/api/v1/project-inventory/summary` 并在聊天区显示当前快照的资产、Blueprint、代码文件、关卡 Actor、材质实例和常见类型计数，`Show Blueprint Graphs` 会优先按内容浏览器当前选中的 Blueprint 查询；如果没有选中 Blueprint，则调用 `/api/v1/project-inventory/blueprint-graphs?include_nodes=true&limit=20` 并在聊天区显示全项目图表摘要。它们只读取/提交快照，不创建 Proposal，也不会修改蓝图。
+UEAgentTool 的 Agent Chat / Project QA 工作区已经提供四个只读辅助按钮：`Sync Inventory Now` 会重新提交 Project Inventory，`Show Assets` 会调用 `/api/v1/editor-operations/inspect/assets?limit=30` 并在聊天区列出最近快照中的项目资产，`Show Inventory Summary` 会调用 `/api/v1/project-inventory/summary` 并在聊天区显示当前快照的资产、Blueprint、代码文件、关卡 Actor、材质实例和常见类型计数，`Show Blueprint Graphs` 会优先按内容浏览器当前选中的 Blueprint 查询；如果没有选中 Blueprint，则调用 `/api/v1/project-inventory/blueprint-graphs?include_nodes=true&limit=20` 并在聊天区显示全项目图表摘要。它们只读取/提交快照，不创建 Proposal，也不会修改蓝图。
 
 Agent Chat 路由也会把英文图表节点问题识别为 Project Inventory 查询，例如 `In the current project, what nodes are in BP_PlayerCharacter EventGraph?`。这类问题会优先使用 `graph_summaries` 中的节点标题、节点数、pin 数和连线数，而不是让 LLM 根据通用 UE 知识猜测当前工程内容。
 
