@@ -257,6 +257,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["source_asset_path", "new_name"],
         "frontend_status": "implemented_v1",
     },
+    "fixup_redirectors": {
+        "tool_id": "editor_fixup_redirectors",
+        "title": "Fixup Redirectors",
+        "risk_flags": "HIGH",
+        "summary": "Fix redirectors under one bounded /Game folder after user confirmation.",
+        "required_fields": ["folder_path"],
+        "frontend_status": "implemented_v1",
+    },
     "add_umg_widget": {
         "tool_id": "editor_add_umg_widget",
         "title": "Add UMG Widget",
@@ -389,6 +397,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "batch_rename_assets",
             "move_assets",
             "duplicate_asset",
+            "fixup_redirectors",
         ],
     },
     "blueprint": {
@@ -661,6 +670,27 @@ class EditorOperationService:
                 if not source_name or candidate.lower() != source_name.lower():
                     return candidate
         return f"{source_name}_Copy" if source_name else "DuplicatedAsset"
+
+    @staticmethod
+    def _detect_redirector_folder_from_request(request: UnifiedTaskRequest, query_text: str) -> str:
+        explicit_folder = str(
+            request.payload.get("folder_path")
+            or request.payload.get("target_folder")
+            or request.payload.get("asset_folder")
+            or ""
+        ).strip()
+        if explicit_folder:
+            return explicit_folder
+        for path in EditorOperationService._extract_unreal_paths_from_text(query_text):
+            if path.startswith("/Game/"):
+                leaf = path.rsplit("/", 1)[-1]
+                if "." in leaf or leaf.startswith(("BP_", "WBP_", "SM_", "SK_", "MI_", "M_", "T_", "DA_", "ABP_")):
+                    return path.rsplit("/", 1)[0]
+                return path
+        selected_asset = EditorOperationService._selected_asset_path(request)
+        if selected_asset:
+            return selected_asset.rsplit("/", 1)[0]
+        return ""
 
     @staticmethod
     def _extract_blueprint_variable_name_from_text(text: str) -> str:
@@ -3041,6 +3071,27 @@ class EditorOperationService:
                 context=request.context.model_dump(mode="json"),
             )
 
+        wants_fixup_redirectors = any(
+            token in query_lower or token in query_text
+            for token in ("redirector", "redirectors", "重定向器", "redirector修复")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("fix", "fixup", "repair", "clean", "cleanup", "修复", "清理")
+        )
+        if wants_fixup_redirectors:
+            folder_path = EditorOperationService._detect_redirector_folder_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="fixup_redirectors",
+                payload={
+                    "folder_path": request.payload.get("folder_path") or folder_path,
+                    "recursive": request.payload.get("recursive", True),
+                    "max_redirectors": request.payload.get("max_redirectors", 50),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
         wants_rename = selected_asset and any(
             token in query_lower or token in query_text
             for token in ("rename", "重命名", "改名", "改成", "改为")
@@ -3150,6 +3201,16 @@ class EditorOperationService:
         folder = EditorOperationService._normalize_asset_path(value, require_game_root=True).rstrip("/")
         if "." in folder:
             raise EditorOperationValidationError("target_folder_must_not_be_object_path", {"target_folder": folder})
+        return folder
+
+    @staticmethod
+    def _normalize_redirector_folder(value: Any) -> str:
+        folder = EditorOperationService._normalize_folder(value)
+        if folder == "/Game":
+            raise EditorOperationValidationError(
+                "redirector_folder_too_broad",
+                {"folder_path": folder, "rule": "Use a bounded subfolder such as /Game/Blueprints."},
+            )
         return folder
 
     @staticmethod
@@ -3553,6 +3614,21 @@ class EditorOperationService:
         except (TypeError, ValueError) as exc:
             raise EditorOperationValidationError(f"{field_name}_must_be_number") from exc
         if not math.isfinite(number) or number < min_value or number > max_value:
+            raise EditorOperationValidationError(
+                f"{field_name}_out_of_range",
+                {"min": min_value, "max": max_value, "value": value},
+            )
+        return number
+
+    @staticmethod
+    def _normalize_int_range(value: Any, field_name: str, *, min_value: int, max_value: int) -> int:
+        if isinstance(value, bool):
+            raise EditorOperationValidationError(f"{field_name}_must_be_integer")
+        try:
+            number = int(value)
+        except (TypeError, ValueError) as exc:
+            raise EditorOperationValidationError(f"{field_name}_must_be_integer") from exc
+        if number < min_value or number > max_value:
             raise EditorOperationValidationError(
                 f"{field_name}_out_of_range",
                 {"min": min_value, "max": max_value, "value": value},
@@ -4338,6 +4414,20 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "fixup_redirectors":
+            max_redirectors = self._normalize_int_range(
+                payload.get("max_redirectors", 50),
+                "max_redirectors",
+                min_value=1,
+                max_value=200,
+            )
+            return {
+                "folder_path": self._normalize_redirector_folder(payload.get("folder_path")),
+                "recursive": bool(payload.get("recursive", True)),
+                "max_redirectors": max_redirectors,
+                "save_policy": "editor_fixup_redirectors",
+            }
+
         if operation_type == "add_umg_widget":
             widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
             widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
@@ -4644,6 +4734,15 @@ class EditorOperationService:
                 f"Duplicate source asset: {payload['source_asset_path']}. No asset is changed before confirmation.",
                 f"Create duplicate `{payload['target_path']}`. The duplicated package is marked dirty, not auto-saved.",
             )
+        if operation_type == "fixup_redirectors":
+            recursive_note = "recursively" if payload["recursive"] else "non-recursively"
+            return (
+                f"Fix redirectors under {payload['folder_path']} {recursive_note}. No asset is changed before confirmation.",
+                (
+                    "Run Unreal redirector fixup for at most "
+                    f"{payload['max_redirectors']} redirectors. This may update referencers or redirector packages."
+                ),
+            )
         if operation_type == "add_umg_widget":
             parent = payload.get("parent_widget_name") or "root widget"
             return (
@@ -4826,6 +4925,16 @@ class EditorOperationService:
                     "target_path": payload["target_path"],
                 }
             ]
+        if operation_type == "fixup_redirectors":
+            return [
+                {
+                    "kind": "asset_folder",
+                    "action": "fixup_redirectors",
+                    "path": payload["folder_path"],
+                    "recursive": payload["recursive"],
+                    "max_redirectors": payload["max_redirectors"],
+                }
+            ]
         if operation_type in {
             "add_umg_widget",
             "set_umg_widget_text",
@@ -4970,6 +5079,14 @@ class EditorOperationService:
             "batch_rename_assets": ["renamed_assets", "dirty_packages", "failed_items"],
             "move_assets": ["moved_assets", "dirty_packages", "failed_items"],
             "duplicate_asset": ["source_asset_path", "target_path", "duplicated_asset_path", "dirty", "dirty_packages"],
+            "fixup_redirectors": [
+                "folder_path",
+                "recursive",
+                "redirector_count",
+                "fixed_redirectors",
+                "dirty",
+                "dirty_packages",
+            ],
             "add_umg_widget": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
             "set_umg_widget_text": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
             "set_umg_widget_layout": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],

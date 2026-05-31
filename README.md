@@ -12,7 +12,7 @@ https://github.com/Nath-Vikky/UEAgentTool
 - `Code Generate`：根据用户需求和知识库参考生成 UE C++ 草稿，并做轻量 preflight。
 - `Logs Analyze`：分析粘贴日志片段或日志文件路径。
 - `Assets Inspect`：分析选中资产的命名、类型、引用关系和常见 UE 设置。
-- `Editor Operation Proposal`：为 UE 插件生成需要用户确认的编辑器操作提案，例如资产改名、资产移动、Static Mesh 设置、Blueprint 创建、基础 Blueprint/UMG 操作等。
+- `Editor Operation Proposal`：为 UE 插件生成需要用户确认的编辑器操作提案，例如资产改名、资产移动/复制、Redirector 修复、Static Mesh 设置、Blueprint 创建、基础 Blueprint/UMG 操作等。
 
 ## 架构概览
 

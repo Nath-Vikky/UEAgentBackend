@@ -5870,7 +5870,7 @@ Validation:
 Current no-UE smoke baseline:
 
 ```text
-editor-operation-chat-bridge: 18/18 passed
+editor-operation-chat-bridge: 19/19 passed
 ```
 
 ## 2026-05-31 Asset Duplicate Proposal
@@ -5909,5 +5909,44 @@ Safety behavior:
 Current no-UE smoke baseline:
 
 ```text
-editor-operation-chat-bridge: 18/18 passed
+editor-operation-chat-bridge: 19/19 passed
+```
+
+## 2026-05-31 Asset Redirector Fixup Proposal
+
+`Editor Operation Bridge` now includes `fixup_redirectors`, a confirmed-write
+asset maintenance proposal for cleaning Unreal redirectors under one bounded
+`/Game/...` folder.
+
+Example:
+
+```json
+{
+  "operation_type": "fixup_redirectors",
+  "payload": {
+    "folder_path": "/Game/Blueprints",
+    "recursive": true,
+    "max_redirectors": 50
+  }
+}
+```
+
+Agent Chat can create the same Proposal from explicit maintenance requests:
+
+```text
+Fix redirectors in /Game/Blueprints
+```
+
+Safety behavior:
+
+- Backend creates a pending Proposal only; UEAgentTool executes after user confirmation.
+- The folder must be a bounded `/Game/...` subfolder; `/Game` root is rejected.
+- `max_redirectors` defaults to `50` and is capped at `200`.
+- UEAgentTool scans `UObjectRedirector` assets through Asset Registry and blocks execution if the scan exceeds the configured cap.
+- Redirector fixup may update referencers or redirector packages through Unreal's `AssetTools.FixupReferencers`; review source-control changes after execution.
+
+Current no-UE smoke baseline:
+
+```text
+editor-operation-chat-bridge: 19/19 passed
 ```

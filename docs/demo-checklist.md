@@ -54,7 +54,7 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 Expected:
 
 - Blueprint graph proposal/result smoke: `14/14 passed`
-- Agent Chat editor-operation smoke: `18/18 passed`
+- Agent Chat editor-operation smoke: `19/19 passed`
 - Editor workflow materialization smoke: `4/4 passed`
 - Project Inventory chat smoke: `1/1 passed`
 
@@ -76,6 +76,8 @@ UE editor operation still changes the open project after confirmation.
 Suggested low-risk demos:
 
 - Rename one test asset.
+- Duplicate one test asset to a safe `_Copy` name.
+- Fix redirectors under a bounded test folder such as `/Game/AgentDemo`.
 - Create one test Blueprint under `/Game/AgentDemo`.
 - Add a `Print String` Blueprint node template.
 - Compile the test Blueprint.

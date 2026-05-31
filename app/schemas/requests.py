@@ -91,6 +91,7 @@ class EditorOperationProposalRequest(BaseModel):
         "batch_rename_assets",
         "move_assets",
         "duplicate_asset",
+        "fixup_redirectors",
         "add_umg_widget",
         "set_umg_widget_text",
         "set_umg_widget_layout",

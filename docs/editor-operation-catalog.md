@@ -4,8 +4,8 @@ This catalog is generated from the backend editor operation registry.
 
 ## Summary
 
-- Operation count: `27`
-- Implemented frontend count: `27`
+- Operation count: `28`
+- Implemented frontend count: `28`
 - Read-only inspection count: `2`
 - Transport: `http`
 - Proposal type: `editor_operation`
@@ -28,6 +28,7 @@ Rename, move, and apply safe asset settings.
 | `batch_rename_assets` | `HIGH` | `renames` | `renamed_assets`, `dirty_packages`, `failed_items` |
 | `move_assets` | `HIGH` | `asset_paths`, `target_folder` | `moved_assets`, `dirty_packages`, `failed_items` |
 | `duplicate_asset` | `MEDIUM` | `source_asset_path`, `new_name` | `source_asset_path`, `target_path`, `duplicated_asset_path`, `dirty`, `dirty_packages` |
+| `fixup_redirectors` | `HIGH` | `folder_path` | `folder_path`, `recursive`, `redirector_count`, `fixed_redirectors`, `dirty`, `dirty_packages` |
 
 ### Blueprint Operations
 

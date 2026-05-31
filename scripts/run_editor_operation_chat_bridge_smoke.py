@@ -249,6 +249,19 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_fixup_redirectors_folder",
+            "request": _chat_request(
+                case_id="chat_fixup_redirectors_folder",
+                query="Fix redirectors in /Game/Blueprints",
+            ),
+            "expected_operation_type": "fixup_redirectors",
+            "expected_payload": {
+                "folder_path": "/Game/Blueprints",
+                "recursive": True,
+                "max_redirectors": 50,
+            },
+        },
+        {
             "case_id": "chat_delay_print_string_beginplay",
             "request": _chat_request(
                 case_id="chat_delay_print_string_beginplay",

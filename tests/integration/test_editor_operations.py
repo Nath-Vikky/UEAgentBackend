@@ -79,6 +79,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "batch_rename_assets",
         "move_assets",
         "duplicate_asset",
+        "fixup_redirectors",
         "add_umg_widget",
         "set_umg_widget_text",
         "set_umg_widget_layout",
@@ -139,6 +140,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["batch_rename_assets"]["frontend_status"] == "implemented_v1"
     assert operation_items["move_assets"]["frontend_status"] == "implemented_v1"
     assert operation_items["duplicate_asset"]["frontend_status"] == "implemented_v1"
+    assert operation_items["fixup_redirectors"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_umg_widget"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_text"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_layout"]["frontend_status"] == "implemented_v1"
@@ -172,6 +174,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_batch_rename_assets" in tool_ids
     assert "editor_move_assets" in tool_ids
     assert "editor_duplicate_asset" in tool_ids
+    assert "editor_fixup_redirectors" in tool_ids
     assert "mcp_get_blueprint_graph" in tool_ids
     assert "mcp_get_widget_tree" in tool_ids
     assert "editor_add_umg_widget" in tool_ids
@@ -1335,6 +1338,54 @@ def test_duplicate_asset_rejects_same_target(client: TestClient) -> None:
     assert body["errors"][0]["code"] == "duplicate_target_matches_source"
 
 
+def test_fixup_redirectors_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "fixup_redirectors",
+            "payload": {
+                "folder_path": "/Game/Blueprints",
+                "recursive": True,
+                "max_redirectors": 25,
+            },
+            "reason": "Clean redirectors after asset moves.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "fixup_redirectors"
+    assert body["operation"]["tool_id"] == "editor_fixup_redirectors"
+    payload = body["operation"]["operation_payload"]
+    assert payload["folder_path"] == "/Game/Blueprints"
+    assert payload["recursive"] is True
+    assert payload["max_redirectors"] == 25
+    assert payload["save_policy"] == "editor_fixup_redirectors"
+    assert body["operation"]["affected_targets"][0]["kind"] == "asset_folder"
+    assert body["operation"]["expected_result_contract"]["operation_result_fields"] == [
+        "folder_path",
+        "recursive",
+        "redirector_count",
+        "fixed_redirectors",
+        "dirty",
+        "dirty_packages",
+    ]
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_fixup_redirectors_rejects_game_root(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "fixup_redirectors",
+            "payload": {"folder_path": "/Game"},
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "redirector_folder_too_broad"
+
+
 def test_add_umg_widget_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -2135,6 +2186,47 @@ def test_agent_chat_can_duplicate_selected_asset(client: TestClient) -> None:
     assert payload["source_asset_path"] == "/Game/Blueprints/BP_EnemySpawner"
     assert payload["new_name"] == "BP_EnemySpawner_Copy"
     assert payload["target_path"] == "/Game/Blueprints/BP_EnemySpawner_Copy"
+
+
+def test_agent_chat_can_fixup_redirectors_for_folder(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_fixup_redirectors_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Fix redirectors in /Game/Blueprints",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+            },
+            "payload": {"user_query": "Fix redirectors in /Game/Blueprints"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "fixup_redirectors"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["folder_path"] == "/Game/Blueprints"
+    assert payload["recursive"] is True
+    assert payload["max_redirectors"] == 50
 
 
 def test_agent_chat_can_create_blueprint_editor_operation_proposal(client: TestClient) -> None:
