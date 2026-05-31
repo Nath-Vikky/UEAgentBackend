@@ -5826,3 +5826,49 @@ knowledge.
 ```
 
 当前 `run_editor_operation_chat_bridge_smoke.py` 基线为 `16/16 passed`。本修复不要求 UE 前端改接口；如果前端没有选中资产，建议保持插件启动后的 Project Inventory 自动同步。
+
+## 2026-05-31 UMG Reparent Widget Proposal
+
+`Editor Operation Bridge` now includes `reparent_umg_widget`, a confirmed-write
+proposal for moving one existing UMG widget under another existing panel widget.
+
+Use it when a HUD/UserWidget already contains the target widget and the desired
+parent container, for example:
+
+```json
+{
+  "operation_type": "reparent_umg_widget",
+  "payload": {
+    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+    "widget_name": "IconImage",
+    "new_parent_name": "RootCanvas"
+  }
+}
+```
+
+Agent Chat can also create the same Proposal from Project Inventory:
+
+```text
+Move WBP_MainHUD IconImage widget under RootCanvas
+```
+
+Safety behavior:
+
+- The backend only creates a pending Proposal; UEAgentTool executes after user confirmation.
+- The target widget and new parent must be different names.
+- UEAgentTool blocks reparenting the root widget, missing widgets, non-panel parents, same-parent moves, and moving a panel under one of its descendants.
+- The Widget Blueprint package is marked dirty but not auto-saved.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py -q
+.\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py --output -
+.\.venv\Scripts\ruff.exe check app tests scripts --no-cache
+```
+
+Current no-UE smoke baseline:
+
+```text
+editor-operation-chat-bridge: 17/17 passed
+```

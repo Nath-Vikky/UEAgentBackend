@@ -305,6 +305,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["widget_blueprint_path", "widget_name", "slot_type", "layout"],
         "frontend_status": "implemented_v1",
     },
+    "reparent_umg_widget": {
+        "tool_id": "editor_reparent_umg_widget",
+        "title": "Reparent UMG Widget",
+        "risk_flags": "MEDIUM",
+        "summary": "Move one existing widget under another existing panel widget after user confirmation.",
+        "required_fields": ["widget_blueprint_path", "widget_name", "new_parent_name"],
+        "frontend_status": "implemented_v1",
+    },
     "place_actor_in_level": {
         "tool_id": "editor_place_actor_in_level",
         "title": "Place Actor In Level",
@@ -398,6 +406,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "set_umg_widget_appearance",
             "set_umg_widget_brush",
             "set_umg_slot_layout_v2",
+            "reparent_umg_widget",
         ],
     },
     "level": {
@@ -1620,6 +1629,30 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_new_parent_widget_name_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
+        explicit_name = str(
+            request.payload.get("new_parent_name")
+            or request.payload.get("parent_widget_name")
+            or request.payload.get("target_parent_name")
+            or ""
+        ).strip()
+        if explicit_name:
+            return explicit_name
+
+        patterns = (
+            r"(?:under|inside|into|to parent|new parent)\s+([A-Za-z][A-Za-z0-9_]{1,79})",
+            r"(?:parent|container)\s*(?:to|=|:)\s*([A-Za-z][A-Za-z0-9_]{1,79})",
+            r"(?:放到|移到|挂到|作为子控件到|父控件)\s*([A-Za-z][A-Za-z0-9_]{1,79})",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, query_text, flags=re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip()
+                if not candidate.lower().startswith(("wbp_", "ui_")):
+                    return candidate
+        return None
+
+    @staticmethod
     def _detect_umg_text_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
         explicit_text = request.payload.get("text")
         if explicit_text is not None:
@@ -2175,6 +2208,36 @@ class EditorOperationService:
                         context_bundle,
                     ),
                     "pattern": EditorOperationService._detect_arrange_pattern_from_request(request, query_text),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_umg_reparent = any(
+            token in query_lower
+            for token in ("umg", "widget", "textblock", "text block", "hud", "wbp_")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("reparent", "move under", "move into", "under", "new parent", "parent widget", "放到", "移到", "挂到", "父控件")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("set", "change", "update", "move", "reparent", "放到", "移到", "挂到", "改到")
+        )
+        if wants_umg_reparent:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+            new_parent_name = EditorOperationService._detect_new_parent_widget_name_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="reparent_umg_widget",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
+                    "new_parent_name": new_parent_name or "",
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -4236,6 +4299,22 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "reparent_umg_widget":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            new_parent_name = self._normalize_asset_name(payload.get("new_parent_name"), "new_parent_name")
+            if widget_name == new_parent_name:
+                raise EditorOperationValidationError(
+                    "widget_parent_must_differ_from_target",
+                    {"widget_name": widget_name, "new_parent_name": new_parent_name},
+                )
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "new_parent_name": new_parent_name,
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "place_actor_in_level":
             actor_class = self._normalize_class_path(payload.get("actor_class"))
             actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
@@ -4475,6 +4554,11 @@ class EditorOperationService:
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Set `{payload['slot_type']}` layout for `{payload['widget_name']}` fields: {fields}. The package is not auto-saved.",
             )
+        if operation_type == "reparent_umg_widget":
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Move widget `{payload['widget_name']}` under panel `{payload['new_parent_name']}`. The package is not auto-saved.",
+            )
         if operation_type == "place_actor_in_level":
             location = payload["transform"]["location"]
             label = payload.get("actor_label") or "(default label)"
@@ -4611,6 +4695,7 @@ class EditorOperationService:
             "set_umg_widget_appearance",
             "set_umg_widget_brush",
             "set_umg_slot_layout_v2",
+            "reparent_umg_widget",
         }:
             target = {
                 "kind": "umg_widget",
@@ -4627,6 +4712,8 @@ class EditorOperationService:
                 target["brush"] = dict(payload["brush"])
             if payload.get("layout"):
                 target["layout_fields"] = sorted(payload["layout"].keys())
+            if payload.get("new_parent_name"):
+                target["new_parent_name"] = payload["new_parent_name"]
             return [target]
         if operation_type == "place_actor_in_level":
             return [
@@ -4773,6 +4860,14 @@ class EditorOperationService:
                 "horizontal_alignment",
                 "vertical_alignment",
                 "size",
+                "dirty",
+                "dirty_packages",
+            ],
+            "reparent_umg_widget": [
+                "widget_blueprint_path",
+                "widget_name",
+                "old_parent_name",
+                "new_parent_name",
                 "dirty",
                 "dirty_packages",
             ],

@@ -25,7 +25,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         default="storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json",
-        help="JSON report output path.",
+        help="JSON report output path. Use '-' to print to stdout without writing a file.",
     )
     return parser.parse_args()
 
@@ -333,6 +333,19 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_umg_reparent",
+            "request": _chat_request(
+                case_id="chat_umg_reparent",
+                query="Move WBP_MainHUD IconImage widget under RootCanvas",
+            ),
+            "expected_operation_type": "reparent_umg_widget",
+            "expected_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage",
+                "new_parent_name": "RootCanvas",
+            },
+        },
+        {
             "case_id": "chat_material_scalar",
             "request": _chat_request(
                 case_id="chat_material_scalar",
@@ -471,10 +484,15 @@ def main() -> int:
             "It complements run_blueprint_graph_operation_smoke.py, which tests the explicit Proposal API.",
         ],
     }
+    report_json = json.dumps(report, ensure_ascii=False, indent=2)
+    if args.output == "-":
+        print(report_json)
+        return 0 if report["overall_ok"] else 1
+
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    output_path.write_text(report_json, encoding="utf-8")
+    print(report_json)
     return 0 if report["overall_ok"] else 1
 
 

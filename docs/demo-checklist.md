@@ -54,7 +54,7 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 Expected:
 
 - Blueprint graph proposal/result smoke: `14/14 passed`
-- Agent Chat editor-operation smoke: `16/16 passed`
+- Agent Chat editor-operation smoke: `17/17 passed`
 - Editor workflow materialization smoke: `4/4 passed`
 - Project Inventory chat smoke: `1/1 passed`
 
