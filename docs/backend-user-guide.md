@@ -5951,6 +5951,30 @@ Current no-UE smoke baseline:
 editor-operation-chat-bridge: 21/21 passed
 ```
 
+## 2026-05-31 Asset Read-only Inspection APIs
+
+`Editor Operation Bridge` now also exposes two read-only Asset inspection
+endpoints backed by the latest Project Inventory snapshot:
+
+```http
+GET /api/v1/editor-operations/inspect/assets?asset_type=StaticMesh&query=Rock
+GET /api/v1/editor-operations/inspect/asset-detail?asset_id=SM_Rock
+```
+
+Use these when a tool or UI needs stable project facts without creating a
+confirmed-write Proposal:
+
+- `inspect_assets` returns matching asset records, including captured path,
+  type, package path, dependencies, referencers, settings, and properties when
+  present in Project Inventory.
+- `inspect_asset_detail` returns one asset by `asset_id`, `asset_path`, name,
+  or fallback query.
+- Both endpoints are `read_only`; they do not load UE packages, mutate Asset
+  Registry state, rename/move/delete assets, or save anything.
+- Agent Chat can still use the broader `query_project_inventory` tool for
+  natural language project questions. These endpoints are a clearer tool/API
+  boundary for panels, Debug View, and future MCP-compatible adapters.
+
 ## 2026-05-31 Asset Duplicate Proposal
 
 `Editor Operation Bridge` now includes `duplicate_asset`, a confirmed-write

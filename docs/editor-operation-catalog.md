@@ -6,7 +6,7 @@ This catalog is generated from the backend editor operation registry.
 
 - Operation count: `30`
 - Implemented frontend count: `30`
-- Read-only inspection count: `2`
+- Read-only inspection count: `4`
 - Transport: `http`
 - Proposal type: `editor_operation`
 - Requires confirmation: `True`
@@ -29,6 +29,13 @@ Rename, move, and apply safe asset settings.
 | `move_assets` | `HIGH` | `asset_paths`, `target_folder` | `moved_assets`, `dirty_packages`, `failed_items` |
 | `duplicate_asset` | `MEDIUM` | `source_asset_path`, `new_name` | `source_asset_path`, `target_path`, `duplicated_asset_path`, `dirty`, `dirty_packages` |
 | `fixup_redirectors` | `HIGH` | `folder_path` | `folder_path`, `recursive`, `redirector_count`, `fixed_redirectors`, `dirty`, `dirty_packages` |
+
+Read-only inspections:
+
+| Inspection | Endpoint | Required Fields | Boundary |
+| --- | --- | --- | --- |
+| `inspect_assets` | `/api/v1/editor-operations/inspect/assets` | - | Read-only inventory search; no Asset Registry mutation, loading, rename, move, delete, or save. |
+| `inspect_asset_detail` | `/api/v1/editor-operations/inspect/asset-detail` | `asset_id` | Read-only inventory detail lookup; no package load, asset edit, or save. |
 
 ### Blueprint Operations
 

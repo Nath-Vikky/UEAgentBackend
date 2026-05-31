@@ -104,7 +104,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     }
     assert body["capabilities"]["summary"]["operation_count"] >= 18
     assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
-    assert body["capabilities"]["summary"]["read_only_operation_count"] >= 2
+    assert body["capabilities"]["summary"]["read_only_operation_count"] >= 4
     assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 0
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
@@ -126,6 +126,8 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert read_only_items["inspect_level_actors"]["side_effect_level"] == "read_only"
     assert read_only_items["inspect_level_actors"]["requires_confirmation"] is False
     assert read_only_items["inspect_level_actors"]["proposal_enabled"] is False
+    assert read_only_items["inspect_assets"]["endpoint"].endswith("/inspect/assets")
+    assert read_only_items["inspect_asset_detail"]["endpoint"].endswith("/inspect/asset-detail")
     assert read_only_items["inspect_material_instance_parameters"]["endpoint"].endswith(
         "/inspect/material-instance-parameters"
     )
@@ -198,6 +200,8 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_set_material_instance_parameter" in tool_ids
     assert "editor_set_material_instance_texture_parameter" in tool_ids
     assert "editor_set_material_instance_static_switch" in tool_ids
+    assert "editor_inspect_assets" in tool_ids
+    assert "editor_inspect_asset_detail" in tool_ids
     tools_by_id = {
         item["tool_id"]: item
         for item in capabilities["capabilities"]["tool_registry"]["tools"]
@@ -216,6 +220,25 @@ def test_editor_operation_read_only_inspections_use_project_inventory(client: Te
         json={
             "project_id": "ReadOnlyInspectionProject",
             "project_name": "ReadOnlyInspectionProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Environment/SM_Rock.SM_Rock",
+                    "asset_name": "SM_Rock",
+                    "asset_type": "StaticMesh",
+                    "package_path": "/Game/Environment",
+                    "dependencies": ["/Game/Materials/M_Rock"],
+                    "referencers": ["/Game/Maps/L_Test"],
+                    "settings": {"nanite_enabled": True, "lod_count": 3},
+                    "properties": {"material_slots": ["M_Rock"]},
+                },
+                {
+                    "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                    "asset_name": "BP_PlayerCharacter",
+                    "asset_type": "Blueprint",
+                    "package_path": "/Game/Blueprints",
+                    "blueprint": {"parent_class": "ACharacter"},
+                },
+            ],
             "level_actors": [
                 {
                     "actor_label": "BP_EnemySpawner_1",
@@ -240,6 +263,14 @@ def test_editor_operation_read_only_inspections_use_project_inventory(client: Te
         "/api/v1/editor-operations/inspect/level-actors",
         params={"project_id": "ReadOnlyInspectionProject", "query": "EnemySpawner"},
     )
+    assets = client.get(
+        "/api/v1/editor-operations/inspect/assets",
+        params={"project_id": "ReadOnlyInspectionProject", "asset_type": "StaticMesh", "query": "Rock"},
+    )
+    asset_detail = client.get(
+        "/api/v1/editor-operations/inspect/asset-detail",
+        params={"project_id": "ReadOnlyInspectionProject", "asset_id": "SM_Rock"},
+    )
     materials = client.get(
         "/api/v1/editor-operations/inspect/material-instance-parameters",
         params={"project_id": "ReadOnlyInspectionProject", "material_instance_path": "/Game/Materials/MI_Rock"},
@@ -250,6 +281,14 @@ def test_editor_operation_read_only_inspections_use_project_inventory(client: Te
     assert actors.json()["inspection"]["operation_type"] == "inspect_level_actors"
     assert actors.json()["inspection"]["side_effect_level"] == "read_only"
     assert actors.json()["items"][0]["actor_label"] == "BP_EnemySpawner_1"
+    assert assets.status_code == 200
+    assert assets.json()["inspection"]["operation_type"] == "inspect_assets"
+    assert assets.json()["inspection"]["side_effect_level"] == "read_only"
+    assert assets.json()["items"][0]["asset_name"] == "SM_Rock"
+    assert asset_detail.status_code == 200
+    assert asset_detail.json()["inspection"]["operation_type"] == "inspect_asset_detail"
+    assert asset_detail.json()["item"]["asset_name"] == "SM_Rock"
+    assert asset_detail.json()["item"]["settings"]["nanite_enabled"] is True
     assert materials.status_code == 200
     assert materials.json()["inspection"]["operation_type"] == "inspect_material_instance_parameters"
     assert materials.json()["items"][0]["material_instance_name"] == "MI_Rock"

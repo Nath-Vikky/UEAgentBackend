@@ -21,6 +21,8 @@ Check:
 GET http://127.0.0.1:8000/api/v1/system/health
 GET http://127.0.0.1:8000/api/v1/system/capabilities
 GET http://127.0.0.1:8000/api/v1/editor-operations/capabilities
+GET http://127.0.0.1:8000/api/v1/editor-operations/inspect/assets
+GET http://127.0.0.1:8000/api/v1/editor-operations/inspect/asset-detail?asset_id=SM_Rock
 ```
 
 ## 2. Prepare The UE Plugin

@@ -187,6 +187,84 @@ def inspect_level_actors(
     }
 
 
+@router.get("/inspect/assets")
+def inspect_assets(
+    project_id: str | None = None,
+    query: str | None = None,
+    asset_type: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    settings: Settings = Depends(get_app_settings),
+) -> dict:
+    service = ProjectInventoryService(settings)
+    items = service.list_assets(
+        project_id=project_id,
+        query=query,
+        asset_type=asset_type,
+        limit=limit,
+    )
+    summary = service.summary(project_id)
+    empty_reason = ""
+    if not summary.get("has_snapshot"):
+        empty_reason = "no_project_inventory_snapshot"
+    elif not items:
+        empty_reason = "no_matching_assets"
+    return {
+        "success": True,
+        "inspection": {
+            "operation_type": "inspect_assets",
+            "side_effect_level": "read_only",
+            "source": "project_inventory",
+            "query": query or "",
+            "project_id": project_id or summary.get("project_id") or "",
+            "asset_type": asset_type or "",
+            "match_count": len(items),
+            "empty_reason": empty_reason,
+        },
+        "summary": summary,
+        "items": items,
+        "errors": [],
+    }
+
+
+@router.get("/inspect/asset-detail")
+def inspect_asset_detail(
+    project_id: str | None = None,
+    asset_id: str | None = None,
+    asset_path: str | None = None,
+    query: str | None = None,
+    settings: Settings = Depends(get_app_settings),
+) -> dict:
+    service = ProjectInventoryService(settings)
+    lookup_value = asset_id or asset_path or query or ""
+    item = service.get_asset(lookup_value, project_id) if lookup_value else None
+    if not item and query:
+        matches = service.list_assets(project_id=project_id, query=query, limit=1)
+        item = matches[0] if matches else None
+    summary = service.summary(project_id)
+    empty_reason = ""
+    if not summary.get("has_snapshot"):
+        empty_reason = "no_project_inventory_snapshot"
+    elif not item:
+        empty_reason = "no_matching_asset"
+    return {
+        "success": True,
+        "inspection": {
+            "operation_type": "inspect_asset_detail",
+            "side_effect_level": "read_only",
+            "source": "project_inventory",
+            "query": query or "",
+            "project_id": project_id or summary.get("project_id") or "",
+            "asset_id": asset_id or "",
+            "asset_path": asset_path or "",
+            "match_count": 1 if item else 0,
+            "empty_reason": empty_reason,
+        },
+        "summary": summary,
+        "item": item or {},
+        "errors": [],
+    }
+
+
 @router.get("/inspect/material-instance-parameters")
 def inspect_material_instance_parameters(
     project_id: str | None = None,

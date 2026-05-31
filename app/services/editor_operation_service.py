@@ -467,6 +467,26 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
 }
 
 READ_ONLY_INSPECTION_SPECS: dict[str, dict[str, Any]] = {
+    "inspect_assets": {
+        "group": "asset",
+        "tool_id": "editor_inspect_assets",
+        "title": "Inspect Assets",
+        "summary": "Read asset names, types, paths, dependencies, referencers, and captured settings from Project Inventory.",
+        "required_fields": [],
+        "frontend_status": "backend_read_only_v1",
+        "endpoint": "/api/v1/editor-operations/inspect/assets",
+        "boundary": "Read-only inventory search; no Asset Registry mutation, loading, rename, move, delete, or save.",
+    },
+    "inspect_asset_detail": {
+        "group": "asset",
+        "tool_id": "editor_inspect_asset_detail",
+        "title": "Inspect Asset Detail",
+        "summary": "Read one asset detail record from Project Inventory by id, path, name, or query.",
+        "required_fields": ["asset_id"],
+        "frontend_status": "backend_read_only_v1",
+        "endpoint": "/api/v1/editor-operations/inspect/asset-detail",
+        "boundary": "Read-only inventory detail lookup; no package load, asset edit, or save.",
+    },
     "inspect_level_actors": {
         "group": "level",
         "tool_id": "editor_inspect_level_actors",
