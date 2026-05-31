@@ -337,6 +337,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["widget_blueprint_path", "widget_name", "new_widget_name"],
         "frontend_status": "implemented_v1",
     },
+    "delete_umg_widget": {
+        "tool_id": "editor_delete_umg_widget",
+        "title": "Delete UMG Widget",
+        "risk_flags": "HIGH",
+        "summary": "Remove one existing non-root non-panel UMG widget after user confirmation.",
+        "required_fields": ["widget_blueprint_path", "widget_name"],
+        "frontend_status": "implemented_v1",
+    },
     "place_actor_in_level": {
         "tool_id": "editor_place_actor_in_level",
         "title": "Place Actor In Level",
@@ -434,6 +442,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "set_umg_slot_layout_v2",
             "reparent_umg_widget",
             "duplicate_umg_widget",
+            "delete_umg_widget",
         ],
     },
     "level": {
@@ -2378,6 +2387,31 @@ class EditorOperationService:
                     "widget_blueprint_path": widget_blueprint_path or "",
                     "widget_name": widget_name or "",
                     "new_widget_name": new_widget_name or "",
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_umg_delete = any(
+            token in query_lower
+            for token in ("umg", "widget", "textblock", "text block", "image", "button", "hud", "wbp_")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("delete", "remove", "destroy", "移除", "删除", "删掉", "刪除")
+        )
+        if wants_umg_delete:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="delete_umg_widget",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
                 },
                 reason=query_text,
                 requested_by="agent_chat",
@@ -4613,6 +4647,15 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "delete_umg_widget":
+            widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
+            widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
+            return {
+                "widget_blueprint_path": widget_blueprint_path,
+                "widget_name": widget_name,
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "place_actor_in_level":
             actor_class = self._normalize_class_path(payload.get("actor_class"))
             actor_label = self._normalize_optional_string(payload.get("actor_label") or "", max_length=80)
@@ -4876,6 +4919,11 @@ class EditorOperationService:
                 f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
                 f"Duplicate widget `{payload['widget_name']}` as `{payload['new_widget_name']}` under the same parent. The package is not auto-saved.",
             )
+        if operation_type == "delete_umg_widget":
+            return (
+                f"Widget Blueprint before change: {payload['widget_blueprint_path']}",
+                f"Remove widget `{payload['widget_name']}` from its parent. The package is not auto-saved and editor Undo can restore it.",
+            )
         if operation_type == "place_actor_in_level":
             location = payload["transform"]["location"]
             label = payload.get("actor_label") or "(default label)"
@@ -5033,6 +5081,7 @@ class EditorOperationService:
             "set_umg_slot_layout_v2",
             "reparent_umg_widget",
             "duplicate_umg_widget",
+            "delete_umg_widget",
         }:
             target = {
                 "kind": "umg_widget",
@@ -5224,6 +5273,14 @@ class EditorOperationService:
                 "source_widget_name",
                 "new_widget_name",
                 "parent_widget_name",
+                "dirty",
+                "dirty_packages",
+            ],
+            "delete_umg_widget": [
+                "widget_blueprint_path",
+                "widget_name",
+                "old_parent_name",
+                "removed_widgets",
                 "dirty",
                 "dirty_packages",
             ],

@@ -4,8 +4,8 @@ This catalog is generated from the backend editor operation registry.
 
 ## Summary
 
-- Operation count: `29`
-- Implemented frontend count: `29`
+- Operation count: `30`
+- Implemented frontend count: `30`
 - Read-only inspection count: `2`
 - Transport: `http`
 - Proposal type: `editor_operation`
@@ -52,6 +52,7 @@ Inspect and edit simple Widget Blueprint structure and properties.
 | --- | --- | --- | --- |
 | `add_umg_widget` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `widget_class` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
 | `duplicate_umg_widget` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `new_widget_name` | `widget_blueprint_path`, `source_widget_name`, `new_widget_name`, `parent_widget_name`, `dirty`, `dirty_packages` |
+| `delete_umg_widget` | `HIGH` | `widget_blueprint_path`, `widget_name` | `widget_blueprint_path`, `widget_name`, `old_parent_name`, `removed_widgets`, `dirty`, `dirty_packages` |
 | `set_umg_widget_text` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `text` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
 | `set_umg_widget_layout` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `layout` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
 | `set_umg_widget_visibility` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `visibility` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |

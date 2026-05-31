@@ -385,6 +385,18 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_umg_delete",
+            "request": _chat_request(
+                case_id="chat_umg_delete",
+                query="Remove WBP_MainHUD IconImage widget",
+            ),
+            "expected_operation_type": "delete_umg_widget",
+            "expected_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage",
+            },
+        },
+        {
             "case_id": "chat_material_scalar",
             "request": _chat_request(
                 case_id="chat_material_scalar",

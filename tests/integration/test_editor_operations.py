@@ -89,6 +89,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "set_umg_slot_layout_v2",
         "reparent_umg_widget",
         "duplicate_umg_widget",
+        "delete_umg_widget",
         "place_actor_in_level",
         "set_actor_transform",
         "set_actor_metadata",
@@ -151,6 +152,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["set_umg_slot_layout_v2"]["frontend_status"] == "implemented_v1"
     assert operation_items["reparent_umg_widget"]["frontend_status"] == "implemented_v1"
     assert operation_items["duplicate_umg_widget"]["frontend_status"] == "implemented_v1"
+    assert operation_items["delete_umg_widget"]["frontend_status"] == "implemented_v1"
     assert operation_items["place_actor_in_level"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_metadata"]["frontend_status"] == "implemented_v1"
@@ -188,6 +190,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_set_umg_slot_layout_v2" in tool_ids
     assert "editor_reparent_umg_widget" in tool_ids
     assert "editor_duplicate_umg_widget" in tool_ids
+    assert "editor_delete_umg_widget" in tool_ids
     assert "editor_place_actor_in_level" in tool_ids
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_actor_metadata" in tool_ids
@@ -1841,6 +1844,38 @@ def test_duplicate_umg_widget_rejects_same_name(client: TestClient) -> None:
     assert response.status_code == 400
     body = response.json()
     assert body["errors"][0]["code"] == "new_widget_name_must_differ_from_source"
+
+
+def test_delete_umg_widget_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "delete_umg_widget",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "IconImage_Copy",
+            },
+            "reason": "Remove the duplicate icon after reviewing the HUD.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "delete_umg_widget"
+    assert body["operation"]["tool_id"] == "editor_delete_umg_widget"
+    payload = body["operation"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "IconImage_Copy"
+    assert body["operation"]["affected_targets"][0]["action"] == "delete_umg_widget"
+    assert body["operation"]["expected_result_contract"]["operation_result_fields"] == [
+        "widget_blueprint_path",
+        "widget_name",
+        "old_parent_name",
+        "removed_widgets",
+        "dirty",
+        "dirty_packages",
+    ]
+    assert body["item"]["confirmation"]["state"] == "pending"
 
 
 def test_place_actor_in_level_proposal_contract(client: TestClient) -> None:
@@ -3617,6 +3652,63 @@ def test_agent_chat_resolves_umg_duplicate_from_project_inventory(client: TestCl
     assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
     assert payload["widget_name"] == "IconImage"
     assert payload["new_widget_name"] == "IconImage_Copy"
+
+
+def test_agent_chat_resolves_umg_delete_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/UI/WBP_MainHUD.WBP_MainHUD",
+                    "asset_name": "WBP_MainHUD",
+                    "asset_type": "WidgetBlueprint",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_umg_delete_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Remove WBP_MainHUD IconImage widget",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Remove WBP_MainHUD IconImage widget"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "delete_umg_widget"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "IconImage"
 
 
 def test_agent_chat_can_set_selected_material_instance_parameter(client: TestClient) -> None:
