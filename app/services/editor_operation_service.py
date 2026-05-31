@@ -6111,6 +6111,49 @@ class EditorOperationService:
                 }
             )
 
+        if bool(operation_result.get("success")):
+            source_operation_type = str(preview.get("operation_type") or operation_result.get("operation_type") or "")
+            for folder_path in self._redirector_follow_up_folders(
+                operation_type=source_operation_type,
+                payload=payload,
+                result=result,
+            ):
+                folder_slug = re.sub(r"[^A-Za-z0-9_]+", "_", folder_path.strip("/"))[:48].strip("_") or "folder"
+                follow_payload = {
+                    "folder_path": folder_path,
+                    "recursive": True,
+                    "max_redirectors": 50,
+                }
+                candidates.append(
+                    {
+                        "candidate_id": f"fixup_redirectors_{folder_slug}",
+                        "source_action_id": "fixup_redirectors_after_asset_change",
+                        "operation_type": "fixup_redirectors",
+                        "proposal_ready": True,
+                        "missing_inputs": [],
+                        "confidence": "medium",
+                        "reason": "Fix redirectors in the source folder after an asset rename or move operation.",
+                        "payload": follow_payload,
+                        "create_request_hint": {
+                            "method": "POST",
+                            "path": "/api/v1/editor-operations/proposals",
+                            "json": {
+                                "operation_type": "fixup_redirectors",
+                                "payload": follow_payload,
+                                "reason": f"Follow up from proposal {proposal_id}: fix redirectors after asset path changes.",
+                                "requested_by": "editor_operation_follow_up",
+                                "context": {"source_proposal_id": proposal_id},
+                            },
+                        },
+                        "requires_confirmation": True,
+                        "auto_execute": False,
+                        "safety_notes": [
+                            "This only creates a pending redirector fixup Proposal.",
+                            "Review the folder scope before confirming because Unreal may update referencer packages.",
+                        ],
+                    }
+                )
+
         status = "suggested" if candidates else "not_needed"
         if candidates and not any(bool(item.get("proposal_ready")) for item in candidates):
             status = "needs_manual_input"
@@ -6132,6 +6175,43 @@ class EditorOperationService:
                 "candidates": candidates,
             }
         }
+
+    @staticmethod
+    def _redirector_follow_up_folders(
+        *,
+        operation_type: str,
+        payload: dict[str, Any],
+        result: dict[str, Any],
+    ) -> list[str]:
+        if operation_type not in {"rename_selected_asset", "batch_rename_assets", "move_assets"}:
+            return []
+
+        folders: list[str] = []
+
+        def add_folder_from_asset_path(value: Any) -> None:
+            path = str(value or "").strip().replace("\\", "/")
+            if not path.startswith("/Game/") or "/" not in path.strip("/"):
+                return
+            folder = path.rsplit("/", 1)[0]
+            if folder == "/Game" or not folder.startswith("/Game/"):
+                return
+            if folder not in folders:
+                folders.append(folder)
+
+        if operation_type == "rename_selected_asset":
+            add_folder_from_asset_path(payload.get("asset_path") or result.get("old_asset_path"))
+        elif operation_type == "batch_rename_assets":
+            for item in payload.get("renames") or result.get("renamed_assets") or []:
+                if isinstance(item, dict):
+                    add_folder_from_asset_path(item.get("asset_path") or item.get("old_asset_path"))
+        elif operation_type == "move_assets":
+            for item in payload.get("moves") or result.get("moved_assets") or []:
+                if isinstance(item, dict):
+                    add_folder_from_asset_path(item.get("asset_path") or item.get("old_asset_path"))
+            for asset_path in payload.get("asset_paths") or []:
+                add_folder_from_asset_path(asset_path)
+
+        return folders[:5]
 
     @staticmethod
     def _follow_up_quick_actions(*, proposal_id: str, follow_up: dict[str, Any]) -> list[dict[str, Any]]:

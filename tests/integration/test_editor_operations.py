@@ -304,6 +304,22 @@ def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient)
     assert result_body["item"]["result_summary"]["dirty_packages"] == ["/Game/Maps/L_TestCombatArena"]
     assert result_body["item"]["result_summary"]["applied_field_count"] == 1
     assert result_body["proposal"]["dry_run_preview"]["operation_result"]["transaction_id"] == "tx_rename_001"
+    assert result_body["follow_up"]["ready_candidate_count"] == 1
+    follow_candidate = result_body["follow_up"]["candidates"][0]
+    assert follow_candidate["operation_type"] == "fixup_redirectors"
+    assert follow_candidate["payload"]["folder_path"] == "/Game/Maps"
+    assert follow_candidate["auto_execute"] is False
+    assert result_body["user_view"]["quick_actions"][0]["payload"]["candidate_id"].startswith("fixup_redirectors_")
+
+    materialized = client.post(
+        f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal",
+        json={"candidate": follow_candidate, "requested_by": "integration_test"},
+    )
+    assert materialized.status_code == 200
+    materialized_body = materialized.json()
+    assert materialized_body["proposal"]["operation"]["operation_type"] == "fixup_redirectors"
+    assert materialized_body["proposal"]["operation"]["operation_payload"]["folder_path"] == "/Game/Maps"
+    assert materialized_body["proposal"]["item"]["confirmation"]["state"] == "pending"
 
 
 def test_editor_operation_result_requires_confirmation(client: TestClient) -> None:

@@ -5944,6 +5944,7 @@ Safety behavior:
 - `max_redirectors` defaults to `50` and is capped at `200`.
 - UEAgentTool scans `UObjectRedirector` assets through Asset Registry and blocks execution if the scan exceeds the configured cap.
 - Redirector fixup may update referencers or redirector packages through Unreal's `AssetTools.FixupReferencers`; review source-control changes after execution.
+- After a successful asset rename, batch rename, or move result is reported, the backend may surface a ready follow-up candidate that creates a `fixup_redirectors` Proposal for the source folder. This is still a pending Proposal only; it is never confirmed or executed automatically.
 
 Current no-UE smoke baseline:
 
