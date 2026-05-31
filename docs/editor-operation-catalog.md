@@ -4,8 +4,8 @@ This catalog is generated from the backend editor operation registry.
 
 ## Summary
 
-- Operation count: `26`
-- Implemented frontend count: `26`
+- Operation count: `27`
+- Implemented frontend count: `27`
 - Read-only inspection count: `2`
 - Transport: `http`
 - Proposal type: `editor_operation`
@@ -27,6 +27,7 @@ Rename, move, and apply safe asset settings.
 | `apply_static_mesh_basic_settings` | `MEDIUM` | `asset_path`, `settings` | `dirty`, `dirty_packages`, `applied_fields`, `failed_fields` |
 | `batch_rename_assets` | `HIGH` | `renames` | `renamed_assets`, `dirty_packages`, `failed_items` |
 | `move_assets` | `HIGH` | `asset_paths`, `target_folder` | `moved_assets`, `dirty_packages`, `failed_items` |
+| `duplicate_asset` | `MEDIUM` | `source_asset_path`, `new_name` | `source_asset_path`, `target_path`, `duplicated_asset_path`, `dirty`, `dirty_packages` |
 
 ### Blueprint Operations
 

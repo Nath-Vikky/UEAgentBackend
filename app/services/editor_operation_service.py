@@ -249,6 +249,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["asset_paths", "target_folder"],
         "frontend_status": "implemented_v1",
     },
+    "duplicate_asset": {
+        "tool_id": "editor_duplicate_asset",
+        "title": "Duplicate Asset",
+        "risk_flags": "MEDIUM",
+        "summary": "Duplicate one Unreal asset to a new /Game path after user confirmation.",
+        "required_fields": ["source_asset_path", "new_name"],
+        "frontend_status": "implemented_v1",
+    },
     "add_umg_widget": {
         "tool_id": "editor_add_umg_widget",
         "title": "Add UMG Widget",
@@ -380,6 +388,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "apply_static_mesh_basic_settings",
             "batch_rename_assets",
             "move_assets",
+            "duplicate_asset",
         ],
     },
     "blueprint": {
@@ -639,6 +648,21 @@ class EditorOperationService:
         return default_name
 
     @staticmethod
+    def _extract_duplicate_asset_new_name_from_text(text: str, source_asset_path: str | None) -> str:
+        source_name = EditorOperationService._asset_name_from_path(source_asset_path or "")
+        for pattern in (
+            r"(?:duplicate|copy|clone)\s+(?:asset\s+)?(?:/[A-Za-z0-9_./-]+\s+)?(?:as|to|called|named|name it)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
+            r"(?:as|to|called|named|name it)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
+            r"(?:复制|拷贝|克隆).{0,32}(?:为|成|叫|命名为)\s*([A-Za-z][A-Za-z0-9_]{1,63})",
+        ):
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                candidate = match.group(1)
+                if not source_name or candidate.lower() != source_name.lower():
+                    return candidate
+        return f"{source_name}_Copy" if source_name else "DuplicatedAsset"
+
+    @staticmethod
     def _extract_blueprint_variable_name_from_text(text: str) -> str:
         for pattern in (
             r"(?:variable|var|property)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
@@ -809,6 +833,56 @@ class EditorOperationService:
         if selected_assets:
             return selected_assets[0]
         return None
+
+    @staticmethod
+    def _detect_asset_path_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None = None,
+    ) -> str | None:
+        explicit_path = str(
+            request.payload.get("source_asset_path")
+            or request.payload.get("asset_path")
+            or request.payload.get("source_path")
+            or ""
+        ).strip()
+        if explicit_path:
+            return explicit_path
+        paths = EditorOperationService._extract_unreal_paths_from_text(query_text)
+        if paths:
+            return paths[0]
+        selected_asset = EditorOperationService._selected_asset_path(request)
+        if selected_asset:
+            return selected_asset
+        named_candidate = EditorOperationService._find_named_candidate_path(
+            request,
+            query_text,
+            prefixes=("BP_", "WBP_", "SM_", "SK_", "MI_", "M_", "T_", "DA_", "ABP_"),
+        )
+        if named_candidate:
+            return named_candidate
+        return EditorOperationService._find_inventory_candidate_path(
+            context_bundle=context_bundle,
+            query_text=query_text,
+            accepted_type_tokens=(
+                "asset",
+                "blueprint",
+                "widgetblueprint",
+                "widget blueprint",
+                "staticmesh",
+                "static mesh",
+                "skeletalmesh",
+                "skeletal mesh",
+                "material",
+                "materialinstance",
+                "material instance",
+                "texture",
+                "texture2d",
+                "dataasset",
+                "animationblueprint",
+            ),
+            prefixes=("BP_", "WBP_", "SM_", "SK_", "MI_", "M_", "T_", "DA_", "ABP_"),
+        )
 
     @staticmethod
     def _candidate_asset_paths(request: UnifiedTaskRequest) -> list[str]:
@@ -2938,6 +3012,35 @@ class EditorOperationService:
             )
 
         selected_asset = EditorOperationService._selected_asset_path(request)
+        wants_duplicate_asset = any(
+            token in query_lower or token in query_text
+            for token in ("duplicate", "copy", "clone", "复制", "拷贝", "克隆")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("asset", "blueprint", "bp_", "wbp_", "sm_", "mi_", "/game/", "资产", "蓝图", "材质")
+        )
+        if wants_duplicate_asset:
+            source_asset_path = EditorOperationService._detect_asset_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            new_name = request.payload.get("new_name") or EditorOperationService._extract_duplicate_asset_new_name_from_text(
+                query_text,
+                source_asset_path,
+            )
+            return EditorOperationProposalRequest(
+                operation_type="duplicate_asset",
+                payload={
+                    "source_asset_path": source_asset_path or "",
+                    "new_name": new_name,
+                    "target_folder": request.payload.get("target_folder") or "",
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
         wants_rename = selected_asset and any(
             token in query_lower or token in query_text
             for token in ("rename", "重命名", "改名", "改成", "改为")
@@ -4213,6 +4316,28 @@ class EditorOperationService:
                 "save_policy": "mark_dirty_only",
             }
 
+        if operation_type == "duplicate_asset":
+            source_asset_path = self._normalize_asset_path(
+                payload.get("source_asset_path") or payload.get("asset_path") or payload.get("source_path")
+            )
+            source_folder = source_asset_path.rsplit("/", 1)[0]
+            target_folder = self._normalize_folder(payload.get("target_folder") or source_folder)
+            new_name = self._normalize_asset_name(payload.get("new_name"), "new_name")
+            target_path = f"{target_folder}/{new_name}"
+            if target_path == source_asset_path:
+                raise EditorOperationValidationError(
+                    "duplicate_target_matches_source",
+                    {"source_asset_path": source_asset_path, "target_path": target_path},
+                )
+            return {
+                "source_asset_path": source_asset_path,
+                "source_asset_name": source_asset_path.rsplit("/", 1)[-1],
+                "target_folder": target_folder,
+                "new_name": new_name,
+                "target_path": target_path,
+                "save_policy": "mark_dirty_only",
+            }
+
         if operation_type == "add_umg_widget":
             widget_blueprint_path = self._normalize_asset_path(payload.get("widget_blueprint_path"))
             widget_name = self._normalize_asset_name(payload.get("widget_name"), "widget_name")
@@ -4514,6 +4639,11 @@ class EditorOperationService:
                 f"Move {payload['item_count']} assets to {payload['target_folder']}. No asset is changed before confirmation.",
                 f"Move plan: {preview}. Redirectors are not fixed automatically in this operation.",
             )
+        if operation_type == "duplicate_asset":
+            return (
+                f"Duplicate source asset: {payload['source_asset_path']}. No asset is changed before confirmation.",
+                f"Create duplicate `{payload['target_path']}`. The duplicated package is marked dirty, not auto-saved.",
+            )
         if operation_type == "add_umg_widget":
             parent = payload.get("parent_widget_name") or "root widget"
             return (
@@ -4687,6 +4817,15 @@ class EditorOperationService:
                 }
                 for item in payload["moves"]
             ]
+        if operation_type == "duplicate_asset":
+            return [
+                {
+                    "kind": "asset",
+                    "action": "duplicate",
+                    "path": payload["source_asset_path"],
+                    "target_path": payload["target_path"],
+                }
+            ]
         if operation_type in {
             "add_umg_widget",
             "set_umg_widget_text",
@@ -4830,6 +4969,7 @@ class EditorOperationService:
             "compile_blueprint": ["blueprint_path", "compile_status", "messages"],
             "batch_rename_assets": ["renamed_assets", "dirty_packages", "failed_items"],
             "move_assets": ["moved_assets", "dirty_packages", "failed_items"],
+            "duplicate_asset": ["source_asset_path", "target_path", "duplicated_asset_path", "dirty", "dirty_packages"],
             "add_umg_widget": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
             "set_umg_widget_text": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],
             "set_umg_widget_layout": ["widget_blueprint_path", "widget_name", "dirty", "dirty_packages"],

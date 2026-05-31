@@ -78,6 +78,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "compile_blueprint",
         "batch_rename_assets",
         "move_assets",
+        "duplicate_asset",
         "add_umg_widget",
         "set_umg_widget_text",
         "set_umg_widget_layout",
@@ -137,6 +138,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["compile_blueprint"]["frontend_status"] == "implemented_v1"
     assert operation_items["batch_rename_assets"]["frontend_status"] == "implemented_v1"
     assert operation_items["move_assets"]["frontend_status"] == "implemented_v1"
+    assert operation_items["duplicate_asset"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_umg_widget"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_text"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_umg_widget_layout"]["frontend_status"] == "implemented_v1"
@@ -169,6 +171,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_compile_blueprint" in tool_ids
     assert "editor_batch_rename_assets" in tool_ids
     assert "editor_move_assets" in tool_ids
+    assert "editor_duplicate_asset" in tool_ids
     assert "mcp_get_blueprint_graph" in tool_ids
     assert "mcp_get_widget_tree" in tool_ids
     assert "editor_add_umg_widget" in tool_ids
@@ -1288,6 +1291,50 @@ def test_move_assets_rejects_same_folder(client: TestClient) -> None:
     assert body["errors"][0]["code"] == "move_asset_target_folder_matches_current"
 
 
+def test_duplicate_asset_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "duplicate_asset",
+            "payload": {
+                "source_asset_path": "/Game/Blueprints/BP_EnemySpawner",
+                "new_name": "BP_EnemySpawner_Copy",
+                "target_folder": "/Game/Blueprints/Variants",
+            },
+            "reason": "Create a safe variant of this Blueprint.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "duplicate_asset"
+    assert body["operation"]["tool_id"] == "editor_duplicate_asset"
+    payload = body["operation"]["operation_payload"]
+    assert payload["source_asset_path"] == "/Game/Blueprints/BP_EnemySpawner"
+    assert payload["source_asset_name"] == "BP_EnemySpawner"
+    assert payload["new_name"] == "BP_EnemySpawner_Copy"
+    assert payload["target_folder"] == "/Game/Blueprints/Variants"
+    assert payload["target_path"] == "/Game/Blueprints/Variants/BP_EnemySpawner_Copy"
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_duplicate_asset_rejects_same_target(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "duplicate_asset",
+            "payload": {
+                "source_asset_path": "/Game/Blueprints/BP_EnemySpawner",
+                "new_name": "BP_EnemySpawner",
+            },
+        },
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "duplicate_target_matches_source"
+
+
 def test_add_umg_widget_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -2046,6 +2093,48 @@ def test_assets_inspect_emits_rename_editor_operation_proposal(client: TestClien
     assert task_detail["debug_view"]["side_effects"][0]["operation_result"]["transaction_id"] == (
         f"ue_transaction_{proposal_id}"
     )
+
+
+def test_agent_chat_can_duplicate_selected_asset(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_duplicate_selected_asset_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Duplicate selected asset as BP_EnemySpawner_Copy",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_EnemySpawner"],
+            },
+            "payload": {"user_query": "Duplicate selected asset as BP_EnemySpawner_Copy"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "duplicate_asset"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["source_asset_path"] == "/Game/Blueprints/BP_EnemySpawner"
+    assert payload["new_name"] == "BP_EnemySpawner_Copy"
+    assert payload["target_path"] == "/Game/Blueprints/BP_EnemySpawner_Copy"
 
 
 def test_agent_chat_can_create_blueprint_editor_operation_proposal(client: TestClient) -> None:

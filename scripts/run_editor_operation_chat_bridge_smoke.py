@@ -236,6 +236,19 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_duplicate_inventory_asset",
+            "request": _chat_request(
+                case_id="chat_duplicate_inventory_asset",
+                query="Duplicate BP_EnemySpawner asset as BP_EnemySpawner_Copy",
+            ),
+            "expected_operation_type": "duplicate_asset",
+            "expected_payload": {
+                "source_asset_path": "/Game/Blueprints/BP_EnemySpawner",
+                "new_name": "BP_EnemySpawner_Copy",
+                "target_path": "/Game/Blueprints/BP_EnemySpawner_Copy",
+            },
+        },
+        {
             "case_id": "chat_delay_print_string_beginplay",
             "request": _chat_request(
                 case_id="chat_delay_print_string_beginplay",

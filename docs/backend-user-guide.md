@@ -5870,5 +5870,44 @@ Validation:
 Current no-UE smoke baseline:
 
 ```text
-editor-operation-chat-bridge: 17/17 passed
+editor-operation-chat-bridge: 18/18 passed
+```
+
+## 2026-05-31 Asset Duplicate Proposal
+
+`Editor Operation Bridge` now includes `duplicate_asset`, a confirmed-write
+proposal for copying one existing UE asset to a new `/Game` path.
+
+Example:
+
+```json
+{
+  "operation_type": "duplicate_asset",
+  "payload": {
+    "source_asset_path": "/Game/Blueprints/BP_EnemySpawner",
+    "new_name": "BP_EnemySpawner_Copy",
+    "target_folder": "/Game/Blueprints"
+  }
+}
+```
+
+Agent Chat can also create the Proposal from selected assets or Project
+Inventory:
+
+```text
+Duplicate BP_EnemySpawner asset as BP_EnemySpawner_Copy
+```
+
+Safety behavior:
+
+- Backend creates a pending Proposal only; UEAgentTool executes after user confirmation.
+- Source and target must both stay under `/Game`.
+- Target path must differ from the source path.
+- UEAgentTool blocks missing source assets and existing target assets.
+- The duplicated package is marked dirty but not auto-saved.
+
+Current no-UE smoke baseline:
+
+```text
+editor-operation-chat-bridge: 18/18 passed
 ```
