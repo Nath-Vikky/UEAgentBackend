@@ -339,6 +339,21 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_custom_event_print_string",
+            "request": _chat_request(
+                case_id="chat_custom_event_print_string",
+                query="Add custom event OnAgentTriggered to BP_TestActor and connect it to Print String",
+                selected_assets=["/Game/Blueprints/BP_TestActor"],
+            ),
+            "expected_operation_type": "add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "custom_event_print_string",
+                "blueprint_path": "/Game/Blueprints/BP_TestActor",
+                "custom_event_name": "OnAgentTriggered",
+                "message": "OnAgentTriggered from UEAgent",
+            },
+        },
+        {
             "case_id": "chat_place_actor",
             "request": _chat_request(
                 case_id="chat_place_actor",

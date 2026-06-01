@@ -47,7 +47,7 @@ Create Blueprint assets and perform bounded Blueprint graph edits.
 | `add_blueprint_variable` | `MEDIUM` | `blueprint_path`, `variable_name`, `variable_type` | `blueprint_path`, `variable_name`, `dirty`, `dirty_packages` |
 | `add_blueprint_component` | `MEDIUM` | `blueprint_path`, `component_name`, `component_class` | `blueprint_path`, `component_name`, `dirty`, `dirty_packages` |
 | `create_blueprint_event_stub` | `MEDIUM` | `blueprint_path`, `event_name` | `blueprint_path`, `event_name`, `dirty`, `dirty_packages` |
-| `add_blueprint_node_template` | `MEDIUM` | `blueprint_path`, `template_id` | `blueprint_path`, `template_id`, `graph_name`, `entry_event`, `branch_path`, `condition_default`, `delay_seconds`, `sequence_output_count`, `messages`, `variable_name`, `variable_scope`, `variable_value`, `function_name`, `function_target`, `input_action_path`, `input_action_name`, `created_node_id`, `created_node_name`, `entry_node_id`, `entry_node_name`, `created_nodes`, `linked_nodes`, `linked_pins`, `linked_pin_summaries`, `compile_status`, `dirty`, `dirty_packages` |
+| `add_blueprint_node_template` | `MEDIUM` | `blueprint_path`, `template_id` | `blueprint_path`, `template_id`, `graph_name`, `entry_event`, `branch_path`, `condition_default`, `delay_seconds`, `sequence_output_count`, `messages`, `variable_name`, `variable_scope`, `variable_value`, `function_name`, `function_target`, `custom_event_name`, `input_action_path`, `input_action_name`, `created_node_id`, `created_node_name`, `entry_node_id`, `entry_node_name`, `created_nodes`, `linked_nodes`, `linked_pins`, `linked_pin_summaries`, `compile_status`, `dirty`, `dirty_packages` |
 | `connect_blueprint_nodes` | `MEDIUM` | `blueprint_path`, `graph_name`, `source_node_id`, `source_pin_name`, `target_node_id`, `target_pin_name` | `blueprint_path`, `graph_name`, `source_node_id`, `source_node_name`, `source_pin_name`, `source_pin_id`, `target_node_id`, `target_node_name`, `target_pin_name`, `target_pin_id`, `linked_pins`, `linked_pin_summaries`, `compile_status`, `dirty`, `dirty_packages` |
 | `compile_blueprint` | `MEDIUM` | `blueprint_path` | `blueprint_path`, `compile_status`, `messages` |
 
@@ -58,8 +58,6 @@ Inspect and edit simple Widget Blueprint structure and properties.
 | Operation | Risk | Required Fields | Result Fields |
 | --- | --- | --- | --- |
 | `add_umg_widget` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `widget_class` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
-| `duplicate_umg_widget` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `new_widget_name` | `widget_blueprint_path`, `source_widget_name`, `new_widget_name`, `parent_widget_name`, `dirty`, `dirty_packages` |
-| `delete_umg_widget` | `HIGH` | `widget_blueprint_path`, `widget_name` | `widget_blueprint_path`, `widget_name`, `old_parent_name`, `removed_widgets`, `dirty`, `dirty_packages` |
 | `set_umg_widget_text` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `text` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
 | `set_umg_widget_layout` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `layout` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
 | `set_umg_widget_visibility` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `visibility` | `widget_blueprint_path`, `widget_name`, `dirty`, `dirty_packages` |
@@ -67,6 +65,8 @@ Inspect and edit simple Widget Blueprint structure and properties.
 | `set_umg_widget_brush` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `brush` | `widget_blueprint_path`, `widget_name`, `resource_type`, `resource_path`, `dirty`, `dirty_packages` |
 | `set_umg_slot_layout_v2` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `slot_type`, `layout` | `widget_blueprint_path`, `widget_name`, `slot_type`, `padding`, `horizontal_alignment`, `vertical_alignment`, `size`, `dirty`, `dirty_packages` |
 | `reparent_umg_widget` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `new_parent_name` | `widget_blueprint_path`, `widget_name`, `old_parent_name`, `new_parent_name`, `dirty`, `dirty_packages` |
+| `duplicate_umg_widget` | `MEDIUM` | `widget_blueprint_path`, `widget_name`, `new_widget_name` | `widget_blueprint_path`, `source_widget_name`, `new_widget_name`, `parent_widget_name`, `dirty`, `dirty_packages` |
+| `delete_umg_widget` | `HIGH` | `widget_blueprint_path`, `widget_name` | `widget_blueprint_path`, `widget_name`, `old_parent_name`, `removed_widgets`, `dirty`, `dirty_packages` |
 
 ### Level Operations
 

@@ -102,6 +102,7 @@ BLUEPRINT_EVENT_NAMES = {
 BLUEPRINT_NODE_TEMPLATE_IDS = {
     "branch_print_string",
     "call_function",
+    "custom_event_print_string",
     "delay_print_string",
     "enhanced_input_action_event",
     "enhanced_input_print_string",
@@ -756,6 +757,20 @@ class EditorOperationService:
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if match:
                 return match.group(1)
+        return ""
+
+    @staticmethod
+    def _extract_blueprint_custom_event_name_from_text(text: str) -> str:
+        for pattern in (
+            r"(?:custom\s+event|event)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
+            r"([A-Za-z][A-Za-z0-9_]{1,63})\s+(?:custom\s+event|event)",
+            r"(?:自定义事件|事件)\s*([A-Za-z][A-Za-z0-9_]{1,63})",
+        ):
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                candidate = match.group(1)
+                if candidate.lower() not in {"beginplay", "tick", "overlap", "eventgraph"}:
+                    return candidate
         return ""
 
     @staticmethod
@@ -2995,6 +3010,44 @@ class EditorOperationService:
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
             )
+        custom_event_signal = any(
+            token in query_lower or token in query_text
+            for token in (
+                "custom event",
+                "customevent",
+                "\u81ea\u5b9a\u4e49\u4e8b\u4ef6",
+            )
+        )
+        if blueprint_signal and print_string_signal and add_signal and custom_event_signal:
+            blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            custom_event_name = (
+                str(request.payload.get("custom_event_name") or "").strip()
+                or EditorOperationService._extract_blueprint_custom_event_name_from_text(query_text)
+                or "UEAgentCustomEvent"
+            )
+            return EditorOperationProposalRequest(
+                operation_type="add_blueprint_node_template",
+                payload={
+                    "blueprint_path": blueprint_path or "",
+                    "template_id": "custom_event_print_string",
+                    "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                        request,
+                        query_text,
+                    ),
+                    "custom_event_name": custom_event_name,
+                    "message": request.payload.get("message")
+                    or request.payload.get("string_value")
+                    or f"{custom_event_name} from UEAgent",
+                    "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
         if blueprint_signal and print_string_signal and add_signal and sequence_signal:
             blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
                 request,
@@ -3605,6 +3658,10 @@ class EditorOperationService:
             "branch_print_string": "branch_print_string",
             "call": "call_function",
             "call_function": "call_function",
+            "custom_event": "custom_event_print_string",
+            "custom_event_print": "custom_event_print_string",
+            "custom_event_printstring": "custom_event_print_string",
+            "custom_event_print_string": "custom_event_print_string",
             "delay": "delay_print_string",
             "delay_print": "delay_print_string",
             "delay_printstring": "delay_print_string",
@@ -4585,6 +4642,7 @@ class EditorOperationService:
             }
             if template_id in {
                 "branch_print_string",
+                "custom_event_print_string",
                 "delay_print_string",
                 "enhanced_input_print_string",
                 "print_string",
@@ -4636,6 +4694,11 @@ class EditorOperationService:
                     "function_name",
                 )
                 normalized["function_target"] = "self"
+            if template_id == "custom_event_print_string":
+                normalized["custom_event_name"] = self._normalize_asset_name(
+                    payload.get("custom_event_name", payload.get("event_name")),
+                    "custom_event_name",
+                )
             if template_id in {"enhanced_input_action_event", "enhanced_input_print_string"}:
                 normalized["input_action_path"] = self._normalize_asset_path(payload.get("input_action_path"))
             node_position = self._normalize_blueprint_node_position(payload.get("node_position"))
@@ -5011,6 +5074,11 @@ class EditorOperationService:
                     details += f" with default value `{payload['variable_value']}`"
             if payload["template_id"] == "call_function":
                 details += f" for existing self function `{payload['function_name']}`"
+            if payload["template_id"] == "custom_event_print_string":
+                details += (
+                    f" for Custom Event `{payload['custom_event_name']}`"
+                    f" and connect it to PrintString `{payload['message']}`"
+                )
             if payload["template_id"] == "enhanced_input_action_event":
                 details += f" for Input Action `{payload['input_action_path']}`"
             if payload["template_id"] == "enhanced_input_print_string":
@@ -5229,6 +5297,7 @@ class EditorOperationService:
                 "sequence_output_count",
                 "function_name",
                 "function_target",
+                "custom_event_name",
                 "input_action_path",
                 "source_node_id",
                 "source_pin_name",
@@ -5392,6 +5461,7 @@ class EditorOperationService:
                 "variable_value",
                 "function_name",
                 "function_target",
+                "custom_event_name",
                 "input_action_path",
                 "input_action_name",
                 "created_node_id",
@@ -5854,6 +5924,7 @@ class EditorOperationService:
                 "sequence_print_strings",
                 "set_variable",
                 "call_function",
+                "custom_event_print_string",
             }
         )
 

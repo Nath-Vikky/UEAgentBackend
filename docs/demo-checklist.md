@@ -77,8 +77,8 @@ pass `--output -` to print the JSON report without writing a file.
 
 Expected:
 
-- Blueprint graph proposal/result smoke: `15/15 passed`
-- Agent Chat editor-operation smoke: `22/22 passed`
+- Blueprint graph proposal/result smoke: `17/17 passed`
+- Agent Chat editor-operation smoke: `24/24 passed`
 - Editor workflow materialization smoke: `4/4 passed`
 - Project Inventory chat smoke: `1/1 passed`
 
@@ -105,6 +105,7 @@ Suggested low-risk demos:
 - Create one test Blueprint under `/Game/AgentDemo`.
 - Add a `Print String` Blueprint node template.
 - Add an `ActorBeginOverlap -> PrintString` Blueprint node chain in a test Blueprint.
+- Add a `Custom Event -> PrintString` Blueprint node chain in a test Blueprint.
 - Add an Enhanced Input Action event that connects `Triggered -> PrintString`.
 - Compile the test Blueprint.
 - Set one TextBlock text in a test Widget Blueprint.
