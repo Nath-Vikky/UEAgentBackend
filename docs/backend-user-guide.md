@@ -6146,3 +6146,25 @@ Current no-UE smoke baseline:
 ```text
 editor-operation-chat-bridge: 21/21 passed
 ```
+
+## 2026-06-01 Editor Operation Catalog Refactor
+
+后端开始把 `Editor Operation Bridge` 从单一大服务拆成更清晰的模块。当前已完成第一步：
+
+- `app/services/editor_operations/catalog.py`：集中保存 operation specs、read-only inspection specs、operation groups、协议常量、字段白名单和 `EditorOperationValidationError`。
+- `app/services/editor_operations/capabilities.py`：集中组装 `/editor-operations/capabilities` 返回的工具目录、分组、风险计数和只读能力信息。
+- `app/services/editor_operations/result_contracts.py`：集中保存每个 operation 期望 UE 前端回传的结果字段。
+- `app/services/editor_operations/preview.py`：集中保存 Proposal preflight checks 和 preview summary 模板。
+- `app/services/editor_operation_service.py`：继续负责 Proposal 创建、payload 规范化、结果记录、诊断和历史摘要。
+- `app/services/editor_workflow_planner_service.py` 与 `app/services/tool_proposal_bridge_service.py`：直接读取 catalog 中的 operation metadata。
+
+这次是行为不变的结构优化，不影响 UEAgentTool 使用方式。API 路径、Proposal JSON、用户确认流程、UE 前端执行和结果回传契约都保持不变。
+
+本轮回归：
+
+```text
+ruff check app tests scripts --no-cache: passed
+pytest editor operation / catalog / tool registry / MCP adapter: 149 passed
+editor-operation-chat-bridge smoke: 29/29 passed
+blueprint-graph-operation smoke: 17/17 passed
+```

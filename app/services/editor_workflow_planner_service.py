@@ -5,7 +5,8 @@ import uuid
 from typing import Any
 
 from app.schemas.requests import EditorOperationProposalRequest, UnifiedTaskRequest
-from app.services.editor_operation_service import EditorOperationService, OPERATION_SPECS
+from app.services.editor_operation_service import EditorOperationService
+from app.services.editor_operations.catalog import OPERATION_SPECS
 
 WORKFLOW_PLAN_SCHEMA_VERSION = "editor_workflow_plan_v1"
 WORKFLOW_STEP_MATERIALIZATION_SCHEMA_VERSION = "editor_workflow_step_materialization_v1"

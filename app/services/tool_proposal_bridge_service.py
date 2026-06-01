@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.editor_operation_service import OPERATION_SPECS
+from app.services.editor_operations.catalog import OPERATION_SPECS
 from app.tools.registry import ToolSpec, get_tool_spec
 
 TOOL_REGISTRY_PROPOSAL_BRIDGE_VERSION = "tool_registry_proposal_bridge_v1"
