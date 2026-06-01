@@ -120,6 +120,11 @@ def _seed_inventory(client: TestClient) -> dict[str, Any]:
                     "asset_name": "T_Player_D",
                     "asset_type": "Texture2D",
                 },
+                {
+                    "asset_path": "/Game/Input/IA_Jump.IA_Jump",
+                    "asset_name": "IA_Jump",
+                    "asset_type": "InputAction",
+                },
             ],
             "level_actors": [
                 {
@@ -301,6 +306,21 @@ def _cases() -> list[dict[str, Any]]:
             "expected_payload": {
                 "blueprint_path": "/Game/Blueprints/BP_EnemySpawner",
                 "event_name": "Tick",
+            },
+        },
+        {
+            "case_id": "chat_enhanced_input_print_string",
+            "request": _chat_request(
+                case_id="chat_enhanced_input_print_string",
+                query="Add Enhanced Input Action IA_Jump to BP_TestActor and connect Triggered to Print String",
+                selected_assets=["/Game/Blueprints/BP_TestActor", "/Game/Input/IA_Jump"],
+            ),
+            "expected_operation_type": "add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "enhanced_input_print_string",
+                "blueprint_path": "/Game/Blueprints/BP_TestActor",
+                "input_action_path": "/Game/Input/IA_Jump",
+                "message": "IA_Jump triggered",
             },
         },
         {

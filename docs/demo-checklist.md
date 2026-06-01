@@ -77,8 +77,8 @@ pass `--output -` to print the JSON report without writing a file.
 
 Expected:
 
-- Blueprint graph proposal/result smoke: `14/14 passed`
-- Agent Chat editor-operation smoke: `21/21 passed`
+- Blueprint graph proposal/result smoke: `15/15 passed`
+- Agent Chat editor-operation smoke: `22/22 passed`
 - Editor workflow materialization smoke: `4/4 passed`
 - Project Inventory chat smoke: `1/1 passed`
 
@@ -104,6 +104,7 @@ Suggested low-risk demos:
 - Fix redirectors under a bounded test folder such as `/Game/AgentDemo`.
 - Create one test Blueprint under `/Game/AgentDemo`.
 - Add a `Print String` Blueprint node template.
+- Add an Enhanced Input Action event that connects `Triggered -> PrintString`.
 - Compile the test Blueprint.
 - Set one TextBlock text in a test Widget Blueprint.
 - Duplicate one non-panel UMG widget under the same parent with a safe new name.

@@ -249,9 +249,9 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `storage/artifacts/evals/*.md` 是本地生成的 Markdown 评估报告，展示 `hit_at_k`、`mrr`、`route_accuracy`、`citation_coverage` 等核心指标。当前评估是 smoke 级别，用于证明“可测、可复现、可继续优化”，不是企业级大规模 benchmark。
 
-`scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它会调用 `POST /api/v1/editor-operations/proposals` 验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`delay_print_string`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定；同时会模拟一次 `POST /api/v1/editor-operations/results`，验证 Blueprint Graph 结果诊断、`editor_operation_graph_details` User View block 和 follow-up quick action 是否仍然连通。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
+`scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它会调用 `POST /api/v1/editor-operations/proposals` 验证 `print_string`、`branch_print_string`、`sequence_print_strings`、`delay_print_string`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event`、`enhanced_input_print_string`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定；同时会模拟一次 `POST /api/v1/editor-operations/results`，验证 Blueprint Graph 结果诊断、`editor_operation_graph_details` User View block 和 follow-up quick action 是否仍然连通。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
-`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`（含普通 PrintString、Delay -> PrintString，以及中英文 `BP_ProjectSpecificName` 这类真实命名用例）、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`duplicate_umg_widget`、`delete_umg_widget`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
+`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`（含普通 PrintString、Delay -> PrintString、Enhanced Input Triggered -> PrintString，以及中英文 `BP_ProjectSpecificName` 这类真实命名用例）、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`duplicate_umg_widget`、`delete_umg_widget`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
@@ -2894,7 +2894,7 @@ compile_blueprint
 }
 ```
 
-`add_blueprint_node_template` 当前开放八个白名单模板：
+`add_blueprint_node_template` 当前开放九个白名单模板：
 
 - `template_id=print_string`：UE 插件会在指定 graph 中创建 `UKismetSystemLibrary::PrintString` CallFunction 节点。若传入 `entry_event=BeginPlay`，插件会创建或复用 `Event BeginPlay` 节点，并尝试连接 `BeginPlay.Then -> PrintString.Execute`。
 - `template_id=branch_print_string`：UE 插件会创建或复用 `Event BeginPlay`，创建 `Branch` 节点和 `PrintString` 节点，并连接 `BeginPlay -> Branch -> PrintString`。可传 `condition_default=true/false` 设置 Branch 条件默认值，可传 `branch_path=true/false` 指定把 PrintString 接到 True 分支还是 False 分支。
@@ -2903,7 +2903,8 @@ compile_blueprint
 - `template_id=get_variable`：UE 插件会为已有 Blueprint member variable 创建一个 `Variable Get` 节点。当前只支持 `variable_scope=self`，不会自动连线。
 - `template_id=set_variable`：UE 插件会为已有 Blueprint member variable 创建一个 `Variable Set` 节点，默认创建或复用 `Event BeginPlay` 并连接 `BeginPlay -> SetVariable`。可传 `variable_value` 写入 Set 节点值 Pin 的默认值。
 - `template_id=call_function`：UE 插件会调用当前 Blueprint / 父类上已存在的无输入参数、非 Pure 函数，创建 `CallFunction` 节点；默认创建或复用 `Event BeginPlay` 并连接 `BeginPlay -> CallFunction`。当前只支持 `function_target=self`。
-- `template_id=enhanced_input_action_event`：UE 插件会根据已有 `UInputAction` 资产创建 `Enhanced Input Action` 事件节点。当前只创建事件源节点，不自动连线；后续可通过 `get_blueprint_graph` 读取 `Triggered / Started / Completed` 等 pin，再用 `connect_blueprint_nodes` 显式连接。
+- `template_id=enhanced_input_action_event`：UE 插件会根据已有 `UInputAction` 资产创建 `Enhanced Input Action` 事件节点。该模板只创建事件源节点，不自动连线；后续可通过 `get_blueprint_graph` 读取 `Triggered / Started / Completed` 等 pin，再用 `connect_blueprint_nodes` 显式连接。
+- `template_id=enhanced_input_print_string`：UE 插件会根据已有 `UInputAction` 资产创建 `Enhanced Input Action` 事件节点和一个 `PrintString` 节点，并尝试连接 `EnhancedInput.Triggered -> PrintString.Execute`。如果 `Triggered` pin 不存在，会回退到第一个可用 exec output；如果任一 pin 已被占用，则本次执行会失败并回传诊断，不会断开已有连线。
 
 执行后可选编译一次 Blueprint，并把 `created_nodes`、`linked_nodes`、`linked_pins`、`branch_path`、`condition_default`、`sequence_output_count`、`messages`、`delay_seconds`、`variable_name`、`variable_scope`、`variable_value`、`function_name`、`function_target`、`input_action_path`、`input_action_name`、`compile_status`、`dirty_packages`、`applied_fields` 回传后端。后续模板会继续按白名单扩展，不开放任意节点类名。
 
@@ -3085,6 +3086,22 @@ Enhanced Input Action Event 示例：
 }
 ```
 
+Enhanced Input Triggered -> PrintString 示例：
+
+```json
+{
+  "operation_type": "add_blueprint_node_template",
+  "payload": {
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "template_id": "enhanced_input_print_string",
+    "graph_name": "EventGraph",
+    "input_action_path": "/Game/Input/IA_Jump",
+    "message": "IA_Jump triggered",
+    "compile_after_edit": true
+  }
+}
+```
+
 显式连接 Blueprint Pin 示例：
 
 ```json
@@ -3110,6 +3127,7 @@ Agent Chat 自然语言桥接会做一层轻量图谱语义识别：
 - 文本包含 `ConstructionScript`、`construction script`、`构造脚本` 时，会把 `graph_name` 设为 `ConstructionScript`。
 - 文本包含 `EventGraph`、`event graph`、`事件图表` 时，会把 `graph_name` 设为 `EventGraph`。
 - Agent Chat 中普通 `Print String` 请求如果明确目标是 `EventGraph`，后端会默认补 `entry_event=BeginPlay`，让 UEAgentTool 创建或复用 `Event BeginPlay` 并尝试连接执行线；如果用户明确说 `unconnected / no connection / 只创建 / 不连接`，则保持 `entry_event=""`，只创建节点不连线。
+- 文本同时包含 `Enhanced Input / Input Action / IA_*` 和 `Print String`，且能从 payload、选中资产、Project Inventory 或文本中的 `IA_*` 名称解析到 Input Action 时，会生成 `enhanced_input_print_string` Proposal。
 - 文本包含 `compile / recompile / 编译 / 重新编译` 且能从 payload、Project Inventory、选中资产或最近操作中解析到 Blueprint 时，会生成 `compile_blueprint` Proposal。
 - 文本包含 `BeginPlay / Tick / ActorBeginOverlap / ActorEndOverlap` 这类白名单事件，且是“添加事件节点”语义时，会生成 `create_blueprint_event_stub` Proposal。
 
@@ -3143,7 +3161,7 @@ required_payload_fields: blueprint_path
 - 仍然必须走 `confirm -> UE 前端执行 -> results 回传`。
 - v1 不做复杂节点连线、不生成大段蓝图逻辑、不自动放入关卡、不自动保存包。
 - `create_blueprint_event_stub` 仅允许 `BeginPlay / Tick / ActorBeginOverlap / ActorEndOverlap`。
-- `add_blueprint_node_template` 当前只允许 `print_string`、`branch_print_string`、`sequence_print_strings`、`delay_print_string`、`get_variable`、`set_variable`、`call_function` 与 `enhanced_input_action_event`；自动连线只支持 `entry_event=BeginPlay` 这一条模板化入口；变量模板只支持已有 member variable，不会自动创建变量；函数调用模板只支持当前 Blueprint / 父类上已有的无输入参数、非 Pure 函数；Enhanced Input 模板只支持已有 `UInputAction` 资产且不自动连线；不支持任意节点、删除节点、批量替换节点或任意 pin 连线。
+- `add_blueprint_node_template` 当前只允许 `print_string`、`branch_print_string`、`sequence_print_strings`、`delay_print_string`、`get_variable`、`set_variable`、`call_function`、`enhanced_input_action_event` 与 `enhanced_input_print_string`；自动连线只支持 `entry_event=BeginPlay` 或 `Enhanced Input Triggered -> PrintString` 这类固定模板；变量模板只支持已有 member variable，不会自动创建变量；函数调用模板只支持当前 Blueprint / 父类上已有的无输入参数、非 Pure 函数；Enhanced Input 模板只支持已有 `UInputAction` 资产；不支持任意节点、删除节点、批量替换节点或任意 pin 连线。
 - `connect_blueprint_nodes` 只允许明确 source/target node id 和 pin name 的单次连接；不支持跨 Blueprint、跨 graph、断开已有连接、批量连线或自动猜 pin。
 - `compile_blueprint` 只触发一次 UE 编译并返回状态，不自动保存 package，不做循环修复。
 - `get_blueprint_graph` 只读，不经过 Proposal；建议仅在本地 TCP 白名单中开放。

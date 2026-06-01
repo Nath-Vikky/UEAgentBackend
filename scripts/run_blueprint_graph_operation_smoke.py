@@ -285,6 +285,27 @@ def _cases() -> list[dict[str, Any]]:
             "expected_result_fields": ["input_action_path", "created_nodes"],
         },
         {
+            "case_id": "template_enhanced_input_print_string",
+            "request": _proposal_payload(
+                "add_blueprint_node_template",
+                {
+                    "blueprint_path": blueprint_path,
+                    "template_id": "enhanced_input_print_string",
+                    "graph_name": "EventGraph",
+                    "input_action_path": "/Game/Input/IA_Jump",
+                    "message": "Jump triggered",
+                },
+            ),
+            "expected_status": 200,
+            "expected_tool_id": "editor_add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "enhanced_input_print_string",
+                "input_action_path": "/Game/Input/IA_Jump",
+                "message": "Jump triggered",
+            },
+            "expected_result_fields": ["input_action_path", "created_nodes", "linked_pins"],
+        },
+        {
             "case_id": "connect_blueprint_nodes",
             "request": _proposal_payload(
                 "connect_blueprint_nodes",

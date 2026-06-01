@@ -1296,6 +1296,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                         "call_function",
                         "delay_print_string",
                         "enhanced_input_action_event",
+                        "enhanced_input_print_string",
                         "get_variable",
                         "print_string",
                         "sequence_print_strings",

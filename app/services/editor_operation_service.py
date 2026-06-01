@@ -104,6 +104,7 @@ BLUEPRINT_NODE_TEMPLATE_IDS = {
     "call_function",
     "delay_print_string",
     "enhanced_input_action_event",
+    "enhanced_input_print_string",
     "get_variable",
     "print_string",
     "sequence_print_strings",
@@ -1662,6 +1663,52 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_input_action_path_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None = None,
+    ) -> str | None:
+        explicit_path = str(
+            request.payload.get("input_action_path")
+            or request.payload.get("input_action")
+            or request.payload.get("input_action_asset")
+            or ""
+        ).strip()
+        if explicit_path:
+            return explicit_path
+
+        for path in EditorOperationService._extract_unreal_paths_from_text(query_text):
+            asset_name = EditorOperationService._asset_name_from_path(path)
+            if asset_name.lower().startswith("ia_") or "/input/" in path.lower():
+                return path
+
+        named_candidate = EditorOperationService._find_named_candidate_path(
+            request,
+            query_text,
+            prefixes=("IA_",),
+        )
+        if named_candidate and EditorOperationService._asset_name_from_path(named_candidate).lower().startswith("ia_"):
+            return named_candidate
+
+        inventory_candidate = EditorOperationService._find_inventory_candidate_path(
+            context_bundle=context_bundle,
+            query_text=query_text,
+            accepted_type_tokens=("inputaction", "input action"),
+            prefixes=("IA_",),
+        )
+        if inventory_candidate:
+            return inventory_candidate
+
+        for selected_asset in EditorOperationService._candidate_asset_paths(request):
+            if re.search(r"(^|[/._])IA_[A-Za-z0-9_]+", selected_asset):
+                return selected_asset
+
+        match = re.search(r"\b(IA_[A-Za-z][A-Za-z0-9_]{1,63})\b", query_text, flags=re.IGNORECASE)
+        if match:
+            return f"/Game/Input/{match.group(1)}"
+        return None
+
+    @staticmethod
     def _detect_blueprint_path_from_request(
         request: UnifiedTaskRequest,
         query_text: str,
@@ -2832,6 +2879,49 @@ class EditorOperationService:
                 "\u7136\u540e",
             )
         )
+        enhanced_input_signal = any(
+            token in query_lower or token in query_text
+            for token in (
+                "enhanced input",
+                "input action",
+                "inputaction",
+                "ia_",
+                "enhancedinput",
+                "\u589e\u5f3a\u8f93\u5165",
+                "\u8f93\u5165\u52a8\u4f5c",
+            )
+        )
+        if blueprint_signal and print_string_signal and add_signal and enhanced_input_signal:
+            input_action_path = EditorOperationService._detect_input_action_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            if input_action_path:
+                blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                    request,
+                    query_text,
+                    context_bundle,
+                )
+                return EditorOperationProposalRequest(
+                    operation_type="add_blueprint_node_template",
+                    payload={
+                        "blueprint_path": blueprint_path or "",
+                        "template_id": "enhanced_input_print_string",
+                        "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                            request,
+                            query_text,
+                        ),
+                        "input_action_path": input_action_path,
+                        "message": request.payload.get("message")
+                        or request.payload.get("string_value")
+                        or f"{EditorOperationService._asset_name_from_path(input_action_path)} triggered",
+                        "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                    },
+                    reason=query_text,
+                    requested_by="agent_chat",
+                    context=request.context.model_dump(mode="json"),
+                )
         if blueprint_signal and print_string_signal and add_signal and sequence_signal:
             blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
                 request,
@@ -3449,11 +3539,17 @@ class EditorOperationService:
             "enhanced_input": "enhanced_input_action_event",
             "enhanced_input_action": "enhanced_input_action_event",
             "enhanced_input_action_event": "enhanced_input_action_event",
+            "enhanced_input_print": "enhanced_input_print_string",
+            "enhanced_input_printstring": "enhanced_input_print_string",
+            "enhanced_input_print_string": "enhanced_input_print_string",
             "function": "call_function",
             "function_call": "call_function",
             "get": "get_variable",
             "get_var": "get_variable",
             "get_variable": "get_variable",
+            "input_action_print": "enhanced_input_print_string",
+            "input_action_printstring": "enhanced_input_print_string",
+            "input_action_print_string": "enhanced_input_print_string",
             "if_print_string": "branch_print_string",
             "ifthenelse_print_string": "branch_print_string",
             "print": "print_string",
@@ -4387,7 +4483,7 @@ class EditorOperationService:
             entry_event_raw = payload.get("entry_event")
             if template_id == "get_variable":
                 entry_event_raw = ""
-            if template_id == "enhanced_input_action_event":
+            if template_id in {"enhanced_input_action_event", "enhanced_input_print_string"}:
                 entry_event_raw = ""
             if template_id in {
                 "branch_print_string",
@@ -4406,7 +4502,13 @@ class EditorOperationService:
                 "compile_after_edit": bool(payload.get("compile_after_edit", True)),
                 "save_policy": "mark_dirty_only",
             }
-            if template_id in {"branch_print_string", "delay_print_string", "print_string", "sequence_print_strings"}:
+            if template_id in {
+                "branch_print_string",
+                "delay_print_string",
+                "enhanced_input_print_string",
+                "print_string",
+                "sequence_print_strings",
+            }:
                 normalized["message"] = self._clean_text(
                     payload.get("message") or payload.get("string_value") or "Hello from UEAgent",
                     max_length=240,
@@ -4453,7 +4555,7 @@ class EditorOperationService:
                     "function_name",
                 )
                 normalized["function_target"] = "self"
-            if template_id == "enhanced_input_action_event":
+            if template_id in {"enhanced_input_action_event", "enhanced_input_print_string"}:
                 normalized["input_action_path"] = self._normalize_asset_path(payload.get("input_action_path"))
             node_position = self._normalize_blueprint_node_position(payload.get("node_position"))
             if node_position:
@@ -4830,6 +4932,11 @@ class EditorOperationService:
                 details += f" for existing self function `{payload['function_name']}`"
             if payload["template_id"] == "enhanced_input_action_event":
                 details += f" for Input Action `{payload['input_action_path']}`"
+            if payload["template_id"] == "enhanced_input_print_string":
+                details += (
+                    f" for Input Action `{payload['input_action_path']}`"
+                    f" and connect Triggered to PrintString `{payload['message']}`"
+                )
             if payload.get("entry_event"):
                 details += f" and connect from `{payload['entry_event']}`"
             if payload.get("compile_after_edit"):
@@ -5662,6 +5769,7 @@ class EditorOperationService:
             in {
                 "print_string",
                 "branch_print_string",
+                "enhanced_input_print_string",
                 "sequence_print_strings",
                 "set_variable",
                 "call_function",
