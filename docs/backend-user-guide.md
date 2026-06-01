@@ -2923,6 +2923,7 @@ UE 插件回传 Blueprint Graph 执行结果后，后端会在 `result_summary.o
 - `linked_pin_count`：本次真实连接的 pin 数量。
 - `compile_requested / compile_status`：是否请求编译以及 UE 插件回传的编译状态。
 - `diagnostic_flags`：例如 `expected_linked_pins_missing`、`compile_status_missing`、`compile_failed`、`created_nodes_missing`。
+- `failed_fields[] / errors[]`：UEAgentTool 会尽量把缺少 node/pin、pin 已占用、graph/schema 不可用、Blueprint 编译失败等原因整理成可读文本，后端会把这些信息同步到 User View 的 `Blueprint Graph Details` block 中。
 
 这些字段主要给 Debug View、操作历史和排查使用，不要求前端立刻新增 UI；旧版 Proposal 卡片可以继续只显示原有结果。
 

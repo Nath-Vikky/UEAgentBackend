@@ -6876,6 +6876,30 @@ class EditorOperationService:
         )
         if dirty_packages:
             items.append(f"Dirty packages: {', '.join(dirty_packages[:5])}")
+        for failed_field in EditorOperationService._summarize_limited_items(
+            result_summary.get("failed_fields") or result.get("failed_fields"),
+            lambda item: (
+                f"{item.get('field') or 'unknown'}: {item.get('reason') or item.get('message') or 'failed'}"
+                if isinstance(item, dict)
+                else str(item)
+            ),
+            limit=5,
+        ):
+            items.append(f"Failed field: {failed_field}")
+        error_items = []
+        for error_item in operation_result.get("errors") or []:
+            if isinstance(error_item, dict):
+                code = EditorOperationService._first_non_empty_text(
+                    error_item.get("code"),
+                    error_item.get("reason"),
+                    "unknown_error",
+                )
+                message = EditorOperationService._first_non_empty_text(error_item.get("message"))
+                error_items.append(f"{code}: {message}" if message else code)
+            else:
+                error_items.append(str(error_item))
+        for error_summary in error_items[:5]:
+            items.append(f"UE error: {error_summary}")
 
         if not items:
             return None
