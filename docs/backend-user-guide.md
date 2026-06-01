@@ -251,7 +251,7 @@ GitHub Actions 当前仅保留手动触发入口，不再随 push 自动运行�
 
 `scripts/run_blueprint_graph_operation_smoke.py` 是无 UE、无 LLM 的后端契约烟测。它会调用 `POST /api/v1/editor-operations/proposals` 验证 `print_string`（含 `ActorBeginOverlap -> PrintString`）、`branch_print_string`、`sequence_print_strings`、`delay_print_string`、`get_variable`、`set_variable`、`call_function`、`custom_event_print_string`、`enhanced_input_action_event`、`enhanced_input_print_string`、`connect_blueprint_nodes` 以及两个拒绝用例是否仍然稳定；同时会模拟一次 `POST /api/v1/editor-operations/results`，验证 Blueprint Graph 结果诊断、`editor_operation_graph_details` User View block 和 follow-up quick action 是否仍然连通。报告默认写入 `storage/artifacts/smoke/blueprint-graph-operation-smoke-latest.json`，该目录默认不进入 Git。
 
-`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`（含普通 PrintString、Overlap -> PrintString、Custom Event -> PrintString、Delay -> PrintString、Enhanced Input Triggered -> PrintString，以及中英文 `BP_ProjectSpecificName` 这类真实命名用例）、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`add_umg_widget`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`duplicate_umg_widget`、`delete_umg_widget`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
+`scripts/run_editor_operation_chat_bridge_smoke.py` 是无 UE、无 LLM 的自由聊天桥接烟测。它会先写入一份临时 Project Inventory，然后通过 `POST /api/v1/chat/runs` 验证自然语言是否能稳定生成 `add_blueprint_node_template`（含普通 PrintString、Overlap -> PrintString、Custom Event -> PrintString、Delay -> PrintString、Enhanced Input Triggered -> PrintString，以及中英文 `BP_ProjectSpecificName` 这类真实命名用例）、`compile_blueprint`、`create_blueprint_event_stub`、`place_actor_in_level`、`set_actor_metadata`、`move_assets`、`add_umg_widget`、`set_umg_widget_text`、`set_umg_widget_appearance`、`set_umg_widget_brush`、`set_umg_slot_layout_v2`、`duplicate_umg_widget`、`delete_umg_widget`、`set_material_instance_parameter` 和 `set_material_instance_static_switch` Proposal。报告默认写入 `storage/artifacts/smoke/editor-operation-chat-bridge-smoke-latest.json`。
 
 幻觉守卫评测专门覆盖：
 - 没有 Project Inventory 时，不能编造当前工程里不存在的蓝图、变量或组件。
@@ -5873,7 +5873,7 @@ knowledge.
 .\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py
 ```
 
-当前 `run_editor_operation_chat_bridge_smoke.py` 基线为 `25/25 passed`。本修复不要求 UE 前端改接口；如果前端没有选中资产，建议保持插件启动后的 Project Inventory 自动同步。
+当前 `run_editor_operation_chat_bridge_smoke.py` 基线为 `26/26 passed`。本修复不要求 UE 前端改接口；如果前端没有选中资产，建议保持插件启动后的 Project Inventory 自动同步。
 
 ## 2026-05-31 UMG Reparent Widget Proposal
 

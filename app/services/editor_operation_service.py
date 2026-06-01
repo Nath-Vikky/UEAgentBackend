@@ -735,6 +735,78 @@ class EditorOperationService:
         return ""
 
     @staticmethod
+    def _looks_like_asset_path(path: str) -> bool:
+        leaf = str(path or "").rstrip("/").rsplit("/", 1)[-1]
+        if "." in leaf:
+            return True
+        return leaf.startswith(("BP_", "WBP_", "SM_", "SK_", "MI_", "M_", "T_", "DA_", "ABP_", "L_"))
+
+    @staticmethod
+    def _detect_move_target_folder_from_request(request: UnifiedTaskRequest, query_text: str) -> str:
+        explicit_folder = str(
+            request.payload.get("target_folder")
+            or request.payload.get("destination_folder")
+            or request.payload.get("dest_folder")
+            or ""
+        ).strip()
+        if explicit_folder:
+            return explicit_folder
+
+        target_match = re.search(
+            r"(?:to|into|under|target\s+folder|destination)\s+(/[A-Za-z0-9_./-]+)",
+            query_text,
+            flags=re.IGNORECASE,
+        )
+        if target_match:
+            return target_match.group(1).rstrip("/")
+
+        for path in reversed(EditorOperationService._extract_unreal_paths_from_text(query_text)):
+            if path.startswith("/Game/") and not EditorOperationService._looks_like_asset_path(path):
+                return path
+        return ""
+
+    @staticmethod
+    def _detect_asset_paths_for_move_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        context_bundle: dict[str, Any] | None = None,
+    ) -> list[str]:
+        explicit_paths = request.payload.get("asset_paths")
+        if isinstance(explicit_paths, list):
+            return [str(path or "").strip() for path in explicit_paths if str(path or "").strip()]
+
+        paths: list[str] = []
+        seen: set[str] = set()
+
+        def add_path(path: str | None) -> None:
+            text = str(path or "").strip()
+            if not text or not EditorOperationService._looks_like_asset_path(text):
+                return
+            key = text.lower()
+            if key in seen:
+                return
+            seen.add(key)
+            paths.append(text)
+
+        for path in EditorOperationService._extract_unreal_paths_from_text(query_text):
+            add_path(path)
+
+        for selected_asset in EditorOperationService._candidate_asset_paths(request):
+            add_path(selected_asset)
+
+        query_lower = query_text.lower()
+        for item in EditorOperationService._inventory_asset_candidates(context_bundle):
+            path = str(item.get("asset_path") or "").strip()
+            name = str(item.get("asset_name") or EditorOperationService._asset_name_from_path(path)).strip()
+            if not path or not name:
+                continue
+            leaf_name = EditorOperationService._asset_name_from_path(path)
+            if name.lower() in query_lower or leaf_name.lower() in query_lower or path.lower() in query_lower:
+                add_path(path)
+
+        return paths
+
+    @staticmethod
     def _extract_blueprint_variable_name_from_text(text: str) -> str:
         for pattern in (
             r"(?:variable|var|property)\s+([A-Za-z][A-Za-z0-9_]{1,63})",
@@ -3497,6 +3569,31 @@ class EditorOperationService:
                     "source_asset_path": source_asset_path or "",
                     "new_name": new_name,
                     "target_folder": request.payload.get("target_folder") or "",
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        wants_move_assets = any(
+            token in query_lower or token in query_text
+            for token in ("move", "relocate", "transfer", "organize", "绉诲姩", "绉诲埌", "鏁寸悊")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("asset", "assets", "blueprint", "bp_", "wbp_", "sm_", "mi_", "/game/", "璧勪骇", "钃濆浘")
+        )
+        if wants_move_assets:
+            asset_paths = EditorOperationService._detect_asset_paths_for_move_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            target_folder = EditorOperationService._detect_move_target_folder_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="move_assets",
+                payload={
+                    "asset_paths": asset_paths,
+                    "target_folder": target_folder,
                 },
                 reason=query_text,
                 requested_by="agent_chat",

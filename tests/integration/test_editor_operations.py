@@ -2423,6 +2423,63 @@ def test_agent_chat_can_duplicate_selected_asset(client: TestClient) -> None:
     assert payload["target_path"] == "/Game/Blueprints/BP_EnemySpawner_Copy"
 
 
+def test_agent_chat_can_move_inventory_asset_to_folder(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
+                    "asset_name": "BP_EnemySpawner",
+                    "asset_type": "Blueprint",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_move_asset_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Move BP_EnemySpawner asset to /Game/Environment/Blueprints",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+            },
+            "payload": {"user_query": "Move BP_EnemySpawner asset to /Game/Environment/Blueprints"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "move_assets"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["asset_paths"] == ["/Game/Blueprints/BP_EnemySpawner"]
+    assert payload["target_folder"] == "/Game/Environment/Blueprints"
+    assert payload["moves"][0]["target_path"] == "/Game/Environment/Blueprints/BP_EnemySpawner"
+
+
 def test_agent_chat_can_fixup_redirectors_for_folder(client: TestClient) -> None:
     response = client.post(
         "/api/v1/chat/runs",

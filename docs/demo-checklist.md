@@ -78,7 +78,7 @@ pass `--output -` to print the JSON report without writing a file.
 Expected:
 
 - Blueprint graph proposal/result smoke: `17/17 passed`
-- Agent Chat editor-operation smoke: `25/25 passed`
+- Agent Chat editor-operation smoke: `26/26 passed`
 - Editor workflow materialization smoke: `5/5 passed`
 - Project Inventory chat smoke: `1/1 passed`
 

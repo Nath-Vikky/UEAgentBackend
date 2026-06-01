@@ -283,6 +283,19 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_move_inventory_asset",
+            "request": _chat_request(
+                case_id="chat_move_inventory_asset",
+                query="Move BP_EnemySpawner asset to /Game/Environment/Blueprints",
+            ),
+            "expected_operation_type": "move_assets",
+            "expected_payload": {
+                "asset_paths": ["/Game/Blueprints/BP_EnemySpawner"],
+                "target_folder": "/Game/Environment/Blueprints",
+                "moves.0.target_path": "/Game/Environment/Blueprints/BP_EnemySpawner",
+            },
+        },
+        {
             "case_id": "chat_fixup_redirectors_folder",
             "request": _chat_request(
                 case_id="chat_fixup_redirectors_folder",
@@ -534,9 +547,16 @@ def _cases() -> list[dict[str, Any]]:
 def _nested_get(data: dict[str, Any], path: str) -> Any:
     current: Any = data
     for part in path.split("."):
-        if not isinstance(current, dict):
-            return None
-        current = current.get(part)
+        if isinstance(current, list) and part.isdigit():
+            index = int(part)
+            if index >= len(current):
+                return None
+            current = current[index]
+            continue
+        if isinstance(current, dict):
+            current = current.get(part)
+            continue
+        return None
     return current
 
 
