@@ -1912,6 +1912,62 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_umg_widget_class_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
+        explicit_class = str(request.payload.get("widget_class") or "").strip()
+        if explicit_class:
+            return explicit_class
+
+        normalized_query = re.sub(r"[^a-z0-9]+", "", query_text.lower())
+        class_aliases = sorted(UMG_WIDGET_CLASS_ALIASES.items(), key=lambda item: len(item[0]), reverse=True)
+        for alias, widget_class in class_aliases:
+            if alias in normalized_query:
+                return widget_class
+        return None
+
+    @staticmethod
+    def _detect_created_umg_widget_name_from_request(
+        request: UnifiedTaskRequest,
+        query_text: str,
+        widget_class: str | None,
+    ) -> str | None:
+        explicit_name = str(
+            request.payload.get("widget_name")
+            or request.payload.get("new_widget_name")
+            or request.payload.get("target_widget_name")
+            or ""
+        ).strip()
+        if explicit_name:
+            return explicit_name
+
+        class_name = (widget_class or "").rsplit(".", 1)[-1]
+        class_terms = {class_name, class_name.replace("Block", " Block")}
+        for alias, alias_class in UMG_WIDGET_CLASS_ALIASES.items():
+            if alias_class == widget_class:
+                class_terms.add(alias)
+        class_terms = {term.strip() for term in class_terms if term.strip()}
+
+        for term in sorted(class_terms, key=len, reverse=True):
+            escaped = re.escape(term).replace("\\ ", r"\s+")
+            patterns = (
+                rf"(?:add|create|insert|make)\s+(?:a|an)?\s*{escaped}\s+(?:widget\s+)?([A-Za-z][A-Za-z0-9_]{{1,79}})",
+                rf"{escaped}\s+(?:named|called|as)\s+([A-Za-z][A-Za-z0-9_]{{1,79}})",
+            )
+            for pattern in patterns:
+                match = re.search(pattern, query_text, flags=re.IGNORECASE)
+                if match:
+                    candidate = match.group(1).strip()
+                    if not candidate.lower().startswith(("wbp_", "ui_")):
+                        return candidate
+
+        fallback_name = EditorOperationService._detect_widget_name_from_request(request, query_text)
+        if fallback_name:
+            return fallback_name
+
+        if class_name and _ASSET_NAME_RE.match(f"Agent{class_name}"):
+            return f"Agent{class_name}"
+        return None
+
+    @staticmethod
     def _detect_umg_text_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
         explicit_text = request.payload.get("text")
         if explicit_text is not None:
@@ -2553,6 +2609,46 @@ class EditorOperationService:
                     "widget_blueprint_path": widget_blueprint_path or "",
                     "widget_name": widget_name or "",
                     "new_parent_name": new_parent_name or "",
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        umg_widget_class = EditorOperationService._detect_umg_widget_class_from_request(request, query_text)
+        wants_umg_add = (
+            umg_widget_class is not None
+            and any(
+                token in query_lower
+                for token in ("umg", "widget", "textblock", "text block", "image", "button", "hud", "wbp_")
+            )
+            and (
+                re.search(r"\b(?:add|create|insert|make)\b", query_lower) is not None
+                or any(token in query_text for token in ("\u6dfb\u52a0", "\u521b\u5efa", "\u65b0\u589e", "\u63d2\u5165"))
+            )
+        )
+        if wants_umg_add:
+            widget_blueprint_path = EditorOperationService._detect_widget_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            widget_name = EditorOperationService._detect_created_umg_widget_name_from_request(
+                request,
+                query_text,
+                umg_widget_class,
+            )
+            parent_widget_name = EditorOperationService._detect_new_parent_widget_name_from_request(request, query_text)
+            text_value = EditorOperationService._detect_umg_text_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="add_umg_widget",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path or "",
+                    "widget_name": widget_name or "",
+                    "widget_class": umg_widget_class,
+                    "parent_widget_name": parent_widget_name or "",
+                    "text": text_value if text_value is not None else "",
+                    "is_variable": True,
                 },
                 reason=query_text,
                 requested_by="agent_chat",

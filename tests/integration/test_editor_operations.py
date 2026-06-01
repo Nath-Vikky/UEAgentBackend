@@ -3479,6 +3479,69 @@ def test_agent_chat_resolves_umg_text_from_project_inventory(client: TestClient)
     assert payload["text"] == "Mission Ready"
 
 
+def test_agent_chat_resolves_add_umg_widget_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/UI/WBP_MainHUD.WBP_MainHUD",
+                    "asset_name": "WBP_MainHUD",
+                    "asset_type": "WidgetBlueprint",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_add_umg_widget_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Add TextBlock TitleText to WBP_MainHUD under RootCanvas with text 'Mission Ready'",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {
+                "user_query": "Add TextBlock TitleText to WBP_MainHUD under RootCanvas with text 'Mission Ready'"
+            },
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "add_umg_widget"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "TitleText"
+    assert payload["widget_class"] == "/Script/UMG.TextBlock"
+    assert payload["parent_widget_name"] == "RootCanvas"
+    assert payload["text"] == "Mission Ready"
+    assert payload["is_variable"] is True
+
+
 def test_agent_chat_resolves_umg_layout_from_project_inventory(client: TestClient) -> None:
     snapshot = client.post(
         "/api/v1/project-inventory/snapshot",

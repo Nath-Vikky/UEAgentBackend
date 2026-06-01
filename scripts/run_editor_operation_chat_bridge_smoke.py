@@ -365,6 +365,22 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_add_umg_widget",
+            "request": _chat_request(
+                case_id="chat_add_umg_widget",
+                query="Add TextBlock TitleText to WBP_MainHUD under RootCanvas with text 'Mission Ready'",
+            ),
+            "expected_operation_type": "add_umg_widget",
+            "expected_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "widget_class": "/Script/UMG.TextBlock",
+                "parent_widget_name": "RootCanvas",
+                "text": "Mission Ready",
+                "is_variable": True,
+            },
+        },
+        {
             "case_id": "chat_umg_text",
             "request": _chat_request(
                 case_id="chat_umg_text",
