@@ -23,6 +23,16 @@ def _first_non_empty(*values: Any) -> str:
     return ""
 
 
+def _plan_asset_path(value: Any) -> str:
+    text = _clean_text(value)
+    if not text:
+        return ""
+    try:
+        return EditorOperationService._normalize_asset_path(text)
+    except Exception:
+        return text
+
+
 def _quoted_text(goal: str) -> str:
     match = re.search(r"[\"'“”‘’](.+?)[\"'“”‘’]", goal)
     return match.group(1).strip() if match else ""
@@ -165,13 +175,24 @@ class EditorWorkflowPlannerService:
         if workflow_type == "blueprint_print_then_compile":
             plan_payload.setdefault(
                 "blueprint_path",
-                EditorOperationService._detect_blueprint_path_from_request(request, goal, context_bundle) or "",
+                _plan_asset_path(EditorOperationService._detect_blueprint_path_from_request(request, goal, context_bundle) or ""),
             )
             plan_payload.setdefault("graph_name", EditorOperationService._detect_blueprint_graph_name_from_request(request, goal))
+        elif workflow_type == "umg_hud_group":
+            plan_payload.setdefault(
+                "widget_blueprint_path",
+                _plan_asset_path(EditorOperationService._detect_widget_blueprint_path_from_request(request, goal, context_bundle) or ""),
+            )
+            parent_widget_name = EditorOperationService._detect_new_parent_widget_name_from_request(request, goal)
+            detected_text = EditorOperationService._detect_umg_text_from_request(request, goal)
+            if parent_widget_name:
+                plan_payload.setdefault("parent_widget_name", parent_widget_name)
+            if detected_text:
+                plan_payload.setdefault("label_text", detected_text)
         elif workflow_type == "umg_text_widget":
             plan_payload.setdefault(
                 "widget_blueprint_path",
-                EditorOperationService._detect_widget_blueprint_path_from_request(request, goal, context_bundle) or "",
+                _plan_asset_path(EditorOperationService._detect_widget_blueprint_path_from_request(request, goal, context_bundle) or ""),
             )
             detected_widget_name = EditorOperationService._detect_widget_name_from_request(request, goal)
             detected_text = EditorOperationService._detect_umg_text_from_request(request, goal)
@@ -214,7 +235,7 @@ class EditorWorkflowPlannerService:
             "mode": "plan_only_confirmed_step_workflows",
             "auto_execute": False,
             "requires_user_confirmation_per_step": True,
-            "template_count": 3,
+            "template_count": 4,
             "templates": [
                 {
                     "workflow_type": "blueprint_print_then_compile",
@@ -244,6 +265,22 @@ class EditorWorkflowPlannerService:
                         "set_umg_widget_visibility",
                     ],
                     "boundary": "Safe UMG widget/template fields only; no animations, bindings, or complex widget-tree rewrites.",
+                },
+                {
+                    "workflow_type": "umg_hud_group",
+                    "title": "UMG HUD Group",
+                    "description": "Plan a small HUD group under an existing panel using add_umg_widget steps: HorizontalBox, Image, TextBlock, and Button.",
+                    "required_payload_fields": ["widget_blueprint_path"],
+                    "optional_payload_fields": [
+                        "parent_widget_name",
+                        "group_name",
+                        "icon_widget_name",
+                        "label_widget_name",
+                        "button_widget_name",
+                        "label_text",
+                    ],
+                    "emitted_operation_types": ["add_umg_widget"],
+                    "boundary": "Plan-only simple widget-tree scaffolding; no bindings, animations, button behavior, or responsive layout generation.",
                 },
                 {
                     "workflow_type": "arrange_and_tag_actors",
@@ -290,6 +327,13 @@ class EditorWorkflowPlannerService:
                 context=safe_context,
                 requested_by=requested_by,
             )
+        if resolved_type == "umg_hud_group":
+            return self._umg_hud_group(
+                goal=safe_goal,
+                payload=safe_payload,
+                context=safe_context,
+                requested_by=requested_by,
+            )
         if resolved_type == "arrange_and_tag_actors":
             return self._arrange_and_tag_actors(
                 goal=safe_goal,
@@ -317,6 +361,8 @@ class EditorWorkflowPlannerService:
         lower = goal.lower()
         if "print string" in lower or ("beginplay" in lower and "compile" in lower):
             return "blueprint_print_then_compile"
+        if any(token in lower for token in ("hud group", "hud panel", "ui group", "status hud", "status group")):
+            return "umg_hud_group"
         if any(token in lower for token in ("umg", "widget", "textblock", "hud", "ui")):
             return "umg_text_widget"
         if any(token in lower for token in ("arrange", "layout actors", "grid", "circle", "排列", "阵列")) and (
@@ -338,6 +384,7 @@ class EditorWorkflowPlannerService:
             context.get("blueprint_path"),
             context.get("current_blueprint_path"),
         )
+        blueprint_path = _plan_asset_path(blueprint_path)
         graph_name = _first_non_empty(payload.get("graph_name"), "EventGraph")
         message = _first_non_empty(payload.get("message"), _quoted_text(goal), "Hello from UEAgentCraft")
         goal_lower = goal.lower()
@@ -416,6 +463,7 @@ class EditorWorkflowPlannerService:
             context.get("widget_blueprint_path"),
             context.get("current_widget_blueprint_path"),
         )
+        widget_blueprint_path = _plan_asset_path(widget_blueprint_path)
         widget_name = _first_non_empty(payload.get("widget_name"), payload.get("name"), "AgentText")
         widget_class = _first_non_empty(payload.get("widget_class"), "TextBlock")
         text = _first_non_empty(payload.get("text"), _quoted_text(goal))
@@ -493,6 +541,104 @@ class EditorWorkflowPlannerService:
             steps=steps,
             status=self._status_for_steps(steps),
             reason="planned_umg_text_widget",
+        )
+
+    def _umg_hud_group(
+        self,
+        *,
+        goal: str,
+        payload: dict[str, Any],
+        context: dict[str, Any],
+        requested_by: str,
+    ) -> dict[str, Any]:
+        widget_blueprint_path = _first_non_empty(
+            payload.get("widget_blueprint_path"),
+            context.get("widget_blueprint_path"),
+            context.get("current_widget_blueprint_path"),
+        )
+        widget_blueprint_path = _plan_asset_path(widget_blueprint_path)
+        parent_widget_name = _first_non_empty(payload.get("parent_widget_name"), payload.get("parent"))
+        group_name = _first_non_empty(payload.get("group_name"), "AgentHUDGroup")
+        icon_name = _first_non_empty(payload.get("icon_widget_name"), "AgentHUDIcon")
+        label_name = _first_non_empty(payload.get("label_widget_name"), payload.get("widget_name"), "AgentHUDText")
+        button_name = _first_non_empty(payload.get("button_widget_name"), "AgentHUDButton")
+        label_text = _first_non_empty(payload.get("label_text"), payload.get("text"), _quoted_text(goal), "Ready")
+        missing_base = ["widget_blueprint_path"] if not widget_blueprint_path else []
+        steps = [
+            self._step(
+                index=0,
+                operation_type="add_umg_widget",
+                title="Add HUD HorizontalBox group",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path,
+                    "widget_name": group_name,
+                    "widget_class": "HorizontalBox",
+                    "parent_widget_name": parent_widget_name,
+                    "text": "",
+                    "is_variable": True,
+                },
+                missing_inputs=missing_base,
+                reason="Create a bounded HUD container as the first confirmed Proposal step.",
+                requested_by=requested_by,
+            ),
+            self._step(
+                index=1,
+                operation_type="add_umg_widget",
+                title="Add HUD icon Image",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path,
+                    "widget_name": icon_name,
+                    "widget_class": "Image",
+                    "parent_widget_name": group_name,
+                    "text": "",
+                    "is_variable": True,
+                },
+                missing_inputs=missing_base,
+                reason="Add a simple icon placeholder under the HUD group.",
+                requested_by=requested_by,
+                depends_on_step_ids=["step_0_add_umg_widget"],
+            ),
+            self._step(
+                index=2,
+                operation_type="add_umg_widget",
+                title="Add HUD label TextBlock",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path,
+                    "widget_name": label_name,
+                    "widget_class": "TextBlock",
+                    "parent_widget_name": group_name,
+                    "text": label_text,
+                    "is_variable": True,
+                },
+                missing_inputs=missing_base,
+                reason="Add a visible HUD label under the HUD group.",
+                requested_by=requested_by,
+                depends_on_step_ids=["step_0_add_umg_widget"],
+            ),
+            self._step(
+                index=3,
+                operation_type="add_umg_widget",
+                title="Add HUD action Button",
+                payload={
+                    "widget_blueprint_path": widget_blueprint_path,
+                    "widget_name": button_name,
+                    "widget_class": "Button",
+                    "parent_widget_name": group_name,
+                    "text": "",
+                    "is_variable": True,
+                },
+                missing_inputs=missing_base,
+                reason="Add a simple Button placeholder; behavior binding remains out of scope.",
+                requested_by=requested_by,
+                depends_on_step_ids=["step_0_add_umg_widget"],
+            ),
+        ]
+        return self._plan_envelope(
+            workflow_type="umg_hud_group",
+            goal=goal,
+            steps=steps,
+            status=self._status_for_steps(steps),
+            reason="planned_umg_hud_group",
         )
 
     def _arrange_and_tag_actors(

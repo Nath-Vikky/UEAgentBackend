@@ -57,6 +57,7 @@ def test_workflow_templates_describe_plan_only_safety() -> None:
     workflow_types = {item["workflow_type"] for item in templates["templates"]}
     assert workflow_types == {
         "blueprint_print_then_compile",
+        "umg_hud_group",
         "umg_text_widget",
         "arrange_and_tag_actors",
     }
@@ -75,6 +76,40 @@ def test_umg_text_workflow_reports_missing_inputs_without_executing() -> None:
     assert "widget_blueprint_path" in plan["steps"][0]["missing_inputs"]
     assert "text" in plan["steps"][0]["missing_inputs"]
     assert plan["steps"][0]["auto_execute"] is False
+
+
+def test_umg_hud_group_workflow_emits_bounded_add_widget_steps() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal="Plan a HUD group under RootCanvas with text 'HP 100'",
+        workflow_type="umg_hud_group",
+        payload={
+            "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+            "parent_widget_name": "RootCanvas",
+            "group_name": "StatusHUDGroup",
+            "label_text": "HP 100",
+        },
+    )
+
+    assert plan["status"] == "planned"
+    assert plan["workflow_type"] == "umg_hud_group"
+    assert plan["step_count"] == 4
+    assert plan["ready_step_count"] == 4
+    assert [step["operation_type"] for step in plan["steps"]] == [
+        "add_umg_widget",
+        "add_umg_widget",
+        "add_umg_widget",
+        "add_umg_widget",
+    ]
+    first, icon, label, button = plan["steps"]
+    assert first["payload"]["widget_class"] == "HorizontalBox"
+    assert first["payload"]["widget_name"] == "StatusHUDGroup"
+    assert first["payload"]["parent_widget_name"] == "RootCanvas"
+    assert icon["payload"]["widget_class"] == "Image"
+    assert icon["depends_on_step_ids"] == ["step_0_add_umg_widget"]
+    assert label["payload"]["widget_class"] == "TextBlock"
+    assert label["payload"]["text"] == "HP 100"
+    assert button["payload"]["widget_class"] == "Button"
+    assert all(step["auto_execute"] is False for step in plan["steps"])
 
 
 def test_arrange_and_tag_workflow_creates_one_metadata_step_per_actor() -> None:
@@ -148,6 +183,51 @@ def test_detect_chat_workflow_request_extracts_blueprint_plan() -> None:
     assert detected is not None
     assert detected["workflow_type"] == "blueprint_print_then_compile"
     assert detected["payload"]["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
+
+
+def test_detect_chat_workflow_request_extracts_umg_hud_group_plan() -> None:
+    request = UnifiedTaskRequest(
+        task_type="agent_chat",
+        session=SessionInput(
+            session_id="workflow_detect_umg_hud_group",
+            messages=[
+                SessionMessageInput(
+                    role="user",
+                    content=(
+                        "Plan a HUD group in WBP_MainHUD under RootCanvas "
+                        "with text 'HP 100'"
+                    ),
+                )
+            ],
+        ),
+        payload={
+            "user_query": (
+                "Plan a HUD group in WBP_MainHUD under RootCanvas "
+                "with text 'HP 100'"
+            )
+        },
+    )
+
+    detected = EditorWorkflowPlannerService.detect_chat_workflow_request(
+        request,
+        context_bundle={
+            "project_inventory_context": {
+                "query_candidates": [
+                    {
+                        "asset_path": "/Game/UI/WBP_MainHUD.WBP_MainHUD",
+                        "asset_name": "WBP_MainHUD",
+                        "asset_type": "WidgetBlueprint",
+                    }
+                ]
+            }
+        },
+    )
+
+    assert detected is not None
+    assert detected["workflow_type"] == "umg_hud_group"
+    assert detected["payload"]["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert detected["payload"]["parent_widget_name"] == "RootCanvas"
+    assert detected["payload"]["label_text"] == "HP 100"
 
 
 def test_prepare_step_proposal_request_materializes_single_ready_step() -> None:

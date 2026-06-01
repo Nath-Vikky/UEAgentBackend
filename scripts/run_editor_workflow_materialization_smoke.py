@@ -195,6 +195,52 @@ def _run_workflow_step_rejection(client: TestClient) -> dict[str, Any]:
     }
 
 
+def _run_umg_hud_group_step_materialization(client: TestClient) -> dict[str, Any]:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Plan a HUD group under RootCanvas with text 'HP 100'",
+            "workflow_type": "umg_hud_group",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "parent_widget_name": "RootCanvas",
+                "group_name": "StatusHUDGroup",
+                "label_text": "HP 100",
+            },
+        },
+    )
+    plan_body = plan_response.json()
+    plan = dict(plan_body.get("workflow_plan") or {})
+    step = list(plan.get("steps") or [{}])[0]
+    proposal_response = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan.get("plan_id"),
+            "step": step,
+            "requested_by": "workflow_materialization_smoke",
+        },
+    )
+    body = proposal_response.json()
+    operation_payload = body.get("proposal", {}).get("operation", {}).get("operation_payload", {})
+    checks = [
+        _check("plan_status_code", 200, plan_response.status_code),
+        _check("proposal_status_code", 200, proposal_response.status_code),
+        _check("workflow_type", "umg_hud_group", plan.get("workflow_type")),
+        _check("step_count", 4, plan.get("step_count")),
+        _check("operation_type", "add_umg_widget", body.get("proposal", {}).get("operation", {}).get("operation_type")),
+        _check("proposal_widget_class", "/Script/UMG.HorizontalBox", operation_payload.get("widget_class")),
+        _check("proposal_widget_name", "StatusHUDGroup", operation_payload.get("widget_name")),
+        _check("proposal_parent_widget_name", "RootCanvas", operation_payload.get("parent_widget_name")),
+        _check("confirmation_state", "pending", body.get("proposal", {}).get("item", {}).get("confirmation", {}).get("state")),
+        _check("auto_execute", False, body.get("workflow_step", {}).get("auto_execute")),
+    ]
+    return {
+        "case_id": "umg_hud_group_step_to_proposal",
+        "ok": all(item["ok"] for item in checks),
+        "checks": checks,
+    }
+
+
 def _run_follow_up_materialization(client: TestClient) -> dict[str, Any]:
     created = client.post(
         "/api/v1/editor-operations/proposals",
@@ -262,6 +308,7 @@ def main() -> int:
             _run_workflow_step_materialization(client),
             _run_delay_workflow_step_materialization(client),
             _run_workflow_step_rejection(client),
+            _run_umg_hud_group_step_materialization(client),
             _run_follow_up_materialization(client),
         ]
     report = {

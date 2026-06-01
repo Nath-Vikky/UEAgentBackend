@@ -79,7 +79,7 @@ Expected:
 
 - Blueprint graph proposal/result smoke: `17/17 passed`
 - Agent Chat editor-operation smoke: `25/25 passed`
-- Editor workflow materialization smoke: `4/4 passed`
+- Editor workflow materialization smoke: `5/5 passed`
 - Project Inventory chat smoke: `1/1 passed`
 
 ## 4. Demo The Agent Features

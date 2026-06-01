@@ -5484,6 +5484,7 @@ Supported workflow types in v1:
 
 - `blueprint_print_then_compile`: add a BeginPlay Print String or Delay -> PrintString template, then compile the Blueprint as a separate confirmed step.
 - `umg_text_widget`: add a TextBlock, set text, and optionally apply CanvasPanelSlot layout or visibility.
+- `umg_hud_group`: plan a small HUD group under an existing panel using `add_umg_widget` steps for HorizontalBox, Image, TextBlock, and Button.
 - `arrange_and_tag_actors`: arrange a bounded Actor set, then optionally apply the same metadata to each Actor.
 
 Use `GET /api/v1/editor-operations/workflows/templates` to list the same
@@ -5800,14 +5801,15 @@ Covered cases:
 - `workflow_step_to_proposal`: workflow plan step becomes a pending Proposal.
 - `delay_workflow_step_to_proposal`: delay-print workflow step keeps `template_id=delay_print_string` and `delay_seconds` when it becomes a pending Proposal.
 - `workflow_step_rejects_missing_inputs`: non-ready workflow step is rejected.
+- `umg_hud_group_step_to_proposal`: first HUD group workflow step becomes a pending `add_umg_widget` Proposal.
 - `follow_up_candidate_to_proposal`: Blueprint repair follow-up candidate becomes a pending Proposal.
 
 Expected result:
 
 ```text
 overall_ok = true
-case_count = 4
-passed = 4
+case_count = 5
+passed = 5
 failed = 0
 ```
 
