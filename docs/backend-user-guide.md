@@ -3361,6 +3361,12 @@ I4-5 先补两类可控写操作：Level Actor 放置，以及 Material Instance
 - `transform` 可选，默认 location/rotation 为 0，scale 为 1。
 - v1 不做批量摆放、不删除 Actor、不修改已存在 Actor、不触发导航重建/灯光烘焙等派生流程。
 
+移动已有 Level Actor 时，Agent Chat 可以从 `Project Inventory.level_actors[]`
+解析明确的 Actor label/name。示例：`Move BP_EnemySpawner_1 right 200` 会生成
+`set_actor_transform`，payload 中包含 `actor_reference=BP_EnemySpawner_1` 和
+`transform_delta.location.y=200`。如果没有明确 transform 数值或方向，后端不会编造
+移动量，会转为普通回答或 blocked。
+
 设置 Material Instance 参数：
 
 ```json

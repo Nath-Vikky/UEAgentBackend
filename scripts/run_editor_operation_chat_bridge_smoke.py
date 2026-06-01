@@ -559,6 +559,21 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_named_actor_transform",
+            "request": _chat_request(
+                case_id="chat_named_actor_transform",
+                query="Move BP_EnemySpawner_1 right 200",
+            ),
+            "expected_operation_type": "set_actor_transform",
+            "expected_payload": {
+                "actor_reference": "BP_EnemySpawner_1",
+                "transform_mode": "delta",
+                "transform_delta.location.x": 0.0,
+                "transform_delta.location.y": 200.0,
+                "transform_delta.location.z": 0.0,
+            },
+        },
+        {
             "case_id": "chat_arrange_actors_pattern",
             "request": _chat_request(
                 case_id="chat_arrange_actors_pattern",

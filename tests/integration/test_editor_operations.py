@@ -3478,6 +3478,65 @@ def test_agent_chat_reuses_recent_placed_actor_for_transform(client: TestClient)
     assert last_operation["target"]["actor_reference"] == "BP_TestActor_1"
 
 
+def test_agent_chat_can_move_named_inventory_actor_without_actor_keyword(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "level_actors": [
+                {
+                    "actor_label": "BP_EnemySpawner_1",
+                    "actor_name": "BP_EnemySpawner_C_1",
+                    "actor_class": "BP_EnemySpawner_C",
+                    "level_name": "TestMap",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_named_actor_transform_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Move BP_EnemySpawner_1 right 200",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Move BP_EnemySpawner_1 right 200"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_actor_transform"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["actor_reference"] == "BP_EnemySpawner_1"
+    assert payload["transform_mode"] == "delta"
+    assert payload["transform_delta"]["location"] == {"x": 0.0, "y": 200.0, "z": 0.0}
+
+
 def test_agent_chat_resolves_umg_text_from_project_inventory(client: TestClient) -> None:
     snapshot = client.post(
         "/api/v1/project-inventory/snapshot",

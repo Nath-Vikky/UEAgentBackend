@@ -2530,7 +2530,7 @@ class EditorOperationService:
             )
         ) and any(
             token in query_lower or token in query_text
-            for token in ("actor", "that", "previous", "last", "刚才", "上一个", "那个", "这个", "场景物体")
+            for token in ("actor", "that", "previous", "last", "bp_", "刚才", "上一个", "那个", "这个", "场景物体")
         )
         if wants_actor_transform:
             actor_reference = EditorOperationService._detect_actor_reference_from_request(
@@ -2547,13 +2547,14 @@ class EditorOperationService:
                 payload["transform_delta"] = transform_update
             else:
                 payload["transform"] = transform_update
-            return EditorOperationProposalRequest(
-                operation_type="set_actor_transform",
-                payload=payload,
-                reason=query_text,
-                requested_by="agent_chat",
-                context=request.context.model_dump(mode="json"),
-            )
+            if transform_update:
+                return EditorOperationProposalRequest(
+                    operation_type="set_actor_transform",
+                    payload=payload,
+                    reason=query_text,
+                    requested_by="agent_chat",
+                    context=request.context.model_dump(mode="json"),
+                )
 
         actor_metadata_target_signal = any(
             token in query_lower or token in query_text

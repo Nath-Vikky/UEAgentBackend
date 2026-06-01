@@ -78,7 +78,7 @@ pass `--output -` to print the JSON report without writing a file.
 Expected:
 
 - Blueprint graph proposal/result smoke: `17/17 passed`
-- Agent Chat editor-operation smoke: `28/28 passed`
+- Agent Chat editor-operation smoke: `29/29 passed`
 - Editor workflow materialization smoke: `5/5 passed`
 - Project Inventory chat smoke: `1/1 passed`
 
@@ -116,6 +116,7 @@ Suggested low-risk demos:
 - Set one HorizontalBox/VerticalBox/Overlay slot padding or alignment through `set_umg_slot_layout_v2`.
 - Set one scalar or vector color parameter on a test Material Instance.
 - Set one texture or static switch parameter on a test Material Instance.
+- Move one named level Actor with a bounded transform delta.
 - Rename or tag one level Actor through a confirmed `set_actor_metadata` proposal.
 - Arrange 2 or 3 safe test level Actors through `arrange_actors_pattern`.
 
