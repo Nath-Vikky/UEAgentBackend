@@ -2368,24 +2368,53 @@ class EditorOperationService:
             "white": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
             "黑": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0},
             "black": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0},
+            "orange": {"r": 1.0, "g": 0.5, "b": 0.0, "a": 1.0},
+            "yellow": {"r": 1.0, "g": 1.0, "b": 0.0, "a": 1.0},
+            "\u6a59": {"r": 1.0, "g": 0.5, "b": 0.0, "a": 1.0},
+            "\u9ec4": {"r": 1.0, "g": 1.0, "b": 0.0, "a": 1.0},
         }
         query_lower = query_text.lower()
         for token, value in color_values.items():
             if token in query_lower or token in query_text:
                 return ("vector", value)
+        hex_match = re.search(r"#([0-9a-fA-F]{6})([0-9a-fA-F]{2})?", query_text)
+        if hex_match:
+            hex_value = hex_match.group(1)
+            alpha_value = hex_match.group(2)
+            return (
+                "vector",
+                {
+                    "r": int(hex_value[0:2], 16) / 255.0,
+                    "g": int(hex_value[2:4], 16) / 255.0,
+                    "b": int(hex_value[4:6], 16) / 255.0,
+                    "a": int(alpha_value, 16) / 255.0 if alpha_value else 1.0,
+                },
+            )
         rgb_match = re.search(
             r"(?:rgb|颜色|color)\s*[:：=]?\s*\(?\s*(-?\d+(?:\.\d+)?)\s*[,， ]\s*(-?\d+(?:\.\d+)?)\s*[,， ]\s*(-?\d+(?:\.\d+)?)(?:\s*[,， ]\s*(-?\d+(?:\.\d+)?))?",
             query_text,
             flags=re.IGNORECASE,
         )
         if rgb_match:
+            r_value = float(rgb_match.group(1))
+            g_value = float(rgb_match.group(2))
+            b_value = float(rgb_match.group(3))
+            a_value = float(rgb_match.group(4) or 1.0)
+            if all(0.0 <= value <= 255.0 for value in (r_value, g_value, b_value)) and any(
+                value > 1.0 for value in (r_value, g_value, b_value)
+            ):
+                r_value /= 255.0
+                g_value /= 255.0
+                b_value /= 255.0
+                if a_value > 1.0:
+                    a_value /= 255.0
             return (
                 "vector",
                 {
-                    "r": float(rgb_match.group(1)),
-                    "g": float(rgb_match.group(2)),
-                    "b": float(rgb_match.group(3)),
-                    "a": float(rgb_match.group(4) or 1.0),
+                    "r": r_value,
+                    "g": g_value,
+                    "b": b_value,
+                    "a": a_value,
                 },
             )
         value_match = re.search(r"(?:到|为|成|=|value|set to|to)\s*(-?\d+(?:\.\d+)?)", query_text, flags=re.IGNORECASE)

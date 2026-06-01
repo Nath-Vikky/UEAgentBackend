@@ -504,6 +504,36 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_material_vector_hex",
+            "request": _chat_request(
+                case_id="chat_material_vector_hex",
+                query="Set MI_Player material BaseColor to #FF8040",
+            ),
+            "expected_operation_type": "set_material_instance_parameter",
+            "expected_payload": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "BaseColor",
+                "parameter_type": "vector",
+                "value.r": 1.0,
+                "value.g": 128 / 255,
+                "value.b": 64 / 255,
+                "value.a": 1.0,
+            },
+        },
+        {
+            "case_id": "chat_material_texture_parameter",
+            "request": _chat_request(
+                case_id="chat_material_texture_parameter",
+                query="Set MI_Player material BaseTexture to T_Player_D texture",
+            ),
+            "expected_operation_type": "set_material_instance_texture_parameter",
+            "expected_payload": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "BaseTexture",
+                "texture_path": "/Game/Textures/T_Player_D",
+            },
+        },
+        {
             "case_id": "chat_material_static_switch",
             "request": _chat_request(
                 case_id="chat_material_static_switch",
@@ -593,10 +623,14 @@ def _evaluate_case(client: TestClient, case: dict[str, Any]) -> dict[str, Any]:
     ]
     for key, expected_value in case.get("expected_payload", {}).items():
         actual_value = _nested_get(payload, key)
+        if isinstance(actual_value, int | float) and isinstance(expected_value, int | float):
+            ok = abs(float(actual_value) - float(expected_value)) <= 1e-6
+        else:
+            ok = actual_value == expected_value
         checks.append(
             {
                 "name": f"payload.{key}",
-                "ok": actual_value == expected_value,
+                "ok": ok,
                 "expected": expected_value,
                 "actual": actual_value,
             }

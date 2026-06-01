@@ -6,7 +6,7 @@ from app.agent.context_builder import build_context_summary
 from app.i18n.language import localized as _localized
 from app.schemas.common import QuickAction, UserViewBlock
 from app.schemas.requests import EditorOperationProposalRequest
-from app.services.editor_operation_service import EditorOperationService
+from app.services.editor_operation_service import EditorOperationService, EditorOperationValidationError
 from app.services.task_handlers.base import TaskExecutionContext
 
 
@@ -32,7 +32,12 @@ class EditorOperationProposalHandler:
             trace_id=context.trace_id,
             context_bundle=context.context_bundle,
         )
-        proposal = EditorOperationService(db).try_build_action_proposal(self.editor_operation_request)
+        validation_error: dict[str, Any] | None = None
+        try:
+            proposal = EditorOperationService(db).build_action_proposal(self.editor_operation_request)
+        except EditorOperationValidationError as exc:
+            proposal = None
+            validation_error = {"reason": exc.reason, "details": exc.details}
         if not proposal:
             text = _localized(
                 output_language,
@@ -60,6 +65,7 @@ class EditorOperationProposalHandler:
                 "details": {
                     "operation_type": self.editor_operation_request.operation_type,
                     "proposal_count": len(proposals),
+                    "validation_error": validation_error,
                 },
             }
         ]
@@ -74,6 +80,7 @@ class EditorOperationProposalHandler:
                     data={
                         "operation_type": self.editor_operation_request.operation_type,
                         "proposal": proposal or {},
+                        "validation_error": validation_error,
                     },
                 ).model_dump(mode="json")
             ],
@@ -95,6 +102,7 @@ class EditorOperationProposalHandler:
                 "operation_type": self.editor_operation_request.operation_type,
                 "proposal": proposal or {},
                 "proposal_created": bool(proposal),
+                "validation_error": validation_error,
                 "safety_policy": {
                     "llm_direct_execution": False,
                     "requires_frontend_confirmation": True,
@@ -103,7 +111,7 @@ class EditorOperationProposalHandler:
             },
             "context_summary": build_context_summary(request),
             "context_bundle": context.context_bundle,
-            "warnings": [],
+            "warnings": [validation_error] if validation_error else [],
         }
         retrieval_trace = {
             "mode": "not_used",

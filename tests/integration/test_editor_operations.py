@@ -4235,6 +4235,68 @@ def test_agent_chat_resolves_material_texture_from_project_inventory(client: Tes
     assert payload["texture_path"] == "/Game/Textures/T_Player_D"
 
 
+def test_agent_chat_resolves_material_vector_hex_from_project_inventory(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "DemoProject",
+            "project_name": "DemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Materials/MI_Player.MI_Player",
+                    "asset_name": "MI_Player",
+                    "asset_type": "MaterialInstanceConstant",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_material_vector_hex_inventory_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Set MI_Player material BaseColor to #FF8040",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {"user_query": "Set MI_Player material BaseColor to #FF8040"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_material_instance_parameter"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "BaseColor"
+    assert payload["parameter_type"] == "vector"
+    assert payload["value"]["r"] == 1.0
+    assert payload["value"]["g"] == pytest.approx(128 / 255)
+    assert payload["value"]["b"] == pytest.approx(64 / 255)
+    assert payload["value"]["a"] == 1.0
+
+
 def test_agent_chat_resolves_material_static_switch_from_project_inventory(client: TestClient) -> None:
     snapshot = client.post(
         "/api/v1/project-inventory/snapshot",

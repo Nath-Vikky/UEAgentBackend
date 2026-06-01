@@ -3419,7 +3419,7 @@ static switch 参数也使用独立 operation，`value` 必须是布尔值：
 
 - 只支持 Material Instance Constant。
 - `set_material_instance_parameter` 的 `parameter_type` 只支持 `scalar` 和 `vector`。
-- vector 使用 `r/g/b/a`，也可由后端接受数组或 `x/y/z/w` 并归一成 `r/g/b/a`。
+- vector 使用 `r/g/b/a`，也可由后端接受数组、`x/y/z/w`、`rgb(...)` 或 `#RRGGBB` 并归一成 `r/g/b/a`。
 - texture 参数走 `set_material_instance_texture_parameter`，只接受明确的 `texture_path`。
 - static switch 参数走 `set_material_instance_static_switch`，只接受明确的 `true/false`。
 - v1 不编辑材质图谱、不创建 Material Function、不自动保存资产。
@@ -3470,6 +3470,26 @@ static switch 参数也使用独立 operation，`value` 必须是布尔值：
     "parameter_name": "Roughness",
     "parameter_type": "scalar",
     "value": 0.35
+  }
+}
+```
+
+材质颜色示例：
+
+```text
+Set MI_Player material BaseColor to #FF8040
+```
+
+如果 Project Inventory 中能解析 `MI_Player`，后端会把 `#RRGGBB` 转成 vector 参数：
+
+```json
+{
+  "operation_type": "set_material_instance_parameter",
+  "payload": {
+    "material_instance_path": "/Game/Materials/MI_Player",
+    "parameter_name": "BaseColor",
+    "parameter_type": "vector",
+    "value": {"r": 1.0, "g": 0.5019607843, "b": 0.2509803922, "a": 1.0}
   }
 }
 ```
