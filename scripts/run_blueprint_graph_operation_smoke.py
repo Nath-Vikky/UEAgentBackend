@@ -140,6 +140,28 @@ def _cases() -> list[dict[str, Any]]:
             "expected_result_fields": ["event_name", "dirty_packages"],
         },
         {
+            "case_id": "template_overlap_print_string",
+            "request": _proposal_payload(
+                "add_blueprint_node_template",
+                {
+                    "blueprint_path": blueprint_path,
+                    "template_id": "print_string",
+                    "graph_name": "EventGraph",
+                    "message": "Overlap smoke",
+                    "entry_event": "ActorBeginOverlap",
+                    "compile_after_edit": True,
+                },
+            ),
+            "expected_status": 200,
+            "expected_tool_id": "editor_add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "print_string",
+                "entry_event": "ActorBeginOverlap",
+                "message": "Overlap smoke",
+            },
+            "expected_result_fields": ["created_nodes", "linked_pins"],
+        },
+        {
             "case_id": "template_branch_print_string",
             "request": _proposal_payload(
                 "add_blueprint_node_template",

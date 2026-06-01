@@ -558,6 +558,33 @@ def test_blueprint_node_template_print_string_proposal_contract(client: TestClie
     assert "linked_pins" in body["operation"]["expected_result_contract"]["operation_result_fields"]
 
 
+def test_blueprint_node_template_overlap_print_string_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "print_string",
+                "graph_name": "EventGraph",
+                "message": "Overlap detected",
+                "entry_event": "ActorBeginOverlap",
+                "compile_after_edit": True,
+            },
+            "reason": "Add ActorBeginOverlap -> PrintString for a safe graph smoke test.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    payload = body["operation"]["operation_payload"]
+    assert payload["template_id"] == "print_string"
+    assert payload["message"] == "Overlap detected"
+    assert payload["entry_event"] == "ActorBeginOverlap"
+    assert body["operation"]["affected_targets"][0]["entry_event"] == "ActorBeginOverlap"
+    assert "linked_pins" in body["operation"]["expected_result_contract"]["operation_result_fields"]
+
+
 def test_blueprint_node_template_branch_print_string_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -833,7 +860,11 @@ def test_blueprint_node_template_rejects_unknown_entry_event(client: TestClient)
     assert response.status_code == 400
     body = response.json()
     assert body["errors"][0]["code"] == "blueprint_node_entry_event_not_supported_in_v1"
-    assert body["errors"][0]["details"]["allowed_entry_events"] == ["BeginPlay"]
+    assert body["errors"][0]["details"]["allowed_entry_events"] == [
+        "ActorBeginOverlap",
+        "ActorEndOverlap",
+        "BeginPlay",
+    ]
 
 
 def test_blueprint_node_template_rejects_unknown_branch_path(client: TestClient) -> None:
@@ -2673,6 +2704,44 @@ def test_agent_chat_defaults_eventgraph_print_string_to_beginplay(client: TestCl
     assert payload["template_id"] == "print_string"
     assert payload["graph_name"] == "EventGraph"
     assert payload["entry_event"] == "BeginPlay"
+
+
+def test_agent_chat_builds_overlap_print_string_template(client: TestClient) -> None:
+    query = "Add a Print String node to BP_TestActor when ActorBeginOverlap happens"
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_blueprint_print_overlap_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_TestActor"
+    assert payload["template_id"] == "print_string"
+    assert payload["graph_name"] == "EventGraph"
+    assert payload["entry_event"] == "ActorBeginOverlap"
+    assert payload["message"] == "ActorBeginOverlap from UEAgent"
 
 
 def test_agent_chat_keeps_unconnected_eventgraph_print_string_unlinked(client: TestClient) -> None:

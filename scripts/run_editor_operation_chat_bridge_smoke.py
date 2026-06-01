@@ -216,6 +216,21 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_overlap_print_string",
+            "request": _chat_request(
+                case_id="chat_overlap_print_string",
+                query="Add a Print String node to BP_TestActor when ActorBeginOverlap happens",
+                selected_assets=["/Game/Blueprints/BP_TestActor"],
+            ),
+            "expected_operation_type": "add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "print_string",
+                "blueprint_path": "/Game/Blueprints/BP_TestActor",
+                "entry_event": "ActorBeginOverlap",
+                "message": "ActorBeginOverlap from UEAgent",
+            },
+        },
+        {
             "case_id": "chat_chinese_print_string_inventory_bp_specific_name",
             "request": _chat_request(
                 case_id="chat_chinese_print_string_inventory_bp_specific_name",

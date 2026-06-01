@@ -112,6 +112,8 @@ BLUEPRINT_NODE_TEMPLATE_IDS = {
 }
 
 BLUEPRINT_NODE_ENTRY_EVENTS = {
+    "ActorBeginOverlap",
+    "ActorEndOverlap",
     "BeginPlay",
 }
 
@@ -818,11 +820,38 @@ class EditorOperationService:
         if explicit_event:
             return explicit_event
         compact = query_text.replace("_", "").replace(" ", "").lower()
+        query_lower = query_text.lower()
         if any(
             token in compact or token in query_text
             for token in ("beginplay", "eventbeginplay", "receivebeginplay", "开始播放")
         ):
             return "BeginPlay"
+        if any(
+            token in compact or token in query_lower or token in query_text
+            for token in (
+                "actorbeginoverlap",
+                "beginoverlap",
+                "begin overlap",
+                "overlap begin",
+                "\u5f00\u59cb\u91cd\u53e0",
+                "\u8fdb\u5165\u91cd\u53e0",
+                "\u5f00\u59cb\u78b0\u649e",
+            )
+        ):
+            return "ActorBeginOverlap"
+        if any(
+            token in compact or token in query_lower or token in query_text
+            for token in (
+                "actorendoverlap",
+                "endoverlap",
+                "end overlap",
+                "overlap end",
+                "\u7ed3\u675f\u91cd\u53e0",
+                "\u79bb\u5f00\u91cd\u53e0",
+                "\u7ed3\u675f\u78b0\u649e",
+            )
+        ):
+            return "ActorEndOverlap"
         return default
 
     @staticmethod
@@ -2891,6 +2920,20 @@ class EditorOperationService:
                 "\u8f93\u5165\u52a8\u4f5c",
             )
         )
+        overlap_signal = any(
+            token in query_lower or token in query_text
+            for token in (
+                "overlap",
+                "begin overlap",
+                "end overlap",
+                "actorbeginoverlap",
+                "actorendoverlap",
+                "\u91cd\u53e0",
+                "\u78b0\u649e",
+                "\u8fdb\u5165\u89e6\u53d1",
+                "\u79bb\u5f00\u89e6\u53d1",
+            )
+        )
         if blueprint_signal and print_string_signal and add_signal and enhanced_input_signal:
             input_action_path = EditorOperationService._detect_input_action_path_from_request(
                 request,
@@ -2922,6 +2965,36 @@ class EditorOperationService:
                     requested_by="agent_chat",
                     context=request.context.model_dump(mode="json"),
                 )
+        if blueprint_signal and print_string_signal and add_signal and overlap_signal:
+            blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            entry_event = EditorOperationService._detect_blueprint_entry_event_from_request(
+                request,
+                query_text,
+                default="ActorBeginOverlap",
+            )
+            return EditorOperationProposalRequest(
+                operation_type="add_blueprint_node_template",
+                payload={
+                    "blueprint_path": blueprint_path or "",
+                    "template_id": "print_string",
+                    "graph_name": EditorOperationService._detect_blueprint_graph_name_from_request(
+                        request,
+                        query_text,
+                    ),
+                    "message": request.payload.get("message")
+                    or request.payload.get("string_value")
+                    or f"{entry_event} from UEAgent",
+                    "entry_event": entry_event,
+                    "compile_after_edit": bool(request.payload.get("compile_after_edit", True)),
+                },
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
         if blueprint_signal and print_string_signal and add_signal and sequence_signal:
             blueprint_path = EditorOperationService._detect_blueprint_path_from_request(
                 request,
@@ -3586,9 +3659,17 @@ class EditorOperationService:
             return ""
         normalized = text.replace("_", "").replace(" ", "").lower()
         aliases = {
+            "actorbeginoverlap": "ActorBeginOverlap",
+            "beginoverlap": "ActorBeginOverlap",
             "beginplay": "BeginPlay",
+            "actorendoverlap": "ActorEndOverlap",
+            "endoverlap": "ActorEndOverlap",
             "eventbeginplay": "BeginPlay",
             "receivebeginplay": "BeginPlay",
+            "\u5f00\u59cb\u91cd\u53e0": "ActorBeginOverlap",
+            "\u8fdb\u5165\u91cd\u53e0": "ActorBeginOverlap",
+            "\u7ed3\u675f\u91cd\u53e0": "ActorEndOverlap",
+            "\u79bb\u5f00\u91cd\u53e0": "ActorEndOverlap",
             "开始播放": "BeginPlay",
         }
         event_name = aliases.get(normalized, text)

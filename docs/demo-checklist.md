@@ -104,6 +104,7 @@ Suggested low-risk demos:
 - Fix redirectors under a bounded test folder such as `/Game/AgentDemo`.
 - Create one test Blueprint under `/Game/AgentDemo`.
 - Add a `Print String` Blueprint node template.
+- Add an `ActorBeginOverlap -> PrintString` Blueprint node chain in a test Blueprint.
 - Add an Enhanced Input Action event that connects `Triggered -> PrintString`.
 - Compile the test Blueprint.
 - Set one TextBlock text in a test Widget Blueprint.

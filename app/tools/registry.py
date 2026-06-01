@@ -1310,7 +1310,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                 "delay_seconds": {"type": "number", "minimum": 0, "maximum": 60},
                 "print_to_screen": {"type": "boolean"},
                 "print_to_log": {"type": "boolean"},
-                "entry_event": {"type": "string", "enum": ["BeginPlay", ""]},
+                "entry_event": {"type": "string", "enum": ["BeginPlay", "ActorBeginOverlap", "ActorEndOverlap", ""]},
                 "condition_default": {"type": "boolean"},
                 "branch_path": {"type": "string", "enum": ["true", "false"]},
                 "variable_name": {"type": "string"},
