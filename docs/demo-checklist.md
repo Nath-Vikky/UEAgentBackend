@@ -50,6 +50,8 @@ Quick read-only views:
   node summaries.
 - `Show Level Actors`: show recent loaded-level Actor summaries.
 - `Show Materials`: show Material Instance parameter summaries.
+- `Show Tools`: show supported editor-operation tools, read-only inspections,
+  groups, and confirmation policy.
 - `Show Activity`: show recent editor-operation proposals, execution states,
   and diagnostic counts.
 - `Show Inventory Summary`: show compact Project Inventory counts.
