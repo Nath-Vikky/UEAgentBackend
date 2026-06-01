@@ -2814,6 +2814,27 @@ GET /api/v1/editor-operations/inspect/material-instance-parameters
 - 快照是本地 JSON 存储，不做企业级索引服务。
 - Active Context 只保留摘要，不把大段源码或完整资产元数据塞进 prompt。
 
+### 25.6 MCP / SSE 稳定版边界
+
+当前稳定版的编辑器集成主链路仍然是 HTTP Proposal Bridge：
+
+```text
+Agent Chat -> Tool/Operation routing -> pending Proposal -> 用户确认 -> UEAgentTool 执行 -> 回传结果
+```
+
+MCP 在本项目中当前定位为 Tool Registry 兼容层和未来 transport 预留：
+
+- `GET /api/v1/mcp/tool-registry/manifest` 可以导出 MCP-compatible ToolSpec 元数据。
+- confirmed-write 工具不会被 MCP 直接执行，必须转换为 Proposal。
+- UEAgentTool 目前不需要作为 MCP client/server 才能使用核心功能。
+- 如果未来工具数量大幅增加，才考虑把 read-only 工具开放为直接 MCP call，把写工具继续映射到 Proposal。
+
+SSE / streaming 当前也是可选增强：
+
+- 非流式 HTTP 仍是默认路径，UE 插件可以保持现有请求方式。
+- SSE 适合长 LLM 回复或长 workflow 进度提示，不改变 Proposal 的安全语义。
+- 即使启用流式输出，写入类操作仍然必须等待用户确认，不能在流中自动执行。
+
 ## 26. Blueprint Graph Automation v1 Proposal 契约
 
 后端已经把蓝图图表自动化纳入 `Editor Operation Bridge`。写操作仍然只生成 proposal，不直接绕过 UE 前端执行 Editor API。UE 前端回传确认：以下 operation 已在 UE 侧接入真实执行路径，`GET /api/v1/editor-operations/capabilities` 中的 `frontend_status` 已标记为 `implemented_v1`。另外，默认关闭的 TCP 工具层提供 `get_blueprint_graph` 只读图谱摘要，供未来 Agent 感知蓝图结构。
