@@ -158,6 +158,7 @@ def _chat_request(
     case_id: str,
     query: str,
     selected_assets: list[str] | None = None,
+    editor_state: dict[str, Any] | None = None,
     language: str = "en-US",
 ) -> dict[str, Any]:
     return {
@@ -171,6 +172,7 @@ def _chat_request(
             "project_root": "D:/DemoProject",
             "active_panel": "AgentChat",
             "selected_assets": selected_assets or [],
+            "editor_state": editor_state or {},
         },
         "payload": {"user_query": query},
         "runtime_options": {
@@ -213,6 +215,25 @@ def _cases() -> list[dict[str, Any]]:
                 "blueprint_path": "/Game/Blueprints/BP_TestActor",
                 "graph_name": "EventGraph",
                 "entry_event": "BeginPlay",
+            },
+        },
+        {
+            "case_id": "chat_print_string_active_construction_script",
+            "request": _chat_request(
+                case_id="chat_print_string_active_construction_script",
+                query='Add "Ready" Print String node to the current Blueprint',
+                selected_assets=["/Game/Blueprints/BP_TestActor"],
+                editor_state={
+                    "current_blueprint_path": "/Game/Blueprints/BP_TestActor",
+                    "current_graph_name": "ConstructionScript",
+                },
+            ),
+            "expected_operation_type": "add_blueprint_node_template",
+            "expected_payload": {
+                "template_id": "print_string",
+                "blueprint_path": "/Game/Blueprints/BP_TestActor",
+                "graph_name": "ConstructionScript",
+                "entry_event": "",
             },
         },
         {
