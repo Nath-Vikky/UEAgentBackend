@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
+from importlib.util import find_spec
 from typing import Any
 
 
@@ -56,6 +58,11 @@ class AgentGraphSpec:
         }
 
 
+@lru_cache(maxsize=16)
+def _module_available(module_name: str) -> bool:
+    return find_spec(module_name) is not None
+
+
 def review_fix_validate_graph_spec() -> AgentGraphSpec:
     """Describe the existing review/fix/validate chain as a graph blueprint."""
 
@@ -94,6 +101,71 @@ def review_fix_validate_graph_spec() -> AgentGraphSpec:
     )
 
 
+def graph_framework_readiness_report(
+    spec: AgentGraphSpec,
+    *,
+    requested_framework: str = "framework_neutral",
+    langgraph_available: bool | None = None,
+) -> dict[str, Any]:
+    """Describe whether this graph should stay self-hosted or move to LangGraph.
+
+    This is intentionally a readiness report rather than a runtime dependency.
+    The backend can expose framework suitability in Debug View while keeping the
+    stable self-contained execution path. If LangGraph is installed through the
+    optional `agent` extra, this report becomes a clear migration signal.
+    """
+
+    available = _module_available("langgraph") if langgraph_available is None else langgraph_available
+    if requested_framework == "langgraph_active":
+        status = "ready" if available else "blocked_missing_dependency"
+        recommendation = (
+            "LangGraph can own orchestration for this graph."
+            if available
+            else "Install optional agent dependencies or switch to langgraph_optional/framework_neutral."
+        )
+    elif requested_framework == "langgraph_optional":
+        status = "available" if available else "optional_unavailable"
+        recommendation = (
+            "Keep current execution stable, but this graph can be migrated incrementally."
+            if available
+            else "Current self-hosted graph remains active; LangGraph is optional and not installed."
+        )
+    else:
+        status = "framework_neutral"
+        recommendation = "Keep the dependency-free graph as the stable default path."
+
+    return {
+        "version": "graph_framework_readiness_v1",
+        "graph_id": spec.graph_id,
+        "requested_framework": requested_framework,
+        "selected_runtime": "self_hosted_graph" if status != "ready" else "langgraph_candidate",
+        "status": status,
+        "recommendation": recommendation,
+        "framework_candidates": [
+            {
+                "framework": "langgraph",
+                "available": available,
+                "optional_dependency": "ue-agent-backend[agent]",
+                "best_for": [
+                    "multi_step_agent_orchestration",
+                    "conditional_edges",
+                    "checkpointable_workflows",
+                ],
+                "adoption_boundary": (
+                    "May replace orchestration wiring, but must preserve Tool Registry, Proposal confirmation, "
+                    "Debug View, and UEAgentTool execution contracts."
+                ),
+            }
+        ],
+        "graph_shape": spec.to_dict(),
+        "migration_notes": [
+            "Do not make LangGraph a hard dependency for local users.",
+            "Start with read-only or plan-only graphs before confirmed-write Proposal graphs.",
+            "Keep the existing AgentGraphSpec as the source of truth so self-hosted and LangGraph modes share one contract.",
+        ],
+    }
+
+
 def langgraph_adapter_blueprint(spec: AgentGraphSpec) -> dict[str, Any]:
     """Return a dependency-free LangGraph-style wiring blueprint.
 
@@ -110,6 +182,7 @@ def langgraph_adapter_blueprint(spec: AgentGraphSpec) -> dict[str, Any]:
         "edges": [edge.to_dict() for edge in spec.edges],
         "terminal_nodes": list(spec.terminal_nodes),
         "requires_dependency": False,
+        "readiness": graph_framework_readiness_report(spec, requested_framework="langgraph_optional"),
     }
 
 
@@ -117,6 +190,7 @@ __all__ = [
     "AgentGraphEdge",
     "AgentGraphNode",
     "AgentGraphSpec",
+    "graph_framework_readiness_report",
     "langgraph_adapter_blueprint",
     "review_fix_validate_graph_spec",
 ]

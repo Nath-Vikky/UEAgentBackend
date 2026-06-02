@@ -49,9 +49,13 @@ def build_agent_decision_trace(
     route = dict(routing.get("route") or {})
     locale = dict(routing.get("locale") or {})
     context_budget = dict(context_bundle.get("budget") or {})
+    context_pack = dict(context_bundle.get("context_pack") or {})
+    context_pack_summary = dict(context_pack.get("debug_summary") or {})
+    context_pack_budget = dict(context_pack.get("budget_layer") or {})
     active_context = dict(context_bundle.get("active_context") or {})
     session_summary = dict(context_bundle.get("session_summary") or {})
     long_term_memory = dict(context_bundle.get("long_term_memory") or {})
+    file_memory = dict(context_bundle.get("file_memory") or {})
     web_memory = dict(context_bundle.get("web_memory") or {})
     memory_context = dict(context_bundle.get("memory") or {})
     tool_plan = dict(data.get("tool_plan") or debug_view.get("tool_plan") or {})
@@ -115,6 +119,8 @@ def build_agent_decision_trace(
             confidence=1.0,
             details={
                 "context_bundle_version": context_bundle.get("version"),
+                "context_pack_version": context_pack.get("version"),
+                "context_pack_mode": context_pack.get("mode"),
                 "active_context_version": active_context.get("version"),
                 "active_project": active_context.get("project", {}),
                 "active_asset": active_context.get("asset", {}),
@@ -122,10 +128,13 @@ def build_agent_decision_trace(
                 "active_log": active_context.get("log", {}),
                 "recent_message_count": len(context_bundle.get("recent_messages") or []),
                 "tool_context_count": len(context_bundle.get("tool_context") or []),
+                "selected_memory_count": context_pack_summary.get("selected_memory_count", 0),
+                "tool_observation_count": context_pack_summary.get("tool_observation_count", 0),
                 "session_summary_status": session_summary.get("status"),
                 "estimated_chars": context_budget.get("estimated_chars"),
                 "char_budget": context_budget.get("char_budget"),
                 "within_budget": context_budget.get("within_budget"),
+                "context_pack_budget": context_pack_budget,
             },
             warnings=list(context_budget.get("warnings") or []),
         ),
@@ -158,6 +167,9 @@ def build_agent_decision_trace(
                 "long_term_memory_status": long_term_memory.get("status"),
                 "long_term_memory_count": long_term_memory.get("count", 0),
                 "long_term_memory_items": long_term_memory.get("items", []),
+                "file_memory_status": file_memory.get("status"),
+                "file_memory_count": len(file_memory.get("items") or []),
+                "file_memory_reason": file_memory.get("reason"),
                 "web_memory_status": web_memory.get("status"),
                 "web_memory_count": len(web_memory.get("items") or []),
                 "web_memory_reason": web_memory.get("reason"),

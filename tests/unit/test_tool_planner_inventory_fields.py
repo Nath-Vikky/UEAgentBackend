@@ -132,7 +132,7 @@ def test_tool_planner_builds_result_contracts_for_selected_tools() -> None:
 
 
 def test_project_inventory_query_returns_requested_field_view() -> None:
-    storage_dir = Path("tests/unit/.tmp") / f"inventory-fields-{uuid.uuid4().hex}"
+    storage_dir = Path("storage/test-tmp") / f"inventory-fields-{uuid.uuid4().hex}"
     try:
         service = ProjectInventoryService(Settings(storage_dir=str(storage_dir)))
         service.save_snapshot(

@@ -20,6 +20,8 @@ coverage.xml
 .eval-runtime/
 pytest_tmp/
 tests/unit/.tmp/
+storage/test-tmp/
+runtime/
 *.egg-info/
 storage/app.db
 storage/*.db

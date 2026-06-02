@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from app.core.settings import Settings
 
 
-TEST_TMP_DIR = Path(__file__).resolve().parent / ".tmp"
+TEST_TMP_DIR = Path("storage/test-tmp/settings")
 LIST_ENV_KEYS = (
     "APP_CORS_ORIGINS",
     "KB_SOURCE_PATHS",
@@ -24,7 +25,7 @@ def clean_list_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _write_env_file(name: str, content: str) -> Path:
     TEST_TMP_DIR.mkdir(parents=True, exist_ok=True)
-    env_file = TEST_TMP_DIR / name
+    env_file = TEST_TMP_DIR / f"{uuid.uuid4().hex}-{name}"
     env_file.write_text(content, encoding="utf-8")
     return env_file
 
@@ -62,6 +63,19 @@ def test_settings_default_to_lexical_first_rag() -> None:
     assert settings.rag_fallback_mode == "lexical_only"
     assert settings.web_search_enabled is False
     assert settings.web_search_provider == "disabled"
+    assert settings.agent_graph_framework == "framework_neutral"
+    assert settings.local_memory_enabled is False
+    assert settings.local_memory_root == "./runtime/memory"
+
+
+def test_settings_accept_agent_graph_framework_override(clean_list_env: None) -> None:
+    env_file = _write_env_file(
+        "agent-framework.env",
+        "AGENT_GRAPH_FRAMEWORK=langgraph_optional\n",
+    )
+    settings = Settings(_env_file=env_file)
+
+    assert settings.agent_graph_framework == "langgraph_optional"
 
 
 def test_settings_accept_csv_for_web_search_list_fields(clean_list_env: None) -> None:

@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.agent.active_context import build_active_context
 from app.agent.context_builder import build_context_summary
+from app.agent.context_pack import build_context_pack, context_pack_prompt_excerpt
 from app.agent.memory_providers import (
+    FileMemoryProvider,
     MemoryProviderResult,
     MemoryQuery,
     SessionLongTermMemoryProvider,
@@ -330,9 +332,12 @@ def _build_memory_context(
     *,
     query: str,
     long_term_result: MemoryProviderResult,
+    file_memory_result: MemoryProviderResult | None,
     web_memory_result: MemoryProviderResult | None,
 ) -> dict[str, Any]:
     providers = [long_term_result]
+    if file_memory_result is not None:
+        providers.append(file_memory_result)
     if web_memory_result is not None:
         providers.append(web_memory_result)
     items: list[dict[str, Any]] = []
@@ -346,6 +351,7 @@ def _build_memory_context(
         "items": items,
         "policy": {
             "session_long_term_memory": "Project/session-scoped compact memory from chat history.",
+            "local_file_memory": "Local private runtime/memory markdown notes; read-only and never written to knowledge/.",
             "web_memory": "Cached web-search summaries only; never treated as formal KB and never writes to knowledge/.",
             "dedupe": "Providers remain separate so local project memory is not mixed with cached web evidence.",
         },
@@ -361,7 +367,7 @@ def _estimate_chars(bundle: dict[str, Any]) -> int:
     for item in bundle.get("long_term_memory", {}).get("items", []):
         total += len(str(item.get("text") or ""))
     for item in bundle.get("memory", {}).get("items", []):
-        if item.get("provider_id") == "web_memory":
+        if item.get("provider_id") in {"web_memory", "local_file_memory"}:
             total += len(str(item.get("text") or ""))
     total += len(str(bundle.get("active_context") or ""))
     total += len(str(bundle.get("editor_context") or ""))
@@ -397,8 +403,16 @@ def build_context_bundle(
             limit=5,
         )
     )
+    file_memory_result: MemoryProviderResult | None = None
     web_memory_result: MemoryProviderResult | None = None
     if settings is not None:
+        file_memory_result = FileMemoryProvider(settings).recall(
+            MemoryQuery(
+                project_name=request.context.project_name,
+                query=latest_user_message,
+                limit=3,
+            )
+        )
         web_memory_result = WebMemoryProvider(db, settings).recall(
             MemoryQuery(
                 project_name=request.context.project_name,
@@ -410,6 +424,7 @@ def build_context_bundle(
     memory_context = _build_memory_context(
         query=latest_user_message,
         long_term_result=long_term_memory_result,
+        file_memory_result=file_memory_result,
         web_memory_result=web_memory_result,
     )
     editor_operations_context = _recent_editor_operations(
@@ -439,6 +454,14 @@ def build_context_bundle(
         "recent_messages": recent_messages,
         "session_summary": _session_summary(db, session_id),
         "long_term_memory": long_term_memory_result.raw,
+        "file_memory": file_memory_result.raw
+        if file_memory_result
+        else {
+            "status": "skipped",
+            "reason": "settings_not_provided",
+            "items": [],
+            "summary": {"writes_to_kb": False},
+        },
         "web_memory": web_memory_result.raw
         if web_memory_result
         else {
@@ -478,10 +501,15 @@ def build_context_bundle(
         bundle["budget"]["warnings"] = ["context_bundle_over_budget_compact_excerpts_used"]
     else:
         bundle["budget"]["warnings"] = []
+    bundle["context_pack"] = build_context_pack(bundle)
     return bundle
 
 
 def context_bundle_prompt_excerpt(context_bundle: dict[str, Any]) -> str:
+    context_pack = context_bundle.get("context_pack")
+    if isinstance(context_pack, dict) and context_pack:
+        return context_pack_prompt_excerpt(context_pack)
+
     lines = ["Context Bundle v1:"]
     editor_context = context_bundle.get("editor_context") or {}
     if editor_context:

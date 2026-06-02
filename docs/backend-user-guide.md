@@ -144,6 +144,8 @@
 当前 provider：
 
 - `SessionLongTermMemoryProvider`：包装原有 `recall_long_term_memory()`，Context Bundle 已通过它读取 `long_term_memory`。
+- `FileMemoryProvider`：可选本地私有记忆 provider。`LOCAL_MEMORY_ENABLED=true` 时读取
+  `LOCAL_MEMORY_ROOT` 下的 Markdown/TXT 文件，默认目录是 `./runtime/memory`，该目录已被 Git 忽略。
 - `WebMemoryProvider`：包装 `WebMemoryService.recall()`，Context Bundle 现在会在 `WEB_MEMORY_ENABLED=true` 时读取最近的高质量 Web Memory。
 
 标准入参/出参：
@@ -159,6 +161,13 @@
 - Web Memory 仍然只是可追溯的网页摘要缓存，不会写入 `knowledge/`，也不会替代本地 KB/RAG。
 - 不新增企业级用户画像或跨项目记忆同步。
 - 后续如果增加 Project Memory / Team Memory，优先实现 provider，而不是直接塞进 `context_manager.py`。
+
+File Memory boundary:
+
+- File Memory is exposed as `data.context_bundle.file_memory` and
+  `data.context_bundle.memory.sources[].provider_id = "local_file_memory"`.
+- File Memory is not KB ingestion, not vector indexing, and not public project
+  documentation. Keep private notes under `runtime/memory`.
 
 ### Self-Reflection
 
@@ -1634,7 +1643,7 @@ POST /api/v1/sessions
 - `debug_view.context_bundle.session_summary`：阶段 B 之前主要读取 session metadata 中已有摘要；没有则显示 `not_available`。
 - `debug_view.context_bundle.long_term_memory`：项目/会话长期记忆，字段保持旧版本兼容。
 - `debug_view.context_bundle.web_memory`：当 `WEB_MEMORY_ENABLED=true` 时注入的 Web Search 摘要缓存，用于复用近期高质量外部资料。
-- `debug_view.context_bundle.memory.sources`：统一记忆来源诊断，当前包含 `session_long_term_memory` 和可选 `web_memory`。
+- `debug_view.context_bundle.memory.sources`：统一记忆来源诊断，当前包含 `session_long_term_memory`、可选 `local_file_memory` 和可选 `web_memory`。
 - `debug_view.context_bundle.budget`：字符预算、估算字符数、裁剪策略和 warnings。
 - `debug_view.memory_summary.context_budget`：Debug View 中更短的预算摘要，方便快速判断是否接近上下文限制。
 
@@ -1644,6 +1653,52 @@ POST /api/v1/sessions
 - 第一版不做自动长期记忆总结，不做复杂 graph，也不做多 agent 上下文共享。
 - Web Memory 注入上下文时仍保持独立来源，不视为正式知识库证据；如果回答需要严格引用项目文档，仍优先看 RAG/local grep/project inventory。
 - 如果需要看某次请求到底带了哪些上下文，优先打开 `debug_view.context_bundle`，不要从 raw prompt 反推。
+
+### 18.9.1 Context Pack v1
+
+2026-06-02 update: the backend now builds `context_pack_v1` on top of the
+existing `context_bundle_v1`.
+
+Purpose:
+
+- `context_bundle_v1` remains the full compact context contract for backward compatibility.
+- `context_pack_v1` is the structured prompt/debug projection used by the Agent layer.
+- It separates context into `system_layer`, `project_layer`, `active_layer`,
+  `conversation_layer`, `knowledge_layer`, `memory_layer`, `tool_layer`, and
+  `budget_layer`.
+- It does not change public APIs, Proposal safety, or UEAgentTool execution.
+
+Where to inspect:
+
+- `debug_view.context_pack`
+- `data.context_pack`
+- `debug_view.context_bundle.context_pack`
+- `debug_view.agent_decision_trace.decisions.context_decision.details.context_pack_version`
+
+Current behavior:
+
+- Memory selection is deterministic and non-LLM: the backend ranks compact
+  memory/cached evidence snippets by lexical overlap and existing provider score.
+- `tool_layer.tool_observation_summary` keeps recent tool task summaries
+  separate from chat history.
+- `tool_layer.recent_editor_operations` keeps recent confirmed UE operations
+  available as active context without injecting full raw result JSON into the prompt.
+- `system_layer` records the important Agent boundary: LLMs can reason and
+  propose, but confirmed UE writes still require Proposal confirmation.
+
+Why this matters:
+
+- It gives ReAct Lite, future LangGraph-compatible orchestration, and
+  Multi-Agent Lite a clean input object.
+- It makes context compression explainable in Debug View.
+- It keeps the frontend stable while improving backend Agent architecture.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_context_pack.py tests\unit\test_memory_providers.py -q
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py::test_project_qa_returns_confidence_and_citations tests\integration\test_system_and_tasks.py::test_direct_chat_with_project_context_still_skips_kb_when_query_is_generic -q
+```
 
 ### 18.10 Memory Summary v1
 
@@ -1716,6 +1771,63 @@ POST /api/v1/sessions
 - Decision Trace 不额外调用 LLM，只汇总后端已有判断。
 - 普通用户界面不需要展示完整 trace。
 - 调试展示或排查“为什么这次走 RAG / 为什么没走 RAG / 为什么 LLM skipped”时，优先看这里。
+
+### 18.11.1 Multi-Agent Lite Role Trace
+
+2026-06-02 update: every task response now includes a framework-neutral
+`multi_agent_lite_trace_v1` diagnostic.
+
+Where to inspect:
+
+- `debug_view.multi_agent_lite`
+- `data.multi_agent_lite`
+
+Roles:
+
+- `coordinator`: route the request and assemble context.
+- `researcher`: collect evidence from RAG, local search, project inventory,
+  session/file/web memory, or cached sources.
+- `planner`: select a skill, read-only tool plan, or pending Proposal plan.
+- `executor`: execute only confirmed write-side Proposals through UEAgentTool.
+- `reviewer`: expose lightweight self-reflection / quality diagnostics.
+
+Boundary:
+
+- It does not launch multiple LLM calls.
+- It does not run a parallel swarm.
+- It does not bypass Proposal confirmation.
+- It is a stable trace format for future LangGraph-compatible orchestration or
+  real Multi-Agent services.
+
+### 18.11.2 ReAct v2 Display Trace
+
+2026-06-02 update: every task response now includes `react_v2_trace_v1`.
+
+Where to inspect:
+
+- `debug_view.react_trace`
+- `data.react_trace`
+
+Flow:
+
+```text
+input
+  -> thought_summary
+  -> plan_summary
+  -> observation_summary
+  -> reflection_summary
+  -> final
+```
+
+Boundary:
+
+- `react_trace` is display-safe and does not expose raw chain-of-thought.
+- It is a diagnostic projection of the current deterministic/LLM-assisted
+  execution, not a permission to auto-run write tools.
+- Existing `react_loop` remains backward compatible for Project QA / workflow
+  traces. Prefer `react_trace` for the new full-task Debug View summary.
+- Write operations still create at most one pending Proposal per turn and still
+  require UEAgentTool confirmation.
 
 ### 18.12 RAG Readiness 与本地评测
 
@@ -3961,6 +4073,27 @@ Content-Type: application/json
 ```
 
 这一步主要服务于架构表达和后续扩展，不要求 UE 前端修改。
+
+2026-06-02 更新：Graph Adapter 现在增加了可选框架 readiness 诊断。
+
+- 新配置：`AGENT_GRAPH_FRAMEWORK=framework_neutral | langgraph_optional | langgraph_active`。
+- 默认值：`framework_neutral`，即继续使用当前自研轻量图，不引入额外依赖。
+- `langgraph_optional`：不改变运行时，只在 Debug View 中标记 LangGraph 是否可作为迁移候选。
+- `langgraph_active`：声明希望 LangGraph 接管图编排；如果没有安装 `ue-agent-backend[agent]`，Debug View 会显示 `blocked_missing_dependency`，不会破坏当前自研运行路径。
+- 新 Debug 字段：`debug_view.graph_framework`。
+- 新函数：`graph_framework_readiness_report()`，用于说明图 ID、候选框架、依赖状态、迁移边界和推荐动作。
+
+重要边界：
+
+- LangGraph 只允许未来接管“图编排 / 条件边 / checkpointable workflow”。
+- Tool Registry、Proposal 确认、安全策略、UEAgentTool 真正执行 Editor API 的边界不变。
+- 当前 UE 前端无需修改。
+
+验证命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_graph_adapter.py tests\unit\test_settings.py -q
+```
 
 ## 2026-05-11 Assembly Sprint N8 小收口
 

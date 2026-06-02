@@ -84,6 +84,9 @@ KB_SOURCE_PATHS=./knowledge
 EMBEDDING_ENABLED=false
 RAG_MODE=hybrid
 RAG_FALLBACK_MODE=lexical_only
+AGENT_GRAPH_FRAMEWORK=framework_neutral
+LOCAL_MEMORY_ENABLED=false
+LOCAL_MEMORY_ROOT=./runtime/memory
 ```
 
 后续需要向量检索时再启用：

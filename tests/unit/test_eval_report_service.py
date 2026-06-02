@@ -10,7 +10,7 @@ from app.services.eval_report_service import EvalReportService
 
 
 def _runtime_root() -> Path:
-    root = Path("storage") / "test-eval-report-service" / uuid.uuid4().hex
+    root = Path("storage/test-tmp/eval-report-service") / uuid.uuid4().hex
     shutil.rmtree(root, ignore_errors=True)
     root.mkdir(parents=True, exist_ok=True)
     return root

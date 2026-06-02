@@ -9,8 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.agent.context_builder import build_context_summary
 from app.agent.context_manager import build_context_bundle, context_bundle_prompt_excerpt
+from app.agent.context_pack import build_context_pack
 from app.agent.decision_trace import build_agent_decision_trace
+from app.agent.graph_adapter import graph_framework_readiness_report, review_fix_validate_graph_spec
 from app.agent.memory_manager import update_session_memory
+from app.agent.multi_agent import build_multi_agent_lite_trace
+from app.agent.react_trace import build_react_v2_trace
 from app.agent.response_composer import compose_unified_response
 from app.agent.router import classify_request
 from app.core.settings import Settings
@@ -875,6 +879,7 @@ class TaskService:
         active_context["code"] = code_context
         bundle["active_context"] = active_context
         bundle["project_inventory_context"] = inventory_context
+        bundle["context_pack"] = build_context_pack(bundle)
         return bundle
 
     def create_task(
@@ -956,6 +961,7 @@ class TaskService:
             stream_sink=stream_sink,
         )
         execution["debug_view"]["active_context"] = context_bundle.get("active_context", {})
+        execution["debug_view"]["context_pack"] = context_bundle.get("context_pack", {})
         execution["debug_view"]["tool_registry_protocol"] = tool_protocol_summary()
         execution["debug_view"]["tool_execution_policy"] = TOOL_EXECUTION_POLICY
         execution["debug_view"]["tools"] = enrich_tool_debug_entries(
@@ -970,6 +976,7 @@ class TaskService:
         )
         execution["debug_view"]["skill"] = skill_runtime
         execution["data"] = {**dict(execution.get("data") or {}), "skill": skill_runtime}
+        execution["data"]["context_pack"] = context_bundle.get("context_pack", {})
         execution["planner_diagnostics"] = {
             **dict(execution.get("planner_diagnostics") or {}),
             "skill": skill_runtime,
@@ -1012,6 +1019,7 @@ class TaskService:
                     "step_count": len(execution["step_results"]),
                     "session_memory": context_bundle.get("session_summary", {}),
                     "long_term_memory": context_bundle.get("long_term_memory", {}),
+                    "file_memory": context_bundle.get("file_memory", {}),
                     "web_memory": context_bundle.get("web_memory", {}),
                     "memory": context_bundle.get("memory", {}),
                     "context_budget": context_bundle.get("budget", {}),
@@ -1055,6 +1063,32 @@ class TaskService:
             finish_reason=finish_reason,
             output_complete=output_complete,
         )
+        multi_agent_lite_trace = build_multi_agent_lite_trace(
+            request=request,
+            routing=routing,
+            context_pack=context_bundle.get("context_pack", {}),
+            skill_runtime=skill_runtime,
+            retrieval_trace=execution["retrieval_trace"],
+            data=execution["data"],
+            debug_view=execution["debug_view"],
+            action_proposals=execution["action_proposals"],
+        )
+        execution["debug_view"]["multi_agent_lite"] = multi_agent_lite_trace
+        execution["data"]["multi_agent_lite"] = multi_agent_lite_trace
+        react_v2_trace = build_react_v2_trace(
+            request=request,
+            routing=routing,
+            context_pack=context_bundle.get("context_pack", {}),
+            skill_runtime=skill_runtime,
+            retrieval_trace=execution["retrieval_trace"],
+            data=execution["data"],
+            debug_view=execution["debug_view"],
+            action_proposals=execution["action_proposals"],
+            task_status=task_status,
+            finish_reason=finish_reason,
+        )
+        execution["debug_view"]["react_trace"] = react_v2_trace
+        execution["data"]["react_trace"] = react_v2_trace
         trace_summary = build_trace_summary(
             trace_id,
             routing["intent"]["route_type"],
@@ -1293,7 +1327,12 @@ class TaskService:
             "intent": routing["intent"],
             "route": routing["route"],
             "context_bundle": resolved_context_bundle,
+            "context_pack": resolved_context_bundle.get("context_pack", {}),
             "active_context": resolved_context_bundle.get("active_context", {}),
+            "graph_framework": graph_framework_readiness_report(
+                review_fix_validate_graph_spec(),
+                requested_framework=self.settings.agent_graph_framework,
+            ),
             "tool_registry_protocol": tool_protocol_summary(),
             "tool_execution_policy": TOOL_EXECUTION_POLICY,
             "retrieval": {},
@@ -1308,6 +1347,7 @@ class TaskService:
             "memory_summary": {
                 "session_memory": resolved_context_bundle.get("session_summary", {}),
                 "long_term_memory": resolved_context_bundle.get("long_term_memory", {}),
+                "file_memory": resolved_context_bundle.get("file_memory", {}),
                 "context_budget": resolved_context_bundle.get("budget", {}),
             },
             "output_complete": True,

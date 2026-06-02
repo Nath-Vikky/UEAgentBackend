@@ -5,7 +5,7 @@ from pathlib import Path
 from scripts.scan_knowledge_sources import build_markdown_summary, summarize_knowledge_sources
 
 
-TEST_TMP_DIR = Path(__file__).resolve().parent / ".tmp" / "knowledge-source-scan"
+TEST_TMP_DIR = Path("storage/test-tmp/knowledge-source-scan")
 
 
 def test_summarize_knowledge_sources_counts_domains_without_reading_contents() -> None:

@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     )
     router_signal_min_confidence: float = 0.72
     router_signal_min_margin: float = 8.0
+    agent_graph_framework: Literal["framework_neutral", "langgraph_optional", "langgraph_active"] = (
+        "framework_neutral"
+    )
 
     web_search_enabled: bool = False
     web_search_provider: str = "disabled"
@@ -108,6 +111,10 @@ class Settings(BaseSettings):
     web_memory_max_entries: int = 200
     web_memory_min_score: float = 0.08
     web_memory_fts_enabled: bool = True
+    local_memory_enabled: bool = False
+    local_memory_root: str = "./runtime/memory"
+    local_memory_max_files: int = 80
+    local_memory_max_file_bytes: int = 120_000
 
     storage_dir: str = "./storage"
     upload_dir: str = "./storage/uploads"

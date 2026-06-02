@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
+import uuid
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -10,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 import app.db.models  # noqa: F401
 from app.agent.context_manager import build_context_bundle, context_bundle_prompt_excerpt
 from app.agent.memory_providers import (
+    FileMemoryProvider,
     MemoryQuery,
     SessionLongTermMemoryProvider,
     WebMemoryProvider,
@@ -80,6 +83,36 @@ def test_web_memory_provider_preserves_disabled_contract() -> None:
     assert result.status == "skipped"
     assert result.items == []
     assert result.raw["reason"] == "disabled_by_settings"
+
+
+def test_file_memory_provider_reads_private_markdown_when_enabled() -> None:
+    root = Path("storage/test-tmp/memory") / uuid.uuid4().hex
+    project_dir = root / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (root / "MEMORY.md").write_text(
+        "# Memory Index\n\n- project/enhanced-input.md: Enhanced Input setup notes.\n",
+        encoding="utf-8",
+    )
+    (project_dir / "enhanced-input.md").write_text(
+        "# Enhanced Input Setup\n\nUse Input Actions and Mapping Contexts for character input.",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        _env_file=None,
+        local_memory_enabled=True,
+        local_memory_root=str(root),
+        local_memory_max_files=10,
+    )
+
+    result = FileMemoryProvider(settings).recall(
+        MemoryQuery(query="Enhanced Input Mapping Context", project_name="DemoProject", limit=3)
+    )
+
+    assert result.provider_id == "local_file_memory"
+    assert result.status == "available"
+    assert result.items[0]["retrieval_source"] == "local_file_memory"
+    assert "Enhanced Input" in result.items[0]["title"]
+    assert result.raw["policy"].startswith("Local private memory")
 
 
 def test_context_bundle_injects_web_memory_as_separate_source() -> None:
@@ -153,6 +186,7 @@ def test_context_bundle_injects_web_memory_as_separate_source() -> None:
         for source in bundle["memory"]["sources"]
     } == {
         "session_long_term_memory": "not_found",
+        "local_file_memory": "skipped",
         "web_memory": "completed",
     }
     assert any(item["provider_id"] == "web_memory" for item in bundle["memory"]["items"])

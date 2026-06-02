@@ -1484,6 +1484,12 @@ def test_project_qa_returns_confidence_and_citations(client: TestClient) -> None
     assert body["user_view"]["citations_preview"]
     assert body["retrieval_trace"]["retrieved_docs"]
     assert body["debug_view"]["context_bundle"]["version"] == "context_bundle_v1"
+    assert body["debug_view"]["context_pack"]["version"] == "context_pack_v1"
+    assert body["data"]["context_pack"]["version"] == "context_pack_v1"
+    assert body["debug_view"]["multi_agent_lite"]["version"] == "multi_agent_lite_trace_v1"
+    assert body["debug_view"]["react_trace"]["version"] == "react_v2_trace_v1"
+    assert body["data"]["multi_agent_lite"]["summary"]["active_role_count"] >= 2
+    assert body["data"]["react_trace"]["boundary"]["raw_chain_of_thought_exposed"] is False
     assert body["data"]["context_bundle"]["input_summary"]["route_type"] == "project_qa"
     decision_trace = body["debug_view"]["agent_decision_trace"]
     assert decision_trace["version"] == "agent_decision_trace_v1"
@@ -1687,10 +1693,14 @@ def test_direct_chat_skips_kb_retrieval(client: TestClient) -> None:
     assert body["data"]["skill"]["collector"] == "chat_messages_and_editor_context"
     assert body["trace_summary"]["skill_id"] == "ProjectQASkill"
     assert body["debug_view"]["context_bundle"]["version"] == "context_bundle_v1"
+    assert body["debug_view"]["context_pack"]["version"] == "context_pack_v1"
+    assert body["debug_view"]["multi_agent_lite"]["version"] == "multi_agent_lite_trace_v1"
+    assert body["debug_view"]["react_trace"]["version"] == "react_v2_trace_v1"
     assert body["debug_view"]["context_bundle"]["input_summary"]["route_type"] == "direct_answer"
     assert body["debug_view"]["context_bundle"]["recent_messages"]
     assert "context_budget" in body["debug_view"]["memory_summary"]
     assert body["data"]["context_bundle"]["version"] == "context_bundle_v1"
+    assert body["data"]["context_pack"]["version"] == "context_pack_v1"
     decision_trace = body["debug_view"]["agent_decision_trace"]
     assert decision_trace["version"] == "agent_decision_trace_v1"
     assert decision_trace["summary"]["route_type"] == "direct_answer"
