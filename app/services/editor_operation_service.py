@@ -49,6 +49,11 @@ from app.services.editor_operations.catalog import (
     UMG_WIDGET_CLASS_ALLOWLIST,
     EditorOperationValidationError,
 )
+from app.services.editor_operations.blueprint_graph_policy import (
+    build_blueprint_graph_policy_preview,
+    detect_blueprint_graph_target,
+    detect_unconnected_blueprint_node_intent,
+)
 from app.services.editor_operations.preview import (
     build_preflight_checks,
     build_preview_summary,
@@ -280,6 +285,12 @@ class EditorOperationService:
         request: UnifiedTaskRequest,
         query_text: str,
     ) -> str:
+        return str(
+            detect_blueprint_graph_target(
+                request.payload,
+                query_text,
+            )["graph_name"]
+        )
         explicit_graph = str(request.payload.get("graph_name") or "").strip()
         if explicit_graph:
             return explicit_graph
@@ -320,6 +331,13 @@ class EditorOperationService:
         *,
         default: str = "",
     ) -> str:
+        return str(
+            detect_blueprint_graph_target(
+                request.payload,
+                query_text,
+                default_entry_event=default,
+            )["entry_event"]
+        )
         explicit_event = str(request.payload.get("entry_event") or "").strip()
         if explicit_event:
             return explicit_event
@@ -360,6 +378,7 @@ class EditorOperationService:
 
     @staticmethod
     def _detect_unconnected_blueprint_node_intent(query_text: str) -> bool:
+        return detect_unconnected_blueprint_node_intent(query_text)
         query_lower = query_text.lower()
         compact = query_lower.replace("_", "").replace("-", "").replace(" ", "")
         return any(
@@ -4258,6 +4277,7 @@ class EditorOperationService:
         if operation_type == "add_blueprint_node_template":
             blueprint_path = self._normalize_asset_path(payload.get("blueprint_path"))
             template_id = self._normalize_blueprint_node_template_id(payload.get("template_id"))
+            graph_name = self._normalize_graph_name(payload.get("graph_name"))
             entry_event_raw = payload.get("entry_event")
             if template_id == "get_variable":
                 entry_event_raw = ""
@@ -4269,12 +4289,12 @@ class EditorOperationService:
                 "delay_print_string",
                 "sequence_print_strings",
                 "set_variable",
-            } and not str(entry_event_raw or "").strip():
+            } and graph_name == "EventGraph" and not str(entry_event_raw or "").strip():
                 entry_event_raw = "BeginPlay"
             normalized: dict[str, Any] = {
                 "blueprint_path": blueprint_path,
                 "template_id": template_id,
-                "graph_name": self._normalize_graph_name(payload.get("graph_name")),
+                "graph_name": graph_name,
                 "node_comment": self._clean_text(payload.get("node_comment"), max_length=160),
                 "entry_event": self._normalize_blueprint_node_entry_event(entry_event_raw),
                 "compile_after_edit": bool(payload.get("compile_after_edit", True)),
@@ -5158,6 +5178,11 @@ class EditorOperationService:
                 "auto_save": False,
             },
         }
+        if operation_type == "add_blueprint_node_template":
+            dry_run_preview["blueprint_graph_policy"] = build_blueprint_graph_policy_preview(
+                normalized_payload,
+                request.reason or "",
+            )
         display_hints = {
             "ui": "editor_operation_confirmation",
             "operation_type": operation_type,

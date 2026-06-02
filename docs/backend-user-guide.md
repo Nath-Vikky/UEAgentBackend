@@ -3027,6 +3027,27 @@ compile_blueprint
 }
 ```
 
+Blueprint Graph policy v1:
+
+- Backend now adds `dry_run_preview.blueprint_graph_policy` for
+  `add_blueprint_node_template` proposals.
+- This block is diagnostic-only and does not change the UEAgentTool execution
+  payload. Existing Proposal cards can ignore it.
+- It records selected `graph_name`, selected `entry_event`, whether the user
+  asked for an unconnected node, selection reasons, template capability, and
+  expected connection behavior.
+- `EventGraph` templates may default to `BeginPlay` when a connected exec chain
+  is expected. `ConstructionScript` and other non-event graphs do not get a
+  forced `BeginPlay`; if no entry event exists, the preview marks
+  `expected_behavior.connects_exec_pins=false`.
+- If the user asks for `unconnected`, `standalone`, `no connection`, or their
+  Chinese equivalents for "do not connect" / "create only", the backend clears
+  the default entry event and the proposal is expected to create an isolated
+  node/template.
+- This policy layer is the backend-side bridge between natural-language
+  requests and future HTTP/MCP graph tools. It keeps graph selection
+  explainable without letting the LLM directly edit arbitrary Blueprint graphs.
+
 `add_blueprint_node_template` 当前开放十个白名单模板：
 
 - `template_id=print_string`：UE 插件会在指定 graph 中创建 `UKismetSystemLibrary::PrintString` CallFunction 节点。若传入 `entry_event=BeginPlay / ActorBeginOverlap / ActorEndOverlap`，插件会创建或复用对应事件节点，并尝试连接 `Event.Then -> PrintString.Execute`。

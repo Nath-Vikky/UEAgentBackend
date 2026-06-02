@@ -2791,6 +2791,10 @@ def test_agent_chat_defaults_eventgraph_print_string_to_beginplay(client: TestCl
     assert payload["template_id"] == "print_string"
     assert payload["graph_name"] == "EventGraph"
     assert payload["entry_event"] == "BeginPlay"
+    graph_policy = body["action_proposals"][0]["dry_run_preview"]["blueprint_graph_policy"]
+    assert graph_policy["schema_version"] == "blueprint_graph_policy_v1"
+    assert graph_policy["expected_behavior"]["connects_exec_pins"] is True
+    assert graph_policy["warnings"] == []
 
 
 def test_agent_chat_builds_overlap_print_string_template(client: TestClient) -> None:
@@ -3137,6 +3141,10 @@ def test_agent_chat_detects_construction_script_graph_for_blueprint_template(
     assert payload["template_id"] == "print_string"
     assert payload["graph_name"] == "ConstructionScript"
     assert payload["entry_event"] == ""
+    graph_policy = body["action_proposals"][0]["dry_run_preview"]["blueprint_graph_policy"]
+    assert graph_policy["graph_name"] == "ConstructionScript"
+    assert graph_policy["entry_event"] == ""
+    assert graph_policy["expected_behavior"]["connects_exec_pins"] is False
 
 
 def test_agent_chat_can_compile_selected_blueprint(client: TestClient) -> None:
