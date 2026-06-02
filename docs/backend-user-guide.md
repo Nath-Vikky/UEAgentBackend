@@ -2891,6 +2891,13 @@ planner can use this Active Context focus as the default target. If the user
 explicitly says `EventGraph` or `ConstructionScript`, the user request still
 wins over the inferred focus.
 
+The same focus rule also applies to single-step Agent Chat editor-operation
+routing for `add_blueprint_node_template`: when the user asks to add a
+Blueprint Print String node but omits the graph name, the backend can use
+`context.editor_state.current_graph_name`. If that graph is `ConstructionScript`,
+the Proposal leaves `entry_event` empty so UEAgentTool can create an unlinked
+Construction Script node instead of trying to connect from `BeginPlay`.
+
 如果 UI 或调试脚本需要直接展示蓝图结构列表，可以使用：
 
 ```http

@@ -281,10 +281,58 @@ class EditorOperationService:
         return default
 
     @staticmethod
+    def _query_mentions_blueprint_graph_target(query_text: str) -> bool:
+        query_lower = str(query_text or "").lower()
+        compact = query_lower.replace("_", "").replace("-", "").replace(" ", "")
+        return any(
+            token in query_lower or token in compact
+            for token in (
+                "eventgraph",
+                "event graph",
+                "constructionscript",
+                "construction script",
+                "userconstructionscript",
+            )
+        )
+
+    @staticmethod
+    def _active_graph_name_from_request(request: UnifiedTaskRequest) -> str:
+        payload_graph = str(
+            request.payload.get("current_graph_name")
+            or request.payload.get("active_graph_name")
+            or ""
+        ).strip()
+        if payload_graph:
+            return payload_graph
+        editor_state = request.context.editor_state or {}
+        return str(
+            editor_state.get("current_graph_name")
+            or editor_state.get("graph_name")
+            or editor_state.get("active_graph_name")
+            or ""
+        ).strip()
+
+    @staticmethod
     def _detect_blueprint_graph_name_from_request(
         request: UnifiedTaskRequest,
         query_text: str,
     ) -> str:
+        target = detect_blueprint_graph_target(
+            request.payload,
+            query_text,
+        )
+        detected_graph = str(target["graph_name"])
+        explicit_graph = str(request.payload.get("graph_name") or "").strip()
+        active_graph = EditorOperationService._active_graph_name_from_request(request)
+        if explicit_graph:
+            return detected_graph
+        if (
+            active_graph
+            and detected_graph == "EventGraph"
+            and not EditorOperationService._query_mentions_blueprint_graph_target(query_text)
+        ):
+            return active_graph
+        return detected_graph
         return str(
             detect_blueprint_graph_target(
                 request.payload,
@@ -331,13 +379,17 @@ class EditorOperationService:
         *,
         default: str = "",
     ) -> str:
-        return str(
-            detect_blueprint_graph_target(
-                request.payload,
-                query_text,
-                default_entry_event=default,
-            )["entry_event"]
+        explicit_event = str(request.payload.get("entry_event") or "").strip()
+        target = detect_blueprint_graph_target(
+            request.payload,
+            query_text,
+            default_entry_event=default,
         )
+        entry_event = str(target["entry_event"])
+        graph_name = EditorOperationService._detect_blueprint_graph_name_from_request(request, query_text)
+        if graph_name != "EventGraph" and not explicit_event:
+            return ""
+        return entry_event
         explicit_event = str(request.payload.get("entry_event") or "").strip()
         if explicit_event:
             return explicit_event

@@ -3147,6 +3147,50 @@ def test_agent_chat_detects_construction_script_graph_for_blueprint_template(
     assert graph_policy["expected_behavior"]["connects_exec_pins"] is False
 
 
+def test_agent_chat_uses_active_graph_for_single_blueprint_template(
+    client: TestClient,
+) -> None:
+    query = 'Add "Ready" Print String node to the current Blueprint'
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_blueprint_print_active_graph_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_TestActor"],
+                "editor_state": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_TestActor",
+                    "current_graph_name": "ConstructionScript",
+                },
+            },
+            "payload": {"user_query": query},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    payload = body["action_proposals"][0]["dry_run_preview"]["operation_payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_TestActor"
+    assert payload["template_id"] == "print_string"
+    assert payload["graph_name"] == "ConstructionScript"
+    assert payload["entry_event"] == ""
+    assert body["action_proposals"][0]["dry_run_preview"]["blueprint_graph_policy"]["warnings"] == []
+
+
 def test_agent_chat_can_compile_selected_blueprint(client: TestClient) -> None:
     query = "编译这个蓝图"
     response = client.post(
