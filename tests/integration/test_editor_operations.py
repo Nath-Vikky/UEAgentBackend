@@ -4682,3 +4682,51 @@ def test_agent_chat_can_return_plan_only_editor_workflow(client: TestClient) -> 
     assert first_action["payload"]["request"]["workflow_plan_id"] == plan["plan_id"]
     assert first_action["payload"]["request"]["step"]["step_id"] == plan["steps"][0]["step_id"]
     assert any(block["block_type"] == "workflow_ready_actions" for block in body["user_view"]["blocks"])
+
+
+def test_agent_chat_workflow_uses_active_blueprint_focus_when_path_omitted(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_editor_workflow_active_focus",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": 'Plan a workflow: add "Ready" Print String then compile it',
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "RushBa",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_FocusedActor.BP_FocusedActor"],
+                "editor_state": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_FocusedActor.BP_FocusedActor",
+                    "current_graph_name": "ConstructionScript",
+                },
+            },
+            "payload": {
+                "user_query": 'Plan a workflow: add "Ready" Print String then compile it',
+            },
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    plan = body["data"]["editor_workflow_plan"]
+    first, second = plan["steps"]
+    assert plan["status"] == "planned"
+    assert first["payload"]["blueprint_path"] == "/Game/Blueprints/BP_FocusedActor"
+    assert first["payload"]["graph_name"] == "ConstructionScript"
+    assert first["payload"]["entry_event"] == ""
+    assert second["payload"]["blueprint_path"] == "/Game/Blueprints/BP_FocusedActor"
+    assert body["debug_view"]["active_context"]["blueprint"]["current_graph_name"] == "ConstructionScript"
