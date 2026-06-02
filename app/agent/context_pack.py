@@ -254,8 +254,10 @@ def context_pack_prompt_excerpt(context_pack: dict[str, Any]) -> str:
         lines.append(
             "- Active: "
             f"asset={active.get('asset')}, "
+            f"blueprint={active.get('blueprint')}, "
             f"code={active.get('code')}, "
-            f"log={active.get('log')}"
+            f"log={active.get('log')}, "
+            f"editor_focus={active.get('editor_focus')}"
         )
     conversation = dict(context_pack.get("conversation_layer") or {})
     session_summary = dict(conversation.get("session_summary") or {})

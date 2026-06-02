@@ -2882,6 +2882,15 @@ This is optional and backward-compatible. Existing UEAgentTool builds can keep
 sending only `selected_assets`; newer builds may send graph/node focus when the
 user is actively editing a Blueprint graph.
 
+2026-06-02 update: Context Pack prompt excerpts now surface
+`active_layer.blueprint` and `active_layer.editor_focus` explicitly. This helps
+Agent Chat and workflow handlers reason about the current Blueprint focus
+without requiring a new frontend contract. When a plan-only Blueprint workflow
+does not receive an explicit `blueprint_path` or `graph_name`, the workflow
+planner can use this Active Context focus as the default target. If the user
+explicitly says `EventGraph` or `ConstructionScript`, the user request still
+wins over the inferred focus.
+
 如果 UI 或调试脚本需要直接展示蓝图结构列表，可以使用：
 
 ```http
@@ -5727,6 +5736,15 @@ Safety boundary:
 - Every write step still requires a normal Proposal and user confirmation.
 - The planner does not hide follow-up writes in the background.
 - It is deterministic and template-based in v1; it is not a full autonomous task scheduler.
+
+2026-06-02 update: Blueprint workflow planning can now reuse Active Context
+Blueprint focus. If the request omits `blueprint_path`, the planner checks
+`active_context.blueprint.current_blueprint_path`, `context.editor_state`, and
+the latest successful Blueprint operation target. If the request omits
+`graph_name`, the planner can use `active_context.blueprint.current_graph_name`.
+For `ConstructionScript` or other non-EventGraph targets, the planner leaves
+`entry_event` empty instead of forcing `BeginPlay`; for explicit EventGraph
+requests it keeps the existing `BeginPlay` default.
 
 Frontend impact: no mandatory change. A future Workflow UI can show the plan,
 let the user submit one step at a time, and stop/skip steps safely.

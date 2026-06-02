@@ -56,6 +56,105 @@ def _as_string_list(value: Any) -> list[str]:
     return items
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _context_section(context: dict[str, Any], *path: str) -> dict[str, Any]:
+    current: Any = context
+    for key in path:
+        current = _as_dict(current).get(key)
+    return _as_dict(current)
+
+
+def _context_value(context: dict[str, Any], *paths: tuple[str, ...]) -> str:
+    for path in paths:
+        current: Any = context
+        for key in path:
+            current = _as_dict(current).get(key)
+        text = _clean_text(current)
+        if text:
+            return text
+    return ""
+
+
+def _active_blueprint_path(context: dict[str, Any]) -> str:
+    blueprint = _context_section(context, "active_context", "blueprint")
+    last_operation = _as_dict(blueprint.get("last_successful_operation"))
+    last_target = _as_dict(last_operation.get("target"))
+    return _first_non_empty(
+        _context_value(
+            context,
+            ("active_context", "blueprint", "current_blueprint_path"),
+            ("active_context", "blueprint", "blueprint_path"),
+            ("active_context", "editor_focus", "current_blueprint_path"),
+            ("editor_context", "current_blueprint_path"),
+            ("editor_context", "blueprint_path"),
+            ("editor_state", "current_blueprint_path"),
+            ("editor_state", "blueprint_path"),
+            ("context_pack", "active_layer", "blueprint", "current_blueprint_path"),
+        ),
+        last_target.get("blueprint_path"),
+        last_operation.get("blueprint_path"),
+    )
+
+
+def _active_graph_name(context: dict[str, Any]) -> str:
+    blueprint = _context_section(context, "active_context", "blueprint")
+    last_operation = _as_dict(blueprint.get("last_successful_operation"))
+    last_target = _as_dict(last_operation.get("target"))
+    return _first_non_empty(
+        _context_value(
+            context,
+            ("active_context", "blueprint", "current_graph_name"),
+            ("active_context", "blueprint", "graph_name"),
+            ("active_context", "editor_focus", "current_graph_name"),
+            ("editor_context", "current_graph_name"),
+            ("editor_context", "graph_name"),
+            ("editor_state", "current_graph_name"),
+            ("editor_state", "graph_name"),
+            ("context_pack", "active_layer", "blueprint", "current_graph_name"),
+        ),
+        last_target.get("graph_name"),
+        last_operation.get("graph_name"),
+    )
+
+
+def _goal_mentions_graph_target(goal: str) -> bool:
+    lower = str(goal or "").lower()
+    compact = lower.replace("_", "").replace("-", "").replace(" ", "")
+    return any(
+        token in lower or token in compact
+        for token in (
+            "eventgraph",
+            "event graph",
+            "constructionscript",
+            "construction script",
+            "userconstructionscript",
+        )
+    )
+
+
+def _resolve_blueprint_graph_name(
+    *,
+    goal: str,
+    payload: dict[str, Any],
+    context: dict[str, Any],
+    detected_graph_name: str = "",
+) -> str:
+    payload_graph = _clean_text(payload.get("graph_name"))
+    active_graph = _active_graph_name(context)
+    detected_graph = _clean_text(detected_graph_name)
+    goal_has_graph = _goal_mentions_graph_target(goal)
+
+    for candidate in (payload_graph, detected_graph):
+        if not candidate:
+            continue
+        if candidate != "EventGraph" or goal_has_graph or not active_graph:
+            return candidate
+    return _first_non_empty(active_graph, payload_graph, detected_graph, "EventGraph")
+
+
 class EditorWorkflowPlannerService:
     """Builds multi-step editor workflow plans without executing writes."""
 
@@ -172,13 +271,31 @@ class EditorWorkflowPlannerService:
         safe_context = request.context.model_dump(mode="json")
         active_context = dict((context_bundle or {}).get("active_context") or {})
         editor_context = dict((context_bundle or {}).get("editor_context_structured") or {})
+        workflow_context = {
+            **safe_context,
+            "active_context": active_context,
+            "editor_context": editor_context,
+        }
         plan_payload = dict(payload)
         if workflow_type == "blueprint_print_then_compile":
+            detected_graph = EditorOperationService._detect_blueprint_graph_name_from_request(request, goal)
             plan_payload.setdefault(
                 "blueprint_path",
-                _plan_asset_path(EditorOperationService._detect_blueprint_path_from_request(request, goal, context_bundle) or ""),
+                _plan_asset_path(
+                    EditorOperationService._detect_blueprint_path_from_request(request, goal, context_bundle)
+                    or _active_blueprint_path(workflow_context)
+                    or ""
+                ),
             )
-            plan_payload.setdefault("graph_name", EditorOperationService._detect_blueprint_graph_name_from_request(request, goal))
+            plan_payload.setdefault(
+                "graph_name",
+                _resolve_blueprint_graph_name(
+                    goal=goal,
+                    payload=plan_payload,
+                    context=workflow_context,
+                    detected_graph_name=detected_graph,
+                ),
+            )
         elif workflow_type == "umg_hud_group":
             plan_payload.setdefault(
                 "widget_blueprint_path",
@@ -221,11 +338,7 @@ class EditorWorkflowPlannerService:
             "goal": goal,
             "workflow_type": workflow_type,
             "payload": plan_payload,
-            "context": {
-                **safe_context,
-                "active_context": active_context,
-                "editor_context": editor_context,
-            },
+            "context": workflow_context,
             "requested_by": "agent_chat_workflow_planner",
         }
 
@@ -384,9 +497,15 @@ class EditorWorkflowPlannerService:
             payload.get("blueprint_path"),
             context.get("blueprint_path"),
             context.get("current_blueprint_path"),
+            _active_blueprint_path(context),
         )
         blueprint_path = _plan_asset_path(blueprint_path)
-        graph_name = _first_non_empty(payload.get("graph_name"), "EventGraph")
+        graph_name = _resolve_blueprint_graph_name(goal=goal, payload=payload, context=context)
+        entry_event = _first_non_empty(
+            payload.get("entry_event"),
+            context.get("entry_event"),
+            "BeginPlay" if graph_name == "EventGraph" else "",
+        )
         message = _first_non_empty(payload.get("message"), _quoted_text(goal), "Hello from UEAgentCraft")
         goal_lower = goal.lower()
         delay_requested = bool(
@@ -412,7 +531,7 @@ class EditorWorkflowPlannerService:
             "blueprint_path": blueprint_path,
             "graph_name": graph_name,
             "template_id": template_id,
-            "entry_event": "BeginPlay",
+            "entry_event": entry_event,
             "message": message,
             "compile_after_edit": False,
         }

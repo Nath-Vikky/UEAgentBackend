@@ -120,4 +120,6 @@ def test_build_context_pack_projects_bundle_into_stable_layers() -> None:
     excerpt = context_pack_prompt_excerpt(pack)
     assert "Context Pack v1" in excerpt
     assert "Enhanced Input" in excerpt
+    assert "/Game/BP_Demo" in excerpt
+    assert "EventGraph" in excerpt
     assert "Recent tool observations" in excerpt

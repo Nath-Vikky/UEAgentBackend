@@ -46,6 +46,50 @@ def test_blueprint_workflow_can_use_delay_print_template() -> None:
     assert second["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]
 
 
+def test_blueprint_workflow_uses_active_context_blueprint_focus() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal='Add "Ready" Print String and compile it',
+        workflow_type="blueprint_print_then_compile",
+        payload={},
+        context={
+            "active_context": {
+                "blueprint": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_FocusedActor",
+                    "current_graph_name": "ConstructionScript",
+                    "has_blueprint_focus": True,
+                }
+            }
+        },
+    )
+
+    first, second = plan["steps"]
+    assert plan["status"] == "planned"
+    assert first["payload"]["blueprint_path"] == "/Game/Blueprints/BP_FocusedActor"
+    assert first["payload"]["graph_name"] == "ConstructionScript"
+    assert first["payload"]["entry_event"] == ""
+    assert second["payload"]["blueprint_path"] == "/Game/Blueprints/BP_FocusedActor"
+
+
+def test_blueprint_workflow_explicit_eventgraph_overrides_active_graph() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal='Add "Ready" Print String in EventGraph and compile it',
+        workflow_type="blueprint_print_then_compile",
+        payload={"graph_name": "EventGraph"},
+        context={
+            "active_context": {
+                "blueprint": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_FocusedActor",
+                    "current_graph_name": "ConstructionScript",
+                }
+            }
+        },
+    )
+
+    first = plan["steps"][0]
+    assert first["payload"]["graph_name"] == "EventGraph"
+    assert first["payload"]["entry_event"] == "BeginPlay"
+
+
 def test_workflow_templates_describe_plan_only_safety() -> None:
     templates = EditorWorkflowPlannerService.workflow_templates()
 
