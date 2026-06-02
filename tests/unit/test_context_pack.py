@@ -45,8 +45,14 @@ def test_build_context_pack_projects_bundle_into_stable_layers() -> None:
             "version": "active_context_v1",
             "project": {"project_name": "DemoProject", "active_panel": "AgentChat"},
             "asset": {"selected_assets": ["/Game/UI/WBP_Main"]},
+            "blueprint": {
+                "current_blueprint_path": "/Game/BP_Demo",
+                "current_graph_name": "EventGraph",
+                "has_blueprint_focus": True,
+            },
             "code": {"current_file": "Source/Demo/DemoCharacter.cpp"},
             "log": {"has_log_text": False},
+            "editor_focus": {"active_view": "user", "selected_panel": "AgentChat"},
             "kb": {"requires_rag": True},
             "editor_operation": {"status": "not_available"},
         },
@@ -106,6 +112,7 @@ def test_build_context_pack_projects_bundle_into_stable_layers() -> None:
     assert pack["version"] == "context_pack_v1"
     assert pack["system_layer"]["tool_policy"].startswith("Read-only context")
     assert pack["project_layer"]["inventory"]["summary"]["asset_count"] == 12
+    assert pack["active_layer"]["blueprint"]["current_graph_name"] == "EventGraph"
     assert pack["memory_layer"]["selected_items"][0]["source_id"] == "w1"
     assert pack["tool_layer"]["tool_observation_summary"][0]["task_type"] == "code_review"
     assert pack["debug_summary"]["has_inventory_snapshot"] is True

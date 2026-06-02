@@ -739,6 +739,13 @@ def test_agent_chat_context_bundle_includes_inventory_selected_asset_details(cli
     assert inventory_context["selected_assets"][0]["asset_name"] == "BP_PlayerCharacter"
     assert "FollowCamera" in inventory_context["selected_assets"][0]["components"]
     assert body["debug_view"]["active_context"]["inventory"]["has_snapshot"] is True
+    assert (
+        body["debug_view"]["active_context"]["blueprint"]["current_blueprint_path"]
+        == "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter"
+    )
+    assert body["debug_view"]["context_bundle"]["context_pack"]["active_layer"]["blueprint"][
+        "current_blueprint_path"
+    ] == "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter"
     assert body["debug_view"]["active_context"]["code"]["current_file_inventory"]["classes"] == [
         "ARBPlayerCharacter"
     ]

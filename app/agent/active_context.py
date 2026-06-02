@@ -21,6 +21,41 @@ def _payload_text(payload: dict[str, Any], *keys: str) -> str:
     return ""
 
 
+def _editor_state_text(editor_state: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = editor_state.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _looks_like_blueprint_path(value: str) -> bool:
+    text = str(value or "").strip()
+    leaf = text.rsplit("/", 1)[-1].split(".", 1)[0]
+    return leaf.startswith(("BP_", "WBP_", "ABP_")) or "blueprint" in text.lower()
+
+
+def _current_blueprint_path(payload: dict[str, Any], selected_assets: list[str], editor_state: dict[str, Any]) -> str:
+    explicit_path = _payload_text(
+        payload,
+        "blueprint_path",
+        "current_blueprint_path",
+        "widget_blueprint_path",
+    ) or _editor_state_text(
+        editor_state,
+        "blueprint_path",
+        "current_blueprint_path",
+        "active_blueprint_path",
+        "widget_blueprint_path",
+    )
+    if explicit_path:
+        return explicit_path
+    for asset_path in selected_assets:
+        if _looks_like_blueprint_path(asset_path):
+            return asset_path
+    return ""
+
+
 def build_active_context(
     *,
     request: UnifiedTaskRequest,
@@ -31,6 +66,7 @@ def build_active_context(
     payload = dict(request.payload or {})
     route = dict((routing or {}).get("route") or {})
     context = request.context
+    editor_state = dict(context.editor_state or {})
     selected_files = _payload_list(payload, "file_paths", "selected_files")
     current_file = _payload_text(payload, "current_file", "file_path") or context.current_file
     log_file_path = _payload_text(payload, "log_file_path", "attachment_path")
@@ -40,6 +76,31 @@ def build_active_context(
         "inventory_snapshot_id",
         "snapshot_id",
     )
+    current_blueprint_path = _current_blueprint_path(payload, list(context.selected_assets or []), editor_state)
+    current_graph_name = _payload_text(
+        payload,
+        "graph_name",
+        "current_graph_name",
+        "current_blueprint_graph",
+    ) or _editor_state_text(
+        editor_state,
+        "graph_name",
+        "current_graph_name",
+        "current_blueprint_graph",
+        "active_graph_name",
+    )
+    current_graph_node = _payload_text(
+        payload,
+        "selected_node_id",
+        "current_node_id",
+        "current_blueprint_node_id",
+    ) or _editor_state_text(
+        editor_state,
+        "selected_node_id",
+        "current_node_id",
+        "current_blueprint_node_id",
+    )
+    selected_panel = request.ui_state.selected_panel or context.selected_panel
 
     return {
         "version": "active_context_v1",
@@ -47,16 +108,27 @@ def build_active_context(
             "project_name": context.project_name,
             "project_root": context.project_root,
             "active_panel": context.active_panel,
-            "selected_panel": request.ui_state.selected_panel or context.selected_panel,
+            "selected_panel": selected_panel,
             "current_module": context.current_module,
-            "ue_version": (context.editor_state or {}).get("ue_version"),
-            "plugin_version": (context.editor_state or {}).get("plugin_version"),
+            "ue_version": editor_state.get("ue_version"),
+            "plugin_version": editor_state.get("plugin_version"),
         },
         "asset": {
             "selected_assets": context.selected_assets,
             "payload_asset_count": len(_payload_list(payload, "assets", "selected_assets", "asset_metadata")),
             "asset_type_filter": payload.get("asset_type"),
             "inventory_snapshot_id": inventory_snapshot_id or None,
+        },
+        "blueprint": {
+            "current_blueprint_path": current_blueprint_path or None,
+            "current_graph_name": current_graph_name or None,
+            "entry_event": _payload_text(payload, "entry_event", "event_name") or None,
+            "selected_node_id": current_graph_node or None,
+            "selected_node_name": _payload_text(payload, "selected_node_name", "current_node_name")
+            or _editor_state_text(editor_state, "selected_node_name", "current_node_name")
+            or None,
+            "has_blueprint_focus": bool(current_blueprint_path or current_graph_name or current_graph_node),
+            "source": "payload_or_editor_state_or_selected_assets",
         },
         "code": {
             "current_file": current_file,
@@ -80,6 +152,13 @@ def build_active_context(
             "requires_rag": bool((routing or {}).get("intent", {}).get("requires_rag")),
             "retrieval_mode_hint": payload.get("retrieval_mode"),
         },
+        "editor_focus": {
+            "active_view": request.ui_state.active_view,
+            "selected_panel": selected_panel,
+            "active_panel": context.active_panel,
+            "current_blueprint_path": current_blueprint_path or None,
+            "current_graph_name": current_graph_name or None,
+        },
         "mcp": {
             "status": "disabled",
             "enabled": False,
@@ -87,4 +166,3 @@ def build_active_context(
             "note": "MCP is planned as an optional tool transport; HTTP remains the main UE frontend/backend protocol.",
         },
     }
-

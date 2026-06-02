@@ -185,8 +185,10 @@ def build_context_pack(
         },
         "active_layer": {
             "asset": active_context.get("asset") or {},
+            "blueprint": active_context.get("blueprint") or {},
             "code": active_context.get("code") or {},
             "log": active_context.get("log") or {},
+            "editor_focus": active_context.get("editor_focus") or {},
             "editor_operation": active_context.get("editor_operation") or {},
             "mcp": active_context.get("mcp") or {},
         },

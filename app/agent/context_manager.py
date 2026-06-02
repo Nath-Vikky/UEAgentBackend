@@ -433,9 +433,29 @@ def build_context_bundle(
         limit=DEFAULT_EDITOR_OPERATION_TASKS,
     )
     active_context = build_active_context(request=request, routing=routing)
+    last_editor_operation = editor_operations_context["last_successful"]
+    if isinstance(last_editor_operation, dict):
+        last_target = dict(last_editor_operation.get("target") or {})
+        last_blueprint_path = last_target.get("blueprint_path") or last_target.get("path")
+        if last_blueprint_path and str(last_editor_operation.get("operation_type") or "").startswith(
+            (
+                "add_blueprint",
+                "create_blueprint",
+                "compile_blueprint",
+                "connect_blueprint",
+            )
+        ):
+            active_context.setdefault("blueprint", {})["last_successful_operation"] = {
+                "operation_type": last_editor_operation.get("operation_type"),
+                "blueprint_path": last_blueprint_path,
+                "graph_name": last_target.get("graph_name"),
+                "entry_event": last_target.get("entry_event"),
+                "template_id": last_target.get("template_id"),
+                "received_at": last_editor_operation.get("received_at"),
+            }
     active_context["editor_operation"] = {
         "status": editor_operations_context["status"],
-        "last_successful": editor_operations_context["last_successful"],
+        "last_successful": last_editor_operation,
         "recent_count": editor_operations_context["count"],
     }
     bundle = {

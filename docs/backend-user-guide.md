@@ -1683,6 +1683,9 @@ Current behavior:
   separate from chat history.
 - `tool_layer.recent_editor_operations` keeps recent confirmed UE operations
   available as active context without injecting full raw result JSON into the prompt.
+- `active_layer.blueprint` and `active_layer.editor_focus` keep the current
+  Blueprint path, graph name, selected node id/name, and focused editor panel
+  when the UE frontend or payload provides them.
 - `system_layer` records the important Agent boundary: LLMs can reason and
   propose, but confirmed UE writes still require Proposal confirmation.
 
@@ -2858,10 +2861,26 @@ Agent Chat / Project QA 会把最近项目快照注入：
 - `debug_view.active_context.inventory`
 - `debug_view.active_context.asset.selected_asset_details`
 - `debug_view.active_context.code.current_file_inventory`
+- `debug_view.active_context.blueprint`
+- `debug_view.active_context.editor_focus`
 - `debug_view.context_bundle.project_inventory_context.top_level_actors`
 - `debug_view.context_bundle.project_inventory_context.top_material_instances`
 
 因此用户问“当前项目有哪些蓝图资产”“这个蓝图有哪些组件/变量”“当前文件属于哪个模块”“当前关卡有哪些 Actor”“某个材质实例有哪些参数”时，后端可以优先用项目快照回答；如果问题包含“为什么、怎么做、建议、风险”，再组合知识库和 LLM 综合。
+
+2026-06-02 update: Active Context now includes a lightweight Blueprint focus
+projection. The backend can infer `current_blueprint_path` from
+`payload.blueprint_path`, `payload.current_blueprint_path`,
+`payload.widget_blueprint_path`, `context.editor_state.current_blueprint_path`,
+or selected assets whose names look like `BP_`, `WBP_`, or `ABP_`. If the UE
+frontend provides `context.editor_state.current_graph_name`,
+`context.editor_state.selected_node_id`, or the equivalent payload fields, the
+backend exposes them in `debug_view.active_context.blueprint` and
+`debug_view.context_bundle.context_pack.active_layer.blueprint`.
+
+This is optional and backward-compatible. Existing UEAgentTool builds can keep
+sending only `selected_assets`; newer builds may send graph/node focus when the
+user is actively editing a Blueprint graph.
 
 如果 UI 或调试脚本需要直接展示蓝图结构列表，可以使用：
 
