@@ -6582,6 +6582,26 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-03 Editor Operation Affected Targets Refactor
+
+Editor Operation affected-target preview generation now lives in
+`app/services/editor_operations/targets.py`.
+
+The target builder is pure and only turns a normalized operation payload into
+the `affected_targets` list used by dry-run previews and preflight checks.
+`EditorOperationService` still owns normalization, Proposal persistence, and
+confirmed-write safety boundaries.
+
+Frontend impact: no mandatory change. Existing `dry_run_preview.affected_targets`
+items keep the same shape.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_editor_operation_targets.py tests\integration\test_editor_operations.py::test_batch_rename_assets_proposal_contract tests\integration\test_editor_operations.py::test_blueprint_node_template_custom_event_print_string_contract tests\integration\test_editor_operations.py::test_set_umg_widget_appearance_proposal_contract tests\integration\test_editor_operations.py::test_arrange_actors_pattern_proposal_contract tests\integration\test_editor_operations.py::test_set_material_instance_scalar_parameter_proposal_contract -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+```
+
 ## 2026-06-03 Editor Operation Follow-up Candidate Refactor
 
 Editor Operation follow-up candidate generation now lives in
