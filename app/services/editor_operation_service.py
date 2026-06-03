@@ -51,8 +51,13 @@ from app.services.editor_operations.catalog import (
 )
 from app.services.editor_operations.blueprint_graph_policy import (
     build_blueprint_graph_policy_preview,
-    detect_blueprint_graph_target,
+)
+from app.services.editor_operations.blueprint_detectors import (
+    active_graph_name_from_payload_context,
+    detect_blueprint_entry_event_for_request,
+    detect_blueprint_graph_name_for_request,
     detect_unconnected_blueprint_node_intent,
+    query_mentions_blueprint_graph_target,
 )
 from app.services.editor_operations.preview import (
     build_preflight_checks,
@@ -282,95 +287,22 @@ class EditorOperationService:
 
     @staticmethod
     def _query_mentions_blueprint_graph_target(query_text: str) -> bool:
-        query_lower = str(query_text or "").lower()
-        compact = query_lower.replace("_", "").replace("-", "").replace(" ", "")
-        return any(
-            token in query_lower or token in compact
-            for token in (
-                "eventgraph",
-                "event graph",
-                "constructionscript",
-                "construction script",
-                "userconstructionscript",
-            )
-        )
+        return query_mentions_blueprint_graph_target(query_text)
 
     @staticmethod
     def _active_graph_name_from_request(request: UnifiedTaskRequest) -> str:
-        payload_graph = str(
-            request.payload.get("current_graph_name")
-            or request.payload.get("active_graph_name")
-            or ""
-        ).strip()
-        if payload_graph:
-            return payload_graph
-        editor_state = request.context.editor_state or {}
-        return str(
-            editor_state.get("current_graph_name")
-            or editor_state.get("graph_name")
-            or editor_state.get("active_graph_name")
-            or ""
-        ).strip()
+        return active_graph_name_from_payload_context(request.payload, request.context.editor_state)
 
     @staticmethod
     def _detect_blueprint_graph_name_from_request(
         request: UnifiedTaskRequest,
         query_text: str,
     ) -> str:
-        target = detect_blueprint_graph_target(
+        return detect_blueprint_graph_name_for_request(
             request.payload,
+            request.context.editor_state,
             query_text,
         )
-        detected_graph = str(target["graph_name"])
-        explicit_graph = str(request.payload.get("graph_name") or "").strip()
-        active_graph = EditorOperationService._active_graph_name_from_request(request)
-        if explicit_graph:
-            return detected_graph
-        if (
-            active_graph
-            and detected_graph == "EventGraph"
-            and not EditorOperationService._query_mentions_blueprint_graph_target(query_text)
-        ):
-            return active_graph
-        return detected_graph
-        return str(
-            detect_blueprint_graph_target(
-                request.payload,
-                query_text,
-            )["graph_name"]
-        )
-        explicit_graph = str(request.payload.get("graph_name") or "").strip()
-        if explicit_graph:
-            return explicit_graph
-
-        compact = query_text.replace("_", "").replace(" ", "").lower()
-        query_lower = query_text.lower()
-        if any(
-            token in compact or token in query_lower or token in query_text
-            for token in (
-                "constructionscript",
-                "userconstructionscript",
-                "construction script",
-                "构造脚本",
-            )
-        ):
-            return "ConstructionScript"
-        if any(
-            token in compact or token in query_lower or token in query_text
-            for token in ("eventgraph", "event graph", "事件图表", "事件图")
-        ):
-            return "EventGraph"
-
-        for pattern in (
-            r"(?:graph|图表|图谱)\s*[:：]?\s*([A-Za-z][A-Za-z0-9_]{1,63})",
-            r"\b([A-Za-z][A-Za-z0-9_]{1,63})\s+(?:graph)\b",
-        ):
-            match = re.search(pattern, query_text, flags=re.IGNORECASE)
-            if match:
-                graph_name = match.group(1)
-                if graph_name.lower() not in {"blueprint", "event", "node"}:
-                    return graph_name
-        return "EventGraph"
 
     @staticmethod
     def _detect_blueprint_entry_event_from_request(
@@ -379,78 +311,16 @@ class EditorOperationService:
         *,
         default: str = "",
     ) -> str:
-        explicit_event = str(request.payload.get("entry_event") or "").strip()
-        target = detect_blueprint_graph_target(
+        return detect_blueprint_entry_event_for_request(
             request.payload,
+            request.context.editor_state,
             query_text,
-            default_entry_event=default,
+            default=default,
         )
-        entry_event = str(target["entry_event"])
-        graph_name = EditorOperationService._detect_blueprint_graph_name_from_request(request, query_text)
-        if graph_name != "EventGraph" and not explicit_event:
-            return ""
-        return entry_event
-        explicit_event = str(request.payload.get("entry_event") or "").strip()
-        if explicit_event:
-            return explicit_event
-        compact = query_text.replace("_", "").replace(" ", "").lower()
-        query_lower = query_text.lower()
-        if any(
-            token in compact or token in query_text
-            for token in ("beginplay", "eventbeginplay", "receivebeginplay", "开始播放")
-        ):
-            return "BeginPlay"
-        if any(
-            token in compact or token in query_lower or token in query_text
-            for token in (
-                "actorbeginoverlap",
-                "beginoverlap",
-                "begin overlap",
-                "overlap begin",
-                "\u5f00\u59cb\u91cd\u53e0",
-                "\u8fdb\u5165\u91cd\u53e0",
-                "\u5f00\u59cb\u78b0\u649e",
-            )
-        ):
-            return "ActorBeginOverlap"
-        if any(
-            token in compact or token in query_lower or token in query_text
-            for token in (
-                "actorendoverlap",
-                "endoverlap",
-                "end overlap",
-                "overlap end",
-                "\u7ed3\u675f\u91cd\u53e0",
-                "\u79bb\u5f00\u91cd\u53e0",
-                "\u7ed3\u675f\u78b0\u649e",
-            )
-        ):
-            return "ActorEndOverlap"
-        return default
 
     @staticmethod
     def _detect_unconnected_blueprint_node_intent(query_text: str) -> bool:
         return detect_unconnected_blueprint_node_intent(query_text)
-        query_lower = query_text.lower()
-        compact = query_lower.replace("_", "").replace("-", "").replace(" ", "")
-        return any(
-            token in query_lower or token in compact
-            for token in (
-                "unconnected",
-                "unlinked",
-                "standalone",
-                "without connection",
-                "do not connect",
-                "dont connect",
-                "no link",
-                "no connection",
-                "\u4e0d\u8fde\u63a5",
-                "\u4e0d\u8fde\u7ebf",
-                "\u4ec5\u521b\u5efa",
-                "\u53ea\u521b\u5efa",
-                "\u4e0d\u8981\u8fde",
-            )
-        )
 
     @staticmethod
     def _detect_blueprint_event_name_from_request(

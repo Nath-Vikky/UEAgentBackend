@@ -3082,6 +3082,12 @@ Blueprint Graph policy v1:
 - This policy layer is the backend-side bridge between natural-language
   requests and future HTTP/MCP graph tools. It keeps graph selection
   explainable without letting the LLM directly edit arbitrary Blueprint graphs.
+- 2026-06-03 update: Blueprint graph detector rules are now exposed through
+  `app/services/editor_operations/blueprint_detectors.py`. `EditorOperationService`
+  keeps backward-compatible wrapper methods, while graph-name, active-graph,
+  entry-event, and unconnected-node intent rules live in the smaller detector
+  module. This is the first backend detector-split slice for Improv5 and does
+  not change public API payloads.
 
 `add_blueprint_node_template` 当前开放十个白名单模板：
 
