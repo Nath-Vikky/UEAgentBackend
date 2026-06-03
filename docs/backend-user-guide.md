@@ -3100,6 +3100,11 @@ Blueprint Graph policy v1:
   packages, applied/failed field counts, error codes, repair advice, and
   `needs_user_attention` are covered by the smaller result module. Public result
   payloads stay unchanged.
+- 2026-06-03 update: small follow-up helpers now live in
+  `app/services/editor_operations/followups.py`. Redirector follow-up folder
+  extraction, safe quick-action projection, and follow-up folder slugs are
+  isolated while the service keeps the existing follow-up endpoints and
+  Proposal materialization behavior.
 
 `add_blueprint_node_template` 当前开放十个白名单模板：
 
