@@ -6563,6 +6563,25 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-03 Editor Operation Summary Builder Refactor
+
+Editor Operation before/after summary generation now lives in
+`app/services/editor_operations/summaries.py`.
+
+The summary builder is pure and only turns a normalized operation payload into
+display text. `EditorOperationService` still handles detection, normalization,
+Proposal creation, persistence, and audit logging.
+
+Frontend impact: no mandatory change. Existing `before_summary` and
+`after_summary` fields remain part of the same Proposal response contract.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_editor_operation_summaries.py tests\integration\test_editor_operations.py::test_blueprint_node_template_delay_print_string_proposal_contract tests\integration\test_editor_operations.py::test_set_umg_widget_appearance_proposal_contract tests\integration\test_editor_operations.py::test_place_actor_in_level_proposal_contract tests\integration\test_editor_operations.py::test_set_material_instance_texture_parameter_proposal_contract -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+```
+
 ## 2026-06-03 Editor Operation Follow-up Candidate Refactor
 
 Editor Operation follow-up candidate generation now lives in
