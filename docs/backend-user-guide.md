@@ -3105,6 +3105,11 @@ Blueprint Graph policy v1:
   extraction, safe quick-action projection, and follow-up folder slugs are
   isolated while the service keeps the existing follow-up endpoints and
   Proposal materialization behavior.
+- 2026-06-03 update: Blueprint graph result diagnostics and repair-advice rules
+  now live in `app/services/editor_operations/blueprint_result_diagnostics.py`.
+  The service keeps compatibility wrappers, while diagnostic flags such as
+  `expected_linked_pins_missing`, `compile_failed`, and
+  `dirty_packages_missing` are covered by direct unit tests.
 
 `add_blueprint_node_template` 当前开放十个白名单模板：
 
