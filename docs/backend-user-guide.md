@@ -3088,6 +3088,12 @@ Blueprint Graph policy v1:
   entry-event, and unconnected-node intent rules live in the smaller detector
   module. This is the first backend detector-split slice for Improv5 and does
   not change public API payloads.
+- 2026-06-03 update: shared editor-operation path/name normalizers are now
+  exposed through `app/services/editor_operations/normalizers.py`. The service
+  keeps its existing wrapper methods, while common `/Game` path, folder,
+  redirector-folder, asset-name, class-path, and optional-string validation live
+  in the smaller module. This does not change Proposal payloads or frontend
+  behavior.
 
 `add_blueprint_node_template` 当前开放十个白名单模板：
 
