@@ -20,6 +20,7 @@ from app.schemas.requests import (
     EditorOperationResultRequest,
     UnifiedTaskRequest,
 )
+from app.services.proposal_presenter import proposal_payload
 from app.services.editor_operations.capabilities import (
     operation_group,
     supported_operations,
@@ -119,25 +120,6 @@ class EditorOperationService:
     @staticmethod
     def supported_operations() -> dict[str, Any]:
         return supported_operations()
-
-    @staticmethod
-    def _proposal_payload(proposal: ProposalModel) -> dict:
-        return {
-            "proposal_id": proposal.proposal_id,
-            "title": proposal.title,
-            "proposal_type": proposal.proposal_type,
-            "before_summary": proposal.before_summary,
-            "after_summary": proposal.after_summary,
-            "rationale": proposal.rationale,
-            "risk_flags": proposal.risk_flags,
-            "dry_run_preview": proposal.dry_run_preview_json,
-            "display_hints": proposal.display_hints_json,
-            "requires_confirmation": proposal.requires_confirmation,
-            "confirmation": {
-                "state": proposal.confirmation_state,
-                "decision_endpoint": proposal.decision_endpoint,
-            },
-        }
 
     @staticmethod
     def _clean_text(value: Any, *, max_length: int = 1024) -> str:
@@ -5229,7 +5211,7 @@ class EditorOperationService:
             ),
         )
         return {
-            "item": self._proposal_payload(proposal),
+            "item": proposal_payload(proposal),
             "operation": dry_run_preview,
         }
 
@@ -5509,7 +5491,7 @@ class EditorOperationService:
                 "output_complete": True,
             },
             "item": operation_result,
-            "proposal": self._proposal_payload(proposal),
+            "proposal": proposal_payload(proposal),
             "user_view": self._operation_result_user_view(
                 operation_result=operation_result,
                 follow_up=follow_up,

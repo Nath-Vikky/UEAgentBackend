@@ -23,6 +23,7 @@ from app.i18n.language import DEFAULT_OUTPUT_LANGUAGE
 from app.observability.audit import build_audit_entry
 from app.schemas.requests import ProposalDecisionRequest
 from app.services.code_write_service import execute_code_write_plan
+from app.services.proposal_presenter import proposal_payload
 from app.utils.json_tools import dumps_pretty
 from app.utils.paths import task_artifact_dir
 from app.utils.time import now_utc
@@ -373,24 +374,6 @@ class ProposalService:
         response_payload["assistant_message"] = user_view.get("text") or ""
         return data["approval_result"]
 
-    def _proposal_payload(self, proposal: ProposalModel) -> dict:
-        return {
-            "proposal_id": proposal.proposal_id,
-            "title": proposal.title,
-            "proposal_type": proposal.proposal_type,
-            "before_summary": proposal.before_summary,
-            "after_summary": proposal.after_summary,
-            "rationale": proposal.rationale,
-            "risk_flags": proposal.risk_flags,
-            "dry_run_preview": proposal.dry_run_preview_json,
-            "display_hints": proposal.display_hints_json,
-            "requires_confirmation": proposal.requires_confirmation,
-            "confirmation": {
-                "state": proposal.confirmation_state,
-                "decision_endpoint": proposal.decision_endpoint,
-            },
-        }
-
     def _decision_payload(self, decision: ProposalDecisionModel) -> dict:
         return {
             "decision_id": decision.decision_id,
@@ -404,7 +387,7 @@ class ProposalService:
         }
 
     def pending(self) -> list[dict]:
-        return [self._proposal_payload(proposal) for proposal in list_pending_proposals(self.db)]
+        return [proposal_payload(proposal) for proposal in list_pending_proposals(self.db)]
 
     def get_detail(self, proposal_id: str) -> dict | None:
         proposal = get_proposal(self.db, proposal_id)
@@ -413,7 +396,7 @@ class ProposalService:
         task = get_task(self.db, proposal.task_id) if proposal.task_id else None
         decisions = [self._decision_payload(item) for item in list_proposal_decisions(self.db, proposal_id)]
         return {
-            "item": self._proposal_payload(proposal),
+            "item": proposal_payload(proposal),
             "task": {
                 "task_id": task.task_id,
                 "run_id": task.run_id,
@@ -580,7 +563,7 @@ class ProposalService:
         )
         return {
             "item": self._decision_payload(decision),
-            "proposal": self._proposal_payload(proposal),
+            "proposal": proposal_payload(proposal),
         }
 
     def get_decision(self, decision_id: str) -> dict | None:
@@ -590,5 +573,5 @@ class ProposalService:
         proposal = get_proposal(self.db, decision.proposal_id)
         return {
             "item": self._decision_payload(decision),
-            "proposal": self._proposal_payload(proposal) if proposal else None,
+            "proposal": proposal_payload(proposal) if proposal else None,
         }

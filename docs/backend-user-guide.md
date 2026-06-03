@@ -6518,6 +6518,30 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-03 Shared Proposal Presenter Refactor
+
+Proposal response serialization now lives in `app/services/proposal_presenter.py`.
+Both generic Proposal APIs and Editor Operation APIs use the same
+`proposal_payload()` helper.
+
+This keeps the public `ActionProposal` response shape consistent across:
+
+- pending Proposal list/detail APIs;
+- Proposal decision responses;
+- Editor Operation Proposal creation responses;
+- Editor Operation result responses.
+
+Frontend impact: no mandatory change. The fields remain `proposal_id`, `title`,
+`proposal_type`, `before_summary`, `after_summary`, `rationale`, `risk_flags`,
+`dry_run_preview`, `display_hints`, `requires_confirmation`, and `confirmation`.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_proposal_presenter.py tests\integration\test_editor_operations.py::test_editor_operation_rename_proposal_confirm_and_result tests\integration\test_editor_operations.py::test_assets_inspect_emits_rename_editor_operation_proposal tests\integration\test_mcp_tools_api.py::test_tool_registry_proposal_api_creates_pending_editor_proposal -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+```
+
 ## 2026-06-03 Editor Operation Follow-up Candidate Refactor
 
 Editor Operation follow-up candidate generation now lives in
