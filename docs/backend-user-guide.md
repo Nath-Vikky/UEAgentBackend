@@ -3094,6 +3094,12 @@ Blueprint Graph policy v1:
   redirector-folder, asset-name, class-path, and optional-string validation live
   in the smaller module. This does not change Proposal payloads or frontend
   behavior.
+- 2026-06-03 update: editor-operation result summary normalization now lives in
+  `app/services/editor_operations/results.py`. The service still owns Blueprint
+  graph diagnostics for now, but common result summary fields such as dirty
+  packages, applied/failed field counts, error codes, repair advice, and
+  `needs_user_attention` are covered by the smaller result module. Public result
+  payloads stay unchanged.
 
 `add_blueprint_node_template` 当前开放十个白名单模板：
 
