@@ -6427,3 +6427,33 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 .\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py --output -
 ```
+
+## 2026-06-03 Editor Operation History and Diagnostics Refactor
+
+Editor Operation history and diagnostics response assembly has been split into
+`app/services/editor_operations/history.py`.
+
+This module owns read-only JSON projection for:
+
+- `GET /api/v1/editor-operations/history`
+- `GET /api/v1/editor-operations/diagnostics`
+
+The database query remains in `EditorOperationService`; the new module only
+formats already-loaded Proposal records. Public response fields are unchanged,
+including `summary`, `items`, `result_summary`, `diagnostic_flag_counts`,
+`repair_action_counts`, and `recent_attention_items`.
+
+Why this matters:
+
+- History filtering and diagnostics counters are now directly unit-testable.
+- Debug/observability code is separate from confirmed-write Proposal creation.
+- Future history UI fields can be added without touching payload validation or
+  editor operation execution flow.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_editor_operation_history.py tests\unit\test_editor_operation_result_user_view.py tests\unit\test_editor_operation_results.py -q
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py::test_editor_operation_history_returns_preview_and_result_summary tests\integration\test_editor_operations.py::test_blueprint_node_template_result_summary_flags_missing_expected_links tests\integration\test_editor_operations.py::test_editor_operation_diagnostics_summary_counts_attention_flags -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+```

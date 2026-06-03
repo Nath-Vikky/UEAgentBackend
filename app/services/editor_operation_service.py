@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 import re
 import uuid
-from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
@@ -69,6 +68,11 @@ from app.services.editor_operations.followups import (
     follow_up_folder_slug,
     follow_up_quick_actions,
     redirector_follow_up_folders,
+)
+from app.services.editor_operations.history import (
+    history_fetch_limit,
+    operation_diagnostics_summary_payload,
+    operation_history_payload,
 )
 from app.services.editor_operations.normalizers import (
     normalize_asset_name,
@@ -5292,7 +5296,7 @@ class EditorOperationService:
     ) -> dict[str, Any]:
         safe_limit = max(1, min(int(limit), 200))
         has_filters = bool(operation_type or needs_user_attention is not None or diagnostic_flag)
-        fetch_limit = safe_limit if not has_filters else min(max(safe_limit * 6, 80), 500)
+        fetch_limit = history_fetch_limit(safe_limit=safe_limit, has_filters=has_filters)
         statement = (
             select(ProposalModel)
             .where(ProposalModel.proposal_type == EDITOR_OPERATION_PROPOSAL_TYPE)
@@ -5300,53 +5304,13 @@ class EditorOperationService:
             .limit(fetch_limit)
         )
         proposals = list(self.db.scalars(statement))
-        items: list[dict[str, Any]] = []
-        for proposal in proposals:
-            preview = dict(proposal.dry_run_preview_json or {})
-            current_operation_type = str(preview.get("operation_type") or "")
-            if operation_type and current_operation_type != operation_type:
-                continue
-            operation_result = dict(preview.get("operation_result") or {})
-            result_summary = dict(operation_result.get("result_summary") or {})
-            operation_diagnostics = dict(result_summary.get("operation_diagnostics") or {})
-            if needs_user_attention is not None and bool(
-                result_summary.get("needs_user_attention")
-            ) != needs_user_attention:
-                continue
-            if diagnostic_flag:
-                diagnostic_flags = [str(item) for item in operation_diagnostics.get("diagnostic_flags") or []]
-                if str(diagnostic_flag) not in diagnostic_flags:
-                    continue
-            items.append(
-                {
-                    "proposal_id": proposal.proposal_id,
-                    "title": proposal.title,
-                    "operation_type": current_operation_type,
-                    "tool_id": preview.get("tool_id"),
-                    "risk_flags": proposal.risk_flags,
-                    "confirmation_state": proposal.confirmation_state,
-                    "approval_state": preview.get("approval_state"),
-                    "created_at": proposal.created_at.isoformat() if proposal.created_at else None,
-                    "updated_at": proposal.updated_at.isoformat() if proposal.updated_at else None,
-                    "preview_summary": preview.get("preview_summary", {}),
-                    "affected_targets": preview.get("affected_targets", []),
-                    "result_summary": result_summary,
-                    "execution_state": operation_result.get("execution_state"),
-                    "success": operation_result.get("success"),
-                }
-            )
-            if len(items) >= safe_limit:
-                break
-        return {
-            "summary": {
-                "item_count": len(items),
-                "limit": safe_limit,
-                "operation_type": operation_type,
-                "needs_user_attention": needs_user_attention,
-                "diagnostic_flag": diagnostic_flag,
-            },
-            "items": items,
-        }
+        return operation_history_payload(
+            proposals,
+            limit=safe_limit,
+            operation_type=operation_type,
+            needs_user_attention=needs_user_attention,
+            diagnostic_flag=diagnostic_flag,
+        )
 
     def operation_diagnostics_summary(
         self,
@@ -5356,7 +5320,7 @@ class EditorOperationService:
     ) -> dict[str, Any]:
         safe_limit = max(1, min(int(limit), 500))
         has_filters = bool(operation_type)
-        fetch_limit = safe_limit if not has_filters else min(max(safe_limit * 6, 80), 500)
+        fetch_limit = history_fetch_limit(safe_limit=safe_limit, has_filters=has_filters)
         statement = (
             select(ProposalModel)
             .where(ProposalModel.proposal_type == EDITOR_OPERATION_PROPOSAL_TYPE)
@@ -5364,98 +5328,11 @@ class EditorOperationService:
             .limit(fetch_limit)
         )
         proposals = list(self.db.scalars(statement))
-
-        inspected_count = 0
-        executed_count = 0
-        pending_count = 0
-        success_count = 0
-        failed_count = 0
-        needs_user_attention_count = 0
-        operation_type_counts: Counter[str] = Counter()
-        diagnostic_flag_counts: Counter[str] = Counter()
-        repair_action_counts: Counter[str] = Counter()
-        repair_status_counts: Counter[str] = Counter()
-        execution_state_counts: Counter[str] = Counter()
-        confirmation_state_counts: Counter[str] = Counter()
-        recent_attention_items: list[dict[str, Any]] = []
-
-        for proposal in proposals:
-            preview = dict(proposal.dry_run_preview_json or {})
-            current_operation_type = str(preview.get("operation_type") or "")
-            if operation_type and current_operation_type != operation_type:
-                continue
-            inspected_count += 1
-            operation_type_counts[current_operation_type or "unknown"] += 1
-            confirmation_state_counts[str(proposal.confirmation_state or "unknown")] += 1
-
-            operation_result = dict(preview.get("operation_result") or {})
-            result_summary = dict(operation_result.get("result_summary") or {})
-            operation_diagnostics = dict(result_summary.get("operation_diagnostics") or {})
-            diagnostic_flags = [str(item) for item in operation_diagnostics.get("diagnostic_flags") or []]
-            diagnostic_flag_counts.update(diagnostic_flags)
-            repair_advice = dict(operation_diagnostics.get("repair_advice") or result_summary.get("repair_advice") or {})
-            repair_status = str(repair_advice.get("status") or "unknown")
-            repair_status_counts[repair_status] += 1
-            repair_actions = [str(item.get("action_id") or "") for item in repair_advice.get("actions") or []]
-            repair_action_counts.update(item for item in repair_actions if item)
-
-            if operation_result:
-                executed_count += 1
-                execution_state_counts[str(operation_result.get("execution_state") or "reported")] += 1
-                if bool(operation_result.get("success")):
-                    success_count += 1
-                else:
-                    failed_count += 1
-            else:
-                pending_count += 1
-                execution_state_counts["pending_result"] += 1
-
-            needs_user_attention = bool(result_summary.get("needs_user_attention"))
-            if needs_user_attention:
-                needs_user_attention_count += 1
-                if len(recent_attention_items) < 10:
-                    recent_attention_items.append(
-                        {
-                            "proposal_id": proposal.proposal_id,
-                            "operation_type": current_operation_type,
-                            "tool_id": preview.get("tool_id"),
-                            "title": proposal.title,
-                            "confirmation_state": proposal.confirmation_state,
-                            "execution_state": operation_result.get("execution_state"),
-                            "success": operation_result.get("success"),
-                            "updated_at": proposal.updated_at.isoformat() if proposal.updated_at else None,
-                            "diagnostic_flags": diagnostic_flags,
-                            "error_codes": list(result_summary.get("error_codes") or []),
-                            "repair_advice": repair_advice,
-                            "result_summary": result_summary,
-                        }
-                    )
-
-            if inspected_count >= safe_limit:
-                break
-
-        attention_rate = needs_user_attention_count / executed_count if executed_count else 0.0
-        return {
-            "summary": {
-                "schema_version": "editor_operation_diagnostics_summary_v1",
-                "limit": safe_limit,
-                "operation_type": operation_type,
-                "inspected_count": inspected_count,
-                "executed_count": executed_count,
-                "pending_count": pending_count,
-                "success_count": success_count,
-                "failed_count": failed_count,
-                "needs_user_attention_count": needs_user_attention_count,
-                "attention_rate": round(attention_rate, 4),
-                "operation_type_counts": dict(operation_type_counts),
-                "diagnostic_flag_counts": dict(diagnostic_flag_counts),
-                "repair_status_counts": dict(repair_status_counts),
-                "repair_action_counts": dict(repair_action_counts),
-                "execution_state_counts": dict(execution_state_counts),
-                "confirmation_state_counts": dict(confirmation_state_counts),
-                "recent_attention_items": recent_attention_items,
-            },
-        }
+        return operation_diagnostics_summary_payload(
+            proposals,
+            limit=safe_limit,
+            operation_type=operation_type,
+        )
 
     @staticmethod
     def _node_identifier(value: Any) -> str:
