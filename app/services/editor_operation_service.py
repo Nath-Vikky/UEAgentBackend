@@ -90,6 +90,10 @@ from app.services.editor_operations.preview import (
     build_preview_summary,
 )
 from app.services.editor_operations.result_contracts import expected_result_contract
+from app.services.editor_operations.result_recording import (
+    apply_operation_result_to_task_payloads,
+    build_operation_result_payload,
+)
 from app.services.editor_operations.result_user_view import (
     blueprint_graph_result_detail_block,
     operation_result_user_view,
@@ -5447,21 +5451,12 @@ class EditorOperationService:
             )
 
         result_summary = self._normalize_result_summary(request=request, preview=preview)
-        operation_result = {
-            "received_at": now_utc().isoformat(),
-            "proposal_id": request.proposal_id,
-            "operation_type": preview.get("operation_type"),
-            "tool_id": preview.get("tool_id"),
-            "execution_state": request.execution_state,
-            "success": request.success,
-            "executed_by": request.executed_by,
-            "transaction_id": request.transaction_id,
-            "undo_hint": request.undo_hint,
-            "result": dict(request.result or {}),
-            "result_summary": result_summary,
-            "errors": list(request.errors or []),
-            "metadata": dict(request.metadata or {}),
-        }
+        operation_result = build_operation_result_payload(
+            request=request,
+            preview=preview,
+            result_summary=result_summary,
+            received_at=now_utc().isoformat(),
+        )
         preview["operation_result"] = operation_result
         preview["approval_state"] = "executed" if request.success else request.execution_state
         proposal.dry_run_preview_json = preview
@@ -5469,63 +5464,22 @@ class EditorOperationService:
 
         task = get_task(self.db, proposal.task_id) if proposal.task_id else None
         if task:
-            data = dict(task.data_json or {})
-            debug_view = dict(task.debug_view_json or {})
-            raw_response = dict(task.raw_response_json or {})
-            action_proposals = list(task.action_proposals_json or [])
-
-            editor_operation = dict(data.get("editor_operation") or {})
-            if not editor_operation:
-                editor_operation = {
-                    "operation_type": preview.get("operation_type"),
-                    "proposal_created": True,
-                }
-            editor_operation["operation_result"] = operation_result
-            data["editor_operation"] = editor_operation
-            data["editor_operation_results"] = list(data.get("editor_operation_results") or []) + [
-                operation_result
-            ]
-
-            side_effects = list(debug_view.get("side_effects") or [])
-            updated_side_effects: list[dict[str, Any]] = []
-            matched_side_effect = False
-            for item in side_effects:
-                current = dict(item)
-                if current.get("proposal_id") == request.proposal_id:
-                    current["execution_state"] = request.execution_state
-                    current["operation_result"] = operation_result
-                    current["written_by_backend"] = False
-                    matched_side_effect = True
-                updated_side_effects.append(current)
-            if not matched_side_effect:
-                updated_side_effects.append(
-                    {
-                        "proposal_id": request.proposal_id,
-                        "proposal_type": proposal.proposal_type,
-                        "operation_type": preview.get("operation_type"),
-                        "tool_id": preview.get("tool_id"),
-                        "side_effect_level": "confirmed_write",
-                        "execution_state": request.execution_state,
-                        "written_by_backend": False,
-                        "operation_result": operation_result,
-                    }
-                )
-            debug_view["side_effects"] = updated_side_effects
-
-            updated_action_proposals: list[dict[str, Any]] = []
-            for item in action_proposals:
-                current = dict(item)
-                if current.get("proposal_id") == request.proposal_id:
-                    current["dry_run_preview"] = preview
-                updated_action_proposals.append(current)
-            task.action_proposals_json = updated_action_proposals
-            task.data_json = data
-            task.debug_view_json = debug_view
-            if raw_response:
-                raw_response["data"] = data
-                raw_response["debug_view"] = debug_view
-                raw_response["action_proposals"] = updated_action_proposals
-                task.raw_response_json = raw_response
+            updated_task_payloads = apply_operation_result_to_task_payloads(
+                data=dict(task.data_json or {}),
+                debug_view=dict(task.debug_view_json or {}),
+                raw_response=dict(task.raw_response_json or {}),
+                action_proposals=list(task.action_proposals_json or []),
+                proposal_id=request.proposal_id,
+                proposal_type=proposal.proposal_type,
+                preview=preview,
+                operation_result=operation_result,
+                execution_state=request.execution_state,
+            )
+            task.action_proposals_json = updated_task_payloads["action_proposals"]
+            task.data_json = updated_task_payloads["data"]
+            task.debug_view_json = updated_task_payloads["debug_view"]
+            if updated_task_payloads["raw_response"]:
+                task.raw_response_json = updated_task_payloads["raw_response"]
             save_task(self.db, task)
 
         audit_entry = build_audit_entry(

@@ -6458,6 +6458,35 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-03 Editor Operation Result Recording Refactor
+
+Editor Operation result recording helpers now live in
+`app/services/editor_operations/result_recording.py`.
+
+This module owns:
+
+- standard `operation_result` payload construction;
+- task `data.editor_operation` updates;
+- task `data.editor_operation_results[]` append behavior;
+- Debug View `side_effects[]` result synchronization;
+- action proposal `dry_run_preview` refresh;
+- `raw_response` mirror updates when a task response already exists.
+
+The database writes remain in `EditorOperationService`, so persistence,
+validation, audit logging, and API behavior are unchanged.
+
+Frontend impact: no mandatory change. `POST /api/v1/editor-operations/results`
+continues to return the same `item`, `proposal`, `user_view`, `follow_up`, and
+`follow_up_quick_actions` fields.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_editor_operation_result_recording.py tests\unit\test_editor_operation_followups.py tests\unit\test_editor_operation_results.py -q
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py::test_editor_operation_history_returns_preview_and_result_summary tests\integration\test_editor_operations.py::test_blueprint_node_template_result_summary_flags_missing_expected_links tests\integration\test_editor_operations.py::test_assets_inspect_emits_rename_editor_operation_proposal -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+```
+
 ## 2026-06-03 Editor Operation Follow-up Materialization Refactor
 
 Follow-up materialization now lives beside follow-up candidate generation in
