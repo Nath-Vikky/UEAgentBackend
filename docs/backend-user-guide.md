@@ -6394,3 +6394,36 @@ pytest editor operation / catalog / tool registry / MCP adapter: 149 passed
 editor-operation-chat-bridge smoke: 30/30 passed
 blueprint-graph-operation smoke: 17/17 passed
 ```
+
+## 2026-06-03 Editor Operation Result User View Refactor
+
+Editor Operation result display assembly has been split into
+`app/services/editor_operations/result_user_view.py`.
+
+This module owns display-ready result blocks for editor-operation execution
+results:
+
+- `editor_operation_result_summary`
+- `editor_operation_graph_details`
+- `editor_operation_follow_ups`
+
+The public HTTP contract is unchanged. `POST /api/v1/editor-operations/results`
+still returns the same `user_view`, `follow_up`, `item`, and `task` fields.
+Older UEAgentTool builds can continue to ignore `user_view`; newer builds can
+render the same blocks as before.
+
+Why this matters:
+
+- Blueprint node/pin summaries are now directly unit-testable.
+- The main `EditorOperationService` stays focused on proposal orchestration,
+  validation, result persistence, and history APIs.
+- Future UI display blocks can be added without growing the core service.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_editor_operation_result_user_view.py tests\unit\test_blueprint_result_diagnostics.py tests\unit\test_editor_operation_results.py -q
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py::test_blueprint_node_template_result_summary_includes_graph_diagnostics tests\integration\test_editor_operations.py::test_blueprint_node_template_result_summary_flags_missing_expected_links tests\integration\test_editor_operations.py::test_editor_operation_history_returns_preview_and_result_summary -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+.\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py --output -
+```
