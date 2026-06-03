@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from app.services.editor_operations.followups import (
+    entry_event_node_hint,
+    first_node_identifier,
     follow_up_folder_slug,
     follow_up_quick_actions,
+    node_identifier,
+    operation_follow_up_payload,
     redirector_follow_up_folders,
 )
 
@@ -66,3 +70,86 @@ def test_follow_up_quick_actions_only_exposes_ready_candidates() -> None:
 def test_follow_up_folder_slug_is_stable_and_bounded() -> None:
     assert follow_up_folder_slug("/Game/Blueprints/Characters") == "Game_Blueprints_Characters"
     assert follow_up_folder_slug("///") == "folder"
+
+
+def test_follow_up_node_helpers_extract_stable_ids() -> None:
+    assert node_identifier({"node_id": "NODE-GUID", "node_name": "DisplayName"}) == "NODE-GUID"
+    assert first_node_identifier([{}, {"node_name": "PrintString"}]) == "PrintString"
+    assert entry_event_node_hint("BeginPlay") == "EventBeginPlay"
+    assert entry_event_node_hint("ActorBeginOverlap") == "EventActorBeginOverlap"
+
+
+def test_operation_follow_up_payload_returns_not_ready_without_result() -> None:
+    payload = operation_follow_up_payload(
+        proposal_id="proposal_1",
+        preview={"operation_type": "add_blueprint_node_template"},
+        is_editor_operation=True,
+    )
+
+    assert payload["follow_up"]["status"] == "not_ready"
+    assert payload["follow_up"]["reason"] == "operation_result_missing"
+
+
+def test_operation_follow_up_payload_builds_connect_candidate_from_repair_advice() -> None:
+    payload = operation_follow_up_payload(
+        proposal_id="proposal_2",
+        preview={
+            "operation_type": "add_blueprint_node_template",
+            "tool_id": "editor_add_blueprint_node_template",
+            "operation_payload": {
+                "blueprint_path": "/Game/Blueprints/BP_Player",
+                "graph_name": "EventGraph",
+                "entry_event": "BeginPlay",
+            },
+            "operation_result": {
+                "success": True,
+                "execution_state": "completed",
+                "result": {
+                    "created_nodes": [{"node_id": "PRINT-GUID"}],
+                },
+                "result_summary": {
+                    "operation_diagnostics": {
+                        "diagnostic_flags": ["expected_linked_pins_missing"],
+                        "repair_advice": {
+                            "status": "suggested",
+                            "actions": [{"action_id": "connect_expected_exec_pins"}],
+                        },
+                    }
+                },
+            },
+        },
+        is_editor_operation=True,
+    )
+
+    follow_up = payload["follow_up"]
+    assert follow_up["status"] == "suggested"
+    assert follow_up["ready_candidate_count"] == 1
+    candidate = follow_up["candidates"][0]
+    assert candidate["operation_type"] == "connect_blueprint_nodes"
+    assert candidate["payload"]["source_node_id"] == "EventBeginPlay"
+    assert candidate["payload"]["target_node_id"] == "PRINT-GUID"
+    assert candidate["create_request_hint"]["json"]["context"]["source_proposal_id"] == "proposal_2"
+    assert candidate["auto_execute"] is False
+
+
+def test_operation_follow_up_payload_adds_redirector_candidate_after_asset_move() -> None:
+    payload = operation_follow_up_payload(
+        proposal_id="proposal_3",
+        preview={
+            "operation_type": "move_assets",
+            "tool_id": "editor_move_assets",
+            "operation_payload": {"asset_paths": ["/Game/Blueprints/BP_Player"]},
+            "operation_result": {
+                "success": True,
+                "execution_state": "completed",
+                "result": {},
+                "result_summary": {},
+            },
+        },
+        is_editor_operation=True,
+    )
+
+    follow_up = payload["follow_up"]
+    assert follow_up["status"] == "suggested"
+    assert follow_up["candidates"][0]["operation_type"] == "fixup_redirectors"
+    assert follow_up["candidates"][0]["payload"]["folder_path"] == "/Game/Blueprints"

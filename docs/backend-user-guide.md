@@ -6457,3 +6457,35 @@ Validation:
 .\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py::test_editor_operation_history_returns_preview_and_result_summary tests\integration\test_editor_operations.py::test_blueprint_node_template_result_summary_flags_missing_expected_links tests\integration\test_editor_operations.py::test_editor_operation_diagnostics_summary_counts_attention_flags -q
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
+
+## 2026-06-03 Editor Operation Follow-up Candidate Refactor
+
+Editor Operation follow-up candidate generation now lives in
+`app/services/editor_operations/followups.py`.
+
+This module owns:
+
+- Blueprint graph repair candidates such as `connect_blueprint_nodes`.
+- Blueprint compile retry candidates.
+- Asset redirector fixup candidates after asset rename / move results.
+- Stable node identifier helpers used by follow-up proposal hints.
+
+The safety model is unchanged:
+
+- Follow-up candidates are suggestions only.
+- Ready candidates can create a pending Proposal.
+- They never execute UE writes automatically.
+- The UE frontend still confirms and executes through the normal Editor
+  Operation Proposal flow.
+
+Frontend impact: no mandatory change. Existing follow-up quick actions and
+`/editor-operations/proposals/{proposal_id}/follow-ups` responses keep the same
+shape.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_editor_operation_followups.py tests\unit\test_editor_operation_history.py tests\unit\test_editor_operation_result_user_view.py -q
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py::test_blueprint_node_template_result_summary_flags_missing_expected_links tests\integration\test_editor_operations.py::test_blueprint_compile_failed_result_includes_repair_advice tests\integration\test_editor_operations.py::test_editor_operation_follow_ups_require_result_before_suggesting -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+```
