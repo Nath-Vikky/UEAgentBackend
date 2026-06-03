@@ -6542,6 +6542,27 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-03 Editor Operation Proposal Builder Refactor
+
+Editor Operation Proposal response assembly now lives in
+`app/services/editor_operations/proposal_builder.py`.
+
+`EditorOperationService` still owns request normalization, target extraction,
+database persistence, and audit logging. The new builder only assembles the
+already-computed dry-run preview, display hints, confirmation contract, and
+Blueprint graph policy preview.
+
+Frontend impact: no mandatory change. The Proposal response, `dry_run_preview`,
+`display_hints`, confirmation endpoints, and Blueprint graph policy fields keep
+the same shape.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_editor_operation_proposal_builder.py tests\integration\test_editor_operations.py::test_blueprint_node_template_print_string_proposal_contract tests\integration\test_editor_operations.py::test_editor_operation_rename_proposal_confirm_and_result -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+```
+
 ## 2026-06-03 Editor Operation Follow-up Candidate Refactor
 
 Editor Operation follow-up candidate generation now lives in
