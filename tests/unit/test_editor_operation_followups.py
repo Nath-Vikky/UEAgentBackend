@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import pytest
+
 from app.services.editor_operations.followups import (
     entry_event_node_hint,
     first_node_identifier,
     follow_up_folder_slug,
     follow_up_quick_actions,
+    materialize_follow_up_proposal_request,
     node_identifier,
     operation_follow_up_payload,
     redirector_follow_up_folders,
@@ -153,3 +156,58 @@ def test_operation_follow_up_payload_adds_redirector_candidate_after_asset_move(
     assert follow_up["status"] == "suggested"
     assert follow_up["candidates"][0]["operation_type"] == "fixup_redirectors"
     assert follow_up["candidates"][0]["payload"]["folder_path"] == "/Game/Blueprints"
+
+
+def test_materialize_follow_up_proposal_request_keeps_proposal_pending_and_contextual() -> None:
+    follow_up = operation_follow_up_payload(
+        proposal_id="proposal_4",
+        preview={
+            "operation_type": "move_assets",
+            "tool_id": "editor_move_assets",
+            "operation_payload": {"asset_paths": ["/Game/Blueprints/BP_Player"]},
+            "operation_result": {
+                "success": True,
+                "execution_state": "completed",
+                "result": {},
+                "result_summary": {},
+            },
+        },
+        is_editor_operation=True,
+    )["follow_up"]
+    candidate = follow_up["candidates"][0]
+
+    materialized = materialize_follow_up_proposal_request(
+        source_proposal_id="proposal_4",
+        candidate=candidate,
+        requested_by="unit_test",
+        context={"smoke_case": "redirector_follow_up"},
+    )
+
+    assert materialized["schema_version"] == "editor_operation_follow_up_materialization_v1"
+    assert materialized["tool_id"] == "editor_fixup_redirectors"
+    assert materialized["auto_execute"] is False
+    assert materialized["requires_user_confirmation"] is True
+    proposal_request = materialized["proposal_request"]
+    assert proposal_request["operation_type"] == "fixup_redirectors"
+    assert proposal_request["requested_by"] == "unit_test"
+    assert proposal_request["context"]["source_proposal_id"] == "proposal_4"
+    assert proposal_request["context"]["smoke_case"] == "redirector_follow_up"
+    assert proposal_request["context"]["follow_up_materialization"]["auto_execute"] is False
+
+
+def test_materialize_follow_up_proposal_request_rejects_unready_candidate() -> None:
+    with pytest.raises(ValueError, match="follow_up_candidate_not_ready_for_proposal"):
+        materialize_follow_up_proposal_request(
+            source_proposal_id="proposal_5",
+            candidate={
+                "candidate_id": "retry_compile_blueprint",
+                "proposal_ready": False,
+                "missing_inputs": ["blueprint_path"],
+                "create_request_hint": {
+                    "json": {
+                        "operation_type": "compile_blueprint",
+                        "payload": {"blueprint_path": ""},
+                    }
+                },
+            },
+        )

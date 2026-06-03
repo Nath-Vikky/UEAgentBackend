@@ -6458,6 +6458,37 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-03 Editor Operation Follow-up Materialization Refactor
+
+Follow-up materialization now lives beside follow-up candidate generation in
+`app/services/editor_operations/followups.py`.
+
+This covers the safe conversion from one ready follow-up candidate into a typed
+`EditorOperationProposalRequest` payload. `EditorOperationService` keeps the
+same public wrapper, so route behavior and response fields do not change.
+
+Safety behavior remains unchanged:
+
+- The materialized step creates a pending Proposal only.
+- `auto_execute` remains `false`.
+- User confirmation is still required before UEAgentTool executes any Editor
+  API.
+- Candidates with `missing_inputs` or `proposal_ready=false` are rejected.
+- Only operation types registered in the Editor Operation catalog can be
+  materialized.
+
+Frontend impact: no mandatory change. Existing calls to
+`POST /api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal`
+continue to work.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_editor_operation_followups.py tests\unit\test_editor_operation_history.py tests\unit\test_editor_operation_result_user_view.py -q
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py::test_blueprint_node_template_result_summary_flags_missing_expected_links tests\integration\test_editor_operations.py::test_blueprint_compile_failed_result_includes_repair_advice tests\integration\test_editor_operations.py::test_editor_operation_follow_ups_require_result_before_suggesting -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+```
+
 ## 2026-06-03 Editor Operation Follow-up Candidate Refactor
 
 Editor Operation follow-up candidate generation now lives in
