@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import shutil
@@ -749,6 +749,113 @@ def test_agent_chat_context_bundle_includes_inventory_selected_asset_details(cli
     assert body["debug_view"]["active_context"]["code"]["current_file_inventory"]["classes"] == [
         "ARBPlayerCharacter"
     ]
+
+
+def test_agent_chat_context_bundle_includes_current_blueprint_graph_focus(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "GraphFocusProject",
+            "project_name": "GraphFocusProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_FocusedActor",
+                    "asset_name": "BP_FocusedActor",
+                    "asset_type": "Blueprint",
+                    "blueprint": {
+                        "parent_class": "AActor",
+                        "graphs": ["EventGraph"],
+                        "graph_summaries": [
+                            {
+                                "graph_name": "EventGraph",
+                                "graph_type": "event",
+                                "node_count": 2,
+                                "pin_count": 4,
+                                "link_count": 1,
+                                "nodes": [
+                                    {
+                                        "node_id": "event-begin-play",
+                                        "node_name": "K2Node_Event_0",
+                                        "node_class": "K2Node_Event",
+                                        "title": "Event BeginPlay",
+                                    },
+                                    {
+                                        "node_id": "print-string",
+                                        "node_name": "K2Node_CallFunction_0",
+                                        "node_class": "K2Node_CallFunction",
+                                        "title": "Print String",
+                                        "pins": [
+                                            {
+                                                "pin_id": "exec-in",
+                                                "pin_name": "execute",
+                                                "direction": "input",
+                                                "category": "exec",
+                                            }
+                                        ],
+                                    },
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_current_blueprint_graph_focus_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "What nodes are in the currently focused Blueprint graph?",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "GraphFocusProject",
+                "active_panel": "AgentChat",
+                "editor_state": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_FocusedActor.BP_FocusedActor",
+                    "current_graph_name": "EventGraph",
+                    "selected_node_id": "print-string",
+                },
+            },
+            "payload": {"user_query": "What nodes are in the currently focused Blueprint graph?"},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+    active_blueprint = body["debug_view"]["active_context"]["blueprint"]
+    context_pack_blueprint = body["debug_view"]["context_bundle"]["context_pack"]["active_layer"]["blueprint"]
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    assert body["intent"]["route_type"] in {"project_qa", "single_tool"}
+    assert body["debug_view"]["route"]["selected_tool_id"] in {
+        "query_project_inventory",
+        "mcp_get_blueprint_graph",
+    }
+    assert body["debug_view"]["context_bundle"]["project_inventory_context"]["current_blueprint"]["asset_name"] == (
+        "BP_FocusedActor"
+    )
+    assert active_blueprint["current_blueprint_inventory"]["asset_name"] == "BP_FocusedActor"
+    assert active_blueprint["current_graph_summary"]["graph_name"] == "EventGraph"
+    assert active_blueprint["current_graph_summary"]["nodes"][0]["title"] == "Event BeginPlay"
+    assert active_blueprint["current_node_summary"]["title"] == "Print String"
+    assert active_blueprint["current_node_summary"]["pins"][0]["pin_name"] == "execute"
+    assert context_pack_blueprint["current_graph_summary"]["nodes"][1]["title"] == "Print String"
+    assert context_pack_blueprint["current_node_summary"]["node_id"] == "print-string"
 
 
 def test_agent_chat_project_asset_listing_handles_prefix_and_missing_snapshot(client: TestClient) -> None:

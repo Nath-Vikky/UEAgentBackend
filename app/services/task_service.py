@@ -839,10 +839,42 @@ class TaskService:
         )
         active_context = dict(bundle.get("active_context") or {})
         active_context["mcp"] = build_mcp_adapter_status(self.settings)
+        blueprint_context = dict(active_context.get("blueprint") or {})
+        editor_focus_context = dict(active_context.get("editor_focus") or {})
+        current_blueprint_path = (
+            blueprint_context.get("current_blueprint_path")
+            or editor_focus_context.get("current_blueprint_path")
+            or request.payload.get("current_blueprint_path")
+            or request.context.editor_state.get("current_blueprint_path")
+        )
+        current_graph_name = (
+            blueprint_context.get("current_graph_name")
+            or editor_focus_context.get("current_graph_name")
+            or request.payload.get("current_graph_name")
+            or request.context.editor_state.get("current_graph_name")
+        )
+        current_node_id = (
+            blueprint_context.get("selected_node_id")
+            or request.payload.get("selected_node_id")
+            or request.payload.get("current_node_id")
+            or request.context.editor_state.get("selected_node_id")
+            or request.context.editor_state.get("current_node_id")
+        )
+        current_node_name = (
+            blueprint_context.get("selected_node_name")
+            or request.payload.get("selected_node_name")
+            or request.payload.get("current_node_name")
+            or request.context.editor_state.get("selected_node_name")
+            or request.context.editor_state.get("current_node_name")
+        )
         inventory_context = self.inventory_service.context_snapshot(
             project_id=self._inventory_project_id(request),
             selected_assets=list(request.context.selected_assets or []),
             current_file=request.context.current_file,
+            current_blueprint_path=str(current_blueprint_path or "").strip() or None,
+            current_graph_name=str(current_graph_name or "").strip() or None,
+            current_node_id=str(current_node_id or "").strip() or None,
+            current_node_name=str(current_node_name or "").strip() or None,
         )
         inventory_query = str(
             (bundle.get("input_summary") or {}).get("latest_user_message")
@@ -874,6 +906,13 @@ class TaskService:
         asset_context = dict(active_context.get("asset") or {})
         asset_context["selected_asset_details"] = inventory_context.get("selected_assets", [])
         active_context["asset"] = asset_context
+        if inventory_context.get("current_blueprint"):
+            blueprint_context["current_blueprint_inventory"] = inventory_context.get("current_blueprint")
+        if inventory_context.get("current_blueprint_graph"):
+            blueprint_context["current_graph_summary"] = inventory_context.get("current_blueprint_graph")
+        if inventory_context.get("current_blueprint_node"):
+            blueprint_context["current_node_summary"] = inventory_context.get("current_blueprint_node")
+        active_context["blueprint"] = blueprint_context
         code_context = dict(active_context.get("code") or {})
         code_context["current_file_inventory"] = inventory_context.get("current_file")
         active_context["code"] = code_context

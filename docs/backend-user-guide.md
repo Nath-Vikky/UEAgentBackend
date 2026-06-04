@@ -6458,6 +6458,41 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-04 Active Blueprint Graph Focus
+
+Agent Chat / Project QA now resolves the currently focused Blueprint graph from
+Project Inventory when the request includes:
+
+- `context.editor_state.current_blueprint_path`
+- `context.editor_state.current_graph_name`
+- `context.editor_state.selected_node_id` or `selected_node_name` when the
+  editor has a focused graph node
+
+The backend matches common UE object path variants such as
+`/Game/Blueprints/BP_TestActor.BP_TestActor`, `/Game/Blueprints/BP_TestActor`,
+and `BP_TestActor`. If the latest Project Inventory snapshot contains the
+Blueprint `graph_summaries`, the Context Bundle exposes:
+
+- `project_inventory_context.current_blueprint`
+- `project_inventory_context.current_blueprint_graph`
+- `project_inventory_context.current_blueprint_node`
+- `active_context.blueprint.current_blueprint_inventory`
+- `active_context.blueprint.current_graph_summary`
+- `active_context.blueprint.current_node_summary`
+
+This lets the Agent answer questions like "what nodes are in the currently
+focused Blueprint graph?" from project facts instead of guessing from generic UE
+knowledge. If the current node can be matched by id, node name, or display
+title, the backend also exposes a compact node summary with `node_id`,
+`node_name`, `node_class`, `title`, `pin_count`, and up to eight pins. This gives
+future Blueprint operation planning a safer default target when the user says
+"this Blueprint", "the current graph", or "this node".
+
+No frontend contract change is required. Existing UEAgentTool builds that
+already submit Project Inventory `graph_summaries` and editor focus fields can
+use this automatically. If no snapshot exists, these fields are returned as
+`null` rather than omitted, so Debug View and User View parsing remain stable.
+
 ## 2026-06-03 Editor Operation Result Recording Refactor
 
 Editor Operation result recording helpers now live in

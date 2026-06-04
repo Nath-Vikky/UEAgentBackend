@@ -27,6 +27,32 @@ def _asset_name(asset_path: str) -> str:
     return leaf
 
 
+def _asset_lookup_keys(value: Any) -> set[str]:
+    text = str(value or "").strip().strip("'\"")
+    if not text:
+        return set()
+    lowered = text.lower()
+    keys = {lowered}
+    if lowered.endswith("_c"):
+        keys.add(lowered[:-2])
+    leaf = lowered.rstrip("/").rsplit("/", 1)[-1]
+    if leaf:
+        keys.add(leaf)
+        if leaf.endswith("_c"):
+            keys.add(leaf[:-2])
+    if "." in lowered:
+        package_path, object_name = lowered.split(".", 1)
+        keys.add(package_path)
+        if object_name:
+            keys.add(object_name)
+            keys.add(object_name.removesuffix("_c"))
+            parent = package_path.rsplit("/", 1)[0]
+            if parent:
+                keys.add(f"{parent}/{object_name}")
+                keys.add(f"{parent}/{object_name.removesuffix('_c')}")
+    return {item for item in keys if item}
+
+
 def _contains_text(value: Any, needle: str) -> bool:
     if value is None:
         return False
@@ -278,13 +304,24 @@ class ProjectInventoryService:
         return items
 
     def get_asset(self, asset_id: str, project_id: str | None = None) -> dict[str, Any] | None:
-        normalized = asset_id.lower()
+        lookup_keys = _asset_lookup_keys(asset_id)
         for item in self.list_assets(project_id=project_id, limit=10000):
-            if normalized in {
-                str(item.get("asset_id") or "").lower(),
-                str(item.get("asset_path") or "").lower(),
-                str(item.get("asset_name") or "").lower(),
-            }:
+            blueprint = _as_dict(item.get("blueprint"))
+            settings = _as_dict(item.get("settings"))
+            item_keys: set[str] = set()
+            for value in (
+                item.get("asset_id"),
+                item.get("asset_path"),
+                item.get("asset_name"),
+                item.get("package_path"),
+                item.get("object_path"),
+                item.get("generated_class"),
+                blueprint.get("generated_class"),
+                blueprint.get("object_path"),
+                settings.get("object_path"),
+            ):
+                item_keys.update(_asset_lookup_keys(value))
+            if lookup_keys & item_keys:
                 return item
         return None
 
@@ -488,6 +525,10 @@ class ProjectInventoryService:
         project_id: str | None = None,
         selected_assets: list[str] | None = None,
         current_file: str | None = None,
+        current_blueprint_path: str | None = None,
+        current_graph_name: str | None = None,
+        current_node_id: str | None = None,
+        current_node_name: str | None = None,
         limit: int = 6,
     ) -> dict[str, Any]:
         snapshot = self._resolve_snapshot(project_id)
@@ -498,6 +539,9 @@ class ProjectInventoryService:
                 "summary": self.summary(project_id),
                 "selected_assets": [],
                 "current_file": None,
+                "current_blueprint": None,
+                "current_blueprint_graph": None,
+                "current_blueprint_node": None,
                 "top_assets": [],
                 "top_code_files": [],
                 "top_level_actors": [],
@@ -515,6 +559,18 @@ class ProjectInventoryService:
                 if self._code_file_referenced_by_query(item, current_file.lower()):
                     current_file_item = self._compact_code_file(item)
                     break
+        current_blueprint = self.get_asset(current_blueprint_path, project_id) if current_blueprint_path else None
+        compact_current_blueprint = self._compact_asset(current_blueprint) if current_blueprint else None
+        focused_graph = self._focused_graph(
+            current_blueprint,
+            current_graph_name=current_graph_name,
+        )
+        current_blueprint_graph = self._compact_graph_summary(focused_graph) if focused_graph else None
+        current_blueprint_node = self._focused_graph_node_summary(
+            focused_graph,
+            current_node_id=current_node_id,
+            current_node_name=current_node_name,
+        )
 
         return {
             "status": "available",
@@ -526,6 +582,9 @@ class ProjectInventoryService:
             "summary": self.summary(project_id),
             "selected_assets": selected_items[:limit],
             "current_file": current_file_item,
+            "current_blueprint": compact_current_blueprint,
+            "current_blueprint_graph": current_blueprint_graph,
+            "current_blueprint_node": current_blueprint_node,
             "top_assets": [self._compact_asset(item) for item in list(snapshot.get("assets") or [])[:limit]],
             "top_code_files": [self._compact_code_file(item) for item in list(snapshot.get("code_files") or [])[:limit]],
             "top_level_actors": [
@@ -534,6 +593,101 @@ class ProjectInventoryService:
             "top_material_instances": [
                 self._compact_material_instance(item)
                 for item in list(snapshot.get("material_instances") or [])[:limit]
+            ],
+        }
+
+    def _focused_graph(
+        self,
+        item: dict[str, Any] | None,
+        *,
+        current_graph_name: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not item:
+            return None
+        blueprint = _as_dict(item.get("blueprint"))
+        graph_summaries = list(item.get("graph_summaries") or blueprint.get("graph_summaries") or [])
+        if not graph_summaries:
+            return None
+        if current_graph_name:
+            expected = str(current_graph_name or "").strip().lower()
+            for graph in graph_summaries:
+                if str(graph.get("graph_name") or graph.get("name") or "").strip().lower() == expected:
+                    return graph
+        return graph_summaries[0]
+
+    def _focused_graph_summary(
+        self,
+        item: dict[str, Any] | None,
+        *,
+        current_graph_name: str | None = None,
+    ) -> dict[str, Any] | None:
+        focused_graph = self._focused_graph(item, current_graph_name=current_graph_name)
+        return self._compact_graph_summary(focused_graph) if focused_graph else None
+
+    def _focused_graph_node_summary(
+        self,
+        graph: dict[str, Any] | None,
+        *,
+        current_node_id: str | None = None,
+        current_node_name: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not graph:
+            return None
+        expected_ids = {
+            str(value or "").strip().lower()
+            for value in (current_node_id, current_node_name)
+            if str(value or "").strip()
+        }
+        if not expected_ids:
+            return None
+        for node in list(graph.get("nodes") or []):
+            if not isinstance(node, dict):
+                continue
+            node_keys = {
+                str(value or "").strip().lower()
+                for value in (
+                    node.get("node_id"),
+                    node.get("id"),
+                    node.get("node_name"),
+                    node.get("name"),
+                    node.get("title"),
+                )
+                if str(value or "").strip()
+            }
+            if expected_ids & node_keys:
+                return self._compact_graph_node_summary(node)
+        return None
+
+    @staticmethod
+    def _compact_graph_summary(graph: dict[str, Any]) -> dict[str, Any]:
+        nodes = list(graph.get("nodes") or [])[:8]
+        return {
+            "graph_name": graph.get("graph_name") or graph.get("name"),
+            "graph_type": graph.get("graph_type") or graph.get("type"),
+            "node_count": graph.get("node_count"),
+            "pin_count": graph.get("pin_count"),
+            "link_count": graph.get("link_count"),
+            "nodes": [ProjectInventoryService._compact_graph_node_summary(node) for node in nodes if isinstance(node, dict)],
+        }
+
+    @staticmethod
+    def _compact_graph_node_summary(node: dict[str, Any]) -> dict[str, Any]:
+        pins = [pin for pin in list(node.get("pins") or []) if isinstance(pin, dict)]
+        return {
+            "node_id": node.get("node_id") or node.get("id"),
+            "node_name": node.get("node_name") or node.get("name"),
+            "node_class": node.get("node_class") or node.get("class"),
+            "title": node.get("title"),
+            "pin_count": node.get("pin_count") or len(pins) or None,
+            "pins": [
+                {
+                    "pin_id": pin.get("pin_id") or pin.get("id"),
+                    "pin_name": pin.get("pin_name") or pin.get("name"),
+                    "direction": pin.get("direction"),
+                    "category": pin.get("category") or pin.get("pin_category"),
+                    "linked_to": pin.get("linked_to"),
+                }
+                for pin in pins[:8]
             ],
         }
 

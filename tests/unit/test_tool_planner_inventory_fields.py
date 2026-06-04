@@ -172,3 +172,76 @@ def test_project_inventory_query_returns_requested_field_view() -> None:
         assert result["items"][0]["field_view"]["components"][0]["name"] == "Camera"
     finally:
         shutil.rmtree(storage_dir, ignore_errors=True)
+
+
+def test_project_inventory_context_snapshot_resolves_current_blueprint_graph_focus() -> None:
+    storage_dir = Path("storage/test-tmp") / f"inventory-blueprint-focus-{uuid.uuid4().hex}"
+    try:
+        service = ProjectInventoryService(Settings(storage_dir=str(storage_dir)))
+        service.save_snapshot(
+            ProjectInventorySnapshotRequest(
+                project_id="FocusProject",
+                project_name="FocusProject",
+                assets=[
+                    {
+                        "asset_path": "/Game/Blueprints/BP_FocusedActor",
+                        "asset_name": "BP_FocusedActor",
+                        "asset_type": "Blueprint",
+                        "blueprint": {
+                            "parent_class": "AActor",
+                            "graphs": ["EventGraph"],
+                            "graph_summaries": [
+                                {
+                                    "graph_name": "EventGraph",
+                                    "graph_type": "event",
+                                    "node_count": 2,
+                                    "pin_count": 4,
+                                    "link_count": 1,
+                                    "nodes": [
+                                        {
+                                            "node_id": "event-begin-play",
+                                            "node_name": "K2Node_Event_0",
+                                            "node_class": "K2Node_Event",
+                                            "title": "Event BeginPlay",
+                                        },
+                                        {
+                                            "node_id": "print-string",
+                                            "node_name": "K2Node_CallFunction_0",
+                                            "node_class": "K2Node_CallFunction",
+                                            "title": "Print String",
+                                            "pins": [
+                                                {
+                                                    "pin_id": "exec-in",
+                                                    "pin_name": "execute",
+                                                    "direction": "input",
+                                                    "category": "exec",
+                                                }
+                                            ],
+                                        },
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                ],
+            )
+        )
+
+        by_object_path = service.get_asset("/Game/Blueprints/BP_FocusedActor.BP_FocusedActor", "FocusProject")
+        by_asset_name = service.get_asset("BP_FocusedActor", "FocusProject")
+        context = service.context_snapshot(
+            project_id="FocusProject",
+            current_blueprint_path="/Game/Blueprints/BP_FocusedActor.BP_FocusedActor",
+            current_graph_name="EventGraph",
+            current_node_id="print-string",
+        )
+
+        assert by_object_path is not None
+        assert by_asset_name is not None
+        assert context["current_blueprint"]["asset_name"] == "BP_FocusedActor"
+        assert context["current_blueprint_graph"]["graph_name"] == "EventGraph"
+        assert context["current_blueprint_graph"]["nodes"][0]["title"] == "Event BeginPlay"
+        assert context["current_blueprint_node"]["title"] == "Print String"
+        assert context["current_blueprint_node"]["pins"][0]["pin_name"] == "execute"
+    finally:
+        shutil.rmtree(storage_dir, ignore_errors=True)
