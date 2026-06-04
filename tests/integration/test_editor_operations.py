@@ -374,6 +374,8 @@ def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient)
     assert follow_candidate["operation_type"] == "fixup_redirectors"
     assert follow_candidate["payload"]["folder_path"] == "/Game/Maps"
     assert follow_candidate["auto_execute"] is False
+    result_block_types = [block["block_type"] for block in result_body["user_view"]["blocks"]]
+    assert "editor_operation_target_details" in result_block_types
     assert result_body["user_view"]["quick_actions"][0]["payload"]["candidate_id"].startswith("fixup_redirectors_")
 
     materialized = client.post(

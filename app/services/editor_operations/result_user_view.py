@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.services.editor_operations.blueprint_result_diagnostics import first_non_empty_text
+from app.services.editor_operations.result_contracts import OPERATION_RESULT_FIELDS
 from app.services.editor_operations.results import as_string_list
 
 
@@ -326,7 +327,74 @@ def operation_result_detail_block(*, operation_result: dict[str, Any]) -> dict[s
     return (
         blueprint_graph_result_detail_block(operation_result=operation_result)
         or umg_result_detail_block(operation_result=operation_result)
+        or generic_editor_operation_detail_block(operation_result=operation_result)
     )
+
+
+def generic_editor_operation_detail_block(*, operation_result: dict[str, Any]) -> dict[str, Any] | None:
+    result = dict(operation_result.get("result") or {})
+    result_summary = dict(operation_result.get("result_summary") or {})
+    diagnostics = dict(result_summary.get("operation_diagnostics") or {})
+    if diagnostics.get("category") in {"blueprint_graph", "umg"}:
+        return None
+
+    operation_type = str(operation_result.get("operation_type") or "editor_operation")
+    fields = OPERATION_RESULT_FIELDS.get(operation_type, [])
+    items = [f"Operation: {operation_type}"]
+    detail_values: dict[str, Any] = {}
+
+    for field_name in fields:
+        if field_name in {"dirty", "dirty_packages", "applied_fields", "failed_fields"}:
+            continue
+        value = result.get(field_name)
+        if value in (None, "", [], {}):
+            continue
+        detail_values[field_name] = value
+        items.append(f"{field_name}: {_compact_value(value)}")
+
+    dirty_packages = as_string_list(result.get("dirty_packages") or result_summary.get("dirty_packages"))
+    if dirty_packages:
+        items.append(f"Dirty packages: {', '.join(dirty_packages[:5])}")
+
+    for applied_field in _field_items(result_summary.get("applied_fields") or result.get("applied_fields")):
+        items.append(f"Applied: {applied_field}")
+    for failed_field in _field_items(result_summary.get("failed_fields") or result.get("failed_fields")):
+        items.append(f"Failed field: {failed_field}")
+    for error_summary in _error_items(operation_result.get("errors"))[:5]:
+        items.append(f"UE error: {error_summary}")
+
+    if len(items) <= 1:
+        return None
+
+    return {
+        "block_type": "editor_operation_target_details",
+        "title": "Editor Operation Details",
+        "text": "Target fields and UE execution details reported by UEAgentTool.",
+        "data": {
+            "schema_version": "editor_operation_target_details_v1",
+            "operation_type": operation_type,
+            "items": items,
+            "fields": detail_values,
+            "dirty_packages": dirty_packages,
+        },
+    }
+
+
+def _compact_value(value: Any, *, limit: int = 120) -> str:
+    if isinstance(value, dict):
+        parts = [f"{key}={_compact_value(item, limit=40)}" for key, item in list(value.items())[:4]]
+        text = ", ".join(parts)
+        if len(value) > 4:
+            text = f"{text}, +{len(value) - 4} more"
+    elif isinstance(value, list):
+        parts = [_compact_value(item, limit=40) for item in value[:4]]
+        text = ", ".join(part for part in parts if part)
+        if len(value) > 4:
+            text = f"{text}, +{len(value) - 4} more"
+    else:
+        text = str(value)
+    text = text.strip()
+    return text if len(text) <= limit else f"{text[: limit - 3]}..."
 
 
 def _field_items(value: Any, *, limit: int = 5) -> list[str]:
@@ -378,6 +446,7 @@ def _error_items(value: Any, *, limit: int = 5) -> list[str]:
 
 __all__ = [
     "blueprint_graph_result_detail_block",
+    "generic_editor_operation_detail_block",
     "operation_result_user_view",
     "operation_result_detail_block",
     "summarize_graph_node",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.services.editor_operations.result_user_view import (
     blueprint_graph_result_detail_block,
+    generic_editor_operation_detail_block,
     operation_result_user_view,
     summarize_graph_node,
     summarize_graph_pin,
@@ -122,6 +123,34 @@ def test_umg_result_detail_block_uses_diagnostics_and_errors() -> None:
     assert "UE error: widget_not_found: TitleText was not found" in items
 
 
+def test_generic_editor_operation_detail_block_uses_contract_fields() -> None:
+    block = generic_editor_operation_detail_block(
+        operation_result={
+            "operation_type": "set_material_instance_parameter",
+            "result": {
+                "material_instance_path": "/Game/Materials/MI_Player",
+                "parameter_name": "Roughness",
+                "dirty_packages": ["/Game/Materials/MI_Player"],
+                "applied_fields": {"scalar_parameter": "Roughness"},
+            },
+            "result_summary": {
+                "operation_diagnostics": {},
+            },
+            "errors": [],
+        }
+    )
+
+    assert block is not None
+    assert block["block_type"] == "editor_operation_target_details"
+    assert block["data"]["schema_version"] == "editor_operation_target_details_v1"
+    items = block["data"]["items"]
+    assert "Operation: set_material_instance_parameter" in items
+    assert "material_instance_path: /Game/Materials/MI_Player" in items
+    assert "parameter_name: Roughness" in items
+    assert "Dirty packages: /Game/Materials/MI_Player" in items
+    assert "Applied: scalar_parameter: Roughness" in items
+
+
 def test_operation_result_user_view_adds_follow_up_and_attention_blocks() -> None:
     user_view = operation_result_user_view(
         operation_result={
@@ -172,4 +201,31 @@ def test_operation_result_user_view_adds_umg_detail_block() -> None:
     assert block_types == [
         "editor_operation_result_summary",
         "editor_operation_umg_details",
+    ]
+
+
+def test_operation_result_user_view_adds_generic_detail_block() -> None:
+    user_view = operation_result_user_view(
+        operation_result={
+            "operation_type": "set_actor_transform",
+            "result_summary": {
+                "needs_user_attention": False,
+                "operation_diagnostics": {},
+            },
+            "result": {
+                "actor_reference": "BP_Enemy_C_0",
+                "transform_mode": "delta",
+                "dirty_packages": ["/Game/Maps/L_Test"],
+            },
+            "errors": [],
+        },
+        follow_up={},
+        quick_actions=[],
+    )
+
+    assert user_view["status_hint"] == "completed"
+    block_types = [block["block_type"] for block in user_view["blocks"]]
+    assert block_types == [
+        "editor_operation_result_summary",
+        "editor_operation_target_details",
     ]

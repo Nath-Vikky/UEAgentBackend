@@ -5630,6 +5630,17 @@ This endpoint returns recent editor operation proposals with preview and result 
 
 Frontend impact: no mandatory change. Existing Proposal cards can ignore the new fields. Optional UI improvements can show `affected_targets`, `preflight_checks`, and `result_summary` when available.
 
+User View detail blocks:
+
+- Blueprint Graph operations can include `editor_operation_graph_details`.
+- UMG operations can include `editor_operation_umg_details`.
+- Other ordinary editor operations can include
+  `editor_operation_target_details`, which summarizes operation-specific result
+  fields, dirty packages, applied fields, failed fields, and UE errors.
+
+These blocks are additive. A frontend that already renders generic
+`user_view.blocks[]` can show them without calling a new endpoint.
+
 ## 2026-05-19 UEAgentTool Result Contract Normalization
 
 UEAgentTool now normalizes editor operation execution results at the Tool Registry exit point. This keeps individual executors focused on real UE Editor API work while guaranteeing a stable backend-facing result shape.
