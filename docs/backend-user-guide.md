@@ -6752,6 +6752,41 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-04 UE Knowledge Domains Expansion
+
+The local knowledge base now includes additional UE-focused domains for
+Blueprint/UMG automation and editor-operation troubleshooting.
+
+Added domains and folders:
+
+- `knowledge/blueprint-umg/`: UMG Widget Tree layout and Blueprint graph safe
+  templates.
+- `knowledge/troubleshooting/`: editor operation error codes and repair advice.
+- `knowledge/engine-notes/ue-material-instance-parameters.md`: Material
+  Instance parameter editing notes.
+
+How it is used:
+
+- Agent Chat and Code Generate can retrieve these notes through the existing
+  RAG/local lexical search pipeline.
+- When embeddings/Qdrant are disabled, the same Markdown files are still used
+  by lexical retrieval and local grep fallback.
+- When embeddings/Qdrant are enabled and the KB is reindexed, the same files
+  can also participate in vector or hybrid retrieval.
+
+Recommended maintenance workflow:
+
+1. Add distilled UE notes under the most specific `knowledge/` folder.
+2. Include `domain`, `topic`, `keywords`, and `use_for` metadata near the top.
+3. Restart the backend or call the knowledge refresh/reindex endpoint.
+4. Add or update a small eval case when the new note should be discoverable.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_rag_eval.py --dataset tests/eval/rag_ue_knowledge_dataset.jsonl --source-path ./knowledge --top-k 4 --min-hit-at-k 0.8 --min-route-accuracy 1.0 --output storage/artifacts/evals/rag-ue-knowledge-latest.json --markdown-output docs/rag-ue-knowledge-report.md
+```
+
 ## 2026-06-03 Shared Proposal Presenter Refactor
 
 Proposal response serialization now lives in `app/services/proposal_presenter.py`.

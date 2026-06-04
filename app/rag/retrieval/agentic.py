@@ -17,12 +17,14 @@ MAX_AGENTIC_ROUNDS = 2
 
 DOMAIN_REWRITE_HINTS = {
     "asset_rules": "Blueprint StaticMesh asset naming Nanite LOD collision reference viewer",
+    "blueprint_umg": "Blueprint graph UMG Widget Tree CanvasPanel TextBlock Button slot layout",
     "code_reference": "Unreal C++ example header source Build.cs module dependency",
     "engine_notes": "Unreal Engine API lifecycle subsystem reflection gameplay framework",
     "examples": "complete Unreal C++ example implementation",
     "project_docs": "project architecture setup workflow API guide",
     "prompt_packs": "UE C++ assistant rules best practices",
     "team_rules": "team coding convention Unreal project rule",
+    "troubleshooting": "Unreal editor error diagnostic repair compile log missing widget graph pin material parameter",
 }
 
 QUERY_REWRITE_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
@@ -70,8 +72,24 @@ QUERY_REWRITE_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
         "Blueprint parent class component variable compile reference graph",
     ),
     (
+        ("umg", "widget", "canvas panel", "horizontal box", "vertical box", "textblock"),
+        "UMG WidgetTree CanvasPanel HorizontalBox VerticalBox TextBlock Image Button slot layout anchors padding",
+    ),
+    (
+        ("blueprint graph", "print string", "event graph", "beginplay node", "node graph"),
+        "Blueprint graph EventGraph BeginPlay PrintString K2Node pin execution connection compile",
+    ),
+    (
         ("static mesh", "staticmesh", "nanite", "\u9759\u6001\u7f51\u683c\u4f53"),
         "StaticMesh Nanite LOD collision material slots lightmap",
+    ),
+    (
+        ("material instance", "material parameter", "static switch", "scalar parameter", "vector parameter"),
+        "MaterialInstanceConstant scalar vector texture static switch parameter editor only safe apply",
+    ),
+    (
+        ("troubleshoot", "diagnostic", "error code", "repair advice", "operation failed"),
+        "operation diagnostics widget_not_found pin_resolution_failed graph_missing compile failed repair checklist",
     ),
     (
         ("delegate", "event", "\u59d4\u6258"),

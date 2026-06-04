@@ -102,6 +102,22 @@ QUERY_EXPANSIONS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ("技能系统", "gas", "ability system"),
         ("gas", "gameplayability", "abilitysystemcomponent", "attributeset", "gameplayeffect", "gameplaytag"),
     ),
+    (
+        ("umg", "widget", "控件", "canvas panel", "horizontal box", "vertical box", "textblock"),
+        ("umg", "widget", "widgettree", "canvaspanel", "horizontalbox", "verticalbox", "textblock", "image", "button", "slot", "layout"),
+    ),
+    (
+        ("blueprint graph", "event graph", "print string", "蓝图节点", "节点连接"),
+        ("blueprint", "graph", "eventgraph", "beginplay", "printstring", "k2node", "pin", "execution", "connection", "compile"),
+    ),
+    (
+        ("material instance", "material parameter", "scalar parameter", "vector parameter", "static switch", "材质实例"),
+        ("material", "materialinstance", "scalar", "vector", "texture", "staticswitch", "parameter", "setscalarparametervalueeditoronly"),
+    ),
+    (
+        ("troubleshoot", "diagnostic", "error code", "repair advice", "故障诊断", "修复建议"),
+        ("diagnostic", "error", "compile", "failed", "repair", "widget_not_found", "pin_resolution_failed", "operation_diagnostics"),
+    ),
 )
 
 

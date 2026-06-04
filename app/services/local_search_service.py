@@ -14,6 +14,8 @@ from app.rag.indexing.sparse import tokenize_query
 DOMAIN_DIR_ALIASES = {
     "asset-rules": "asset_rules",
     "asset_rules": "asset_rules",
+    "blueprint-umg": "blueprint_umg",
+    "blueprint_umg": "blueprint_umg",
     "code-reference": "code_reference",
     "code_reference": "code_reference",
     "engine-notes": "engine_notes",
@@ -29,6 +31,7 @@ DOMAIN_DIR_ALIASES = {
     "project_docs": "project_docs",
     "team-rules": "team_rules",
     "team_rules": "team_rules",
+    "troubleshooting": "troubleshooting",
 }
 
 CODE_SUFFIXES = {".h", ".hpp", ".hh", ".inl", ".c", ".cc", ".cpp", ".cxx", ".cs", ".py"}
@@ -83,6 +86,10 @@ def _infer_domain(path: Path) -> str:
         return "examples"
     if "prompt-pack" in path_lower or "prompt_pack" in path_lower or "skill-pack" in path_lower:
         return "prompt_packs"
+    if "troubleshooting" in path_lower or "diagnostic" in path_lower or "repair" in path_lower:
+        return "troubleshooting"
+    if "umg" in path_lower or "widget" in path_lower or "blueprint-umg" in path_lower:
+        return "blueprint_umg"
     if "asset" in path_lower or "nanite" in path_lower or "blueprint" in path_lower:
         return "asset_rules"
     if "engine" in path_lower or "unreal" in path_lower or "ue-" in path_lower:

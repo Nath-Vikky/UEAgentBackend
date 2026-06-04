@@ -29,6 +29,8 @@ PROJECT_DOC_STEMS = {
 DOMAIN_DIR_ALIASES = {
     "asset-rules": "asset_rules",
     "asset_rules": "asset_rules",
+    "blueprint-umg": "blueprint_umg",
+    "blueprint_umg": "blueprint_umg",
     "code-reference": "code_reference",
     "code_reference": "code_reference",
     "config-schema": "config_schema",
@@ -46,6 +48,7 @@ DOMAIN_DIR_ALIASES = {
     "prompt_packs": "prompt_packs",
     "team-rules": "team_rules",
     "team_rules": "team_rules",
+    "troubleshooting": "troubleshooting",
 }
 
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b")
@@ -91,6 +94,8 @@ def _classify_domain(path: Path, text: str) -> str:
 
     if _contains_any(combined, ("schema", "config", ".ini", ".json", ".yaml", ".yml", ".toml")):
         return "config_schema"
+    if _contains_any(combined, ("troubleshooting", "repair", "fix", "fixup", "diagnostic")):
+        return "troubleshooting"
     if _contains_any(combined, ("incident", "error", "exception", "callstack", "log")):
         return "incident_history"
     if _contains_any(combined, ("perf", "memory", "insights", "memreport", "profiling")):

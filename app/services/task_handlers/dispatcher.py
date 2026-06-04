@@ -19,6 +19,51 @@ from app.services.editor_operation_service import EditorOperationService
 from app.services.editor_workflow_planner_service import EditorWorkflowPlannerService
 
 
+HOW_TO_QUESTION_MARKERS = (
+    "how do i",
+    "how should",
+    "how to",
+    "what is",
+    "what are",
+    "why",
+    "explain",
+    "describe",
+    "difference between",
+    "best practice",
+    "怎么",
+    "如何",
+    "是什么",
+    "为什么",
+    "请说明",
+    "解释",
+    "区别",
+    "最佳实践",
+)
+
+
+def _request_query_text(context: TaskExecutionContext) -> str:
+    payload_query = str(context.request.payload.get("user_query") or "").strip()
+    if payload_query:
+        return payload_query
+    if context.request.session.messages:
+        return str(context.request.session.messages[-1].content or "").strip()
+    return ""
+
+
+def _has_explicit_editor_operation_payload(context: TaskExecutionContext) -> bool:
+    payload = context.request.payload
+    return bool(payload.get("operation_type") or payload.get("operation_payload"))
+
+
+def _should_keep_project_qa_for_how_to_question(context: TaskExecutionContext) -> bool:
+    route_type = str(context.routing.get("intent", {}).get("route_type") or "")
+    if route_type != "project_qa" or _has_explicit_editor_operation_payload(context):
+        return False
+    query = _request_query_text(context)
+    lowered = query.lower()
+    return any(marker in lowered or marker in query for marker in HOW_TO_QUESTION_MARKERS)
+
+
 class RouteExecutionDispatcher:
     """Selects task handlers while preserving the existing TaskService contract.
 
@@ -47,6 +92,10 @@ class RouteExecutionDispatcher:
         return result
 
     def select_handler(self, host: Any, context: TaskExecutionContext) -> TaskHandler:
+        route_type = str(context.routing.get("intent", {}).get("route_type") or "")
+        if _should_keep_project_qa_for_how_to_question(context):
+            return self._project_qa_handler
+
         editor_workflow_request = EditorWorkflowPlannerService.detect_chat_workflow_request(
             context.request,
             context.context_bundle,
@@ -61,7 +110,6 @@ class RouteExecutionDispatcher:
         if editor_operation_request:
             return EditorOperationProposalHandler(editor_operation_request)
 
-        route_type = str(context.routing.get("intent", {}).get("route_type") or "")
         if route_type == "project_qa":
             return self._project_qa_handler
         if route_type == "direct_answer":

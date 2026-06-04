@@ -44,6 +44,7 @@ KNOWLEDGE_CATALOG_EN_DOC_ACTIONS = ("list", "contents", "overview", "catalog", "
 
 DOMAIN_DISPLAY_NAMES = {
     "asset_rules": "Asset rules / 资产规则",
+    "blueprint_umg": "Blueprint and UMG / 蓝图与UMG",
     "code_reference": "Code reference / 代码参考",
     "config_schema": "Config schema / 配置结构",
     "engine_notes": "Engine notes / 引擎笔记",
@@ -52,6 +53,7 @@ DOMAIN_DISPLAY_NAMES = {
     "perf_notes": "Performance notes / 性能笔记",
     "project_docs": "Project docs / 项目文档",
     "team_rules": "Team rules / 团队规范",
+    "troubleshooting": "Troubleshooting / 故障诊断",
     "unknown": "Unknown / 未分类",
 }
 

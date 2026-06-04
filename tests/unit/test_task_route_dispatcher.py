@@ -120,6 +120,46 @@ def test_route_dispatcher_editor_operation_overrides_route_type() -> None:
     assert handler.handler_id == "editor_operation_proposal"
 
 
+def test_route_dispatcher_keeps_how_to_editor_terms_as_project_qa() -> None:
+    dispatcher = RouteExecutionDispatcher()
+
+    handler = dispatcher.select_handler(
+        _FakeHost(),
+        _context(
+            route_type="project_qa",
+            actual_task_type="agent_chat",
+            request=_request(
+                payload={
+                    "user_query": "How do I add UMG widgets and set CanvasPanel slot layout safely?",
+                    "domain_filters": ["blueprint_umg"],
+                }
+            ),
+        ),
+    )
+
+    assert handler.handler_id == "project_qa"
+
+
+def test_route_dispatcher_keeps_chinese_how_to_blueprint_terms_as_project_qa() -> None:
+    dispatcher = RouteExecutionDispatcher()
+
+    handler = dispatcher.select_handler(
+        _FakeHost(),
+        _context(
+            route_type="project_qa",
+            actual_task_type="agent_chat",
+            request=_request(
+                payload={
+                    "user_query": "怎么给蓝图 EventGraph 添加 Print String 节点？",
+                    "domain_filters": ["blueprint_umg"],
+                }
+            ),
+        ),
+    )
+
+    assert handler.handler_id == "project_qa"
+
+
 def test_route_dispatcher_annotates_debug_view_with_handler_id() -> None:
     result = {"debug_view": {}}
 
