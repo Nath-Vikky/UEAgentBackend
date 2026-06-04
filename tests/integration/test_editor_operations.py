@@ -1737,6 +1737,8 @@ def test_umg_result_summary_maps_widget_errors_to_repair_advice(client: TestClie
     assert "verify_umg_widget_name" in action_ids
     assert summary["needs_user_attention"] is True
     assert body["user_view"]["status_hint"] == "needs_attention"
+    block_types = [block["block_type"] for block in body["user_view"]["blocks"]]
+    assert "editor_operation_umg_details" in block_types
 
     diagnostics_summary = client.get(
         "/api/v1/editor-operations/diagnostics",

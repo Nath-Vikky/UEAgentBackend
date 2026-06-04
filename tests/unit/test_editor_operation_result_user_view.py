@@ -6,6 +6,7 @@ from app.services.editor_operations.result_user_view import (
     summarize_graph_node,
     summarize_graph_pin,
     summarize_limited_items,
+    umg_result_detail_block,
 )
 
 
@@ -87,6 +88,40 @@ def test_blueprint_graph_result_detail_block_uses_diagnostics_and_errors() -> No
     assert "UE error: ue_warning: Pin was adjusted by UE" in items
 
 
+def test_umg_result_detail_block_uses_diagnostics_and_errors() -> None:
+    block = umg_result_detail_block(
+        operation_result={
+            "operation_type": "set_umg_widget_text",
+            "result": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "error_code": "widget_not_found",
+            },
+            "result_summary": {
+                "operation_diagnostics": {
+                    "category": "umg",
+                    "operation_type": "set_umg_widget_text",
+                    "execution_error_codes": ["widget_not_found"],
+                },
+                "dirty_packages": ["/Game/UI/WBP_MainHUD"],
+                "failed_fields": [{"field": "widget_name", "reason": "widget_not_found"}],
+            },
+            "errors": [{"code": "widget_not_found", "message": "TitleText was not found"}],
+        }
+    )
+
+    assert block is not None
+    assert block["block_type"] == "editor_operation_umg_details"
+    assert block["data"]["schema_version"] == "umg_result_details_v1"
+    items = block["data"]["items"]
+    assert "Widget Blueprint: /Game/UI/WBP_MainHUD" in items
+    assert "Widget: TitleText" in items
+    assert "Execution error: widget_not_found" in items
+    assert "Dirty packages: /Game/UI/WBP_MainHUD" in items
+    assert "Failed field: widget_name: widget_not_found" in items
+    assert "UE error: widget_not_found: TitleText was not found" in items
+
+
 def test_operation_result_user_view_adds_follow_up_and_attention_blocks() -> None:
     user_view = operation_result_user_view(
         operation_result={
@@ -110,3 +145,31 @@ def test_operation_result_user_view_adds_follow_up_and_attention_blocks() -> Non
         "editor_operation_follow_ups",
     ]
     assert user_view["quick_actions"] == [{"action_id": "create_follow_up"}]
+
+
+def test_operation_result_user_view_adds_umg_detail_block() -> None:
+    user_view = operation_result_user_view(
+        operation_result={
+            "operation_type": "set_umg_widget_text",
+            "result_summary": {
+                "needs_user_attention": True,
+                "operation_diagnostics": {
+                    "category": "umg",
+                    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                    "widget_name": "TitleText",
+                    "execution_error_codes": ["widget_not_found"],
+                },
+            },
+            "result": {},
+            "errors": [],
+        },
+        follow_up={},
+        quick_actions=[],
+    )
+
+    assert user_view["status_hint"] == "needs_attention"
+    block_types = [block["block_type"] for block in user_view["blocks"]]
+    assert block_types == [
+        "editor_operation_result_summary",
+        "editor_operation_umg_details",
+    ]

@@ -39,9 +39,9 @@ def operation_result_user_view(
             "data": result_summary,
         }
     ]
-    graph_detail_block = blueprint_graph_result_detail_block(operation_result=operation_result)
-    if graph_detail_block:
-        blocks.append(graph_detail_block)
+    detail_block = operation_result_detail_block(operation_result=operation_result)
+    if detail_block:
+        blocks.append(detail_block)
     if follow_up:
         blocks.append(
             {
@@ -242,10 +242,146 @@ def blueprint_graph_result_detail_block(*, operation_result: dict[str, Any]) -> 
     }
 
 
+def umg_result_detail_block(*, operation_result: dict[str, Any]) -> dict[str, Any] | None:
+    result = dict(operation_result.get("result") or {})
+    result_summary = dict(operation_result.get("result_summary") or {})
+    diagnostics = dict(result_summary.get("operation_diagnostics") or {})
+    if diagnostics.get("category") != "umg":
+        return None
+
+    widget_blueprint_path = first_non_empty_text(
+        result.get("widget_blueprint_path"),
+        diagnostics.get("widget_blueprint_path"),
+    )
+    widget_name = first_non_empty_text(
+        result.get("widget_name"),
+        result.get("source_widget_name"),
+        diagnostics.get("widget_name"),
+    )
+    new_widget_name = first_non_empty_text(
+        result.get("new_widget_name"),
+        diagnostics.get("new_widget_name"),
+    )
+    parent_widget_name = first_non_empty_text(
+        result.get("parent_widget_name"),
+        result.get("old_parent_name"),
+        diagnostics.get("parent_widget_name"),
+    )
+    operation_type = first_non_empty_text(
+        operation_result.get("operation_type"),
+        diagnostics.get("operation_type"),
+    )
+
+    items: list[str] = []
+    if widget_blueprint_path:
+        items.append(f"Widget Blueprint: {widget_blueprint_path}")
+    if widget_name:
+        items.append(f"Widget: {widget_name}")
+    if new_widget_name:
+        items.append(f"New widget: {new_widget_name}")
+    if parent_widget_name:
+        items.append(f"Parent widget: {parent_widget_name}")
+    if operation_type:
+        items.append(f"Operation: {operation_type}")
+
+    execution_error_codes = as_string_list(
+        diagnostics.get("execution_error_codes") or result_summary.get("error_codes")
+    )
+    for error_code in execution_error_codes[:5]:
+        items.append(f"Execution error: {error_code}")
+
+    dirty_packages = as_string_list(result.get("dirty_packages") or result_summary.get("dirty_packages"))
+    if dirty_packages:
+        items.append(f"Dirty packages: {', '.join(dirty_packages[:5])}")
+
+    for applied_field in _field_items(result_summary.get("applied_fields") or result.get("applied_fields")):
+        items.append(f"Applied: {applied_field}")
+    for failed_field in _field_items(result_summary.get("failed_fields") or result.get("failed_fields")):
+        items.append(f"Failed field: {failed_field}")
+    for error_summary in _error_items(operation_result.get("errors"))[:5]:
+        items.append(f"UE error: {error_summary}")
+
+    if not items:
+        return None
+
+    return {
+        "block_type": "editor_operation_umg_details",
+        "title": "UMG Operation Details",
+        "text": "Target widget and UE execution details reported by UEAgentTool.",
+        "data": {
+            "schema_version": "umg_result_details_v1",
+            "items": items,
+            "operation_type": operation_type,
+            "widget_blueprint_path": widget_blueprint_path,
+            "widget_name": widget_name,
+            "new_widget_name": new_widget_name,
+            "parent_widget_name": parent_widget_name,
+            "execution_error_codes": execution_error_codes,
+            "dirty_packages": dirty_packages,
+        },
+    }
+
+
+def operation_result_detail_block(*, operation_result: dict[str, Any]) -> dict[str, Any] | None:
+    return (
+        blueprint_graph_result_detail_block(operation_result=operation_result)
+        or umg_result_detail_block(operation_result=operation_result)
+    )
+
+
+def _field_items(value: Any, *, limit: int = 5) -> list[str]:
+    if isinstance(value, dict):
+        raw_items: list[Any] = [
+            {"field": key, "value": item}
+            for key, item in value.items()
+        ]
+    elif isinstance(value, list):
+        raw_items = value
+    elif value:
+        raw_items = [value]
+    else:
+        raw_items = []
+
+    items: list[str] = []
+    for item in raw_items[:limit]:
+        if isinstance(item, dict):
+            field = first_non_empty_text(item.get("field"), item.get("name"), "unknown")
+            reason = first_non_empty_text(
+                item.get("reason"),
+                item.get("message"),
+                item.get("value"),
+                "updated",
+            )
+            items.append(f"{field}: {reason}")
+        else:
+            items.append(str(item))
+    if len(raw_items) > limit:
+        items.append(f"+{len(raw_items) - limit} more")
+    return items
+
+
+def _error_items(value: Any, *, limit: int = 5) -> list[str]:
+    if not isinstance(value, list):
+        value = [value] if value else []
+    items: list[str] = []
+    for item in value[:limit]:
+        if isinstance(item, dict):
+            code = first_non_empty_text(item.get("code"), item.get("reason"), "unknown_error")
+            message = first_non_empty_text(item.get("message"))
+            items.append(f"{code}: {message}" if message else code)
+        else:
+            items.append(str(item))
+    if len(value) > limit:
+        items.append(f"+{len(value) - limit} more")
+    return items
+
+
 __all__ = [
     "blueprint_graph_result_detail_block",
     "operation_result_user_view",
+    "operation_result_detail_block",
     "summarize_graph_node",
     "summarize_graph_pin",
     "summarize_limited_items",
+    "umg_result_detail_block",
 ]

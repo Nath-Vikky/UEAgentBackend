@@ -6445,6 +6445,12 @@ UEAgentTool should continue reporting `errors[].code` and/or `result.error_code`
 with stable values such as `widget_not_found`; the backend will turn those into
 diagnostic flags and repair-advice actions automatically.
 
+When diagnostics are available, `user_view.blocks[]` also includes
+`block_type=editor_operation_umg_details`. This block summarizes the target
+Widget Blueprint, widget name, execution error codes, dirty packages, failed
+fields, and UE error messages so the normal UI can show the issue without
+forcing users to inspect raw JSON.
+
 ## 2026-05-31 Asset Read-only Inspection APIs
 
 `Editor Operation Bridge` now also exposes two read-only Asset inspection
