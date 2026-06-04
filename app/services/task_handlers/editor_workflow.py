@@ -151,6 +151,7 @@ class EditorWorkflowPlanHandler:
             "status": plan.get("status"),
             "step_count": step_count,
             "ready_step_count": ready_step_count,
+            "dependency_graph": plan.get("dependency_graph") or {},
             "auto_execute": False,
         }
         base_debug["react_loop"] = base_debug["workflow_trace"]

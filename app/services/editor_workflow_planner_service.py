@@ -1248,6 +1248,62 @@ class EditorWorkflowPlannerService:
         return "needs_more_input"
 
     @staticmethod
+    def _dependency_state_for_step(step: dict[str, Any]) -> str:
+        if step.get("missing_inputs") or not bool(step.get("proposal_ready")):
+            return "needs_more_input"
+        if step.get("depends_on_step_ids"):
+            return "waiting_dependency"
+        return "ready"
+
+    @staticmethod
+    def _dependency_graph_for_steps(steps: list[dict[str, Any]]) -> dict[str, Any]:
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, Any]] = []
+        entry_step_ids: list[str] = []
+        ready_step_ids: list[str] = []
+        waiting_step_ids: list[str] = []
+        missing_input_step_ids: list[str] = []
+
+        for step in steps:
+            step_id = _clean_text(step.get("step_id"))
+            depends_on_step_ids = _as_string_list(step.get("depends_on_step_ids"))
+            dependency_state = EditorWorkflowPlannerService._dependency_state_for_step(step)
+            nodes.append(
+                {
+                    "step_id": step_id,
+                    "step_index": step.get("step_index"),
+                    "operation_type": step.get("operation_type"),
+                    "proposal_ready": bool(step.get("proposal_ready")),
+                    "depends_on_step_ids": depends_on_step_ids,
+                    "dependency_state": dependency_state,
+                    "missing_inputs": list(step.get("missing_inputs") or []),
+                }
+            )
+            if not depends_on_step_ids:
+                entry_step_ids.append(step_id)
+            if dependency_state == "ready":
+                ready_step_ids.append(step_id)
+            elif dependency_state == "waiting_dependency":
+                waiting_step_ids.append(step_id)
+            else:
+                missing_input_step_ids.append(step_id)
+            for dependency_id in depends_on_step_ids:
+                edges.append({"from_step_id": dependency_id, "to_step_id": step_id})
+
+        return {
+            "schema_version": "editor_workflow_dependency_graph_v1",
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "has_dependencies": bool(edges),
+            "entry_step_ids": entry_step_ids,
+            "ready_step_ids": ready_step_ids,
+            "waiting_step_ids": waiting_step_ids,
+            "missing_input_step_ids": missing_input_step_ids,
+            "nodes": nodes,
+            "edges": edges,
+        }
+
+    @staticmethod
     def _plan_envelope(
         *,
         workflow_type: str,
@@ -1259,6 +1315,7 @@ class EditorWorkflowPlannerService:
     ) -> dict[str, Any]:
         ready_step_count = sum(1 for step in steps if bool(step.get("proposal_ready")))
         plan_id = f"workflow_plan_{uuid.uuid4().hex}"
+        dependency_graph = EditorWorkflowPlannerService._dependency_graph_for_steps(steps)
         return {
             "schema_version": WORKFLOW_PLAN_SCHEMA_VERSION,
             "plan_id": plan_id,
@@ -1276,6 +1333,7 @@ class EditorWorkflowPlannerService:
                 "state": status,
                 "next_action": "create_ready_proposal_step" if ready_step_count else "collect_missing_inputs",
             },
+            "dependency_graph": dependency_graph,
             "safety_notes": safety_notes
             or [
                 "This is a plan only; it does not create proposals automatically.",

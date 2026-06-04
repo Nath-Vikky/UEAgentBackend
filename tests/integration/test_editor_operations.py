@@ -4792,6 +4792,12 @@ def test_agent_chat_can_return_plan_only_editor_workflow(client: TestClient) -> 
     assert first_action["payload"]["request"]["step"]["step_id"] == plan["steps"][0]["step_id"]
     assert body["debug_view"]["step_results"][0]["status"] == "ready"
     assert body["debug_view"]["step_results"][1]["status"] == "waiting_dependency"
+    assert body["debug_view"]["workflow_trace"]["dependency_graph"]["ready_step_ids"] == [
+        "step_0_add_blueprint_node_template"
+    ]
+    assert body["debug_view"]["workflow_trace"]["dependency_graph"]["waiting_step_ids"] == [
+        "step_1_compile_blueprint"
+    ]
     assert any(block["block_type"] == "workflow_ready_actions" for block in body["user_view"]["blocks"])
 
 

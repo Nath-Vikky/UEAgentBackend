@@ -5765,6 +5765,9 @@ Returned plan fields:
 - `workflow_plan.steps[].operation_type`
 - `workflow_plan.steps[].proposal_ready`
 - `workflow_plan.steps[].missing_inputs`
+- `workflow_plan.dependency_graph.ready_step_ids`
+- `workflow_plan.dependency_graph.waiting_step_ids`
+- `workflow_plan.dependency_graph.edges[]`
 - `workflow_plan.steps[].create_request_hint`
 
 Safety boundary:
@@ -5807,6 +5810,13 @@ explicit payload fields or compact graph focus, the step returns
 This workflow requires `blueprint_path` and `input_action_path`. It only works
 with an existing `UInputAction` asset and does not edit Input Mapping Contexts,
 Project Settings, or arbitrary Blueprint wiring.
+
+2026-06-04 update: every workflow plan now includes
+`dependency_graph.schema_version = editor_workflow_dependency_graph_v1`. This
+machine-readable summary lists dependency-free ready steps, dependency-blocked
+steps, missing-input steps, and `from_step_id -> to_step_id` edges. Existing
+`steps[]` remain unchanged; the dependency graph is only a clearer projection for
+Debug View, future UI, and workflow validation.
 
 Frontend impact: no mandatory change. A future Workflow UI can show the plan,
 let the user submit one step at a time, and stop/skip steps safely.

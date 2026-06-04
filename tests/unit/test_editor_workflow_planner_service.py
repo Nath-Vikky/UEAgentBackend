@@ -26,6 +26,16 @@ def test_blueprint_workflow_plan_emits_two_confirmed_steps() -> None:
     assert first["payload"]["compile_after_edit"] is False
     assert second["operation_type"] == "compile_blueprint"
     assert second["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]
+    dependency_graph = plan["dependency_graph"]
+    assert dependency_graph["schema_version"] == "editor_workflow_dependency_graph_v1"
+    assert dependency_graph["ready_step_ids"] == ["step_0_add_blueprint_node_template"]
+    assert dependency_graph["waiting_step_ids"] == ["step_1_compile_blueprint"]
+    assert dependency_graph["edges"] == [
+        {
+            "from_step_id": "step_0_add_blueprint_node_template",
+            "to_step_id": "step_1_compile_blueprint",
+        }
+    ]
 
 
 def test_blueprint_workflow_can_use_delay_print_template() -> None:
