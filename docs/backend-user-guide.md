@@ -5955,14 +5955,19 @@ Safety boundary:
 
 - Only one workflow step can be materialized per request.
 - `proposal_ready=false` or non-empty `missing_inputs` is rejected.
+- Steps with `depends_on_step_ids` are rejected until the caller supplies the
+  prerequisite ids through `context.completed_step_ids` or
+  `context.workflow_state.completed_step_ids`.
 - The endpoint creates a pending Proposal only.
 - It does not confirm the Proposal.
 - It does not execute UEAgentTool or Unreal Editor APIs.
 - The resulting Proposal uses the same confirmation card and result callback as every other editor operation.
 
 Frontend impact: no mandatory change. If a Workflow UI is added, it can show a
-"Create Proposal" button per ready step and call this endpoint. Existing
-Proposal cards remain the only execution UI.
+"Create Proposal" button per ready, dependency-free step and call this endpoint.
+Existing Proposal cards remain the only execution UI. Dependent steps should stay
+visible in the plan until the frontend has confirmed that the prerequisite step
+has completed.
 
 ## 2026-05-24 Follow-up Candidate Materialization
 

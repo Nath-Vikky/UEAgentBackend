@@ -56,6 +56,22 @@ def _as_string_list(value: Any) -> list[str]:
     return items
 
 
+def _workflow_completed_step_ids(*contexts: dict[str, Any]) -> set[str]:
+    completed: set[str] = set()
+    for context in contexts:
+        safe_context = _as_dict(context)
+        candidates = [
+            safe_context.get("completed_step_ids"),
+            safe_context.get("workflow_completed_step_ids"),
+            _as_dict(safe_context.get("workflow_state")).get("completed_step_ids"),
+            _as_dict(safe_context.get("workflow_materialization")).get("completed_step_ids"),
+        ]
+        for candidate in candidates:
+            for item in _as_string_list(candidate):
+                completed.add(item)
+    return completed
+
+
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
@@ -265,6 +281,12 @@ class EditorWorkflowPlannerService:
 
         step_context = dict(request_json.get("context") or {})
         external_context = dict(context or {})
+        depends_on_step_ids = _as_string_list(safe_step.get("depends_on_step_ids"))
+        completed_step_ids = _workflow_completed_step_ids(step_context, external_context)
+        unmet_dependencies = [step_id for step_id in depends_on_step_ids if step_id not in completed_step_ids]
+        if unmet_dependencies:
+            raise ValueError("workflow_step_dependencies_not_satisfied")
+
         workflow_step_id = _clean_text(safe_step.get("step_id") or step_context.get("workflow_step_id"))
         materialized_context = {
             **step_context,
@@ -275,6 +297,8 @@ class EditorWorkflowPlannerService:
                 "workflow_step_id": workflow_step_id,
                 "source": "editor_workflow_step_materialization",
                 "auto_execute": False,
+                "depends_on_step_ids": depends_on_step_ids,
+                "completed_step_ids": sorted(completed_step_ids),
             },
         }
         proposal_request = EditorOperationProposalRequest(

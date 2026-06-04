@@ -494,6 +494,45 @@ def test_prepare_step_proposal_request_materializes_single_ready_step() -> None:
     assert materialized["proposal_request"]["context"]["workflow_materialization"]["auto_execute"] is False
 
 
+def test_prepare_step_proposal_request_rejects_unmet_dependencies() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal='Add "Ready" Print String on BeginPlay and compile it',
+        workflow_type="blueprint_print_then_compile",
+        payload={"blueprint_path": "/Game/Blueprints/BP_Player"},
+    )
+
+    try:
+        EditorWorkflowPlannerService.prepare_step_proposal_request(
+            workflow_plan_id=plan["plan_id"],
+            step=plan["steps"][1],
+            requested_by="unit_test",
+        )
+    except ValueError as exc:
+        assert str(exc) == "workflow_step_dependencies_not_satisfied"
+    else:
+        raise AssertionError("Expected workflow_step_dependencies_not_satisfied")
+
+
+def test_prepare_step_proposal_request_allows_completed_dependencies() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal='Add "Ready" Print String on BeginPlay and compile it',
+        workflow_type="blueprint_print_then_compile",
+        payload={"blueprint_path": "/Game/Blueprints/BP_Player"},
+    )
+
+    materialized = EditorWorkflowPlannerService.prepare_step_proposal_request(
+        workflow_plan_id=plan["plan_id"],
+        step=plan["steps"][1],
+        requested_by="unit_test",
+        context={"completed_step_ids": ["step_0_add_blueprint_node_template"]},
+    )
+
+    workflow_context = materialized["proposal_request"]["context"]["workflow_materialization"]
+    assert materialized["operation_type"] == "compile_blueprint"
+    assert workflow_context["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]
+    assert workflow_context["completed_step_ids"] == ["step_0_add_blueprint_node_template"]
+
+
 def test_prepare_step_proposal_request_rejects_missing_inputs() -> None:
     plan = EditorWorkflowPlannerService().plan_workflow(
         goal="Create HUD title text",

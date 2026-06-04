@@ -4639,6 +4639,69 @@ def test_editor_workflow_step_can_materialize_pending_proposal(client: TestClien
     )
 
 
+def test_editor_workflow_step_rejects_unmet_dependencies(client: TestClient) -> None:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add Ready Print String and compile",
+            "workflow_type": "blueprint_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "message": "Ready",
+            },
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()["workflow_plan"]
+
+    response = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan["plan_id"],
+            "step": plan["steps"][1],
+            "requested_by": "integration_test",
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "workflow_step_dependencies_not_satisfied"
+    assert body["errors"][0]["details"]["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]
+
+
+def test_editor_workflow_step_allows_completed_dependencies(client: TestClient) -> None:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add Ready Print String and compile",
+            "workflow_type": "blueprint_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "message": "Ready",
+            },
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()["workflow_plan"]
+
+    response = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan["plan_id"],
+            "step": plan["steps"][1],
+            "requested_by": "integration_test",
+            "context": {"completed_step_ids": ["step_0_add_blueprint_node_template"]},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    workflow_context = body["proposal"]["operation"]["context"]["workflow_materialization"]
+    assert body["workflow_step"]["operation_type"] == "compile_blueprint"
+    assert workflow_context["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]
+    assert workflow_context["completed_step_ids"] == ["step_0_add_blueprint_node_template"]
+
+
 def test_editor_workflow_step_materialization_rejects_not_ready_step(client: TestClient) -> None:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",

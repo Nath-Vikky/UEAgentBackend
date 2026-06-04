@@ -136,6 +136,7 @@ def create_editor_operation_workflow_step_proposal(
             {
                 "workflow_plan_id": request.workflow_plan_id,
                 "step_id": request.step.get("step_id") if isinstance(request.step, dict) else "",
+                "depends_on_step_ids": request.step.get("depends_on_step_ids") if isinstance(request.step, dict) else [],
             },
         ) from exc
     except EditorOperationValidationError as exc:

@@ -288,6 +288,45 @@ def _run_workflow_step_rejection(client: TestClient) -> dict[str, Any]:
     }
 
 
+def _run_workflow_dependency_rejection(client: TestClient) -> dict[str, Any]:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add Ready Print String and compile",
+            "workflow_type": "blueprint_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "message": "Ready",
+            },
+        },
+    )
+    plan = dict(plan_response.json().get("workflow_plan") or {})
+    step = list(plan.get("steps") or [{}, {}])[1]
+    response = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan.get("plan_id"),
+            "step": step,
+            "requested_by": "workflow_materialization_smoke",
+        },
+    )
+    body = response.json()
+    checks = [
+        _check("status_code", 400, response.status_code),
+        _check("error_code", "workflow_step_dependencies_not_satisfied", body.get("errors", [{}])[0].get("code")),
+        _check(
+            "depends_on_step_ids",
+            ["step_0_add_blueprint_node_template"],
+            body.get("errors", [{}])[0].get("details", {}).get("depends_on_step_ids"),
+        ),
+    ]
+    return {
+        "case_id": "workflow_step_rejects_unmet_dependencies",
+        "ok": all(item["ok"] for item in checks),
+        "checks": checks,
+    }
+
+
 def _run_umg_hud_group_step_materialization(client: TestClient) -> dict[str, Any]:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",
@@ -403,6 +442,7 @@ def main() -> int:
             _run_connect_workflow_step_materialization(client),
             _run_enhanced_input_workflow_step_materialization(client),
             _run_workflow_step_rejection(client),
+            _run_workflow_dependency_rejection(client),
             _run_umg_hud_group_step_materialization(client),
             _run_follow_up_materialization(client),
         ]
