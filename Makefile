@@ -1,4 +1,4 @@
-.PHONY: dev test test-all lint review integration-test smoke-test rag-eval rag-agentic-ab hallucination-eval benchmark code-review-benchmark docker-up docker-down docker-logs
+.PHONY: dev test test-all lint review integration-test smoke-test demo-smoke rag-eval rag-agentic-ab hallucination-eval benchmark code-review-benchmark docker-up docker-down docker-logs
 
 dev:
 	python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
@@ -22,6 +22,9 @@ integration-test:
 
 smoke-test:
 	@echo "Start the backend, then follow docs/integration-smoke-tests.md"
+
+demo-smoke:
+	python scripts/run_editor_demo_smoke_suite.py
 
 rag-eval:
 	python scripts/run_rag_eval.py --source-path ./README.md --source-path ./docs --source-path ./knowledge --top-k 4 --min-hit-at-k 0.25 --min-route-accuracy 0.75

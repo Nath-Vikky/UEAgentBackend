@@ -75,12 +75,22 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 If the local shell cannot write smoke report files under `storage/artifacts`,
 pass `--output -` to print the JSON report without writing a file.
 
+Or run the whole deterministic demo baseline as one suite:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_editor_demo_smoke_suite.py
+```
+
+Use `--include-child-reports` only when you need the full per-case JSON from all
+child smoke scripts.
+
 Expected:
 
 - Blueprint graph proposal/result smoke: `17/17 passed`
 - Agent Chat editor-operation smoke: `30/30 passed`
 - Editor workflow materialization smoke: `9/9 passed`
 - Project Inventory chat smoke: `1/1 passed`
+- Aggregated editor demo smoke suite: `4/4 suites`, `57/57 cases`
 
 ## 4. Demo The Agent Features
 
