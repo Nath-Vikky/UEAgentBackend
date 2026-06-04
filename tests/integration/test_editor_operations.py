@@ -1689,6 +1689,63 @@ def test_set_umg_widget_text_proposal_contract(client: TestClient) -> None:
     assert body["item"]["confirmation"]["state"] == "pending"
 
 
+def test_umg_result_summary_maps_widget_errors_to_repair_advice(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_umg_widget_text",
+            "payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "text": "Mission Ready",
+            },
+            "reason": "Update HUD title copy.",
+            "requested_by": "integration_test",
+        },
+    )
+    assert created.status_code == 200
+    proposal_id = created.json()["item"]["proposal_id"]
+    assert client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm").status_code == 200
+
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "set_umg_widget_text",
+            "execution_state": "failed",
+            "success": False,
+            "executed_by": "ue_plugin",
+            "result": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "error_code": "widget_not_found",
+            },
+            "errors": [{"code": "widget_not_found", "message": "TitleText was not found"}],
+        },
+    )
+
+    assert result.status_code == 200
+    body = result.json()
+    summary = body["item"]["result_summary"]
+    diagnostics = summary["operation_diagnostics"]
+    assert diagnostics["schema_version"] == "umg_operation_diagnostics_v1"
+    assert diagnostics["category"] == "umg"
+    assert diagnostics["diagnostic_flags"] == ["umg_widget_unresolved"]
+    assert diagnostics["execution_error_codes"] == ["widget_not_found"]
+    action_ids = [item["action_id"] for item in diagnostics["repair_advice"]["actions"]]
+    assert "inspect_umg_execution_errors" in action_ids
+    assert "verify_umg_widget_name" in action_ids
+    assert summary["needs_user_attention"] is True
+    assert body["user_view"]["status_hint"] == "needs_attention"
+
+    diagnostics_summary = client.get(
+        "/api/v1/editor-operations/diagnostics",
+        params={"operation_type": "set_umg_widget_text"},
+    )
+    assert diagnostics_summary.status_code == 200
+    assert diagnostics_summary.json()["summary"]["diagnostic_flag_counts"]["umg_widget_unresolved"] == 1
+
+
 def test_set_umg_widget_text_rejects_empty_text(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",

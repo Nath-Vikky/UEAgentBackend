@@ -6413,6 +6413,38 @@ Current no-UE smoke baseline:
 editor-operation-chat-bridge: 21/21 passed
 ```
 
+## 2026-06-04 UMG Result Diagnostics
+
+UMG editor-operation results now produce structured diagnostics when the UE
+plugin reports common execution errors. The backend stores the diagnostics under
+`result_summary.operation_diagnostics` with:
+
+- `schema_version=umg_operation_diagnostics_v1`
+- `category=umg`
+- `execution_error_codes`
+- `diagnostic_flags`
+- `repair_advice`
+
+Common mappings include:
+
+- `widget_blueprint_not_found` / `widget_blueprint_load_failed` ->
+  `umg_blueprint_unresolved`
+- `widget_not_found` / `target_widget_not_found` / `source_widget_not_found` ->
+  `umg_widget_unresolved`
+- `parent_widget_not_found` / `new_parent_widget_not_found` ->
+  `umg_parent_unresolved`
+- `widget_class_not_supported` -> `umg_widget_class_unsupported`
+- `slot_type_not_supported` -> `umg_slot_unsupported`
+- `brush_resource_not_found` -> `umg_brush_resource_unresolved`
+- duplicate-name and unsafe tree operations -> deterministic warning/error
+  advice
+
+Frontend impact: no mandatory change. Existing Proposal cards and result
+callbacks remain compatible. For richer User View / Debug View output,
+UEAgentTool should continue reporting `errors[].code` and/or `result.error_code`
+with stable values such as `widget_not_found`; the backend will turn those into
+diagnostic flags and repair-advice actions automatically.
+
 ## 2026-05-31 Asset Read-only Inspection APIs
 
 `Editor Operation Bridge` now also exposes two read-only Asset inspection

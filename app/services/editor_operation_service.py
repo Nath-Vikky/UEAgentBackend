@@ -107,6 +107,7 @@ from app.services.editor_operations.results import (
 )
 from app.services.editor_operations.summaries import build_operation_summaries
 from app.services.editor_operations.targets import build_affected_targets
+from app.services.editor_operations.umg_result_diagnostics import umg_result_diagnostics
 from app.utils.time import now_utc
 
 
@@ -4963,6 +4964,29 @@ class EditorOperationService:
         )
 
     @staticmethod
+    def _operation_result_diagnostics(
+        *,
+        request: EditorOperationResultRequest,
+        preview: dict[str, Any],
+        result: dict[str, Any],
+        dirty_packages: list[str],
+    ) -> dict[str, Any]:
+        blueprint_diagnostics = EditorOperationService._blueprint_graph_result_diagnostics(
+            request=request,
+            preview=preview,
+            result=result,
+            dirty_packages=dirty_packages,
+        )
+        if blueprint_diagnostics:
+            return blueprint_diagnostics
+        return umg_result_diagnostics(
+            request=request,
+            preview=preview,
+            result=result,
+            dirty_packages=dirty_packages,
+        )
+
+    @staticmethod
     def _blueprint_graph_repair_advice(
         *,
         operation_type: str,
@@ -4992,7 +5016,7 @@ class EditorOperationService:
         return normalize_result_summary(
             request=request,
             preview=preview,
-            diagnostics_builder=EditorOperationService._blueprint_graph_result_diagnostics,
+            diagnostics_builder=EditorOperationService._operation_result_diagnostics,
         )
 
     def list_operation_history(
