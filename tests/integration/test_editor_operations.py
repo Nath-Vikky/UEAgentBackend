@@ -4770,17 +4770,19 @@ def test_editor_workflow_state_projects_next_ready_step_from_results(client: Tes
     assert completed["status"] == "ready_for_next_step"
     assert completed["completed_step_ids"] == ["step_0_add_blueprint_node_template"]
     assert completed["next_ready_step_ids"] == ["step_1_compile_blueprint"]
+    assert completed["next_step_proposal_requests"][0]["workflow_step_id"] == "step_1_compile_blueprint"
+    assert completed["next_step_proposal_requests"][0]["endpoint"] == (
+        "/api/v1/editor-operations/workflows/steps/proposal"
+    )
+    assert completed["next_step_proposal_requests"][0]["request"]["context"]["completed_step_ids"] == [
+        "step_0_add_blueprint_node_template"
+    ]
     assert completed["step_states"][0]["status"] == "completed"
     assert completed["step_states"][1]["status"] == "ready_for_proposal"
 
     compile_proposal = client.post(
         "/api/v1/editor-operations/workflows/steps/proposal",
-        json={
-            "workflow_plan_id": plan["plan_id"],
-            "step": plan["steps"][1],
-            "requested_by": "integration_test",
-            "context": {"completed_step_ids": completed["completed_step_ids"]},
-        },
+        json=completed["next_step_proposal_requests"][0]["request"],
     )
     assert compile_proposal.status_code == 200
     assert compile_proposal.json()["workflow_step"]["operation_type"] == "compile_blueprint"

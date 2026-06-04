@@ -79,6 +79,12 @@ class EditorWorkflowStateService:
         status_counts = Counter(str(item.get("status") or "unknown") for item in step_states)
         next_ready_step_ids = [item["step_id"] for item in step_states if item.get("status") == "ready_for_proposal"]
         completed_step_ids_sorted = sorted(completed_ids)
+        next_step_proposal_requests = self._next_step_proposal_requests(
+            plan_id=plan_id,
+            steps=steps,
+            next_ready_step_ids=next_ready_step_ids,
+            completed_step_ids=completed_step_ids_sorted,
+        )
         return {
             "schema_version": "editor_workflow_state_v1",
             "workflow_plan_id": plan_id,
@@ -100,6 +106,7 @@ class EditorWorkflowStateService:
             "status_counts": dict(status_counts),
             "step_states": step_states,
             "materialized_step_records": list(records_by_step_id.values()),
+            "next_step_proposal_requests": next_step_proposal_requests,
             "next_action": self._next_action(step_states),
             "auto_execute": False,
             "requires_user_confirmation_per_step": True,
@@ -221,6 +228,42 @@ class EditorWorkflowStateService:
         if "needs_more_input" in statuses:
             return "collect_missing_inputs"
         return "workflow_complete"
+
+    @staticmethod
+    def _next_step_proposal_requests(
+        *,
+        plan_id: str,
+        steps: list[dict[str, Any]],
+        next_ready_step_ids: list[str],
+        completed_step_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        next_ready = set(next_ready_step_ids)
+        requests: list[dict[str, Any]] = []
+        for step in steps:
+            step_id = _clean_text(step.get("step_id"))
+            if step_id not in next_ready:
+                continue
+            requests.append(
+                {
+                    "action_type": "create_workflow_step_proposal",
+                    "workflow_step_id": step_id,
+                    "operation_type": step.get("operation_type"),
+                    "method": "POST",
+                    "endpoint": "/api/v1/editor-operations/workflows/steps/proposal",
+                    "request": {
+                        "workflow_plan_id": plan_id,
+                        "step": step,
+                        "requested_by": "workflow_state_projection",
+                        "context": {"completed_step_ids": completed_step_ids},
+                    },
+                    "safety": {
+                        "auto_execute": False,
+                        "creates_pending_proposal_only": True,
+                        "requires_user_confirmation": True,
+                    },
+                }
+            )
+        return requests
 
 
 __all__ = ["EditorWorkflowStateService"]

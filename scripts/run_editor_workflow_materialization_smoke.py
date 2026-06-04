@@ -383,6 +383,11 @@ def _run_workflow_state_projection(client: TestClient) -> dict[str, Any]:
         _check("completed_state_status_code", 200, completed_state_response.status_code),
         _check("completed_step_ids", ["step_0_add_blueprint_node_template"], completed_state.get("completed_step_ids")),
         _check("next_ready_after_result", ["step_1_compile_blueprint"], completed_state.get("next_ready_step_ids")),
+        _check(
+            "next_request_step_id",
+            "step_1_compile_blueprint",
+            (completed_state.get("next_step_proposal_requests") or [{}])[0].get("workflow_step_id"),
+        ),
         _check("state_next_action", "create_next_ready_proposal", completed_state.get("next_action")),
     ]
     return {

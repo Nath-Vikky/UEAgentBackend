@@ -5830,12 +5830,17 @@ The endpoint reads Proposal records that contain
 - `pending_step_ids`
 - `blocked_step_ids`
 - `step_states[].status`
+- `next_step_proposal_requests[]`
 - `next_action`
 
 This endpoint is read-only. It does not create, confirm, execute, or batch
 submit workflow steps. Existing UEAgentTool UI does not need to call it, but a
 future workflow panel can use it to unlock the next step after the previous
-Proposal result has been recorded.
+Proposal result has been recorded. `next_step_proposal_requests[]` is only a
+ready-to-send request hint for
+`POST /api/v1/editor-operations/workflows/steps/proposal`; the caller still has
+to submit it explicitly, and the resulting Proposal still needs user
+confirmation.
 
 Frontend impact: no mandatory change. A future Workflow UI can show the plan,
 let the user submit one step at a time, and stop/skip steps safely.
