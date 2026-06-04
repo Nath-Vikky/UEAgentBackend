@@ -508,6 +508,16 @@ READ_ONLY_INSPECTION_SPECS: dict[str, dict[str, Any]] = {
         "endpoint": "/api/v1/editor-operations/inspect/material-instance-parameters",
         "boundary": "Read-only inspection; parent Material graph editing remains out of scope.",
     },
+    "inspect_material_instance_detail": {
+        "group": "material",
+        "tool_id": "editor_inspect_material_instance_detail",
+        "title": "Inspect Material Instance Detail",
+        "summary": "Read one Material Instance record from Project Inventory by path, name, object path, or query.",
+        "required_fields": ["material_instance_path"],
+        "frontend_status": "backend_read_only_v1",
+        "endpoint": "/api/v1/editor-operations/inspect/material-instance-detail",
+        "boundary": "Read-only inspection; no parameter mutation, parent Material graph edit, or package save.",
+    },
 }
 
 OPERATION_ROADMAP: dict[str, dict[str, Any]] = {}

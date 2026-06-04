@@ -379,6 +379,43 @@ def inspect_material_instance_parameters(
     }
 
 
+@router.get("/inspect/material-instance-detail")
+def inspect_material_instance_detail(
+    project_id: str | None = None,
+    material_instance_path: str | None = None,
+    query: str | None = None,
+    settings: Settings = Depends(get_app_settings),
+) -> dict:
+    service = ProjectInventoryService(settings)
+    lookup_value = material_instance_path or query or ""
+    item = service.get_material_instance(lookup_value, project_id) if lookup_value else None
+    if not item and query:
+        matches = service.list_material_instances(project_id=project_id, query=query, limit=1)
+        item = matches[0] if matches else None
+    summary = service.summary(project_id)
+    empty_reason = ""
+    if not summary.get("has_snapshot"):
+        empty_reason = "no_project_inventory_snapshot"
+    elif not item:
+        empty_reason = "no_matching_material_instance"
+    return {
+        "success": True,
+        "inspection": {
+            "operation_type": "inspect_material_instance_detail",
+            "side_effect_level": "read_only",
+            "source": "project_inventory",
+            "query": query or "",
+            "project_id": project_id or summary.get("project_id") or "",
+            "material_instance_path": material_instance_path or "",
+            "match_count": 1 if item else 0,
+            "empty_reason": empty_reason,
+        },
+        "summary": summary,
+        "item": item or {},
+        "errors": [],
+    }
+
+
 @router.post("/proposals", response_model=EditorOperationProposalResponse)
 def create_editor_operation_proposal(
     request: EditorOperationProposalRequest,

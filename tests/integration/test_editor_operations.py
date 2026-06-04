@@ -104,7 +104,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     }
     assert body["capabilities"]["summary"]["operation_count"] >= 18
     assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
-    assert body["capabilities"]["summary"]["read_only_operation_count"] >= 5
+    assert body["capabilities"]["summary"]["read_only_operation_count"] >= 6
     assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 0
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
@@ -132,6 +132,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert read_only_items["inspect_material_instance_parameters"]["endpoint"].endswith(
         "/inspect/material-instance-parameters"
     )
+    assert read_only_items["inspect_material_instance_detail"]["endpoint"].endswith("/inspect/material-instance-detail")
     assert operation_items["add_blueprint_variable"]["frontend_status"] == "implemented_v1"
     assert operation_items["add_blueprint_variable"]["group"] == "blueprint"
     assert operation_items["add_blueprint_variable"]["risk_flags"] == "MEDIUM"
@@ -280,6 +281,10 @@ def test_editor_operation_read_only_inspections_use_project_inventory(client: Te
         "/api/v1/editor-operations/inspect/material-instance-parameters",
         params={"project_id": "ReadOnlyInspectionProject", "material_instance_path": "/Game/Materials/MI_Rock"},
     )
+    material_detail = client.get(
+        "/api/v1/editor-operations/inspect/material-instance-detail",
+        params={"project_id": "ReadOnlyInspectionProject", "material_instance_path": "/Game/Materials/MI_Rock"},
+    )
 
     assert snapshot.status_code == 200
     assert actors.status_code == 200
@@ -303,6 +308,11 @@ def test_editor_operation_read_only_inspections_use_project_inventory(client: Te
     assert materials.json()["inspection"]["operation_type"] == "inspect_material_instance_parameters"
     assert materials.json()["items"][0]["material_instance_name"] == "MI_Rock"
     assert materials.json()["items"][0]["scalar_parameters"][0]["name"] == "Roughness"
+    assert material_detail.status_code == 200
+    assert material_detail.json()["inspection"]["operation_type"] == "inspect_material_instance_detail"
+    assert material_detail.json()["inspection"]["side_effect_level"] == "read_only"
+    assert material_detail.json()["item"]["material_instance_name"] == "MI_Rock"
+    assert material_detail.json()["item"]["static_switch_parameters"][0]["name"] == "UseDetail"
 
 
 def test_editor_operation_rename_proposal_confirm_and_result(client: TestClient) -> None:

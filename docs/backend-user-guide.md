@@ -2993,6 +2993,7 @@ Editor Operation Bridge 也提供了两个只读检查入口，方便前端或�
 GET /api/v1/editor-operations/inspect/level-actors
 GET /api/v1/editor-operations/inspect/level-actor-detail
 GET /api/v1/editor-operations/inspect/material-instance-parameters
+GET /api/v1/editor-operations/inspect/material-instance-detail
 ```
 
 它们返回 `inspection.side_effect_level=read_only`，不会创建 Proposal，也不会要求 UE 前端执行 Editor API。数据来源仍是最近一次 Project Inventory 快照。
@@ -3761,6 +3762,12 @@ material` from Active Context. If the UE plugin or payload provides
 such as `Set this material Roughness to 0.42` can produce the same pending
 `set_material_instance_parameter` Proposal without naming `MI_Player` in the
 text.
+
+For read-only inspection, `GET
+/api/v1/editor-operations/inspect/material-instance-detail?material_instance_path=...`
+returns one Material Instance record from Project Inventory, including parent
+material and captured scalar/vector/texture/static-switch parameter values when
+the UE plugin submitted them. It does not create a Proposal or save packages.
 
 ```text
 Set MI_Player material BaseColor to #FF8040
