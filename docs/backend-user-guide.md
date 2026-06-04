@@ -5747,6 +5747,7 @@ Example request:
 Supported workflow types in v1:
 
 - `blueprint_print_then_compile`: add a BeginPlay Print String or Delay -> PrintString template, then compile the Blueprint as a separate confirmed step.
+- `blueprint_connect_then_compile`: connect two explicit Blueprint pins, then compile the Blueprint as a separate confirmed step.
 - `umg_text_widget`: add a TextBlock, set text, and optionally apply CanvasPanelSlot layout or visibility.
 - `umg_hud_group`: plan a small HUD group under an existing panel using `add_umg_widget` steps for HorizontalBox, Image, TextBlock, and Button.
 - `arrange_and_tag_actors`: arrange a bounded Actor set, then optionally apply the same metadata to each Actor.
@@ -5780,6 +5781,21 @@ the latest successful Blueprint operation target. If the request omits
 For `ConstructionScript` or other non-EventGraph targets, the planner leaves
 `entry_event` empty instead of forcing `BeginPlay`; for explicit EventGraph
 requests it keeps the existing `BeginPlay` default.
+
+2026-06-04 update: Workflow Planner v2 adds
+`blueprint_connect_then_compile`. It emits:
+
+1. `connect_blueprint_nodes`
+2. `compile_blueprint`
+
+The connect step requires `blueprint_path`, `graph_name`, `source_node_id`,
+`source_pin_name`, `target_node_id`, and `target_pin_name`. The planner can fill
+some of these from `active_context.blueprint.current_node_summary` and
+`active_context.blueprint.current_graph_summary` when UEAgentTool has submitted
+Project Inventory graph summaries and editor focus fields. It does not infer
+arbitrary Blueprint wiring: if the target node or pins cannot be matched from
+explicit payload fields or compact graph focus, the step returns
+`proposal_ready=false` with `missing_inputs`.
 
 Frontend impact: no mandatory change. A future Workflow UI can show the plan,
 let the user submit one step at a time, and stop/skip steps safely.
@@ -5835,6 +5851,7 @@ user clearly asks for a multi-step editor plan, for example:
 
 - "Plan a workflow: add a Print String node to `/Game/Blueprints/BP_PlayerCharacter` then compile it."
 - "Plan a workflow: add a Print String after 2 seconds to `/Game/Blueprints/BP_PlayerCharacter` then compile it."
+- "Plan a workflow: connect the current node to Print String then compile."
 - "Create HUD status text, set the copy, then apply layout."
 - "Arrange these actors, then apply the same tag."
 

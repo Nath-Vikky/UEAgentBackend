@@ -4673,6 +4673,7 @@ def test_editor_workflow_templates_api_lists_supported_plan_only_templates(clien
     assert templates["safety_policy"]["planner_executes_editor_writes"] is False
     workflow_types = {item["workflow_type"] for item in templates["templates"]}
     assert "blueprint_print_then_compile" in workflow_types
+    assert "blueprint_connect_then_compile" in workflow_types
     assert "umg_text_widget" in workflow_types
     assert "arrange_and_tag_actors" in workflow_types
 
@@ -4774,3 +4775,115 @@ def test_agent_chat_workflow_uses_active_blueprint_focus_when_path_omitted(clien
     assert first["payload"]["entry_event"] == ""
     assert second["payload"]["blueprint_path"] == "/Game/Blueprints/BP_FocusedActor"
     assert body["debug_view"]["active_context"]["blueprint"]["current_graph_name"] == "ConstructionScript"
+
+
+def test_agent_chat_workflow_can_connect_current_node_then_compile(client: TestClient) -> None:
+    snapshot = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "WorkflowFocusProject",
+            "project_name": "WorkflowFocusProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_FocusedActor",
+                    "asset_name": "BP_FocusedActor",
+                    "asset_type": "Blueprint",
+                    "blueprint": {
+                        "parent_class": "AActor",
+                        "graphs": ["EventGraph"],
+                        "graph_summaries": [
+                            {
+                                "graph_name": "EventGraph",
+                                "graph_type": "event",
+                                "node_count": 2,
+                                "pin_count": 4,
+                                "link_count": 0,
+                                "nodes": [
+                                    {
+                                        "node_id": "event-begin-play",
+                                        "node_name": "K2Node_Event_0",
+                                        "node_class": "K2Node_Event",
+                                        "title": "Event BeginPlay",
+                                        "pins": [
+                                            {
+                                                "pin_name": "then",
+                                                "direction": "output",
+                                                "category": "exec",
+                                            }
+                                        ],
+                                    },
+                                    {
+                                        "node_id": "print-string",
+                                        "node_name": "K2Node_CallFunction_0",
+                                        "node_class": "K2Node_CallFunction",
+                                        "title": "Print String",
+                                        "pins": [
+                                            {
+                                                "pin_name": "execute",
+                                                "direction": "input",
+                                                "category": "exec",
+                                            }
+                                        ],
+                                    },
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_editor_workflow_connect_focus",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Plan a workflow: connect the current node to Print String then compile",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "WorkflowFocusProject",
+                "active_panel": "AgentChat",
+                "editor_state": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_FocusedActor.BP_FocusedActor",
+                    "current_graph_name": "EventGraph",
+                    "selected_node_id": "event-begin-play",
+                },
+            },
+            "payload": {
+                "user_query": "Plan a workflow: connect the current node to Print String then compile",
+                "target_node_name": "Print String",
+            },
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert snapshot.status_code == 200
+    assert response.status_code == 200
+    body = response.json()
+    plan = body["data"]["editor_workflow_plan"]
+    first, second = plan["steps"]
+    assert body["action_proposals"] == []
+    assert plan["workflow_type"] == "blueprint_connect_then_compile"
+    assert plan["status"] == "planned"
+    assert first["operation_type"] == "connect_blueprint_nodes"
+    assert first["payload"]["blueprint_path"] == "/Game/Blueprints/BP_FocusedActor"
+    assert first["payload"]["graph_name"] == "EventGraph"
+    assert first["payload"]["source_node_id"] == "event-begin-play"
+    assert first["payload"]["source_pin_name"] == "then"
+    assert first["payload"]["target_node_id"] == "print-string"
+    assert first["payload"]["target_pin_name"] == "execute"
+    assert second["operation_type"] == "compile_blueprint"
+    assert second["depends_on_step_ids"] == ["step_0_connect_blueprint_nodes"]
+    assert body["debug_view"]["active_context"]["blueprint"]["current_node_summary"]["node_id"] == "event-begin-play"

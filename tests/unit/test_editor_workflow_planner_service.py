@@ -90,6 +90,99 @@ def test_blueprint_workflow_explicit_eventgraph_overrides_active_graph() -> None
     assert first["payload"]["entry_event"] == "BeginPlay"
 
 
+def test_blueprint_connect_workflow_uses_current_node_and_graph_summary() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal="Connect the current node to Print String then compile",
+        workflow_type="blueprint_connect_then_compile",
+        payload={"target_node_name": "Print String"},
+        context={
+            "active_context": {
+                "blueprint": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_FocusedActor",
+                    "current_graph_name": "EventGraph",
+                    "current_node_summary": {
+                        "node_id": "event-begin-play",
+                        "title": "Event BeginPlay",
+                        "pins": [
+                            {
+                                "pin_name": "then",
+                                "direction": "output",
+                                "category": "exec",
+                            }
+                        ],
+                    },
+                    "current_graph_summary": {
+                        "graph_name": "EventGraph",
+                        "nodes": [
+                            {
+                                "node_id": "event-begin-play",
+                                "title": "Event BeginPlay",
+                                "pins": [
+                                    {
+                                        "pin_name": "then",
+                                        "direction": "output",
+                                        "category": "exec",
+                                    }
+                                ],
+                            },
+                            {
+                                "node_id": "print-string",
+                                "title": "Print String",
+                                "pins": [
+                                    {
+                                        "pin_name": "execute",
+                                        "direction": "input",
+                                        "category": "exec",
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                }
+            }
+        },
+    )
+
+    first, second = plan["steps"]
+    assert plan["status"] == "planned"
+    assert plan["workflow_type"] == "blueprint_connect_then_compile"
+    assert first["operation_type"] == "connect_blueprint_nodes"
+    assert first["payload"]["blueprint_path"] == "/Game/Blueprints/BP_FocusedActor"
+    assert first["payload"]["graph_name"] == "EventGraph"
+    assert first["payload"]["source_node_id"] == "event-begin-play"
+    assert first["payload"]["source_pin_name"] == "then"
+    assert first["payload"]["target_node_id"] == "print-string"
+    assert first["payload"]["target_pin_name"] == "execute"
+    assert second["operation_type"] == "compile_blueprint"
+    assert second["depends_on_step_ids"] == ["step_0_connect_blueprint_nodes"]
+
+
+def test_blueprint_connect_workflow_reports_missing_explicit_target() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal="Connect the current node then compile",
+        workflow_type="blueprint_connect_then_compile",
+        payload={},
+        context={
+            "active_context": {
+                "blueprint": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_FocusedActor",
+                    "current_graph_name": "EventGraph",
+                    "current_node_summary": {
+                        "node_id": "event-begin-play",
+                        "pins": [{"pin_name": "then", "direction": "output", "category": "exec"}],
+                    },
+                }
+            }
+        },
+    )
+
+    first, second = plan["steps"]
+    assert plan["status"] == "partial"
+    assert "target_node_id" in first["missing_inputs"]
+    assert "target_pin_name" in first["missing_inputs"]
+    assert second["proposal_ready"] is True
+
+
 def test_workflow_templates_describe_plan_only_safety() -> None:
     templates = EditorWorkflowPlannerService.workflow_templates()
 
@@ -100,6 +193,7 @@ def test_workflow_templates_describe_plan_only_safety() -> None:
     assert templates["safety_policy"]["planner_executes_editor_writes"] is False
     workflow_types = {item["workflow_type"] for item in templates["templates"]}
     assert workflow_types == {
+        "blueprint_connect_then_compile",
         "blueprint_print_then_compile",
         "umg_hud_group",
         "umg_text_widget",
@@ -227,6 +321,58 @@ def test_detect_chat_workflow_request_extracts_blueprint_plan() -> None:
     assert detected is not None
     assert detected["workflow_type"] == "blueprint_print_then_compile"
     assert detected["payload"]["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
+
+
+def test_detect_chat_workflow_request_extracts_blueprint_connect_plan_from_focus() -> None:
+    request = UnifiedTaskRequest(
+        task_type="agent_chat",
+        session=SessionInput(
+            session_id="workflow_detect_connect",
+            messages=[
+                SessionMessageInput(
+                    role="user",
+                    content="Plan a workflow: connect the current node to Print String then compile",
+                )
+            ],
+        ),
+        payload={
+            "user_query": "Plan a workflow: connect the current node to Print String then compile",
+            "target_node_name": "Print String",
+        },
+    )
+
+    detected = EditorWorkflowPlannerService.detect_chat_workflow_request(
+        request,
+        context_bundle={
+            "active_context": {
+                "blueprint": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_FocusedActor",
+                    "current_graph_name": "EventGraph",
+                    "current_node_summary": {
+                        "node_id": "event-begin-play",
+                        "pins": [{"pin_name": "then", "direction": "output", "category": "exec"}],
+                    },
+                    "current_graph_summary": {
+                        "graph_name": "EventGraph",
+                        "nodes": [
+                            {
+                                "node_id": "print-string",
+                                "title": "Print String",
+                                "pins": [{"pin_name": "execute", "direction": "input", "category": "exec"}],
+                            }
+                        ],
+                    },
+                }
+            }
+        },
+    )
+
+    assert detected is not None
+    assert detected["workflow_type"] == "blueprint_connect_then_compile"
+    assert detected["payload"]["blueprint_path"] == "/Game/Blueprints/BP_FocusedActor"
+    assert detected["payload"]["source_node_id"] == "event-begin-play"
+    assert detected["payload"]["target_node_id"] == "print-string"
+    assert detected["payload"]["target_pin_name"] == "execute"
 
 
 def test_detect_chat_workflow_request_extracts_umg_hud_group_plan() -> None:

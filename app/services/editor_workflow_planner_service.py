@@ -120,6 +120,81 @@ def _active_graph_name(context: dict[str, Any]) -> str:
     )
 
 
+def _active_current_node_summary(context: dict[str, Any]) -> dict[str, Any]:
+    return _context_section(context, "active_context", "blueprint", "current_node_summary")
+
+
+def _active_current_graph_summary(context: dict[str, Any]) -> dict[str, Any]:
+    return _context_section(context, "active_context", "blueprint", "current_graph_summary")
+
+
+def _node_reference(value: Any) -> str:
+    return _clean_text(value).lower().replace("_", " ")
+
+
+def _node_matches_reference(node: dict[str, Any], reference: str) -> bool:
+    expected = _node_reference(reference)
+    if not expected:
+        return False
+    for value in (
+        node.get("node_id"),
+        node.get("id"),
+        node.get("node_name"),
+        node.get("name"),
+        node.get("title"),
+        node.get("node_class"),
+    ):
+        candidate = _node_reference(value)
+        if candidate and (expected == candidate or expected in candidate or candidate in expected):
+            return True
+    return False
+
+
+def _find_graph_node(
+    graph: dict[str, Any],
+    *,
+    reference: str = "",
+    goal: str = "",
+    exclude_node_id: str = "",
+) -> dict[str, Any]:
+    nodes = [item for item in list(graph.get("nodes") or []) if isinstance(item, dict)]
+    if not nodes:
+        return {}
+    excluded = _clean_text(exclude_node_id).lower()
+    for node in nodes:
+        node_id = _clean_text(node.get("node_id") or node.get("id")).lower()
+        if excluded and node_id == excluded:
+            continue
+        if _node_matches_reference(node, reference):
+            return dict(node)
+    goal_lower = goal.lower()
+    for node in nodes:
+        node_id = _clean_text(node.get("node_id") or node.get("id")).lower()
+        if excluded and node_id == excluded:
+            continue
+        title = _clean_text(node.get("title") or node.get("node_name") or node.get("node_class")).lower()
+        if title and title in goal_lower:
+            return dict(node)
+        if "print string" in goal_lower and "print" in title and "string" in title:
+            return dict(node)
+    return {}
+
+
+def _node_identifier(node: dict[str, Any]) -> str:
+    return _first_non_empty(node.get("node_id"), node.get("id"), node.get("node_name"), node.get("name"))
+
+
+def _pin_name_from_node(node: dict[str, Any], *, direction: str) -> str:
+    expected_direction = direction.lower()
+    pins = [item for item in list(node.get("pins") or []) if isinstance(item, dict)]
+    for pin in pins:
+        pin_direction = _clean_text(pin.get("direction")).lower()
+        pin_category = _clean_text(pin.get("category") or pin.get("pin_category")).lower()
+        if pin_direction == expected_direction and (pin_category == "exec" or not pin_category):
+            return _first_non_empty(pin.get("pin_name"), pin.get("name"), pin.get("pin_id"), pin.get("id"))
+    return ""
+
+
 def _goal_mentions_graph_target(goal: str) -> bool:
     lower = str(goal or "").lower()
     compact = lower.replace("_", "").replace("-", "").replace(" ", "")
@@ -296,6 +371,49 @@ class EditorWorkflowPlannerService:
                     detected_graph_name=detected_graph,
                 ),
             )
+        elif workflow_type == "blueprint_connect_then_compile":
+            active_node = _active_current_node_summary(workflow_context)
+            active_graph = _active_current_graph_summary(workflow_context)
+            detected_graph = EditorOperationService._detect_blueprint_graph_name_from_request(request, goal)
+            plan_payload.setdefault(
+                "blueprint_path",
+                _plan_asset_path(
+                    EditorOperationService._detect_blueprint_path_from_request(request, goal, context_bundle)
+                    or _active_blueprint_path(workflow_context)
+                    or ""
+                ),
+            )
+            plan_payload.setdefault(
+                "graph_name",
+                _resolve_blueprint_graph_name(
+                    goal=goal,
+                    payload=plan_payload,
+                    context=workflow_context,
+                    detected_graph_name=detected_graph or _clean_text(active_graph.get("graph_name")),
+                ),
+            )
+            plan_payload.setdefault("source_node_id", _node_identifier(active_node))
+            if not plan_payload.get("source_pin_name"):
+                source_pin = _pin_name_from_node(active_node, direction="output")
+                if source_pin:
+                    plan_payload["source_pin_name"] = source_pin
+            target_reference = _first_non_empty(
+                plan_payload.get("target_node_id"),
+                plan_payload.get("target_node_name"),
+                plan_payload.get("target_node_title"),
+            )
+            target_node = _find_graph_node(
+                active_graph,
+                reference=target_reference,
+                goal=goal,
+                exclude_node_id=_node_identifier(active_node),
+            )
+            if target_node:
+                plan_payload.setdefault("target_node_id", _node_identifier(target_node))
+                if not plan_payload.get("target_pin_name"):
+                    target_pin = _pin_name_from_node(target_node, direction="input")
+                    if target_pin:
+                        plan_payload["target_pin_name"] = target_pin
         elif workflow_type == "umg_hud_group":
             plan_payload.setdefault(
                 "widget_blueprint_path",
@@ -349,8 +467,24 @@ class EditorWorkflowPlannerService:
             "mode": "plan_only_confirmed_step_workflows",
             "auto_execute": False,
             "requires_user_confirmation_per_step": True,
-            "template_count": 4,
+            "template_count": 5,
             "templates": [
+                {
+                    "workflow_type": "blueprint_connect_then_compile",
+                    "title": "Blueprint Connect Pins Then Compile",
+                    "description": "Connect two explicit Blueprint pins, then compile the Blueprint as a second Proposal step.",
+                    "required_payload_fields": [
+                        "blueprint_path",
+                        "graph_name",
+                        "source_node_id",
+                        "source_pin_name",
+                        "target_node_id",
+                        "target_pin_name",
+                    ],
+                    "optional_payload_fields": ["target_node_name", "target_node_title"],
+                    "emitted_operation_types": ["connect_blueprint_nodes", "compile_blueprint"],
+                    "boundary": "Requires explicit node/pin identifiers or current graph focus; does not guess arbitrary Blueprint wiring.",
+                },
                 {
                     "workflow_type": "blueprint_print_then_compile",
                     "title": "Blueprint Print String Then Compile",
@@ -434,6 +568,13 @@ class EditorWorkflowPlannerService:
                 context=safe_context,
                 requested_by=requested_by,
             )
+        if resolved_type == "blueprint_connect_then_compile":
+            return self._blueprint_connect_then_compile(
+                goal=safe_goal,
+                payload=safe_payload,
+                context=safe_context,
+                requested_by=requested_by,
+            )
         if resolved_type == "umg_text_widget":
             return self._umg_text_widget(
                 goal=safe_goal,
@@ -473,6 +614,10 @@ class EditorWorkflowPlannerService:
         if explicit:
             return explicit
         lower = goal.lower()
+        if ("connect" in lower or "wire" in lower or "link" in lower or "连接" in lower or "连线" in lower) and (
+            "compile" in lower or "编译" in lower or "then" in lower or "然后" in lower
+        ):
+            return "blueprint_connect_then_compile"
         if "print string" in lower or ("beginplay" in lower and "compile" in lower):
             return "blueprint_print_then_compile"
         if any(token in lower for token in ("hud group", "hud panel", "ui group", "status hud", "status group")):
@@ -568,6 +713,100 @@ class EditorWorkflowPlannerService:
             steps=steps,
             status=self._status_for_steps(steps),
             reason="planned_blueprint_print_then_compile",
+        )
+
+    def _blueprint_connect_then_compile(
+        self,
+        *,
+        goal: str,
+        payload: dict[str, Any],
+        context: dict[str, Any],
+        requested_by: str,
+    ) -> dict[str, Any]:
+        active_node = _active_current_node_summary(context)
+        active_graph = _active_current_graph_summary(context)
+        blueprint_path = _first_non_empty(
+            payload.get("blueprint_path"),
+            context.get("blueprint_path"),
+            context.get("current_blueprint_path"),
+            _active_blueprint_path(context),
+        )
+        blueprint_path = _plan_asset_path(blueprint_path)
+        graph_name = _resolve_blueprint_graph_name(
+            goal=goal,
+            payload=payload,
+            context=context,
+            detected_graph_name=_clean_text(active_graph.get("graph_name")),
+        )
+        source_node_id = _first_non_empty(
+            payload.get("source_node_id"),
+            payload.get("source_node_name"),
+            _node_identifier(active_node),
+        )
+        source_pin_name = _first_non_empty(
+            payload.get("source_pin_name"),
+            _pin_name_from_node(active_node, direction="output"),
+        )
+        target_reference = _first_non_empty(
+            payload.get("target_node_id"),
+            payload.get("target_node_name"),
+            payload.get("target_node_title"),
+        )
+        target_node = _find_graph_node(
+            active_graph,
+            reference=target_reference,
+            goal=goal,
+            exclude_node_id=source_node_id,
+        )
+        target_node_id = _first_non_empty(
+            payload.get("target_node_id"),
+            _node_identifier(target_node),
+            payload.get("target_node_name"),
+        )
+        target_pin_name = _first_non_empty(
+            payload.get("target_pin_name"),
+            _pin_name_from_node(target_node, direction="input"),
+        )
+        connect_payload = {
+            "blueprint_path": blueprint_path,
+            "graph_name": graph_name,
+            "source_node_id": source_node_id,
+            "source_pin_name": source_pin_name,
+            "target_node_id": target_node_id,
+            "target_pin_name": target_pin_name,
+            "compile_after_edit": False,
+        }
+        missing_connect = [key for key, value in connect_payload.items() if key != "compile_after_edit" and not value]
+        steps = [
+            self._step(
+                index=0,
+                operation_type="connect_blueprint_nodes",
+                title="Connect explicit Blueprint pins",
+                payload=connect_payload,
+                missing_inputs=missing_connect,
+                reason=(
+                    "Connect explicit pins as a confirmed Proposal step. The planner only uses "
+                    "provided node/pin ids or current graph focus; it does not guess arbitrary wiring."
+                ),
+                requested_by=requested_by,
+            ),
+            self._step(
+                index=1,
+                operation_type="compile_blueprint",
+                title="Compile Blueprint after pin connection",
+                payload={"blueprint_path": blueprint_path, "compile_mode": "default"},
+                missing_inputs=["blueprint_path"] if not blueprint_path else [],
+                reason="Compile is a separate confirmed step after the pin connection proposal.",
+                requested_by=requested_by,
+                depends_on_step_ids=["step_0_connect_blueprint_nodes"],
+            ),
+        ]
+        return self._plan_envelope(
+            workflow_type="blueprint_connect_then_compile",
+            goal=goal,
+            steps=steps,
+            status=self._status_for_steps(steps),
+            reason="planned_blueprint_connect_then_compile",
         )
 
     def _umg_text_widget(
