@@ -6090,6 +6090,7 @@ Covered cases:
 
 - `workflow_step_to_proposal`: workflow plan step becomes a pending Proposal.
 - `delay_workflow_step_to_proposal`: delay-print workflow step keeps `template_id=delay_print_string` and `delay_seconds` when it becomes a pending Proposal.
+- `blueprint_connect_workflow_step_to_proposal`: connect-pin workflow step becomes a pending `connect_blueprint_nodes` Proposal.
 - `workflow_step_rejects_missing_inputs`: non-ready workflow step is rejected.
 - `umg_hud_group_step_to_proposal`: first HUD group workflow step becomes a pending `add_umg_widget` Proposal.
 - `follow_up_candidate_to_proposal`: Blueprint repair follow-up candidate becomes a pending Proposal.
@@ -6098,8 +6099,8 @@ Expected result:
 
 ```text
 overall_ok = true
-case_count = 5
-passed = 5
+case_count = 6
+passed = 6
 failed = 0
 ```
 

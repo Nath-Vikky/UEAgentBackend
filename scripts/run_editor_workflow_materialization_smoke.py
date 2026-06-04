@@ -168,6 +168,55 @@ def _run_delay_workflow_step_materialization(client: TestClient) -> dict[str, An
     }
 
 
+def _run_connect_workflow_step_materialization(client: TestClient) -> dict[str, Any]:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Connect BeginPlay to Print String and compile",
+            "workflow_type": "blueprint_connect_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "source_node_id": "EventBeginPlay",
+                "source_pin_name": "then",
+                "target_node_id": "PrintStringNode",
+                "target_pin_name": "execute",
+            },
+        },
+    )
+    plan_body = plan_response.json()
+    plan = dict(plan_body.get("workflow_plan") or {})
+    step = list(plan.get("steps") or [{}])[0]
+    proposal_response = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan.get("plan_id"),
+            "step": step,
+            "requested_by": "workflow_materialization_smoke",
+        },
+    )
+    body = proposal_response.json()
+    operation_payload = body.get("proposal", {}).get("operation", {}).get("operation_payload", {})
+    checks = [
+        _check("plan_status_code", 200, plan_response.status_code),
+        _check("proposal_status_code", 200, proposal_response.status_code),
+        _check("workflow_type", "blueprint_connect_then_compile", plan.get("workflow_type")),
+        _check("step_count", 2, plan.get("step_count")),
+        _check("operation_type", "connect_blueprint_nodes", body.get("proposal", {}).get("operation", {}).get("operation_type")),
+        _check("proposal_source_node_id", "EventBeginPlay", operation_payload.get("source_node_id")),
+        _check("proposal_source_pin_name", "then", operation_payload.get("source_pin_name")),
+        _check("proposal_target_node_id", "PrintStringNode", operation_payload.get("target_node_id")),
+        _check("proposal_target_pin_name", "execute", operation_payload.get("target_pin_name")),
+        _check("confirmation_state", "pending", body.get("proposal", {}).get("item", {}).get("confirmation", {}).get("state")),
+        _check("auto_execute", False, body.get("workflow_step", {}).get("auto_execute")),
+    ]
+    return {
+        "case_id": "blueprint_connect_workflow_step_to_proposal",
+        "ok": all(item["ok"] for item in checks),
+        "checks": checks,
+    }
+
+
 def _run_workflow_step_rejection(client: TestClient) -> dict[str, Any]:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",
@@ -307,6 +356,7 @@ def main() -> int:
         cases = [
             _run_workflow_step_materialization(client),
             _run_delay_workflow_step_materialization(client),
+            _run_connect_workflow_step_materialization(client),
             _run_workflow_step_rejection(client),
             _run_umg_hud_group_step_materialization(client),
             _run_follow_up_materialization(client),
