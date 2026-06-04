@@ -104,7 +104,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     }
     assert body["capabilities"]["summary"]["operation_count"] >= 18
     assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 18
-    assert body["capabilities"]["summary"]["read_only_operation_count"] >= 4
+    assert body["capabilities"]["summary"]["read_only_operation_count"] >= 5
     assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 0
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
@@ -126,6 +126,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert read_only_items["inspect_level_actors"]["side_effect_level"] == "read_only"
     assert read_only_items["inspect_level_actors"]["requires_confirmation"] is False
     assert read_only_items["inspect_level_actors"]["proposal_enabled"] is False
+    assert read_only_items["inspect_level_actor_detail"]["endpoint"].endswith("/inspect/level-actor-detail")
     assert read_only_items["inspect_assets"]["endpoint"].endswith("/inspect/assets")
     assert read_only_items["inspect_asset_detail"]["endpoint"].endswith("/inspect/asset-detail")
     assert read_only_items["inspect_material_instance_parameters"]["endpoint"].endswith(
@@ -263,6 +264,10 @@ def test_editor_operation_read_only_inspections_use_project_inventory(client: Te
         "/api/v1/editor-operations/inspect/level-actors",
         params={"project_id": "ReadOnlyInspectionProject", "query": "EnemySpawner"},
     )
+    actor_detail = client.get(
+        "/api/v1/editor-operations/inspect/level-actor-detail",
+        params={"project_id": "ReadOnlyInspectionProject", "actor_reference": "BP_EnemySpawner_1"},
+    )
     assets = client.get(
         "/api/v1/editor-operations/inspect/assets",
         params={"project_id": "ReadOnlyInspectionProject", "asset_type": "StaticMesh", "query": "Rock"},
@@ -281,6 +286,11 @@ def test_editor_operation_read_only_inspections_use_project_inventory(client: Te
     assert actors.json()["inspection"]["operation_type"] == "inspect_level_actors"
     assert actors.json()["inspection"]["side_effect_level"] == "read_only"
     assert actors.json()["items"][0]["actor_label"] == "BP_EnemySpawner_1"
+    assert actor_detail.status_code == 200
+    assert actor_detail.json()["inspection"]["operation_type"] == "inspect_level_actor_detail"
+    assert actor_detail.json()["inspection"]["side_effect_level"] == "read_only"
+    assert actor_detail.json()["item"]["actor_label"] == "BP_EnemySpawner_1"
+    assert actor_detail.json()["item"]["components"][0]["component_name"] == "SceneRoot"
     assert assets.status_code == 200
     assert assets.json()["inspection"]["operation_type"] == "inspect_assets"
     assert assets.json()["inspection"]["side_effect_level"] == "read_only"

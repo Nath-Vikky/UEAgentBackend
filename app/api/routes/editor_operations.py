@@ -210,6 +210,43 @@ def inspect_level_actors(
     }
 
 
+@router.get("/inspect/level-actor-detail")
+def inspect_level_actor_detail(
+    project_id: str | None = None,
+    actor_reference: str | None = None,
+    query: str | None = None,
+    settings: Settings = Depends(get_app_settings),
+) -> dict:
+    service = ProjectInventoryService(settings)
+    lookup_value = actor_reference or query or ""
+    item = service.get_level_actor(lookup_value, project_id) if lookup_value else None
+    if not item and query:
+        matches = service.list_level_actors(project_id=project_id, query=query, limit=1)
+        item = matches[0] if matches else None
+    summary = service.summary(project_id)
+    empty_reason = ""
+    if not summary.get("has_snapshot"):
+        empty_reason = "no_project_inventory_snapshot"
+    elif not item:
+        empty_reason = "no_matching_level_actor"
+    return {
+        "success": True,
+        "inspection": {
+            "operation_type": "inspect_level_actor_detail",
+            "side_effect_level": "read_only",
+            "source": "project_inventory",
+            "query": query or "",
+            "project_id": project_id or summary.get("project_id") or "",
+            "actor_reference": actor_reference or "",
+            "match_count": 1 if item else 0,
+            "empty_reason": empty_reason,
+        },
+        "summary": summary,
+        "item": item or {},
+        "errors": [],
+    }
+
+
 @router.get("/inspect/assets")
 def inspect_assets(
     project_id: str | None = None,

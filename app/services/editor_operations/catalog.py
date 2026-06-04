@@ -488,6 +488,16 @@ READ_ONLY_INSPECTION_SPECS: dict[str, dict[str, Any]] = {
         "endpoint": "/api/v1/editor-operations/inspect/level-actors",
         "boundary": "Read-only inventory; no level streaming, World Partition editing, or Actor mutation.",
     },
+    "inspect_level_actor_detail": {
+        "group": "level",
+        "tool_id": "editor_inspect_level_actor_detail",
+        "title": "Inspect Level Actor Detail",
+        "summary": "Read one level Actor detail record from Project Inventory by label, object name, path, or query.",
+        "required_fields": ["actor_reference"],
+        "frontend_status": "backend_read_only_v1",
+        "endpoint": "/api/v1/editor-operations/inspect/level-actor-detail",
+        "boundary": "Read-only inventory detail lookup; no Actor mutation, level save, or component edit.",
+    },
     "inspect_material_instance_parameters": {
         "group": "material",
         "tool_id": "editor_inspect_material_instance_parameters",
@@ -508,4 +518,3 @@ class EditorOperationValidationError(ValueError):
         super().__init__(reason)
         self.reason = reason
         self.details = details or {}
-

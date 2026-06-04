@@ -2991,6 +2991,7 @@ Editor Operation Bridge 也提供了两个只读检查入口，方便前端或�
 
 ```http
 GET /api/v1/editor-operations/inspect/level-actors
+GET /api/v1/editor-operations/inspect/level-actor-detail
 GET /api/v1/editor-operations/inspect/material-instance-parameters
 ```
 
@@ -3632,6 +3633,12 @@ actors` from Active Context. If the UE plugin or payload provides
 requests such as `Move this actor right 200` and `Arrange selected actors in a
 line` can produce pending `set_actor_transform` / `arrange_actors_pattern`
 Proposals without repeating the Actor labels in the text.
+
+For read-only inspection, `GET
+/api/v1/editor-operations/inspect/level-actor-detail?actor_reference=...`
+returns one Actor record from Project Inventory, including captured transform,
+folder, tags, class, blueprint path, and component summaries when the UE plugin
+submitted them. It does not create a Proposal or mutate the level.
 
 设置 Material Instance 参数：
 
