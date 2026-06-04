@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.schemas.requests import EditorOperationResultRequest
 from app.services.editor_operations.blueprint_result_diagnostics import (
+    blueprint_execution_error_codes,
     blueprint_graph_repair_advice,
     blueprint_graph_result_diagnostics,
     collection_count,
@@ -92,6 +93,53 @@ def test_blueprint_result_diagnostics_flags_missing_links_and_dirty_packages() -
     assert "report_dirty_packages" in action_ids
 
 
+def test_blueprint_execution_error_codes_collects_request_and_result_errors() -> None:
+    codes = blueprint_execution_error_codes(
+        request=EditorOperationResultRequest(
+            proposal_id="proposal_error_codes",
+            operation_type="add_blueprint_node_template",
+            success=False,
+            errors=[{"code": "graph_not_found"}, {"reason": "event_not_found"}],
+        ),
+        result={
+            "error_code": "pin_resolution_failed",
+            "failed_fields": [{"field": "target_pin", "reason": "target_pin_not_found"}],
+        },
+    )
+
+    assert codes == ["graph_not_found", "event_not_found", "target_pin_not_found", "pin_resolution_failed"]
+
+
+def test_blueprint_result_diagnostics_maps_ue_errors_to_repair_advice() -> None:
+    diagnostics = blueprint_graph_result_diagnostics(
+        request=EditorOperationResultRequest(
+            proposal_id="proposal_ue_error_mapping",
+            operation_type="add_blueprint_node_template",
+            success=False,
+            execution_state="failed",
+            errors=[{"code": "graph_not_found", "message": "Graph was not found"}],
+        ),
+        preview={
+            "operation_type": "add_blueprint_node_template",
+            "operation_payload": {
+                "blueprint_path": "/Game/Blueprints/BP_Player",
+                "graph_name": "EventGraph",
+                "template_id": "print_string",
+            },
+        },
+        result={"entry_event": "BeginPlay", "error_code": "entry_event_not_found"},
+        dirty_packages=[],
+    )
+
+    assert diagnostics["execution_error_codes"] == ["graph_not_found", "entry_event_not_found"]
+    assert diagnostics["diagnostic_flags"] == ["blueprint_graph_unresolved", "entry_event_unresolved"]
+    action_ids = [item["action_id"] for item in diagnostics["repair_advice"]["actions"]]
+    assert "inspect_ue_execution_errors" in action_ids
+    assert "verify_blueprint_graph_name" in action_ids
+    assert "verify_blueprint_entry_event" in action_ids
+    assert diagnostics["repair_advice"]["severity"] == "error"
+
+
 def test_blueprint_repair_advice_marks_failed_request_as_error() -> None:
     advice = blueprint_graph_repair_advice(
         operation_type="compile_blueprint",
@@ -105,6 +153,7 @@ def test_blueprint_repair_advice_marks_failed_request_as_error() -> None:
         result={"compile_status": "failed"},
         template_id="",
         compile_status="failed",
+        execution_error_codes=["compile_failed"],
     )
 
     assert advice["status"] == "suggested"

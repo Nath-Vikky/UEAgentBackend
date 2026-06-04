@@ -23,6 +23,26 @@ BLUEPRINT_TEMPLATES_EXPECTING_LINKED_PINS = {
     "custom_event_print_string",
 }
 
+BLUEPRINT_EXECUTION_ERROR_FLAG_MAP = {
+    "blueprint_not_found": "blueprint_target_unresolved",
+    "blueprint_asset_not_found": "blueprint_target_unresolved",
+    "blueprint_load_failed": "blueprint_target_unresolved",
+    "load_blueprint_failed": "blueprint_target_unresolved",
+    "target_blueprint_missing": "blueprint_target_unresolved",
+    "graph_not_found": "blueprint_graph_unresolved",
+    "graph_missing": "blueprint_graph_unresolved",
+    "graph_unavailable": "blueprint_graph_unresolved",
+    "target_graph_missing": "blueprint_graph_unresolved",
+    "event_not_found": "entry_event_unresolved",
+    "entry_event_not_found": "entry_event_unresolved",
+    "event_node_not_found": "entry_event_unresolved",
+    "pin_not_found": "pin_resolution_failed",
+    "source_pin_not_found": "pin_resolution_failed",
+    "target_pin_not_found": "pin_resolution_failed",
+    "pin_resolution_failed": "pin_resolution_failed",
+    "pin_connection_failed": "pin_resolution_failed",
+}
+
 
 def collection_count(value: Any) -> int:
     if value is None:
@@ -40,6 +60,45 @@ def first_non_empty_text(*values: Any) -> str:
         if text:
             return text
     return ""
+
+
+def _append_unique(values: list[str], item: str) -> None:
+    if item and item not in values:
+        values.append(item)
+
+
+def _error_code_from_item(item: Any) -> str:
+    if isinstance(item, dict):
+        return first_non_empty_text(
+            item.get("code"),
+            item.get("reason"),
+            item.get("error_code"),
+            item.get("type"),
+            item.get("message"),
+        )
+    return first_non_empty_text(item)
+
+
+def blueprint_execution_error_codes(
+    *,
+    request: EditorOperationResultRequest,
+    result: dict[str, Any],
+) -> list[str]:
+    codes: list[str] = []
+    for source in (
+        request.errors,
+        result.get("errors"),
+        result.get("failed_fields"),
+    ):
+        if isinstance(source, list):
+            for item in source:
+                _append_unique(codes, _error_code_from_item(item).strip().lower())
+        elif isinstance(source, dict):
+            for item in source.values():
+                _append_unique(codes, _error_code_from_item(item).strip().lower())
+    for key in ("error_code", "reason", "failure_reason"):
+        _append_unique(codes, first_non_empty_text(result.get(key)).strip().lower())
+    return [item for item in codes if item]
 
 
 def blueprint_graph_result_diagnostics(
@@ -68,18 +127,23 @@ def blueprint_graph_result_diagnostics(
     expects_linked_pins = (
         operation_type == "connect_blueprint_nodes" or template_id in BLUEPRINT_TEMPLATES_EXPECTING_LINKED_PINS
     )
+    execution_error_codes = blueprint_execution_error_codes(request=request, result=result)
 
     diagnostic_flags: list[str] = []
     if request.success and expects_created_nodes and created_node_count == 0:
-        diagnostic_flags.append("created_nodes_missing")
+        _append_unique(diagnostic_flags, "created_nodes_missing")
     if request.success and expects_linked_pins and linked_pin_count == 0:
-        diagnostic_flags.append("expected_linked_pins_missing")
+        _append_unique(diagnostic_flags, "expected_linked_pins_missing")
     if compile_requested and not compile_status:
-        diagnostic_flags.append("compile_status_missing")
+        _append_unique(diagnostic_flags, "compile_status_missing")
     if compile_status.lower() in {"failed", "error", "compile_failed", "blocked"}:
-        diagnostic_flags.append("compile_failed")
+        _append_unique(diagnostic_flags, "compile_failed")
     if request.success and "dirty_packages" in result_fields and not dirty_packages:
-        diagnostic_flags.append("dirty_packages_missing")
+        _append_unique(diagnostic_flags, "dirty_packages_missing")
+    for code in execution_error_codes:
+        mapped_flag = BLUEPRINT_EXECUTION_ERROR_FLAG_MAP.get(code)
+        if mapped_flag:
+            _append_unique(diagnostic_flags, mapped_flag)
 
     repair_advice = blueprint_graph_repair_advice(
         operation_type=operation_type,
@@ -89,6 +153,7 @@ def blueprint_graph_result_diagnostics(
         result=result,
         template_id=template_id,
         compile_status=compile_status,
+        execution_error_codes=execution_error_codes,
     )
     return {
         "schema_version": "blueprint_graph_operation_diagnostics_v1",
@@ -113,6 +178,7 @@ def blueprint_graph_result_diagnostics(
         "linked_node_count": linked_node_count,
         "linked_pin_count": linked_pin_count,
         "has_graph_changes": created_node_count > 0 or linked_pin_count > 0,
+        "execution_error_codes": execution_error_codes,
         "diagnostic_flags": diagnostic_flags,
         "needs_user_attention": (not request.success) or bool(diagnostic_flags),
         "repair_advice": repair_advice,
@@ -128,9 +194,11 @@ def blueprint_graph_repair_advice(
     result: dict[str, Any],
     template_id: str,
     compile_status: str,
+    execution_error_codes: list[str] | None = None,
 ) -> dict[str, Any]:
     actions: list[dict[str, Any]] = []
     flag_set = set(diagnostic_flags)
+    execution_error_codes = list(execution_error_codes or [])
     blueprint_path = first_non_empty_text(
         result.get("blueprint_path"),
         payload.get("blueprint_path"),
@@ -155,6 +223,67 @@ def blueprint_graph_repair_advice(
                     "Check result.errors, Unreal Output Log, and the selected target before retrying."
                 ),
                 "next_step": "Fix the UE-side error or select a valid target, then create a new proposal.",
+            }
+        )
+    if "blueprint_target_unresolved" in flag_set:
+        actions.append(
+            {
+                "action_id": "verify_blueprint_asset_target",
+                "severity": "error",
+                "title": "Verify Blueprint asset target",
+                "details": "UEAgentTool could not load or resolve the target Blueprint asset.",
+                "next_step": "Select the Blueprint in the editor or retry with an explicit /Game/... Blueprint path.",
+                "context": {
+                    "blueprint_path": blueprint_path,
+                    "execution_error_codes": execution_error_codes,
+                },
+            }
+        )
+    if "blueprint_graph_unresolved" in flag_set:
+        actions.append(
+            {
+                "action_id": "verify_blueprint_graph_name",
+                "severity": "error",
+                "title": "Verify Blueprint graph name",
+                "details": "UEAgentTool could not find the requested Blueprint graph.",
+                "next_step": "Open the target Blueprint and use an existing graph name such as EventGraph or ConstructionScript.",
+                "context": {
+                    "blueprint_path": blueprint_path,
+                    "graph_name": graph_name,
+                    "execution_error_codes": execution_error_codes,
+                },
+            }
+        )
+    if "entry_event_unresolved" in flag_set:
+        actions.append(
+            {
+                "action_id": "verify_blueprint_entry_event",
+                "severity": "warning",
+                "title": "Verify Blueprint entry event",
+                "details": "UEAgentTool could not find or create the requested entry event node.",
+                "next_step": "Open the graph, confirm the event is supported, or retry with BeginPlay / ActorBeginOverlap.",
+                "context": {
+                    "blueprint_path": blueprint_path,
+                    "graph_name": graph_name,
+                    "entry_event": entry_event,
+                    "execution_error_codes": execution_error_codes,
+                },
+            }
+        )
+    if "pin_resolution_failed" in flag_set:
+        actions.append(
+            {
+                "action_id": "inspect_blueprint_pin_resolution",
+                "severity": "warning",
+                "title": "Inspect Blueprint pin resolution",
+                "details": "UEAgentTool could not resolve one or more graph pins needed for the operation.",
+                "next_step": "Use a fresh graph snapshot with stable node and pin ids before creating a connect proposal.",
+                "context": {
+                    "blueprint_path": blueprint_path,
+                    "graph_name": graph_name,
+                    "entry_event": entry_event,
+                    "execution_error_codes": execution_error_codes,
+                },
             }
         )
     if "created_nodes_missing" in flag_set:
@@ -238,6 +367,10 @@ def blueprint_graph_repair_advice(
         )
 
     known_flags = {
+        "blueprint_target_unresolved",
+        "blueprint_graph_unresolved",
+        "entry_event_unresolved",
+        "pin_resolution_failed",
         "created_nodes_missing",
         "expected_linked_pins_missing",
         "compile_status_missing",
@@ -280,6 +413,8 @@ def blueprint_graph_repair_advice(
 
 
 __all__ = [
+    "BLUEPRINT_EXECUTION_ERROR_FLAG_MAP",
+    "blueprint_execution_error_codes",
     "blueprint_graph_repair_advice",
     "blueprint_graph_result_diagnostics",
     "collection_count",

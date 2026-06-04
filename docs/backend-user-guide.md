@@ -3182,7 +3182,8 @@ UE 插件回传 Blueprint Graph 执行结果后，后端会在 `result_summary.o
 - `created_node_count`：本次创建的节点数量。
 - `linked_pin_count`：本次真实连接的 pin 数量。
 - `compile_requested / compile_status`：是否请求编译以及 UE 插件回传的编译状态。
-- `diagnostic_flags`：例如 `expected_linked_pins_missing`、`compile_status_missing`、`compile_failed`、`created_nodes_missing`。
+- `execution_error_codes`：UEAgentTool 回传的错误码摘要，例如 `graph_not_found`、`entry_event_not_found`、`pin_resolution_failed`。
+- `diagnostic_flags`：例如 `expected_linked_pins_missing`、`compile_status_missing`、`compile_failed`、`created_nodes_missing`、`blueprint_graph_unresolved`、`entry_event_unresolved`、`pin_resolution_failed`。
 - `failed_fields[] / errors[]`：UEAgentTool 会尽量把缺少 node/pin、pin 已占用、graph/schema 不可用、Blueprint 编译失败等原因整理成可读文本，后端会把这些信息同步到 User View 的 `Blueprint Graph Details` block 中。
 
 这些字段主要给 Debug View、操作历史和排查使用，不要求前端立刻新增 UI；旧版 Proposal 卡片可以继续只显示原有结果。
@@ -3205,7 +3206,7 @@ GET /api/v1/editor-operations/diagnostics?operation_type=add_blueprint_node_temp
 - `executed_count` / `pending_count`：最近 proposal 里已经回传执行结果和仍未回传的数量。
 - `success_count` / `failed_count`：UE 侧执行成功与失败数量。
 - `needs_user_attention_count` / `attention_rate`：需要人工关注的比例。
-- `diagnostic_flag_counts`：例如 `expected_linked_pins_missing`、`compile_failed`、`dirty_packages_missing` 的分布。
+- `diagnostic_flag_counts`：例如 `expected_linked_pins_missing`、`compile_failed`、`dirty_packages_missing`、`blueprint_graph_unresolved`、`entry_event_unresolved` 的分布。
 - `repair_status_counts` / `repair_action_counts`：后端基于诊断 flag 生成的固定修复建议分布。
 - `recent_attention_items`：最近最多 10 条需要关注的 proposal，便于直接跳回 history 或 Debug View 排查。
 

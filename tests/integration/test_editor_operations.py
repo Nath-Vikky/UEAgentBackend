@@ -1338,6 +1338,67 @@ def test_blueprint_compile_failed_result_includes_repair_advice(client: TestClie
     assert candidate["create_request_hint"]["json"]["operation_type"] == "compile_blueprint"
 
 
+def test_blueprint_graph_result_maps_ue_error_codes_to_repair_advice(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "add_blueprint_node_template",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "template_id": "print_string",
+                "graph_name": "EventGraph",
+                "message": "Hello diagnostics",
+                "entry_event": "BeginPlay",
+                "compile_after_edit": False,
+            },
+        },
+    )
+    assert created.status_code == 200
+    proposal_id = created.json()["item"]["proposal_id"]
+    assert client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm").status_code == 200
+
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "add_blueprint_node_template",
+            "execution_state": "failed",
+            "success": False,
+            "executed_by": "ue_plugin",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "template_id": "print_string",
+                "entry_event": "BeginPlay",
+                "error_code": "entry_event_not_found",
+            },
+            "errors": [{"code": "graph_not_found", "message": "EventGraph was not found"}],
+        },
+    )
+
+    assert result.status_code == 200
+    body = result.json()
+    summary = body["item"]["result_summary"]
+    diagnostics = summary["operation_diagnostics"]
+    assert diagnostics["execution_error_codes"] == ["graph_not_found", "entry_event_not_found"]
+    assert diagnostics["diagnostic_flags"] == ["blueprint_graph_unresolved", "entry_event_unresolved"]
+    action_ids = [item["action_id"] for item in diagnostics["repair_advice"]["actions"]]
+    assert "inspect_ue_execution_errors" in action_ids
+    assert "verify_blueprint_graph_name" in action_ids
+    assert "verify_blueprint_entry_event" in action_ids
+    assert summary["needs_user_attention"] is True
+    assert body["user_view"]["status_hint"] == "needs_attention"
+
+    diagnostics_summary = client.get(
+        "/api/v1/editor-operations/diagnostics",
+        params={"operation_type": "add_blueprint_node_template"},
+    )
+    assert diagnostics_summary.status_code == 200
+    flag_counts = diagnostics_summary.json()["summary"]["diagnostic_flag_counts"]
+    assert flag_counts["blueprint_graph_unresolved"] == 1
+    assert flag_counts["entry_event_unresolved"] == 1
+
+
 def test_editor_operation_follow_ups_require_result_before_suggesting(client: TestClient) -> None:
     created = client.post(
         "/api/v1/editor-operations/proposals",
