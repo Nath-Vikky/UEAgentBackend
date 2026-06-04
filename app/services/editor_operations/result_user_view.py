@@ -356,6 +356,12 @@ def generic_editor_operation_detail_block(*, operation_result: dict[str, Any]) -
     if dirty_packages:
         items.append(f"Dirty packages: {', '.join(dirty_packages[:5])}")
 
+    execution_error_codes = as_string_list(
+        diagnostics.get("execution_error_codes") or result_summary.get("error_codes")
+    )
+    for error_code in execution_error_codes[:5]:
+        items.append(f"Execution error: {error_code}")
+
     for applied_field in _field_items(result_summary.get("applied_fields") or result.get("applied_fields")):
         items.append(f"Applied: {applied_field}")
     for failed_field in _field_items(result_summary.get("failed_fields") or result.get("failed_fields")):
@@ -376,6 +382,7 @@ def generic_editor_operation_detail_block(*, operation_result: dict[str, Any]) -
             "items": items,
             "fields": detail_values,
             "dirty_packages": dirty_packages,
+            "execution_error_codes": execution_error_codes,
         },
     }
 

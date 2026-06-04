@@ -135,6 +135,7 @@ def test_generic_editor_operation_detail_block_uses_contract_fields() -> None:
             },
             "result_summary": {
                 "operation_diagnostics": {},
+                "error_codes": ["material_parameter_not_found"],
             },
             "errors": [],
         }
@@ -148,6 +149,7 @@ def test_generic_editor_operation_detail_block_uses_contract_fields() -> None:
     assert "material_instance_path: /Game/Materials/MI_Player" in items
     assert "parameter_name: Roughness" in items
     assert "Dirty packages: /Game/Materials/MI_Player" in items
+    assert "Execution error: material_parameter_not_found" in items
     assert "Applied: scalar_parameter: Roughness" in items
 
 
