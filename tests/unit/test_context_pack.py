@@ -52,6 +52,29 @@ def test_build_context_pack_projects_bundle_into_stable_layers() -> None:
             },
             "code": {"current_file": "Source/Demo/DemoCharacter.cpp"},
             "log": {"has_log_text": False},
+            "level_actor": {
+                "selected_actor_references": ["BP_EnemySpawner_1"],
+                "current_actor_reference": "BP_EnemySpawner_1",
+                "selected_actor_count": 1,
+                "current_actor_inventory": {
+                    "actor_label": "BP_EnemySpawner_1",
+                    "actor_class": "BP_EnemySpawner_C",
+                    "level_name": "L_Test",
+                    "blueprint_path": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner",
+                    "components": [{"component_name": "SceneRoot", "component_class": "SceneComponent"}],
+                },
+            },
+            "material": {
+                "selected_material_instance_paths": ["/Game/Materials/MI_Player.MI_Player"],
+                "current_material_instance_path": "/Game/Materials/MI_Player.MI_Player",
+                "selected_material_instance_count": 1,
+                "current_material_instance_inventory": {
+                    "material_instance_path": "/Game/Materials/MI_Player.MI_Player",
+                    "material_instance_name": "MI_Player",
+                    "parent_material": "/Game/Materials/M_Player",
+                    "scalar_parameters": [{"name": "Roughness", "value": 0.42}],
+                },
+            },
             "editor_focus": {"active_view": "user", "selected_panel": "AgentChat"},
             "kb": {"requires_rag": True},
             "editor_operation": {"status": "not_available"},
@@ -113,13 +136,24 @@ def test_build_context_pack_projects_bundle_into_stable_layers() -> None:
     assert pack["system_layer"]["tool_policy"].startswith("Read-only context")
     assert pack["project_layer"]["inventory"]["summary"]["asset_count"] == 12
     assert pack["active_layer"]["blueprint"]["current_graph_name"] == "EventGraph"
+    assert pack["active_layer"]["level_actor"]["current_actor_inventory"]["actor_label"] == "BP_EnemySpawner_1"
+    assert pack["active_layer"]["level_actor"]["current_actor_inventory"]["component_count"] == 1
+    assert pack["active_layer"]["material"]["current_material_instance_inventory"]["material_instance_name"] == "MI_Player"
+    assert pack["active_layer"]["material"]["current_material_instance_inventory"]["scalar_parameters"][0] == {
+        "name": "Roughness",
+        "value": 0.42,
+    }
     assert pack["memory_layer"]["selected_items"][0]["source_id"] == "w1"
     assert pack["tool_layer"]["tool_observation_summary"][0]["task_type"] == "code_review"
     assert pack["debug_summary"]["has_inventory_snapshot"] is True
+    assert pack["debug_summary"]["has_level_actor_focus"] is True
+    assert pack["debug_summary"]["has_material_focus"] is True
 
     excerpt = context_pack_prompt_excerpt(pack)
     assert "Context Pack v1" in excerpt
     assert "Enhanced Input" in excerpt
     assert "/Game/BP_Demo" in excerpt
     assert "EventGraph" in excerpt
+    assert "BP_EnemySpawner_1" in excerpt
+    assert "MI_Player" in excerpt
     assert "Recent tool observations" in excerpt

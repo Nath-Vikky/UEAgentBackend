@@ -2965,6 +2965,14 @@ into `debug_view.active_context.level_actor.current_actor_inventory` and
 read-only grounding for Agent Chat and tool planning; it does not create
 Proposals or execute editor writes.
 
+The same focus is also projected into
+`debug_view.context_bundle.context_pack.active_layer.level_actor` and
+`debug_view.context_bundle.context_pack.active_layer.material`. This keeps the
+Agent prompt compact: the active layer carries the focused actor/material path,
+label, class, parent material, and parameter/component counts, while detailed
+parameter values should still be answered through Project Inventory query
+results.
+
 Editor Operation Bridge 也提供了两个只读检查入口，方便前端或调试脚本按“编辑器操作能力”的命名方式读取同一份 Inventory：
 
 ```http

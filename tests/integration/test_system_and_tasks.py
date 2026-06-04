@@ -1071,6 +1071,14 @@ def test_agent_chat_project_inventory_answers_level_objects_and_material_values(
     assert focused_body["debug_view"]["context_bundle"]["project_inventory_context"]["current_material_instance"][
         "scalar_parameter_count"
     ] == 1
+    context_pack_active = focused_body["debug_view"]["context_bundle"]["context_pack"]["active_layer"]
+    assert context_pack_active["level_actor"]["current_actor_inventory"]["actor_label"] == "BP_EnemySpawner_1"
+    assert context_pack_active["level_actor"]["current_actor_inventory"]["component_count"] == 2
+    assert context_pack_active["material"]["current_material_instance_inventory"]["material_instance_name"] == "MI_Rock"
+    assert context_pack_active["material"]["current_material_instance_inventory"]["scalar_parameter_count"] == 1
+    context_pack_summary = focused_body["debug_view"]["context_bundle"]["context_pack"]["debug_summary"]
+    assert context_pack_summary["has_level_actor_focus"] is True
+    assert context_pack_summary["has_material_focus"] is True
 
 
 def test_agent_chat_project_qa_can_read_current_project_file(client: TestClient) -> None:
