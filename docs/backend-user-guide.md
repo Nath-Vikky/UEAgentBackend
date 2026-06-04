@@ -6493,6 +6493,13 @@ already submit Project Inventory `graph_summaries` and editor focus fields can
 use this automatically. If no snapshot exists, these fields are returned as
 `null` rather than omitted, so Debug View and User View parsing remain stable.
 
+When Agent Chat routes a current-graph question to the read-only
+`mcp_get_blueprint_graph` tool but no live MCP executor is enabled, the backend
+now returns a Project Inventory focus summary instead of a generic placeholder.
+The answer includes the current Blueprint, graph metrics, node preview, and the
+focused node when available. This keeps the user-facing response useful while
+preserving the same no-write safety boundary.
+
 ## 2026-06-03 Editor Operation Result Recording Refactor
 
 Editor Operation result recording helpers now live in

@@ -6,6 +6,7 @@ from app.agent.context_builder import build_context_summary
 from app.i18n.language import localized as _localized
 from app.schemas.common import QuickAction, UserViewBlock
 from app.services.task_handlers.base import TaskExecutionContext
+from app.services.task_handlers.read_only_tool_summaries import focused_blueprint_graph_result
 
 
 class PlaceholderTaskHandler:
@@ -19,6 +20,16 @@ class PlaceholderTaskHandler:
         output_language = context.output_language
 
         base_debug = host._base_debug(request=request, routing=routing, trace_id=context.trace_id)
+        selected_tool_id = str((routing.get("route") or {}).get("selected_tool_id") or "")
+        if selected_tool_id == "mcp_get_blueprint_graph":
+            graph_result = focused_blueprint_graph_result(
+                context=context,
+                base_debug=base_debug,
+                output_language=output_language,
+            )
+            if graph_result:
+                return graph_result
+
         placeholder_text = _localized(
             output_language,
             "系统已经识别到这是工程任务请求，但当前任务类型还未接入具体执行器，因此先返回任务路由和调试诊断。",

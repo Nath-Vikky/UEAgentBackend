@@ -849,6 +849,8 @@ def test_agent_chat_context_bundle_includes_current_blueprint_graph_focus(client
     assert body["debug_view"]["context_bundle"]["project_inventory_context"]["current_blueprint"]["asset_name"] == (
         "BP_FocusedActor"
     )
+    assert "EventGraph" in body["assistant_message"]
+    assert "Print String" in body["assistant_message"]
     assert active_blueprint["current_blueprint_inventory"]["asset_name"] == "BP_FocusedActor"
     assert active_blueprint["current_graph_summary"]["graph_name"] == "EventGraph"
     assert active_blueprint["current_graph_summary"]["nodes"][0]["title"] == "Event BeginPlay"
