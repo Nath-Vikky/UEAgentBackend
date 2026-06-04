@@ -394,13 +394,22 @@ class ProjectInventoryService:
         asset_type: str | None = None,
         fields: list[str] | None = None,
         selected_assets: list[str] | None = None,
+        selected_actor_references: list[str] | None = None,
+        current_actor_reference: str | None = None,
+        selected_material_instance_paths: list[str] | None = None,
+        current_material_instance_path: str | None = None,
         limit: int = 20,
     ) -> dict[str, Any]:
         needle = query.lower().strip()
         inferred_type = asset_type or self._infer_asset_type(needle)
+        focus_query = self._looks_like_current_focus_query(needle)
         is_code_query = self._looks_like_code_query(needle)
         is_level_actor_query = self._looks_like_level_actor_query(needle)
         is_material_instance_query = self._looks_like_material_instance_query(needle)
+        if focus_query and (selected_actor_references or current_actor_reference):
+            is_level_actor_query = is_level_actor_query or self._mentions_actor_focus_domain(needle)
+        if focus_query and (selected_material_instance_paths or current_material_instance_path):
+            is_material_instance_query = is_material_instance_query or self._mentions_material_focus_domain(needle)
         is_asset_query = inferred_type is not None or self._mentions_asset_domain(needle)
         requested_fields = self._normalize_requested_fields(fields or self._infer_requested_fields(needle))
         assets: list[dict[str, Any]] = []
@@ -456,7 +465,21 @@ class ProjectInventoryService:
                 code_files = self.list_code_files(project_id=project_id, limit=limit)
         level_actors: list[dict[str, Any]] = []
         if is_level_actor_query:
-            level_actors = self.list_level_actors(project_id=project_id, query=query, limit=limit)
+            if focus_query:
+                focus_references = list(
+                    dict.fromkeys(
+                        str(item or "").strip()
+                        for item in [current_actor_reference, *(selected_actor_references or [])]
+                        if str(item or "").strip()
+                    )
+                )
+                level_actors = [
+                    item
+                    for reference in focus_references
+                    if (item := self.get_level_actor(reference, project_id)) is not None
+                ][:limit]
+            if not level_actors:
+                level_actors = self.list_level_actors(project_id=project_id, query=query, limit=limit)
             if not level_actors and query.strip():
                 query_terms = self._query_terms(needle, inferred_type)
                 candidates = self.list_level_actors(project_id=project_id, limit=10000)
@@ -469,7 +492,21 @@ class ProjectInventoryService:
                 level_actors = self.list_level_actors(project_id=project_id, limit=limit)
         material_instances: list[dict[str, Any]] = []
         if is_material_instance_query:
-            material_instances = self.list_material_instances(project_id=project_id, query=query, limit=limit)
+            if focus_query:
+                focus_references = list(
+                    dict.fromkeys(
+                        str(item or "").strip()
+                        for item in [current_material_instance_path, *(selected_material_instance_paths or [])]
+                        if str(item or "").strip()
+                    )
+                )
+                material_instances = [
+                    item
+                    for reference in focus_references
+                    if (item := self.get_material_instance(reference, project_id)) is not None
+                ][:limit]
+            if not material_instances:
+                material_instances = self.list_material_instances(project_id=project_id, query=query, limit=limit)
             if not material_instances and query.strip():
                 query_terms = self._query_terms(needle, inferred_type)
                 candidates = self.list_material_instances(project_id=project_id, limit=10000)
@@ -1460,6 +1497,81 @@ class ProjectInventoryService:
                 "参数",
                 "关卡",
                 "场景",
+            )
+        )
+
+    @staticmethod
+    def _looks_like_current_focus_query(query: str) -> bool:
+        return any(
+            token in query
+            for token in (
+                "selected",
+                "current selected",
+                "currently selected",
+                "current actor",
+                "current object",
+                "current material",
+                "this actor",
+                "this object",
+                "this material",
+                "that actor",
+                "that material",
+                "the actor",
+                "the material",
+                "当前选中",
+                "当前选择",
+                "选中的",
+                "这个",
+                "该",
+                "它",
+                "这个对象",
+                "这个物体",
+                "这个材质",
+            )
+        )
+
+    @staticmethod
+    def _mentions_actor_focus_domain(query: str) -> bool:
+        return any(
+            token in query
+            for token in (
+                "actor",
+                "object",
+                "objects",
+                "component",
+                "components",
+                "transform",
+                "level",
+                "scene",
+                "对象",
+                "物体",
+                "组件",
+                "位置",
+                "变换",
+                "关卡",
+                "场景",
+            )
+        )
+
+    @staticmethod
+    def _mentions_material_focus_domain(query: str) -> bool:
+        return any(
+            token in query
+            for token in (
+                "material",
+                "material instance",
+                "mi_",
+                "parameter",
+                "parameters",
+                "roughness",
+                "texture",
+                "scalar",
+                "vector",
+                "static switch",
+                "材质",
+                "材质实例",
+                "参数",
+                "贴图",
             )
         )
 

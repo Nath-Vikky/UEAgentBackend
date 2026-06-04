@@ -152,6 +152,10 @@ def query_inventory(
         asset_type=request.asset_type,
         fields=request.fields,
         selected_assets=request.selected_assets,
+        selected_actor_references=request.selected_actor_references,
+        current_actor_reference=request.current_actor_reference,
+        selected_material_instance_paths=request.selected_material_instance_paths,
+        current_material_instance_path=request.current_material_instance_path,
         limit=request.limit,
     )
     return ProjectInventoryQueryResponse(

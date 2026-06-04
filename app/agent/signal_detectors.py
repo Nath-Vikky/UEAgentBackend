@@ -58,8 +58,28 @@ INVENTORY_SCOPE_HINTS = {
     "project inventory",
     "current level",
     "current scene",
+    "current actor",
+    "current object",
+    "current material",
+    "selected actor",
+    "selected object",
+    "selected material",
+    "currently selected",
+    "this actor",
+    "this object",
+    "this material",
+    "that actor",
+    "that material",
     "level objects",
     "scene objects",
+    "当前选中",
+    "当前选择",
+    "选中的",
+    "这个对象",
+    "这个物体",
+    "这个材质",
+    "该对象",
+    "该材质",
     "当前关卡",
     "当前场景",
     "当前项目",
@@ -127,6 +147,8 @@ INVENTORY_FACT_HINTS = {
 INVENTORY_QUESTION_HINTS = {
     "which",
     "what",
+    "what is",
+    "what are",
     "list",
     "show",
     "find",
@@ -229,6 +251,8 @@ def detect_inventory_query(
     scope_hits = _contains_any(text_lower, INVENTORY_SCOPE_HINTS)
     fact_hits = _contains_any(text_lower, INVENTORY_FACT_HINTS)
     question_hits = _contains_any(text_lower, INVENTORY_QUESTION_HINTS)
+    if "?" in user_text or "？" in user_text or "是什么" in user_text or "有哪些" in user_text:
+        question_hits = [*question_hits, "question_mark_or_zh_question"]
     if legacy.get("project_inventory_query"):
         confidence = 0.95
     elif scope_hits and fact_hits and question_hits:

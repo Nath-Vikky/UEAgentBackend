@@ -24,6 +24,26 @@ from app.tools.project_file import (
 from app.tools.registry import get_tool_spec
 
 
+def _focus_inventory_query_kwargs(context_bundle: dict[str, Any]) -> dict[str, Any]:
+    active_context = dict(context_bundle.get("active_context") or {})
+    level_actor = dict(active_context.get("level_actor") or {})
+    material = dict(active_context.get("material") or {})
+    return {
+        "selected_actor_references": [
+            str(item or "").strip()
+            for item in list(level_actor.get("selected_actor_references") or [])
+            if str(item or "").strip()
+        ],
+        "current_actor_reference": str(level_actor.get("current_actor_reference") or "").strip() or None,
+        "selected_material_instance_paths": [
+            str(item or "").strip()
+            for item in list(material.get("selected_material_instance_paths") or [])
+            if str(item or "").strip()
+        ],
+        "current_material_instance_path": str(material.get("current_material_instance_path") or "").strip() or None,
+    }
+
+
 class ProjectQAHandler:
     """Runs Project QA over KB, local search, inventory, file reads, and LLM synthesis."""
 
@@ -92,6 +112,13 @@ class ProjectQAHandler:
         inventory_fields = inventory_tool_input.get("fields")
         if not isinstance(inventory_fields, list):
             inventory_fields = []
+        focus_inventory_kwargs = _focus_inventory_query_kwargs(context.context_bundle)
+        selected_actor_references = inventory_tool_input.get("selected_actor_references")
+        if not isinstance(selected_actor_references, list):
+            selected_actor_references = focus_inventory_kwargs["selected_actor_references"]
+        selected_material_instance_paths = inventory_tool_input.get("selected_material_instance_paths")
+        if not isinstance(selected_material_instance_paths, list):
+            selected_material_instance_paths = focus_inventory_kwargs["selected_material_instance_paths"]
         inventory_result = (
             host.inventory_service.query(
                 query=str(inventory_tool_input.get("query") or query_text),
@@ -102,6 +129,24 @@ class ProjectQAHandler:
                 asset_type=str(inventory_tool_input.get("asset_type") or "") or None,
                 fields=[str(item) for item in inventory_fields],
                 selected_assets=list(request.context.selected_assets or []),
+                selected_actor_references=[str(item) for item in selected_actor_references],
+                current_actor_reference=(
+                    str(
+                        inventory_tool_input.get("current_actor_reference")
+                        or focus_inventory_kwargs["current_actor_reference"]
+                        or ""
+                    ).strip()
+                    or None
+                ),
+                selected_material_instance_paths=[str(item) for item in selected_material_instance_paths],
+                current_material_instance_path=(
+                    str(
+                        inventory_tool_input.get("current_material_instance_path")
+                        or focus_inventory_kwargs["current_material_instance_path"]
+                        or ""
+                    ).strip()
+                    or None
+                ),
                 limit=int(inventory_tool_input.get("limit") or 8),
             )
             if tool_plan["use_inventory"]

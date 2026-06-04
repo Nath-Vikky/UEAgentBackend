@@ -1024,7 +1024,7 @@ def test_agent_chat_project_inventory_answers_level_objects_and_material_values(
             "task_type": "agent_chat",
             "session": {
                 "session_id": "inventory_active_actor_material_focus_session",
-                "messages": [{"role": "user", "content": "当前选中的对象和材质是什么？", "language": "auto"}],
+                "messages": [{"role": "user", "content": "当前选中的 Actor 和材质是什么？", "language": "auto"}],
             },
             "context": {
                 "project_name": "InventoryDetailsProject",
@@ -1033,7 +1033,7 @@ def test_agent_chat_project_inventory_answers_level_objects_and_material_values(
                 "editor_state": {"selected_actors": [{"actor_label": "BP_EnemySpawner_1"}]},
             },
             "payload": {
-                "user_query": "当前选中的对象和材质是什么？",
+                "user_query": "当前选中的 Actor 和材质是什么？",
                 "selected_material_instances": [{"material_instance_path": "/Game/Materials/MI_Rock.MI_Rock"}],
             },
             "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
@@ -1062,6 +1062,11 @@ def test_agent_chat_project_inventory_answers_level_objects_and_material_values(
     assert "Roughness" in material_body["assistant_message"]
     assert "0.6" in material_body["assistant_message"]
     assert focused_response.status_code == 200
+    assert focused_body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
+    focused_item_kinds = {item["kind"] for item in focused_body["data"]["inventory"]["items"]}
+    assert focused_item_kinds == {"level_actor", "material_instance"}
+    assert "BP_EnemySpawner_1" in focused_body["assistant_message"]
+    assert "MI_Rock" in focused_body["assistant_message"]
     focused_context = focused_body["debug_view"]["active_context"]
     assert focused_context["level_actor"]["current_actor_inventory"]["actor_label"] == "BP_EnemySpawner_1"
     assert focused_context["material"]["current_material_instance_inventory"]["material_instance_name"] == "MI_Rock"

@@ -165,15 +165,35 @@ PROJECT_INVENTORY_SCOPE_HINTS = {
     "project inventory",
     "current repository",
     "current asset",
+    "current actor",
+    "current object",
+    "current material",
     "current level",
     "current scene",
     "selected asset",
+    "selected actor",
+    "selected object",
+    "selected material",
+    "currently selected",
     "this asset",
+    "this actor",
+    "this object",
+    "this material",
     "that asset",
+    "that actor",
+    "that material",
     "these assets",
     "asset details",
     "level objects",
     "scene objects",
+    "当前选中",
+    "当前选择",
+    "选中的",
+    "这个对象",
+    "这个物体",
+    "这个材质",
+    "该对象",
+    "该材质",
     "当前关卡",
     "当前场景",
     "当前项目",
@@ -273,6 +293,8 @@ PROJECT_INVENTORY_FACT_HINTS = {
 PROJECT_INVENTORY_QUESTION_HINTS = {
     "which",
     "what",
+    "what is",
+    "what are",
     "list",
     "show",
     "find",
@@ -580,7 +602,7 @@ def _looks_like_project_inventory_query(latest_text: str, text_lower: str) -> bo
     )
     has_question = any(
         _hint_present(latest_text, text_lower, hint) for hint in PROJECT_INVENTORY_QUESTION_HINTS
-    )
+    ) or "?" in latest_text or "？" in latest_text or "是什么" in latest_text or "有哪些" in latest_text
     return has_scope and has_fact and has_question
 
 

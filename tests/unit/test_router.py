@@ -214,6 +214,27 @@ def test_agent_chat_with_material_parameter_value_routes_to_inventory() -> None:
     assert routing["route"]["project_inventory_query"] is True
 
 
+def test_agent_chat_with_selected_actor_and_material_focus_routes_to_inventory() -> None:
+    request = _request(
+        content="当前选中的 Actor 和材质是什么？",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "editor_state": {"selected_actors": [{"actor_label": "BP_EnemySpawner_1"}]},
+        },
+        payload={
+            "user_query": "当前选中的 Actor 和材质是什么？",
+            "selected_material_instances": [{"material_instance_path": "/Game/Materials/MI_Rock"}],
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["project_inventory_query"] is True
+
+
 def test_router_keeps_existing_decision_while_exposing_signal_trace() -> None:
     request = _request(
         content="Explain how this file initializes the subsystem.",

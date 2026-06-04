@@ -441,6 +441,8 @@ def build_project_qa_result_contracts(
 def _sanitize_tool_input(tool_id: str, raw_input: dict[str, Any]) -> dict[str, Any]:
     if tool_id == "query_project_inventory":
         fields = raw_input.get("fields")
+        selected_actor_references = raw_input.get("selected_actor_references")
+        selected_material_instance_paths = raw_input.get("selected_material_instance_paths")
         return {
             key: value
             for key, value in {
@@ -449,6 +451,18 @@ def _sanitize_tool_input(tool_id: str, raw_input: dict[str, Any]) -> dict[str, A
                 "asset_path": _optional_str(raw_input.get("asset_path")),
                 "asset_type": _optional_str(raw_input.get("asset_type")),
                 "fields": [str(item) for item in fields[:12]] if isinstance(fields, list) else None,
+                "selected_actor_references": (
+                    [str(item) for item in selected_actor_references[:12]]
+                    if isinstance(selected_actor_references, list)
+                    else None
+                ),
+                "current_actor_reference": _optional_str(raw_input.get("current_actor_reference")),
+                "selected_material_instance_paths": (
+                    [str(item) for item in selected_material_instance_paths[:12]]
+                    if isinstance(selected_material_instance_paths, list)
+                    else None
+                ),
+                "current_material_instance_path": _optional_str(raw_input.get("current_material_instance_path")),
                 "limit": _bounded_int(raw_input.get("limit"), default=8, low=1, high=200),
             }.items()
             if _is_present(value)

@@ -26,6 +26,8 @@ def test_tool_planner_sanitizes_inventory_field_inputs() -> None:
                     "query": "BP_Hero variables",
                     "asset_path": "/Game/Characters/BP_Hero",
                     "fields": ["variables", "components"],
+                    "selected_actor_references": ["BP_Hero_1"],
+                    "current_material_instance_path": "/Game/Materials/MI_Player",
                     "limit": 999,
                     "dangerous": "ignored",
                 },
@@ -53,6 +55,8 @@ def test_tool_planner_sanitizes_inventory_field_inputs() -> None:
     assert calls[0]["input"]["limit"] == 200
     assert calls[0]["input"]["asset_path"] == "/Game/Characters/BP_Hero"
     assert calls[0]["input"]["fields"] == ["variables", "components"]
+    assert calls[0]["input"]["selected_actor_references"] == ["BP_Hero_1"]
+    assert calls[0]["input"]["current_material_instance_path"] == "/Game/Materials/MI_Player"
     assert tool_call_sequence(calls) == ["query_project_inventory"]
 
 
@@ -293,5 +297,63 @@ def test_project_inventory_context_snapshot_resolves_actor_and_material_focus() 
         assert context["current_material_instance"]["material_instance_path"] == "/Game/Materials/MI_Player.MI_Player"
         assert context["current_material_instance"]["scalar_parameter_count"] == 1
         assert context["current_material_instance"]["vector_parameter_count"] == 1
+    finally:
+        shutil.rmtree(storage_dir, ignore_errors=True)
+
+
+def test_project_inventory_query_can_use_current_actor_and_material_focus() -> None:
+    storage_dir = Path("storage/test-tmp") / f"inventory-focus-query-{uuid.uuid4().hex}"
+    try:
+        service = ProjectInventoryService(Settings(storage_dir=str(storage_dir)))
+        service.save_snapshot(
+            ProjectInventorySnapshotRequest(
+                project_id="FocusQueryProject",
+                project_name="FocusQueryProject",
+                level_actors=[
+                    {
+                        "actor_label": "BP_EnemySpawner_1",
+                        "actor_class": "BP_EnemySpawner_C",
+                        "level_name": "L_Test",
+                        "components": ["SceneRoot", "Billboard"],
+                    }
+                ],
+                material_instances=[
+                    {
+                        "material_instance_path": "/Game/Materials/MI_Player.MI_Player",
+                        "material_instance_name": "MI_Player",
+                        "parent_material": "/Game/Materials/M_Player",
+                        "scalar_parameters": [{"name": "Roughness", "value": 0.4}],
+                    }
+                ],
+            )
+        )
+
+        actor_result = service.query(
+            query="这个对象有哪些组件？",
+            project_id="FocusQueryProject",
+            fields=["components", "actor_class"],
+            selected_actor_references=["BP_EnemySpawner_1"],
+            current_actor_reference="BP_EnemySpawner_1",
+            limit=5,
+        )
+        material_result = service.query(
+            query="这个材质的 Roughness 是多少？",
+            project_id="FocusQueryProject",
+            fields=["scalar_parameters", "parent_material"],
+            selected_material_instance_paths=["/Game/Materials/MI_Player"],
+            current_material_instance_path="/Game/Materials/MI_Player",
+            limit=5,
+        )
+
+        assert actor_result["items"][0]["kind"] == "level_actor"
+        assert actor_result["items"][0]["actor_label"] == "BP_EnemySpawner_1"
+        assert actor_result["items"][0]["field_view"]["actor_class"] == "BP_EnemySpawner_C"
+        assert actor_result["items"][0]["field_view"]["components"] == ["SceneRoot", "Billboard"]
+        assert actor_result["summary"]["level_actor_match_count"] == 1
+        assert material_result["items"][0]["kind"] == "material_instance"
+        assert material_result["items"][0]["material_instance_name"] == "MI_Player"
+        assert material_result["items"][0]["field_view"]["scalar_parameters"][0]["name"] == "Roughness"
+        assert material_result["items"][0]["field_view"]["scalar_parameters"][0]["value"] == 0.4
+        assert material_result["summary"]["material_instance_match_count"] == 1
     finally:
         shutil.rmtree(storage_dir, ignore_errors=True)

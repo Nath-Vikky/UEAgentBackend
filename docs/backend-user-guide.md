@@ -2973,6 +2973,19 @@ label, class, parent material, and parameter/component counts, while detailed
 parameter values should still be answered through Project Inventory query
 results.
 
+`POST /api/v1/project-inventory/query` also accepts the same read-only focus
+hints:
+
+- `selected_actor_references`
+- `current_actor_reference`
+- `selected_material_instance_paths`
+- `current_material_instance_path`
+
+Agent Chat fills these from Active Context automatically. Questions such as
+`当前选中的 Actor 和材质是什么？`, `这个对象有哪些组件？`, or
+`这个材质的 Roughness 是多少？` can therefore use Project Inventory grounding
+instead of falling back to generic knowledge-base retrieval.
+
 Editor Operation Bridge 也提供了两个只读检查入口，方便前端或调试脚本按“编辑器操作能力”的命名方式读取同一份 Inventory：
 
 ```http

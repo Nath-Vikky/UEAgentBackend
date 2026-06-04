@@ -916,6 +916,10 @@ class TaskService:
                 query=inventory_query,
                 project_id=self._inventory_project_id(request),
                 selected_assets=list(request.context.selected_assets or []),
+                selected_actor_references=selected_actor_references,
+                current_actor_reference=str(current_actor_reference or "").strip() or None,
+                selected_material_instance_paths=selected_material_instance_paths,
+                current_material_instance_path=str(current_material_instance_path or "").strip() or None,
                 limit=10,
             )
             inventory_context["query_candidates"] = list(inventory_matches.get("items") or [])

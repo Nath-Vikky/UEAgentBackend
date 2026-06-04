@@ -171,6 +171,10 @@ class ProjectInventoryQueryRequest(BaseModel):
     asset_type: str | None = None
     fields: list[str] = Field(default_factory=list)
     selected_assets: list[str] = Field(default_factory=list)
+    selected_actor_references: list[str] = Field(default_factory=list)
+    current_actor_reference: str | None = None
+    selected_material_instance_paths: list[str] = Field(default_factory=list)
+    current_material_instance_path: str | None = None
     limit: int = Field(default=20, ge=1, le=200)
 
 
