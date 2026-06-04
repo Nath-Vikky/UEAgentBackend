@@ -4887,3 +4887,52 @@ def test_agent_chat_workflow_can_connect_current_node_then_compile(client: TestC
     assert second["operation_type"] == "compile_blueprint"
     assert second["depends_on_step_ids"] == ["step_0_connect_blueprint_nodes"]
     assert body["debug_view"]["active_context"]["blueprint"]["current_node_summary"]["node_id"] == "event-begin-play"
+
+
+def test_agent_chat_workflow_can_plan_enhanced_input_then_compile(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_editor_workflow_enhanced_input",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Plan a workflow: add Enhanced Input IA_Jump to BP_Player then compile",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "WorkflowInputProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Blueprints/BP_Player", "/Game/Input/IA_Jump"],
+            },
+            "payload": {
+                "user_query": "Plan a workflow: add Enhanced Input IA_Jump to BP_Player then compile",
+                "input_action_path": "/Game/Input/IA_Jump",
+            },
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    plan = body["data"]["editor_workflow_plan"]
+    first, second = plan["steps"]
+    assert body["action_proposals"] == []
+    assert plan["workflow_type"] == "blueprint_enhanced_input_print_then_compile"
+    assert plan["status"] == "planned"
+    assert first["operation_type"] == "add_blueprint_node_template"
+    assert first["payload"]["blueprint_path"] == "/Game/Blueprints/BP_Player"
+    assert first["payload"]["template_id"] == "enhanced_input_print_string"
+    assert first["payload"]["input_action_path"] == "/Game/Input/IA_Jump"
+    assert first["payload"]["message"] == "IA_Jump triggered"
+    assert second["operation_type"] == "compile_blueprint"
+    assert second["depends_on_step_ids"] == ["step_0_add_blueprint_node_template"]

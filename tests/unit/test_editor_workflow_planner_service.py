@@ -183,6 +183,29 @@ def test_blueprint_connect_workflow_reports_missing_explicit_target() -> None:
     assert second["proposal_ready"] is True
 
 
+def test_blueprint_enhanced_input_workflow_emits_template_then_compile() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal="Add Enhanced Input IA_Jump to Print String then compile",
+        workflow_type="blueprint_enhanced_input_print_then_compile",
+        payload={
+            "blueprint_path": "/Game/Blueprints/BP_Player",
+            "input_action_path": "/Game/Input/IA_Jump",
+        },
+    )
+
+    first, second = plan["steps"]
+    assert plan["status"] == "planned"
+    assert plan["workflow_type"] == "blueprint_enhanced_input_print_then_compile"
+    assert first["operation_type"] == "add_blueprint_node_template"
+    assert first["payload"]["template_id"] == "enhanced_input_print_string"
+    assert first["payload"]["input_action_path"] == "/Game/Input/IA_Jump"
+    assert first["payload"]["entry_event"] == ""
+    assert first["payload"]["message"] == "IA_Jump triggered"
+    assert first["payload"]["compile_after_edit"] is False
+    assert second["operation_type"] == "compile_blueprint"
+    assert second["payload"]["blueprint_path"] == "/Game/Blueprints/BP_Player"
+
+
 def test_workflow_templates_describe_plan_only_safety() -> None:
     templates = EditorWorkflowPlannerService.workflow_templates()
 
@@ -194,6 +217,7 @@ def test_workflow_templates_describe_plan_only_safety() -> None:
     workflow_types = {item["workflow_type"] for item in templates["templates"]}
     assert workflow_types == {
         "blueprint_connect_then_compile",
+        "blueprint_enhanced_input_print_then_compile",
         "blueprint_print_then_compile",
         "umg_hud_group",
         "umg_text_widget",
@@ -373,6 +397,33 @@ def test_detect_chat_workflow_request_extracts_blueprint_connect_plan_from_focus
     assert detected["payload"]["source_node_id"] == "event-begin-play"
     assert detected["payload"]["target_node_id"] == "print-string"
     assert detected["payload"]["target_pin_name"] == "execute"
+
+
+def test_detect_chat_workflow_request_extracts_enhanced_input_plan() -> None:
+    request = UnifiedTaskRequest(
+        task_type="agent_chat",
+        session=SessionInput(
+            session_id="workflow_detect_enhanced_input",
+            messages=[
+                SessionMessageInput(
+                    role="user",
+                    content="Plan a workflow: add Enhanced Input IA_Jump to BP_Player then compile",
+                )
+            ],
+        ),
+        payload={
+            "user_query": "Plan a workflow: add Enhanced Input IA_Jump to BP_Player then compile",
+            "input_action_path": "/Game/Input/IA_Jump",
+        },
+        context={"selected_assets": ["/Game/Blueprints/BP_Player"]},
+    )
+
+    detected = EditorWorkflowPlannerService.detect_chat_workflow_request(request)
+
+    assert detected is not None
+    assert detected["workflow_type"] == "blueprint_enhanced_input_print_then_compile"
+    assert detected["payload"]["blueprint_path"] == "/Game/Blueprints/BP_Player"
+    assert detected["payload"]["input_action_path"] == "/Game/Input/IA_Jump"
 
 
 def test_detect_chat_workflow_request_extracts_umg_hud_group_plan() -> None:

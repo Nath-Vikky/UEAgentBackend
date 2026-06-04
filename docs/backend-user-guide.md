@@ -5748,6 +5748,7 @@ Supported workflow types in v1:
 
 - `blueprint_print_then_compile`: add a BeginPlay Print String or Delay -> PrintString template, then compile the Blueprint as a separate confirmed step.
 - `blueprint_connect_then_compile`: connect two explicit Blueprint pins, then compile the Blueprint as a separate confirmed step.
+- `blueprint_enhanced_input_print_then_compile`: add an Enhanced Input Triggered -> Print String template, then compile the Blueprint as a separate confirmed step.
 - `umg_text_widget`: add a TextBlock, set text, and optionally apply CanvasPanelSlot layout or visibility.
 - `umg_hud_group`: plan a small HUD group under an existing panel using `add_umg_widget` steps for HorizontalBox, Image, TextBlock, and Button.
 - `arrange_and_tag_actors`: arrange a bounded Actor set, then optionally apply the same metadata to each Actor.
@@ -5796,6 +5797,16 @@ Project Inventory graph summaries and editor focus fields. It does not infer
 arbitrary Blueprint wiring: if the target node or pins cannot be matched from
 explicit payload fields or compact graph focus, the step returns
 `proposal_ready=false` with `missing_inputs`.
+
+2026-06-04 update: Workflow Planner v2 also adds
+`blueprint_enhanced_input_print_then_compile`. It emits:
+
+1. `add_blueprint_node_template` with `template_id=enhanced_input_print_string`
+2. `compile_blueprint`
+
+This workflow requires `blueprint_path` and `input_action_path`. It only works
+with an existing `UInputAction` asset and does not edit Input Mapping Contexts,
+Project Settings, or arbitrary Blueprint wiring.
 
 Frontend impact: no mandatory change. A future Workflow UI can show the plan,
 let the user submit one step at a time, and stop/skip steps safely.
@@ -5852,6 +5863,7 @@ user clearly asks for a multi-step editor plan, for example:
 - "Plan a workflow: add a Print String node to `/Game/Blueprints/BP_PlayerCharacter` then compile it."
 - "Plan a workflow: add a Print String after 2 seconds to `/Game/Blueprints/BP_PlayerCharacter` then compile it."
 - "Plan a workflow: connect the current node to Print String then compile."
+- "Plan a workflow: add Enhanced Input IA_Jump to BP_Player then compile."
 - "Create HUD status text, set the copy, then apply layout."
 - "Arrange these actors, then apply the same tag."
 
@@ -6091,6 +6103,7 @@ Covered cases:
 - `workflow_step_to_proposal`: workflow plan step becomes a pending Proposal.
 - `delay_workflow_step_to_proposal`: delay-print workflow step keeps `template_id=delay_print_string` and `delay_seconds` when it becomes a pending Proposal.
 - `blueprint_connect_workflow_step_to_proposal`: connect-pin workflow step becomes a pending `connect_blueprint_nodes` Proposal.
+- `enhanced_input_workflow_step_to_proposal`: Enhanced Input workflow step becomes a pending `add_blueprint_node_template` Proposal with `template_id=enhanced_input_print_string`.
 - `workflow_step_rejects_missing_inputs`: non-ready workflow step is rejected.
 - `umg_hud_group_step_to_proposal`: first HUD group workflow step becomes a pending `add_umg_widget` Proposal.
 - `follow_up_candidate_to_proposal`: Blueprint repair follow-up candidate becomes a pending Proposal.
@@ -6099,8 +6112,8 @@ Expected result:
 
 ```text
 overall_ok = true
-case_count = 6
-passed = 6
+case_count = 7
+passed = 7
 failed = 0
 ```
 

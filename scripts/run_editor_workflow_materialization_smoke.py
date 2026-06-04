@@ -217,6 +217,50 @@ def _run_connect_workflow_step_materialization(client: TestClient) -> dict[str, 
     }
 
 
+def _run_enhanced_input_workflow_step_materialization(client: TestClient) -> dict[str, Any]:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add Enhanced Input IA_Jump to Print String and compile",
+            "workflow_type": "blueprint_enhanced_input_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "input_action_path": "/Game/Input/IA_Jump",
+            },
+        },
+    )
+    plan_body = plan_response.json()
+    plan = dict(plan_body.get("workflow_plan") or {})
+    step = list(plan.get("steps") or [{}])[0]
+    proposal_response = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan.get("plan_id"),
+            "step": step,
+            "requested_by": "workflow_materialization_smoke",
+        },
+    )
+    body = proposal_response.json()
+    operation_payload = body.get("proposal", {}).get("operation", {}).get("operation_payload", {})
+    checks = [
+        _check("plan_status_code", 200, plan_response.status_code),
+        _check("proposal_status_code", 200, proposal_response.status_code),
+        _check("workflow_type", "blueprint_enhanced_input_print_then_compile", plan.get("workflow_type")),
+        _check("step_count", 2, plan.get("step_count")),
+        _check("operation_type", "add_blueprint_node_template", body.get("proposal", {}).get("operation", {}).get("operation_type")),
+        _check("proposal_template_id", "enhanced_input_print_string", operation_payload.get("template_id")),
+        _check("proposal_input_action_path", "/Game/Input/IA_Jump", operation_payload.get("input_action_path")),
+        _check("proposal_compile_after_edit", False, operation_payload.get("compile_after_edit")),
+        _check("confirmation_state", "pending", body.get("proposal", {}).get("item", {}).get("confirmation", {}).get("state")),
+        _check("auto_execute", False, body.get("workflow_step", {}).get("auto_execute")),
+    ]
+    return {
+        "case_id": "enhanced_input_workflow_step_to_proposal",
+        "ok": all(item["ok"] for item in checks),
+        "checks": checks,
+    }
+
+
 def _run_workflow_step_rejection(client: TestClient) -> dict[str, Any]:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",
@@ -357,6 +401,7 @@ def main() -> int:
             _run_workflow_step_materialization(client),
             _run_delay_workflow_step_materialization(client),
             _run_connect_workflow_step_materialization(client),
+            _run_enhanced_input_workflow_step_materialization(client),
             _run_workflow_step_rejection(client),
             _run_umg_hud_group_step_materialization(client),
             _run_follow_up_materialization(client),

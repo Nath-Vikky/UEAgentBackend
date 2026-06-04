@@ -414,6 +414,31 @@ class EditorWorkflowPlannerService:
                     target_pin = _pin_name_from_node(target_node, direction="input")
                     if target_pin:
                         plan_payload["target_pin_name"] = target_pin
+        elif workflow_type == "blueprint_enhanced_input_print_then_compile":
+            detected_graph = EditorOperationService._detect_blueprint_graph_name_from_request(request, goal)
+            plan_payload.setdefault(
+                "blueprint_path",
+                _plan_asset_path(
+                    EditorOperationService._detect_blueprint_path_from_request(request, goal, context_bundle)
+                    or _active_blueprint_path(workflow_context)
+                    or ""
+                ),
+            )
+            plan_payload.setdefault(
+                "graph_name",
+                _resolve_blueprint_graph_name(
+                    goal=goal,
+                    payload=plan_payload,
+                    context=workflow_context,
+                    detected_graph_name=detected_graph,
+                ),
+            )
+            plan_payload.setdefault(
+                "input_action_path",
+                _plan_asset_path(
+                    EditorOperationService._detect_input_action_path_from_request(request, goal, context_bundle)
+                ),
+            )
         elif workflow_type == "umg_hud_group":
             plan_payload.setdefault(
                 "widget_blueprint_path",
@@ -467,8 +492,17 @@ class EditorWorkflowPlannerService:
             "mode": "plan_only_confirmed_step_workflows",
             "auto_execute": False,
             "requires_user_confirmation_per_step": True,
-            "template_count": 5,
+            "template_count": 6,
             "templates": [
+                {
+                    "workflow_type": "blueprint_enhanced_input_print_then_compile",
+                    "title": "Enhanced Input Print String Then Compile",
+                    "description": "Create a bounded Enhanced Input Triggered -> Print String template, then compile the Blueprint as a second Proposal step.",
+                    "required_payload_fields": ["blueprint_path", "input_action_path"],
+                    "optional_payload_fields": ["graph_name", "message"],
+                    "emitted_operation_types": ["add_blueprint_node_template", "compile_blueprint"],
+                    "boundary": "Existing UInputAction asset only; no input mapping context edits or arbitrary graph wiring.",
+                },
                 {
                     "workflow_type": "blueprint_connect_then_compile",
                     "title": "Blueprint Connect Pins Then Compile",
@@ -575,6 +609,13 @@ class EditorWorkflowPlannerService:
                 context=safe_context,
                 requested_by=requested_by,
             )
+        if resolved_type == "blueprint_enhanced_input_print_then_compile":
+            return self._blueprint_enhanced_input_print_then_compile(
+                goal=safe_goal,
+                payload=safe_payload,
+                context=safe_context,
+                requested_by=requested_by,
+            )
         if resolved_type == "umg_text_widget":
             return self._umg_text_widget(
                 goal=safe_goal,
@@ -618,6 +659,18 @@ class EditorWorkflowPlannerService:
             "compile" in lower or "编译" in lower or "then" in lower or "然后" in lower
         ):
             return "blueprint_connect_then_compile"
+        if (
+            "compile" in lower
+            or "then" in lower
+            or "然后" in lower
+            or "编译" in lower
+        ) and (
+            "enhanced input" in lower
+            or "input action" in lower
+            or "ia_" in lower
+            or "增强输入" in goal
+        ):
+            return "blueprint_enhanced_input_print_then_compile"
         if "print string" in lower or ("beginplay" in lower and "compile" in lower):
             return "blueprint_print_then_compile"
         if any(token in lower for token in ("hud group", "hud panel", "ui group", "status hud", "status group")):
@@ -807,6 +860,79 @@ class EditorWorkflowPlannerService:
             steps=steps,
             status=self._status_for_steps(steps),
             reason="planned_blueprint_connect_then_compile",
+        )
+
+    def _blueprint_enhanced_input_print_then_compile(
+        self,
+        *,
+        goal: str,
+        payload: dict[str, Any],
+        context: dict[str, Any],
+        requested_by: str,
+    ) -> dict[str, Any]:
+        blueprint_path = _first_non_empty(
+            payload.get("blueprint_path"),
+            context.get("blueprint_path"),
+            context.get("current_blueprint_path"),
+            _active_blueprint_path(context),
+        )
+        blueprint_path = _plan_asset_path(blueprint_path)
+        graph_name = _resolve_blueprint_graph_name(goal=goal, payload=payload, context=context)
+        input_action_path = _plan_asset_path(payload.get("input_action_path"))
+        input_action_name = input_action_path.rstrip("/").rsplit("/", 1)[-1].split(".")[-1] if input_action_path else ""
+        message = _first_non_empty(
+            payload.get("message"),
+            _quoted_text(goal),
+            f"{input_action_name} triggered" if input_action_name else "",
+            "Enhanced Input triggered",
+        )
+        node_payload = {
+            "blueprint_path": blueprint_path,
+            "graph_name": graph_name,
+            "template_id": "enhanced_input_print_string",
+            "entry_event": "",
+            "input_action_path": input_action_path,
+            "message": message,
+            "compile_after_edit": False,
+        }
+        missing_node = [
+            key
+            for key, value in {
+                "blueprint_path": blueprint_path,
+                "input_action_path": input_action_path,
+            }.items()
+            if not value
+        ]
+        steps = [
+            self._step(
+                index=0,
+                operation_type="add_blueprint_node_template",
+                title="Add Enhanced Input Triggered -> Print String nodes",
+                payload=node_payload,
+                missing_inputs=missing_node,
+                reason=(
+                    "Create the Enhanced Input Print String template first. The template only uses an "
+                    "existing UInputAction asset and does not edit input mapping contexts."
+                ),
+                requested_by=requested_by,
+            ),
+            self._step(
+                index=1,
+                operation_type="compile_blueprint",
+                title="Compile Blueprint after Enhanced Input graph edit",
+                payload={"blueprint_path": blueprint_path, "compile_mode": "default"},
+                missing_inputs=["blueprint_path"] if not blueprint_path else [],
+                reason="Compile is a separate confirmed step so users can inspect the graph edit first.",
+                requested_by=requested_by,
+                depends_on_step_ids=["step_0_add_blueprint_node_template"],
+            ),
+        ]
+        return self._plan_envelope(
+            workflow_type="blueprint_enhanced_input_print_then_compile",
+            goal=goal,
+            steps=steps,
+            status=self._status_for_steps(steps),
+            reason="planned_blueprint_enhanced_input_print_then_compile",
         )
 
     def _umg_text_widget(
