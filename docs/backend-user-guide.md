@@ -5878,7 +5878,7 @@ Proposals automatically and does not execute UE writes. The response appears in:
 - `user_view.blocks[]` with `block_type=workflow_ready_actions` when ready
   steps exist.
 - `user_view.quick_actions[]` with `action_type=create_workflow_step_proposal`
-  for each ready step, capped to the first 5 actions.
+  for dependency-free ready steps, capped to the first 5 actions.
 - `data.editor_workflow_plan`.
 - `data.editor_workflow_quick_actions`.
 - `debug_view.workflow_trace`.
@@ -5895,7 +5895,9 @@ assistant text and optional `user_view.blocks`. A future Workflow UI can read
 `user_view.quick_actions[]` or
 `data.editor_workflow_plan.steps[].create_request_hint` and let users submit one
 step at a time. A quick action creates one pending Proposal only; it does not
-confirm, execute, or batch-submit a workflow.
+confirm, execute, or batch-submit a workflow. Steps with `depends_on_step_ids`
+remain in `data.editor_workflow_plan.steps[]` but are not exposed as quick
+actions until the client has enough execution state to safely continue.
 
 ## 2026-05-24 Workflow Step Materialization
 

@@ -58,12 +58,13 @@ class EditorWorkflowPlanHandler:
             {
                 "step_id": step.get("step_id"),
                 "title": step.get("title"),
-                "status": "ready" if step.get("proposal_ready") else "needs_more_input",
+                "status": self._step_display_status(step),
                 "summary": step.get("operation_type"),
                 "details": {
                     "operation_type": step.get("operation_type"),
                     "tool_id": step.get("tool_id"),
                     "missing_inputs": step.get("missing_inputs") or [],
+                    "depends_on_step_ids": step.get("depends_on_step_ids") or [],
                 },
             }
             for step in plan.get("steps", [])
@@ -98,7 +99,11 @@ class EditorWorkflowPlanHandler:
                 UserViewBlock(
                     block_type="workflow_ready_actions",
                     title="Ready Proposal Actions",
-                    text="Ready workflow steps can be converted into one pending Proposal at a time.",
+                    text=(
+                        "Dependency-free ready workflow steps can be converted into one pending "
+                        "Proposal at a time. Later steps stay in the plan until their dependencies "
+                        "are completed."
+                    ),
                     data={"actions": ready_actions},
                 ).model_dump(mode="json")
             )
@@ -184,6 +189,9 @@ class EditorWorkflowPlanHandler:
                 continue
             if not bool(step.get("proposal_ready")) or step.get("missing_inputs"):
                 continue
+            depends_on_step_ids = [str(item) for item in list(step.get("depends_on_step_ids") or []) if str(item)]
+            if depends_on_step_ids:
+                continue
 
             step_id = str(step.get("step_id") or f"step_{len(actions)}")
             title = str(step.get("title") or step.get("operation_type") or step_id)
@@ -216,3 +224,11 @@ class EditorWorkflowPlanHandler:
             )
             actions.append(action.model_dump(mode="json"))
         return actions
+
+    @staticmethod
+    def _step_display_status(step: dict[str, Any]) -> str:
+        if not bool(step.get("proposal_ready")) or step.get("missing_inputs"):
+            return "needs_more_input"
+        if step.get("depends_on_step_ids"):
+            return "waiting_dependency"
+        return "ready"
