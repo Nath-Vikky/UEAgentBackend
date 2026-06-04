@@ -21,12 +21,14 @@ def test_active_context_summarizes_project_asset_code_and_log_inputs() -> None:
                     "plugin_version": "0.1",
                     "current_graph_name": "EventGraph",
                     "selected_node_id": "EventBeginPlay",
+                    "selected_actors": [{"actor_label": "BP_EnemySpawner_1"}],
                 },
             },
             "payload": {
                 "user_query": "当前项目有哪些蓝图资产？",
                 "log_file_path": "Saved/Logs/RushBa.log",
                 "selected_log_text": "LogTemp: Error: Something failed",
+                "selected_material_instances": [{"material_instance_path": "/Game/Materials/MI_Player"}],
             },
         }
     )
@@ -46,6 +48,10 @@ def test_active_context_summarizes_project_asset_code_and_log_inputs() -> None:
     assert active_context["blueprint"]["selected_node_id"] == "EventBeginPlay"
     assert active_context["blueprint"]["has_blueprint_focus"] is True
     assert active_context["editor_focus"]["current_blueprint_path"] == "/Game/BP_Hero"
+    assert active_context["level_actor"]["current_actor_reference"] == "BP_EnemySpawner_1"
+    assert active_context["level_actor"]["selected_actor_count"] == 1
+    assert active_context["material"]["current_material_instance_path"] == "/Game/Materials/MI_Player"
+    assert active_context["material"]["selected_material_instance_count"] == 1
     assert active_context["code"]["current_file"] == "Source/RushBa/Private/Hero.cpp"
     assert active_context["log"]["has_log_text"] is True
     assert active_context["kb"]["selected_tool_id"] == "query_project_inventory"

@@ -841,6 +841,8 @@ class TaskService:
         active_context["mcp"] = build_mcp_adapter_status(self.settings)
         blueprint_context = dict(active_context.get("blueprint") or {})
         editor_focus_context = dict(active_context.get("editor_focus") or {})
+        level_actor_context = dict(active_context.get("level_actor") or {})
+        material_context = dict(active_context.get("material") or {})
         current_blueprint_path = (
             blueprint_context.get("current_blueprint_path")
             or editor_focus_context.get("current_blueprint_path")
@@ -867,14 +869,42 @@ class TaskService:
             or request.context.editor_state.get("selected_node_name")
             or request.context.editor_state.get("current_node_name")
         )
+        selected_actor_references = [
+            str(item or "").strip()
+            for item in list(level_actor_context.get("selected_actor_references") or [])
+            if str(item or "").strip()
+        ]
+        current_actor_reference = (
+            level_actor_context.get("current_actor_reference")
+            or request.payload.get("actor_reference")
+            or request.payload.get("current_actor_reference")
+            or request.context.editor_state.get("current_actor_reference")
+            or request.context.editor_state.get("current_actor_label")
+        )
+        selected_material_instance_paths = [
+            str(item or "").strip()
+            for item in list(material_context.get("selected_material_instance_paths") or [])
+            if str(item or "").strip()
+        ]
+        current_material_instance_path = (
+            material_context.get("current_material_instance_path")
+            or request.payload.get("material_instance_path")
+            or request.payload.get("current_material_instance_path")
+            or request.context.editor_state.get("material_instance_path")
+            or request.context.editor_state.get("current_material_instance_path")
+        )
         inventory_context = self.inventory_service.context_snapshot(
             project_id=self._inventory_project_id(request),
             selected_assets=list(request.context.selected_assets or []),
+            selected_actor_references=selected_actor_references,
+            selected_material_instance_paths=selected_material_instance_paths,
             current_file=request.context.current_file,
             current_blueprint_path=str(current_blueprint_path or "").strip() or None,
             current_graph_name=str(current_graph_name or "").strip() or None,
             current_node_id=str(current_node_id or "").strip() or None,
             current_node_name=str(current_node_name or "").strip() or None,
+            current_actor_reference=str(current_actor_reference or "").strip() or None,
+            current_material_instance_path=str(current_material_instance_path or "").strip() or None,
         )
         inventory_query = str(
             (bundle.get("input_summary") or {}).get("latest_user_message")
@@ -906,6 +936,14 @@ class TaskService:
         asset_context = dict(active_context.get("asset") or {})
         asset_context["selected_asset_details"] = inventory_context.get("selected_assets", [])
         active_context["asset"] = asset_context
+        level_actor_context["selected_actor_details"] = inventory_context.get("selected_level_actors", [])
+        if inventory_context.get("current_level_actor"):
+            level_actor_context["current_actor_inventory"] = inventory_context.get("current_level_actor")
+        active_context["level_actor"] = level_actor_context
+        material_context["selected_material_instance_details"] = inventory_context.get("selected_material_instances", [])
+        if inventory_context.get("current_material_instance"):
+            material_context["current_material_instance_inventory"] = inventory_context.get("current_material_instance")
+        active_context["material"] = material_context
         if inventory_context.get("current_blueprint"):
             blueprint_context["current_blueprint_inventory"] = inventory_context.get("current_blueprint")
         if inventory_context.get("current_blueprint_graph"):

@@ -524,11 +524,15 @@ class ProjectInventoryService:
         *,
         project_id: str | None = None,
         selected_assets: list[str] | None = None,
+        selected_actor_references: list[str] | None = None,
+        selected_material_instance_paths: list[str] | None = None,
         current_file: str | None = None,
         current_blueprint_path: str | None = None,
         current_graph_name: str | None = None,
         current_node_id: str | None = None,
         current_node_name: str | None = None,
+        current_actor_reference: str | None = None,
+        current_material_instance_path: str | None = None,
         limit: int = 6,
     ) -> dict[str, Any]:
         snapshot = self._resolve_snapshot(project_id)
@@ -542,6 +546,10 @@ class ProjectInventoryService:
                 "current_blueprint": None,
                 "current_blueprint_graph": None,
                 "current_blueprint_node": None,
+                "selected_level_actors": [],
+                "current_level_actor": None,
+                "selected_material_instances": [],
+                "current_material_instance": None,
                 "top_assets": [],
                 "top_code_files": [],
                 "top_level_actors": [],
@@ -571,6 +579,24 @@ class ProjectInventoryService:
             current_node_id=current_node_id,
             current_node_name=current_node_name,
         )
+        selected_level_actors = [
+            self._compact_level_actor(item)
+            for reference in selected_actor_references or []
+            if (item := self.get_level_actor(reference, project_id)) is not None
+        ][:limit]
+        current_level_actor_item = (
+            self.get_level_actor(current_actor_reference, project_id) if current_actor_reference else None
+        )
+        selected_material_instances = [
+            self._compact_material_instance(item)
+            for reference in selected_material_instance_paths or []
+            if (item := self.get_material_instance(reference, project_id)) is not None
+        ][:limit]
+        current_material_instance_item = (
+            self.get_material_instance(current_material_instance_path, project_id)
+            if current_material_instance_path
+            else None
+        )
 
         return {
             "status": "available",
@@ -585,6 +611,16 @@ class ProjectInventoryService:
             "current_blueprint": compact_current_blueprint,
             "current_blueprint_graph": current_blueprint_graph,
             "current_blueprint_node": current_blueprint_node,
+            "selected_level_actors": selected_level_actors,
+            "current_level_actor": (
+                self._compact_level_actor(current_level_actor_item) if current_level_actor_item else None
+            ),
+            "selected_material_instances": selected_material_instances,
+            "current_material_instance": (
+                self._compact_material_instance(current_material_instance_item)
+                if current_material_instance_item
+                else None
+            ),
             "top_assets": [self._compact_asset(item) for item in list(snapshot.get("assets") or [])[:limit]],
             "top_code_files": [self._compact_code_file(item) for item in list(snapshot.get("code_files") or [])[:limit]],
             "top_level_actors": [
@@ -595,6 +631,43 @@ class ProjectInventoryService:
                 for item in list(snapshot.get("material_instances") or [])[:limit]
             ],
         }
+
+    def get_level_actor(self, reference: str, project_id: str | None = None) -> dict[str, Any] | None:
+        lookup_keys = _asset_lookup_keys(reference)
+        if not lookup_keys:
+            return None
+        for item in self.list_level_actors(project_id=project_id, limit=10000):
+            item_keys: set[str] = set()
+            for value in (
+                item.get("actor_id"),
+                item.get("actor_label"),
+                item.get("actor_name"),
+                item.get("actor_path"),
+                item.get("object_path"),
+                item.get("blueprint_path"),
+            ):
+                item_keys.update(_asset_lookup_keys(value))
+            if lookup_keys & item_keys:
+                return item
+        return None
+
+    def get_material_instance(self, reference: str, project_id: str | None = None) -> dict[str, Any] | None:
+        lookup_keys = _asset_lookup_keys(reference)
+        if not lookup_keys:
+            return None
+        for item in self.list_material_instances(project_id=project_id, limit=10000):
+            item_keys: set[str] = set()
+            for value in (
+                item.get("material_instance_id"),
+                item.get("material_instance_name"),
+                item.get("material_instance_path"),
+                item.get("asset_path"),
+                item.get("object_path"),
+            ):
+                item_keys.update(_asset_lookup_keys(value))
+            if lookup_keys & item_keys:
+                return item
+        return None
 
     def _focused_graph(
         self,

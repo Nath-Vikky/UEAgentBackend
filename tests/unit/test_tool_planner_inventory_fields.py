@@ -245,3 +245,53 @@ def test_project_inventory_context_snapshot_resolves_current_blueprint_graph_foc
         assert context["current_blueprint_node"]["pins"][0]["pin_name"] == "execute"
     finally:
         shutil.rmtree(storage_dir, ignore_errors=True)
+
+
+def test_project_inventory_context_snapshot_resolves_actor_and_material_focus() -> None:
+    storage_dir = Path("storage/test-tmp") / f"inventory-actor-material-focus-{uuid.uuid4().hex}"
+    try:
+        service = ProjectInventoryService(Settings(storage_dir=str(storage_dir)))
+        service.save_snapshot(
+            ProjectInventorySnapshotRequest(
+                project_id="FocusProject",
+                project_name="FocusProject",
+                level_actors=[
+                    {
+                        "actor_label": "BP_EnemySpawner_1",
+                        "actor_name": "BP_EnemySpawner_C_1",
+                        "actor_class": "BP_EnemySpawner_C",
+                        "level_name": "L_Test",
+                        "blueprint_path": "/Game/Blueprints/BP_EnemySpawner",
+                        "transform": {"location": {"x": 100, "y": 200, "z": 0}},
+                        "components": ["SceneRoot", "Billboard"],
+                    }
+                ],
+                material_instances=[
+                    {
+                        "material_instance_path": "/Game/Materials/MI_Player.MI_Player",
+                        "material_instance_name": "MI_Player",
+                        "parent_material": "/Game/Materials/M_Player",
+                        "scalar_parameters": [{"name": "Roughness", "value": 0.4}],
+                        "vector_parameters": [{"name": "Tint", "value": [1, 0, 0, 1]}],
+                    }
+                ],
+            )
+        )
+
+        context = service.context_snapshot(
+            project_id="FocusProject",
+            selected_actor_references=["BP_EnemySpawner_1"],
+            current_actor_reference="BP_EnemySpawner_1",
+            selected_material_instance_paths=["MI_Player"],
+            current_material_instance_path="/Game/Materials/MI_Player",
+        )
+
+        assert context["selected_level_actors"][0]["actor_label"] == "BP_EnemySpawner_1"
+        assert context["current_level_actor"]["actor_class"] == "BP_EnemySpawner_C"
+        assert context["current_level_actor"]["component_count"] == 2
+        assert context["selected_material_instances"][0]["material_instance_name"] == "MI_Player"
+        assert context["current_material_instance"]["material_instance_path"] == "/Game/Materials/MI_Player.MI_Player"
+        assert context["current_material_instance"]["scalar_parameter_count"] == 1
+        assert context["current_material_instance"]["vector_parameter_count"] == 1
+    finally:
+        shutil.rmtree(storage_dir, ignore_errors=True)

@@ -1018,8 +1018,37 @@ def test_agent_chat_project_inventory_answers_level_objects_and_material_values(
             },
         },
     )
+    focused_response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "inventory_active_actor_material_focus_session",
+                "messages": [{"role": "user", "content": "当前选中的对象和材质是什么？", "language": "auto"}],
+            },
+            "context": {
+                "project_name": "InventoryDetailsProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Materials/MI_Rock.MI_Rock"],
+                "editor_state": {"selected_actors": [{"actor_label": "BP_EnemySpawner_1"}]},
+            },
+            "payload": {
+                "user_query": "当前选中的对象和材质是什么？",
+                "selected_material_instances": [{"material_instance_path": "/Game/Materials/MI_Rock.MI_Rock"}],
+            },
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
     actor_body = actor_response.json()
     material_body = material_response.json()
+    focused_body = focused_response.json()
 
     assert snapshot.status_code == 200
     assert actor_response.status_code == 200
@@ -1032,6 +1061,16 @@ def test_agent_chat_project_inventory_answers_level_objects_and_material_values(
     assert material_body["data"]["inventory"]["items"][0]["kind"] == "material_instance"
     assert "Roughness" in material_body["assistant_message"]
     assert "0.6" in material_body["assistant_message"]
+    assert focused_response.status_code == 200
+    focused_context = focused_body["debug_view"]["active_context"]
+    assert focused_context["level_actor"]["current_actor_inventory"]["actor_label"] == "BP_EnemySpawner_1"
+    assert focused_context["material"]["current_material_instance_inventory"]["material_instance_name"] == "MI_Rock"
+    assert focused_body["debug_view"]["context_bundle"]["project_inventory_context"]["current_level_actor"][
+        "actor_class"
+    ] == "BP_EnemySpawner_C"
+    assert focused_body["debug_view"]["context_bundle"]["project_inventory_context"]["current_material_instance"][
+        "scalar_parameter_count"
+    ] == 1
 
 
 def test_agent_chat_project_qa_can_read_current_project_file(client: TestClient) -> None:

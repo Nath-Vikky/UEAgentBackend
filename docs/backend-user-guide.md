@@ -2860,6 +2860,8 @@ Agent Chat / Project QA 会把最近项目快照注入：
 - `debug_view.context_bundle.project_inventory_context`
 - `debug_view.active_context.inventory`
 - `debug_view.active_context.asset.selected_asset_details`
+- `debug_view.active_context.level_actor.current_actor_inventory`
+- `debug_view.active_context.material.current_material_instance_inventory`
 - `debug_view.active_context.code.current_file_inventory`
 - `debug_view.active_context.blueprint`
 - `debug_view.active_context.editor_focus`
@@ -2945,6 +2947,23 @@ Agent Chat 路由也会把英文图表节点问题识别为 Project Inventory �
 ```
 
 当问题包含 `this asset / selected asset / components / variables / functions / graphs` 这类上下文词时，后端会优先返回选中资产，而不是列出全项目资产。关卡 Actor 和材质实例字段来自 UEAgentTool 的 Inventory 采集；旧前端不提交时，summary 会显示数量为 0，问答不会编造缺失信息。
+
+2026-06-04 update: Active Context v3 can also project selected Level Actor and
+Material Instance focus from existing request fields:
+
+- `context.editor_state.selected_actors`
+- `payload.selected_actors`
+- `payload.actor_reference`
+- `payload.selected_material_instances`
+- `payload.material_instance_path`
+- `context.selected_assets` entries that look like `MI_...`
+
+When the latest Project Inventory snapshot contains matching
+`level_actors[]` or `material_instances[]`, the backend injects compact details
+into `debug_view.active_context.level_actor.current_actor_inventory` and
+`debug_view.active_context.material.current_material_instance_inventory`. This is
+read-only grounding for Agent Chat and tool planning; it does not create
+Proposals or execute editor writes.
 
 Editor Operation Bridge 也提供了两个只读检查入口，方便前端或调试脚本按“编辑器操作能力”的命名方式读取同一份 Inventory：
 
