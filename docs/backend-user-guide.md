@@ -3739,6 +3739,13 @@ static switch 参数也使用独立 operation，`value` 必须是布尔值：
 
 材质颜色示例：
 
+2026-06-04 update: Agent Chat can also resolve `this material` / `selected
+material` from Active Context. If the UE plugin or payload provides
+`selected_material_instances` or `current_material_instance_path`, a request
+such as `Set this material Roughness to 0.42` can produce the same pending
+`set_material_instance_parameter` Proposal without naming `MI_Player` in the
+text.
+
 ```text
 Set MI_Player material BaseColor to #FF8040
 ```

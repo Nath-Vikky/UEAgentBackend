@@ -4226,6 +4226,54 @@ def test_agent_chat_can_set_selected_material_instance_parameter(client: TestCli
     assert payload["value"] == 0.35
 
 
+def test_agent_chat_can_set_current_material_instance_parameter_from_active_context(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_current_material_parameter_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Set this material Roughness to 0.42",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {
+                "user_query": "Set this material Roughness to 0.42",
+                "selected_material_instances": [{"material_instance_path": "/Game/Materials/MI_Player"}],
+            },
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_material_instance_parameter"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Player"
+    assert payload["parameter_name"] == "Roughness"
+    assert payload["parameter_type"] == "scalar"
+    assert payload["value"] == 0.42
+    assert body["debug_view"]["active_context"]["material"]["current_material_instance_path"] == "/Game/Materials/MI_Player"
+
+
 def test_agent_chat_resolves_material_from_project_inventory(client: TestClient) -> None:
     snapshot = client.post(
         "/api/v1/project-inventory/snapshot",

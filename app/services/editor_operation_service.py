@@ -1058,6 +1058,12 @@ class EditorOperationService:
         )
         if inventory_candidate:
             return inventory_candidate
+        focused_material_path = EditorOperationService._focused_material_path_from_context(
+            context_bundle,
+            query_text,
+        )
+        if focused_material_path:
+            return focused_material_path
         selected_asset = EditorOperationService._selected_asset_path(request)
         if selected_asset and re.search(r"(^|[/._])MI_[A-Za-z0-9_]+", selected_asset):
             return selected_asset
@@ -1073,6 +1079,59 @@ class EditorOperationService:
             )
             if recent_material_path:
                 return str(recent_material_path)
+        return None
+
+    @staticmethod
+    def _focused_material_path_from_context(
+        context_bundle: dict[str, Any] | None,
+        query_text: str,
+    ) -> str | None:
+        if not context_bundle:
+            return None
+        query_lower = query_text.lower()
+        if not any(
+            token in query_lower or token in query_text
+            for token in (
+                "selected",
+                "current material",
+                "this material",
+                "that material",
+                "the material",
+                "当前选中",
+                "当前材质",
+                "这个材质",
+                "该材质",
+                "它",
+            )
+        ):
+            return None
+
+        active_context = dict(context_bundle.get("active_context") or {})
+        material_context = dict(active_context.get("material") or {})
+        current_inventory = material_context.get("current_material_instance_inventory")
+        if isinstance(current_inventory, dict):
+            path = str(current_inventory.get("material_instance_path") or "").strip()
+            if path:
+                return path
+
+        path = str(material_context.get("current_material_instance_path") or "").strip()
+        if path:
+            return path
+
+        selected_details = material_context.get("selected_material_instance_details")
+        if isinstance(selected_details, list):
+            for item in selected_details:
+                if isinstance(item, dict):
+                    path = str(item.get("material_instance_path") or "").strip()
+                    if path:
+                        return path
+
+        selected_paths = material_context.get("selected_material_instance_paths")
+        if isinstance(selected_paths, list):
+            for item in selected_paths:
+                path = str(item or "").strip()
+                if path:
+                    return path
         return None
 
     @staticmethod
