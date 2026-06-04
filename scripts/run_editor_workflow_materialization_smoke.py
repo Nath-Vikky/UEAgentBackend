@@ -327,6 +327,71 @@ def _run_workflow_dependency_rejection(client: TestClient) -> dict[str, Any]:
     }
 
 
+def _run_workflow_state_projection(client: TestClient) -> dict[str, Any]:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add Ready Print String and compile",
+            "workflow_type": "blueprint_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "message": "Ready",
+            },
+        },
+    )
+    plan = dict(plan_response.json().get("workflow_plan") or {})
+    initial_state_response = client.post("/api/v1/editor-operations/workflows/state", json={"workflow_plan": plan})
+    materialized = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan.get("plan_id"),
+            "step": list(plan.get("steps") or [{}])[0],
+            "requested_by": "workflow_materialization_smoke",
+        },
+    )
+    proposal_id = materialized.json().get("proposal", {}).get("item", {}).get("proposal_id", "")
+    confirm = client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm") if proposal_id else None
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "add_blueprint_node_template",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "transaction_id": f"ue_transaction_{proposal_id}",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "created_nodes": [{"node_id": "PrintStringNode", "node_title": "Print String"}],
+                "linked_pins": [{"source_pin": "then", "target_pin": "execute"}],
+                "compile_status": "not_requested",
+                "dirty": True,
+            },
+        },
+    )
+    completed_state_response = client.post("/api/v1/editor-operations/workflows/state", json={"workflow_plan": plan})
+    initial_state = initial_state_response.json().get("workflow_state", {})
+    completed_state = completed_state_response.json().get("workflow_state", {})
+    checks = [
+        _check("plan_status_code", 200, plan_response.status_code),
+        _check("initial_state_status_code", 200, initial_state_response.status_code),
+        _check("initial_next_ready", ["step_0_add_blueprint_node_template"], initial_state.get("next_ready_step_ids")),
+        _check("proposal_status_code", 200, materialized.status_code),
+        _check("confirm_status_code", 200, confirm.status_code if confirm else 0),
+        _check("result_status_code", 200, result.status_code),
+        _check("completed_state_status_code", 200, completed_state_response.status_code),
+        _check("completed_step_ids", ["step_0_add_blueprint_node_template"], completed_state.get("completed_step_ids")),
+        _check("next_ready_after_result", ["step_1_compile_blueprint"], completed_state.get("next_ready_step_ids")),
+        _check("state_next_action", "create_next_ready_proposal", completed_state.get("next_action")),
+    ]
+    return {
+        "case_id": "workflow_state_projects_next_ready_step",
+        "ok": all(item["ok"] for item in checks),
+        "checks": checks,
+    }
+
+
 def _run_umg_hud_group_step_materialization(client: TestClient) -> dict[str, Any]:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",
@@ -443,6 +508,7 @@ def main() -> int:
             _run_enhanced_input_workflow_step_materialization(client),
             _run_workflow_step_rejection(client),
             _run_workflow_dependency_rejection(client),
+            _run_workflow_state_projection(client),
             _run_umg_hud_group_step_materialization(client),
             _run_follow_up_materialization(client),
         ]

@@ -22,6 +22,7 @@ from app.services.editor_operation_service import (
     EditorOperationValidationError,
 )
 from app.services.editor_workflow_planner_service import EditorWorkflowPlannerService
+from app.services.editor_workflow_state_service import EditorWorkflowStateService
 from app.services.project_inventory_service import ProjectInventoryService
 from app.services.proposal_service import ProposalService
 
@@ -42,6 +43,13 @@ class EditorWorkflowStepProposalRequest(BaseModel):
     create_request: dict = Field(default_factory=dict)
     requested_by: str | None = None
     context: dict = Field(default_factory=dict)
+
+
+class EditorWorkflowStateRequest(BaseModel):
+    workflow_plan_id: str | None = None
+    workflow_plan: dict = Field(default_factory=dict)
+    completed_step_ids: list[str] = Field(default_factory=list)
+    history_limit: int = Field(default=500, ge=1, le=1000)
 
 
 class EditorOperationFollowUpProposalRequest(BaseModel):
@@ -109,6 +117,20 @@ def editor_operation_workflow_templates() -> dict:
         "workflow_templates": EditorWorkflowPlannerService.workflow_templates(),
         "errors": [],
     }
+
+
+@router.post("/workflows/state")
+def project_editor_operation_workflow_state(
+    request: EditorWorkflowStateRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    state = EditorWorkflowStateService(db).project_state(
+        workflow_plan=request.workflow_plan,
+        workflow_plan_id=request.workflow_plan_id,
+        completed_step_ids=request.completed_step_ids,
+        history_limit=request.history_limit,
+    )
+    return {"success": True, "workflow_state": state, "errors": []}
 
 
 @router.post("/workflows/steps/proposal")

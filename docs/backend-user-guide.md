@@ -5722,6 +5722,8 @@ The backend now exposes a plan-only endpoint for multi-step editor workflows:
 ```http
 GET  /api/v1/editor-operations/workflows/templates
 POST /api/v1/editor-operations/workflows/plan
+POST /api/v1/editor-operations/workflows/state
+POST /api/v1/editor-operations/workflows/steps/proposal
 ```
 
 This endpoint does not create proposals and does not execute UE writes. It
@@ -5817,6 +5819,23 @@ machine-readable summary lists dependency-free ready steps, dependency-blocked
 steps, missing-input steps, and `from_step_id -> to_step_id` edges. Existing
 `steps[]` remain unchanged; the dependency graph is only a clearer projection for
 Debug View, future UI, and workflow validation.
+
+2026-06-04 update: `/api/v1/editor-operations/workflows/state` can project
+runtime progress from a workflow plan plus stored editor-operation Proposals.
+The endpoint reads Proposal records that contain
+`context.workflow_materialization.workflow_plan_id` and reports:
+
+- `completed_step_ids`
+- `next_ready_step_ids`
+- `pending_step_ids`
+- `blocked_step_ids`
+- `step_states[].status`
+- `next_action`
+
+This endpoint is read-only. It does not create, confirm, execute, or batch
+submit workflow steps. Existing UEAgentTool UI does not need to call it, but a
+future workflow panel can use it to unlock the next step after the previous
+Proposal result has been recorded.
 
 Frontend impact: no mandatory change. A future Workflow UI can show the plan,
 let the user submit one step at a time, and stop/skip steps safely.

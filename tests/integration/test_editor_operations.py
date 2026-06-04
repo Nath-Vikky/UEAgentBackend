@@ -4702,6 +4702,90 @@ def test_editor_workflow_step_allows_completed_dependencies(client: TestClient) 
     assert workflow_context["completed_step_ids"] == ["step_0_add_blueprint_node_template"]
 
 
+def test_editor_workflow_state_projects_next_ready_step_from_results(client: TestClient) -> None:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add Ready Print String and compile",
+            "workflow_type": "blueprint_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "message": "Ready",
+            },
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()["workflow_plan"]
+
+    initial_state = client.post("/api/v1/editor-operations/workflows/state", json={"workflow_plan": plan})
+    assert initial_state.status_code == 200
+    initial = initial_state.json()["workflow_state"]
+    assert initial["status"] == "ready_for_next_step"
+    assert initial["next_ready_step_ids"] == ["step_0_add_blueprint_node_template"]
+    assert initial["step_states"][1]["status"] == "waiting_dependency"
+
+    materialized = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan["plan_id"],
+            "step": plan["steps"][0],
+            "requested_by": "integration_test",
+        },
+    )
+    assert materialized.status_code == 200
+    proposal_id = materialized.json()["proposal"]["item"]["proposal_id"]
+
+    pending_state = client.post("/api/v1/editor-operations/workflows/state", json={"workflow_plan": plan})
+    assert pending_state.status_code == 200
+    pending = pending_state.json()["workflow_state"]
+    assert pending["status"] == "waiting_for_execution"
+    assert pending["step_states"][0]["status"] == "pending_confirmation"
+    assert pending["next_ready_step_ids"] == []
+
+    assert client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm").status_code == 200
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "add_blueprint_node_template",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "transaction_id": f"ue_transaction_{proposal_id}",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "created_nodes": [{"node_id": "PrintStringNode", "node_title": "Print String"}],
+                "linked_pins": [{"source_pin": "then", "target_pin": "execute"}],
+                "compile_status": "not_requested",
+                "dirty": True,
+            },
+        },
+    )
+    assert result.status_code == 200
+
+    completed_state = client.post("/api/v1/editor-operations/workflows/state", json={"workflow_plan": plan})
+    assert completed_state.status_code == 200
+    completed = completed_state.json()["workflow_state"]
+    assert completed["status"] == "ready_for_next_step"
+    assert completed["completed_step_ids"] == ["step_0_add_blueprint_node_template"]
+    assert completed["next_ready_step_ids"] == ["step_1_compile_blueprint"]
+    assert completed["step_states"][0]["status"] == "completed"
+    assert completed["step_states"][1]["status"] == "ready_for_proposal"
+
+    compile_proposal = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan["plan_id"],
+            "step": plan["steps"][1],
+            "requested_by": "integration_test",
+            "context": {"completed_step_ids": completed["completed_step_ids"]},
+        },
+    )
+    assert compile_proposal.status_code == 200
+    assert compile_proposal.json()["workflow_step"]["operation_type"] == "compile_blueprint"
+
+
 def test_editor_workflow_step_materialization_rejects_not_ready_step(client: TestClient) -> None:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",
