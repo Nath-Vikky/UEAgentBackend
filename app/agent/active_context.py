@@ -142,7 +142,7 @@ def build_active_context(
     current_blueprint_path = _current_blueprint_path(payload, selected_assets, editor_state)
     selected_actor_references = _unique_texts(
         [
-            *_payload_list(payload, "selected_actors", "actor_references"),
+            *_payload_list(payload, "selected_actors", "selected_actor_references", "actor_references"),
             *_state_list(editor_state, "selected_actors"),
         ],
         "actor_reference",

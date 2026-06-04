@@ -682,23 +682,33 @@ class EditorOperationService:
         query_text: str,
         context_bundle: dict[str, Any] | None,
     ) -> str | None:
-        for key in ("actor_reference", "actor_label", "actor_name"):
+        for key in ("actor_reference", "current_actor_reference", "actor_label", "current_actor_label", "actor_name"):
             explicit_value = str(request.payload.get(key) or "").strip()
             if explicit_value:
                 return explicit_value
 
         editor_state = dict(request.context.editor_state or {})
-        selected_actors = editor_state.get("selected_actors") or request.payload.get("selected_actors") or []
-        if isinstance(selected_actors, list) and selected_actors:
-            first = selected_actors[0]
-            if isinstance(first, dict):
-                for key in ("actor_label", "actor_name", "name", "label"):
-                    value = str(first.get(key) or "").strip()
-                    if value:
-                        return value
-            value = str(first or "").strip()
-            if value:
-                return value
+        selected_actor_sources = (
+            editor_state.get("selected_actors"),
+            request.payload.get("selected_actors"),
+            request.payload.get("selected_actor_references"),
+            request.payload.get("actor_references"),
+        )
+        for selected_actors in selected_actor_sources:
+            if isinstance(selected_actors, list) and selected_actors:
+                first = selected_actors[0]
+                if isinstance(first, dict):
+                    for key in ("actor_label", "actor_name", "actor_reference", "name", "label"):
+                        value = str(first.get(key) or "").strip()
+                        if value:
+                            return value
+                value = str(first or "").strip()
+                if value:
+                    return value
+
+        focused_actor = EditorOperationService._focused_actor_reference_from_context(context_bundle, query_text)
+        if focused_actor:
+            return focused_actor
 
         inventory_actor = EditorOperationService._inventory_actor_reference(context_bundle, query_text)
         if inventory_actor:
@@ -715,6 +725,111 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _focused_actor_reference_from_context(
+        context_bundle: dict[str, Any] | None,
+        query_text: str,
+    ) -> str | None:
+        if not context_bundle:
+            return None
+        query_lower = query_text.lower()
+        if not any(
+            token in query_lower or token in query_text
+            for token in (
+                "selected",
+                "current actor",
+                "this actor",
+                "that actor",
+                "the actor",
+                "current level actor",
+                "selected level actor",
+                "当前选中",
+                "当前Actor",
+                "当前actor",
+                "这个Actor",
+                "这个actor",
+                "该Actor",
+                "该actor",
+                "它",
+            )
+        ):
+            return None
+
+        active_context = dict(context_bundle.get("active_context") or {})
+        level_actor_context = dict(active_context.get("level_actor") or {})
+        current_inventory = level_actor_context.get("current_actor_inventory")
+        if isinstance(current_inventory, dict):
+            for key in ("actor_label", "actor_name", "actor_path"):
+                value = str(current_inventory.get(key) or "").strip()
+                if value:
+                    return value
+
+        value = str(level_actor_context.get("current_actor_reference") or "").strip()
+        if value:
+            return value
+
+        selected_details = level_actor_context.get("selected_actor_details")
+        if isinstance(selected_details, list):
+            for item in selected_details:
+                if isinstance(item, dict):
+                    for key in ("actor_label", "actor_name", "actor_path"):
+                        value = str(item.get(key) or "").strip()
+                        if value:
+                            return value
+
+        selected_references = level_actor_context.get("selected_actor_references")
+        if isinstance(selected_references, list):
+            for item in selected_references:
+                value = str(item or "").strip()
+                if value:
+                    return value
+        return None
+
+    @staticmethod
+    def _focused_actor_references_from_context(
+        context_bundle: dict[str, Any] | None,
+        query_text: str,
+    ) -> list[str]:
+        if not context_bundle:
+            return []
+        query_lower = query_text.lower()
+        if not any(
+            token in query_lower or token in query_text
+            for token in (
+                "selected",
+                "current actors",
+                "selected actors",
+                "these actors",
+                "level actors",
+                "当前选中",
+                "这些Actor",
+                "这些actor",
+            )
+        ):
+            return []
+
+        active_context = dict(context_bundle.get("active_context") or {})
+        level_actor_context = dict(active_context.get("level_actor") or {})
+        references: list[str] = []
+        selected_details = level_actor_context.get("selected_actor_details")
+        if isinstance(selected_details, list):
+            for item in selected_details:
+                if isinstance(item, dict):
+                    for key in ("actor_label", "actor_name", "actor_path"):
+                        value = str(item.get(key) or "").strip()
+                        if value:
+                            references.append(value)
+                            break
+
+        selected_references = level_actor_context.get("selected_actor_references")
+        if isinstance(selected_references, list):
+            references.extend(str(item or "").strip() for item in selected_references)
+
+        current_reference = str(level_actor_context.get("current_actor_reference") or "").strip()
+        if current_reference:
+            references.append(current_reference)
+        return EditorOperationService._dedupe_strings(references)
+
+    @staticmethod
     def _detect_actor_references_from_request(
         request: UnifiedTaskRequest,
         query_text: str,
@@ -726,11 +841,18 @@ class EditorOperationService:
 
         references: list[str] = []
         editor_state = dict(request.context.editor_state or {})
-        selected_actors = editor_state.get("selected_actors") or request.payload.get("selected_actors") or []
-        if isinstance(selected_actors, list):
+        selected_actor_sources = (
+            editor_state.get("selected_actors"),
+            request.payload.get("selected_actors"),
+            request.payload.get("selected_actor_references"),
+            request.payload.get("actor_references"),
+        )
+        for selected_actors in selected_actor_sources:
+            if not isinstance(selected_actors, list):
+                continue
             for item in selected_actors:
                 if isinstance(item, dict):
-                    for key in ("actor_label", "actor_name", "name", "label"):
+                    for key in ("actor_label", "actor_name", "actor_reference", "name", "label"):
                         value = str(item.get(key) or "").strip()
                         if value:
                             references.append(value)
@@ -740,6 +862,7 @@ class EditorOperationService:
                     if value:
                         references.append(value)
 
+        references.extend(EditorOperationService._focused_actor_references_from_context(context_bundle, query_text))
         references.extend(EditorOperationService._inventory_actor_references(context_bundle, query_text))
         references.extend(
             match.group(1)

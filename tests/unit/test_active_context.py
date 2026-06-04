@@ -56,3 +56,29 @@ def test_active_context_summarizes_project_asset_code_and_log_inputs() -> None:
     assert active_context["log"]["has_log_text"] is True
     assert active_context["kb"]["selected_tool_id"] == "query_project_inventory"
     assert active_context["mcp"]["status"] == "disabled"
+
+
+def test_active_context_accepts_selected_actor_references_payload() -> None:
+    request = UnifiedTaskRequest.model_validate(
+        {
+            "task_type": "agent_chat",
+            "session": {"session_id": "active_context_actor_refs_test", "messages": []},
+            "context": {
+                "project_name": "RushBa",
+                "project_root": "D:/Project/RushBa",
+                "active_panel": "AgentChat",
+            },
+            "payload": {
+                "user_query": "Arrange selected actors in a line",
+                "selected_actor_references": ["BP_EnemySpawner_1", "BP_PatrolPoint_1"],
+            },
+        }
+    )
+    active_context = build_active_context(request=request)
+
+    assert active_context["level_actor"]["selected_actor_references"] == [
+        "BP_EnemySpawner_1",
+        "BP_PatrolPoint_1",
+    ]
+    assert active_context["level_actor"]["current_actor_reference"] == "BP_EnemySpawner_1"
+    assert active_context["level_actor"]["selected_actor_count"] == 2

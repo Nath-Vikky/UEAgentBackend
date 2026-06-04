@@ -2953,6 +2953,7 @@ Material Instance focus from existing request fields:
 
 - `context.editor_state.selected_actors`
 - `payload.selected_actors`
+- `payload.selected_actor_references`
 - `payload.actor_reference`
 - `payload.selected_material_instances`
 - `payload.material_instance_path`
@@ -3623,6 +3624,14 @@ I4-5 先补两类可控写操作：Level Actor 放置，以及 Material Instance
 `set_actor_transform`，payload 中包含 `actor_reference=BP_EnemySpawner_1` 和
 `transform_delta.location.y=200`。如果没有明确 transform 数值或方向，后端不会编造
 移动量，会转为普通回答或 blocked。
+
+2026-06-04 update: Agent Chat can also resolve `this actor` / `selected
+actors` from Active Context. If the UE plugin or payload provides
+`context.editor_state.current_actor_reference`,
+`context.editor_state.selected_actors`, or `payload.selected_actor_references`,
+requests such as `Move this actor right 200` and `Arrange selected actors in a
+line` can produce pending `set_actor_transform` / `arrange_actors_pattern`
+Proposals without repeating the Actor labels in the text.
 
 设置 Material Instance 参数：
 

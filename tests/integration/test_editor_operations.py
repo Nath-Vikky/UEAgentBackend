@@ -3589,6 +3589,96 @@ def test_agent_chat_can_move_named_inventory_actor_without_actor_keyword(client:
     assert payload["transform_delta"]["location"] == {"x": 0.0, "y": 200.0, "z": 0.0}
 
 
+def test_agent_chat_can_move_current_actor_from_active_context(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_current_actor_transform_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Move this actor right 200",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+                "editor_state": {"current_actor_reference": "BP_EnemySpawner_1"},
+            },
+            "payload": {"user_query": "Move this actor right 200"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_actor_transform"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["actor_reference"] == "BP_EnemySpawner_1"
+    assert payload["transform_mode"] == "delta"
+    assert payload["transform_delta"]["location"] == {"x": 0.0, "y": 200.0, "z": 0.0}
+    assert body["debug_view"]["active_context"]["level_actor"]["current_actor_reference"] == "BP_EnemySpawner_1"
+
+
+def test_agent_chat_can_arrange_selected_actor_references_from_payload(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_selected_actor_arrange_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Arrange selected actors in a line",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {
+                "user_query": "Arrange selected actors in a line",
+                "selected_actor_references": ["BP_EnemySpawner_1", "BP_PatrolPoint_1"],
+            },
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "arrange_actors_pattern"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["actor_references"] == ["BP_EnemySpawner_1", "BP_PatrolPoint_1"]
+    assert payload["pattern"]["type"] == "line"
+
+
 def test_agent_chat_resolves_umg_text_from_project_inventory(client: TestClient) -> None:
     snapshot = client.post(
         "/api/v1/project-inventory/snapshot",
