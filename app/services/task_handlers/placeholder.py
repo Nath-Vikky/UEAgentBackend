@@ -8,6 +8,7 @@ from app.schemas.common import QuickAction, UserViewBlock
 from app.services.task_handlers.base import TaskExecutionContext
 from app.services.task_handlers.read_only_tool_summaries import (
     focused_blueprint_graph_result,
+    local_tool_registry_readonly_result,
     live_mcp_readonly_result,
 )
 
@@ -33,6 +34,14 @@ class PlaceholderTaskHandler:
             )
             if live_result:
                 return live_result
+            local_result = local_tool_registry_readonly_result(
+                context=context,
+                base_debug=base_debug,
+                output_language=output_language,
+                selected_tool_id=selected_tool_id,
+            )
+            if local_result:
+                return local_result
         if selected_tool_id == "mcp_get_blueprint_graph":
             graph_result = focused_blueprint_graph_result(
                 context=context,

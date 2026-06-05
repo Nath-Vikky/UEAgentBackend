@@ -92,8 +92,9 @@ Expected:
 - Agent Chat editor-operation smoke: `30/30 passed`
 - Editor workflow materialization smoke: `9/9 passed`
 - Project Inventory chat smoke: `2/2 passed`; these cases check normal Inventory
-  grounding plus explicit MCP read-only route fallback, and also check that
-  `react_trace` includes the display-safe `validation` phase.
+  grounding plus explicit MCP read-only route fallback through the local
+  Tool Registry / Project Inventory path, and also check that `react_trace`
+  includes the display-safe `validation` phase.
 - Tool Registry read-only smoke: `6/6 passed`; this checks the local
   MCP-compatible read-only call path for Blueprint graph, Widget tree, Level
   Actor, Material Instance, and write-tool blocking.

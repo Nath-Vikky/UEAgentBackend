@@ -234,7 +234,7 @@ def _run_mcp_blueprint_graph_fallback(client: TestClient) -> dict[str, Any]:
         _check("chat_status_code", 200, chat_response.status_code),
         _check("route_type", "single_tool", body.get("intent", {}).get("route_type")),
         _check("selected_tool_id", "mcp_get_blueprint_graph", debug_view.get("route", {}).get("selected_tool_id")),
-        _check("retrieval_mode", "project_inventory_focus", body.get("retrieval_trace", {}).get("mode")),
+        _check("retrieval_mode", "local_tool_registry_readonly", body.get("retrieval_trace", {}).get("mode")),
         _contains("assistant_mentions_event_graph", "EventGraph", assistant_message),
         _contains("assistant_mentions_print_string", "Print String", assistant_message),
     ]

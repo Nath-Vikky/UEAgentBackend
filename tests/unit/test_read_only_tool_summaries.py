@@ -88,6 +88,34 @@ class _FailingMCPToolExecutor:
         }
 
 
+class _FakeLocalReadOnlyCallService:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+
+    def call(self, tool: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "status": "completed",
+            "reason": "local_readonly_tool_completed",
+            "tool_id": tool,
+            "tool_name": "get_widget_tree",
+            "transport": "local_tool_registry",
+            "source": "project_inventory",
+            "result": {
+                "structuredContent": {
+                    "widget_blueprint_path": arguments["widget_blueprint_path"],
+                    "widget_tree": {
+                        "root": "RootCanvas",
+                        "widgets": [{"name": "TitleText", "class": "TextBlock", "parent": "RootCanvas"}],
+                    },
+                    "empty_reason": "",
+                },
+                "content": [{"type": "text", "text": "widget inventory"}],
+            },
+            "errors": [],
+        }
+
+
 def _context(*, selected_tool_id: str, request: UnifiedTaskRequest) -> TaskExecutionContext:
     return TaskExecutionContext(
         request=request,
@@ -192,3 +220,26 @@ def test_live_mcp_readonly_result_returns_none_when_tcp_fails(monkeypatch) -> No
 
     assert result is None
     assert base_debug["mcp_live_attempt"]["reason"] == "mcp_tcp_connect_failed"
+
+
+def test_local_tool_registry_readonly_result_reads_widget_tree(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "ToolRegistryReadOnlyCallService", _FakeLocalReadOnlyCallService)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "inspect widget tree"}]},
+        context={"selected_assets": ["/Game/UI/WBP_MainHUD"]},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.local_tool_registry_readonly_result(
+        context=_context(selected_tool_id="mcp_get_widget_tree", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_widget_tree",
+    )
+
+    assert result is not None
+    assert result["retrieval_trace"]["mode"] == "local_tool_registry_readonly"
+    assert result["data"]["local_tool"]["transport"] == "local_tool_registry"
+    assert "RootCanvas" in result["assistant_message"]
+    assert "TitleText" in result["assistant_message"]

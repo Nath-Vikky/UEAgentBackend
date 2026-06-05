@@ -7,6 +7,7 @@ from app.i18n.language import localized as _localized
 from app.schemas.common import QuickAction, UserViewBlock
 from app.services.mcp_executor import MCPToolExecutor
 from app.services.task_handlers.base import TaskExecutionContext
+from app.services.tool_registry_readonly_call_service import ToolRegistryReadOnlyCallService
 
 
 LIVE_MCP_TOOL_NAMES = {
@@ -137,6 +138,141 @@ def live_mcp_readonly_result(
             "mode": "mcp_tcp_readonly",
             "degraded_mode": False,
             "reason": "live_mcp_readonly_tool_completed",
+            "filters_applied": {},
+            "retrieved_docs": [],
+        },
+        "planner_diagnostics": context.routing["route"],
+        "step_results": step_results,
+        "action_proposals": [],
+        "errors": [],
+        "assistant_message": answer,
+        "artifacts": [],
+    }
+
+
+def local_tool_registry_readonly_result(
+    *,
+    context: TaskExecutionContext,
+    base_debug: dict[str, Any],
+    output_language: str,
+    selected_tool_id: str,
+) -> dict[str, Any] | None:
+    dependencies = context.dependencies
+    if dependencies is None or selected_tool_id not in LIVE_MCP_TOOL_NAMES:
+        return None
+    arguments = _live_mcp_arguments(context, selected_tool_id=selected_tool_id)
+    if not arguments:
+        return None
+
+    call = ToolRegistryReadOnlyCallService(dependencies.settings).call(selected_tool_id, arguments)
+    base_debug["local_readonly_attempt"] = {
+        "tool_id": selected_tool_id,
+        "arguments": arguments,
+        "status": call.get("status"),
+        "reason": call.get("reason"),
+        "transport": call.get("transport"),
+    }
+    if not call.get("ok"):
+        base_debug["local_readonly_attempt"]["errors"] = call.get("errors") or []
+        return None
+    tool_result = call.get("result") if isinstance(call.get("result"), dict) else {}
+    if _local_readonly_result_is_empty(selected_tool_id=selected_tool_id, tool_result=tool_result):
+        base_debug["local_readonly_attempt"]["empty_reason"] = (
+            (tool_result.get("structuredContent") or {}).get("empty_reason")
+            if isinstance(tool_result.get("structuredContent"), dict)
+            else ""
+        )
+        return None
+
+    answer = _live_mcp_answer(
+        selected_tool_id=selected_tool_id,
+        tool_result=tool_result,
+        arguments=arguments,
+        output_language=output_language,
+        source_label_zh="本地 Project Inventory 只读工具",
+        source_label_en="local Project Inventory read-only tool",
+    )
+    step_results = [
+        {
+            "step_id": "classify_intent",
+            "title": "Intent Classification",
+            "status": "completed",
+            "summary": context.routing["intent"]["reason"],
+            "details": context.routing["intent"],
+        },
+        {
+            "step_id": "read_local_tool_registry_inventory",
+            "title": "Read Local Tool Registry Inventory",
+            "status": "completed",
+            "summary": f"Used local Inventory-backed read-only tool {selected_tool_id}.",
+            "details": {
+                "tool_id": selected_tool_id,
+                "arguments": arguments,
+                "transport": call.get("transport"),
+            },
+        },
+    ]
+    user_view = {
+        "title": _localized(output_language, "本地只读工具结果", "Local Read-only Tool Result"),
+        "text": answer,
+        "blocks": [
+            UserViewBlock(
+                block_type="summary",
+                title=_localized(output_language, "工具结果摘要", "Tool Result Summary"),
+                text=answer,
+                data={
+                    "tool_id": selected_tool_id,
+                    "arguments": arguments,
+                    "result": tool_result,
+                },
+            ).model_dump(mode="json")
+        ],
+        "citations_preview": [],
+        "quick_actions": [
+            QuickAction(
+                action_id="open_debug_view",
+                label=_localized(output_language, "查看调试信息", "Open debug view"),
+            ).model_dump(mode="json")
+        ],
+        "status_hint": "local_readonly_completed",
+    }
+    data = {
+        "answer": answer,
+        "sources": [
+            {
+                "source_type": "project_inventory",
+                "title": selected_tool_id,
+                "path": arguments.get("blueprint_path") or arguments.get("widget_blueprint_path"),
+            }
+        ],
+        "citations": [],
+        "confidence": 0.74,
+        "context_summary": build_context_summary(context.request),
+        "warnings": [],
+        "local_tool": {
+            "tool_id": selected_tool_id,
+            "arguments": arguments,
+            "transport": call.get("transport"),
+            "result": tool_result,
+        },
+    }
+    base_debug["step_results"] = step_results
+    base_debug["raw_result"] = data
+    base_debug["tools"] = [
+        {
+            "tool_id": selected_tool_id,
+            "status": "completed",
+            "summary": f"Answered from local Inventory-backed read-only tool {selected_tool_id}.",
+        }
+    ]
+    return {
+        "user_view": user_view,
+        "debug_view": base_debug,
+        "data": data,
+        "retrieval_trace": {
+            "mode": "local_tool_registry_readonly",
+            "degraded_mode": True,
+            "reason": "live_mcp_unavailable_local_inventory_tool_completed",
             "filters_applied": {},
             "retrieved_docs": [],
         },
@@ -349,8 +485,10 @@ def _live_mcp_answer(
     tool_result: dict[str, Any],
     arguments: dict[str, Any],
     output_language: str,
+    source_label_zh: str = "UEAgentTool TCP 只读工具",
+    source_label_en: str = "UEAgentTool TCP read-only tool",
 ) -> str:
-    structured = tool_result.get("structuredContent") if isinstance(tool_result.get("structuredContent"), dict) else {}
+    structured = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
     if selected_tool_id == "mcp_get_blueprint_graph":
         graphs = list(structured.get("graphs") or [])
         graph_lines = []
@@ -367,8 +505,8 @@ def _live_mcp_answer(
         parts = [
             _localized(
                 output_language,
-                f"已通过 UEAgentTool TCP 只读工具读取 Blueprint 图表：{arguments.get('blueprint_path')}",
-                f"Read Blueprint graph through UEAgentTool TCP read-only tool: {arguments.get('blueprint_path')}",
+                f"已通过 {source_label_zh}读取 Blueprint 图表：{arguments.get('blueprint_path')}",
+                f"Read Blueprint graph through {source_label_en}: {arguments.get('blueprint_path')}",
             )
         ]
         if graph_lines:
@@ -390,8 +528,8 @@ def _live_mcp_answer(
         parts = [
             _localized(
                 output_language,
-                f"已通过 UEAgentTool TCP 只读工具读取 Widget Tree：{arguments.get('widget_blueprint_path')}",
-                f"Read Widget Tree through UEAgentTool TCP read-only tool: {arguments.get('widget_blueprint_path')}",
+                f"已通过 {source_label_zh}读取 Widget Tree：{arguments.get('widget_blueprint_path')}",
+                f"Read Widget Tree through {source_label_en}: {arguments.get('widget_blueprint_path')}",
             )
         ]
         if structured.get("root"):
@@ -400,6 +538,32 @@ def _live_mcp_answer(
             parts.append(_localized(output_language, "控件预览：", "Widget preview:") + "\n" + "\n".join(widget_lines))
         return "\n\n".join(parts)
     return _first_text_content(tool_result) or _localized(output_language, "只读工具调用已完成。", "Read-only tool call completed.")
+
+
+def _structured_content_for_answer(*, selected_tool_id: str, tool_result: dict[str, Any]) -> dict[str, Any]:
+    structured = tool_result.get("structuredContent") if isinstance(tool_result.get("structuredContent"), dict) else {}
+    if selected_tool_id != "mcp_get_widget_tree":
+        return structured
+    widget_tree = structured.get("widget_tree") if isinstance(structured.get("widget_tree"), dict) else {}
+    if not widget_tree:
+        return structured
+    merged = dict(structured)
+    for key in ("root", "widgets", "children", "nodes"):
+        if key in widget_tree and key not in merged:
+            merged[key] = widget_tree[key]
+    return merged
+
+
+def _local_readonly_result_is_empty(*, selected_tool_id: str, tool_result: dict[str, Any]) -> bool:
+    structured = tool_result.get("structuredContent") if isinstance(tool_result.get("structuredContent"), dict) else {}
+    if selected_tool_id == "mcp_get_blueprint_graph":
+        return not list(structured.get("graphs") or [])
+    if selected_tool_id == "mcp_get_widget_tree":
+        if structured.get("empty_reason"):
+            return True
+        normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
+        return not list(normalized.get("widgets") or normalized.get("children") or normalized.get("nodes") or [])
+    return False
 
 
 def _first_text_content(tool_result: dict[str, Any]) -> str:

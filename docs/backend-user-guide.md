@@ -6944,8 +6944,14 @@ Agent Chat live sensing behavior:
 - The Tool Registry marks these two tools as `allowed_in_free_chat=true`
   because they are read-only and still gated by `MCP_ALLOWED_TOOLS`.
 - If the TCP call fails, the tool is not allow-listed, or the UE tool server
-  returns an error, the backend falls back to the existing Inventory summary or
-  placeholder path.
+  returns an error, the backend next tries the local Tool Registry read-only
+  executor backed by the latest Project Inventory snapshot. If that also lacks
+  enough data, it falls back to the focused Inventory summary or placeholder
+  path.
+- In Debug View, `retrieval_trace.mode=mcp_tcp_readonly` means a live TCP tool
+  answered. `retrieval_trace.mode=local_tool_registry_readonly` means the answer
+  came from local Project Inventory through the same read-only Tool Registry
+  contract, not from a live MCP/TCP call.
 - This does not grant Agent Chat permission to execute write tools. Writes still
   require Editor Operation Proposal confirmation.
 
