@@ -31,6 +31,10 @@ SMOKE_SCRIPTS = [
         "script": "run_tool_registry_readonly_smoke.py",
     },
     {
+        "suite_id": "tool_registry_proposal_bridge",
+        "script": "run_tool_registry_proposal_bridge_smoke.py",
+    },
+    {
         "suite_id": "mcp_tcp_adapter",
         "script": "run_mcp_tcp_adapter_smoke.py",
     },

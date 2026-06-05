@@ -6016,6 +6016,17 @@ Frontend impact: no mandatory change. Existing Proposal cards keep working. A
 future MCP-compatible tool panel can call `/prepare` to preview the operation or
 `/proposals` to create the same Proposal card the current UI already understands.
 
+Deterministic smoke coverage:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_tool_registry_proposal_bridge_smoke.py --output -
+```
+
+The smoke simulates MCP/Tool Registry clients creating pending Proposals for
+Blueprint graph editing, UMG widget creation, Material Instance parameter
+tuning, and Level Actor placement. It also verifies that read-only tools cannot
+enter the confirmed-write Proposal bridge.
+
 ## 2026-05-24 Agent Chat Workflow Plan Integration
 
 Agent Chat can now return the same plan-only editor workflow structure when the
@@ -6865,6 +6876,7 @@ Validation:
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py tests\integration\test_editor_operations.py::test_editor_operation_capabilities_and_registry -q
 .\.venv\Scripts\python.exe scripts\run_tool_registry_readonly_smoke.py --output -
+.\.venv\Scripts\python.exe scripts\run_tool_registry_proposal_bridge_smoke.py --output -
 .\.venv\Scripts\python.exe scripts\run_mcp_tcp_adapter_smoke.py --output -
 .\.venv\Scripts\python.exe scripts\run_editor_demo_smoke_suite.py --output -
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
