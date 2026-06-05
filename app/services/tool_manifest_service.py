@@ -139,6 +139,8 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         "tool_ids": (
             "editor_inspect_material_instance_parameters",
             "editor_inspect_material_instance_detail",
+            "editor_material_set_instance_context",
+            "editor_material_set_parameter_context",
             "editor_set_material_instance_parameter",
             "editor_set_material_instance_texture_parameter",
             "editor_set_material_instance_static_switch",
@@ -224,6 +226,10 @@ UMG_PLAN_ONLY_TOOL_IDS = {
     "editor_umg_set_widget_blueprint_context": "set_umg_widget_blueprint_context",
     "editor_umg_set_cursor_widget": "set_umg_cursor_widget_context",
 }
+MATERIAL_PLAN_ONLY_TOOL_IDS = {
+    "editor_material_set_instance_context": "set_material_instance_context",
+    "editor_material_set_parameter_context": "set_material_parameter_context",
+}
 TOOL_ID_TO_EDITOR_OPERATION = {str(spec["tool_id"]): operation_type for operation_type, spec in OPERATION_SPECS.items()}
 TOOL_ID_TO_EDITOR_OPERATION.update(TOOL_ID_TO_EDITOR_OPERATION_ALIASES)
 TOOL_ID_TO_READONLY_OPERATION = {
@@ -278,6 +284,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "operation_family": "umg",
             "frontend_executor_id": spec.tool_id,
             "operation_type": UMG_PLAN_ONLY_TOOL_IDS[spec.tool_id],
+            "bridge_kind": "plan_only_context",
+        }
+    if spec.tool_id in MATERIAL_PLAN_ONLY_TOOL_IDS:
+        return {
+            "operation_family": "material",
+            "frontend_executor_id": spec.tool_id,
+            "operation_type": MATERIAL_PLAN_ONLY_TOOL_IDS[spec.tool_id],
             "bridge_kind": "plan_only_context",
         }
     return {

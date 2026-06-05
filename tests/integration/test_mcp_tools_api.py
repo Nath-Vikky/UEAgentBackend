@@ -408,6 +408,57 @@ def test_tool_registry_plan_call_sets_umg_cursor_widget_context(client: TestClie
     assert body["call"]["result"]["next_tool_hints"][0]["tool_id"] == "editor_set_umg_widget_text"
 
 
+def test_tool_registry_plan_call_sets_material_instance_context(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/plans/editor_material_set_instance_context/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "material_instance_path": "/Game/Materials/MI_Rock",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    result = body["call"]["result"]
+    context = result["context_patch"]["material_edit_context"]
+    assert result["plan"]["intent"] == "set_material_instance_context"
+    assert context["material_instance_path"] == "/Game/Materials/MI_Rock"
+    assert context["matched_inventory_material_instance"] is True
+    assert context["parameter_counts"]["scalar"] == 1
+    assert result["next_tool_hints"][0]["tool_id"] == "editor_material_set_parameter_context"
+
+
+def test_tool_registry_plan_call_sets_material_parameter_context(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/plans/editor_material_set_parameter_context/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "material_instance_path": "/Game/Materials/MI_Rock",
+                "parameter_name": "Roughness",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    context = body["call"]["result"]["context_patch"]["material_edit_context"]
+    cursor = context["cursor_parameter"]
+    assert cursor["parameter_name"] == "Roughness"
+    assert cursor["parameter_type"] == "scalar"
+    assert cursor["value"] == 0.6
+    assert cursor["matched_inventory_parameter"] is True
+    assert body["call"]["result"]["next_tool_hints"][0]["tool_id"] == "editor_set_material_instance_parameter"
+
+
 def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inventory(
     client: TestClient,
 ) -> None:

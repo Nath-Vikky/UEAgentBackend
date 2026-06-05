@@ -2601,6 +2601,99 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
     ),
+    "editor_material_set_instance_context": ToolSpec(
+        tool_id="editor_material_set_instance_context",
+        task_type="editor_operation",
+        title="Set Material Instance Context",
+        description=(
+            "Plan-only MCP-style context tool. It selects the Material Instance that later "
+            "Material parameter Proposal tools should use as their default target."
+        ),
+        side_effect_level="plan_only",
+        route_preference="workflow",
+        category="context",
+        transport="local_python",
+        requires_confirmation=False,
+        active_context_keys=("project", "asset", "material"),
+        owned_by_skill="MaterialAutomationSkill",
+        allowed_in_free_chat=False,
+        permission_gate="none",
+        context_cost="low",
+        trigger_keywords=(
+            "set material instance context",
+            "select material instance",
+            "current material instance",
+            "set material edit target",
+        ),
+        required_payload_fields=("material_instance_path",),
+        optional_payload_fields=("project_id", "query", "parent_material"),
+        input_schema={
+            "type": "object",
+            "required": ["material_instance_path"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "material_instance_path": {"type": "string"},
+                "query": {"type": "string"},
+                "parent_material": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["plan", "context_patch", "next_tool_hints"],
+            "properties": {
+                "plan": {"type": "object"},
+                "context_patch": {"type": "object"},
+                "next_tool_hints": {"type": "array"},
+            },
+        },
+    ),
+    "editor_material_set_parameter_context": ToolSpec(
+        tool_id="editor_material_set_parameter_context",
+        task_type="editor_operation",
+        title="Set Material Parameter Context",
+        description=(
+            "Plan-only MCP-style context tool. It selects one captured Material Instance parameter "
+            "as the default parameter target for later scalar/vector/texture/static-switch Proposals."
+        ),
+        side_effect_level="plan_only",
+        route_preference="workflow",
+        category="context",
+        transport="local_python",
+        requires_confirmation=False,
+        active_context_keys=("project", "asset", "material"),
+        owned_by_skill="MaterialAutomationSkill",
+        allowed_in_free_chat=False,
+        permission_gate="none",
+        context_cost="low",
+        trigger_keywords=(
+            "set material parameter context",
+            "select material parameter",
+            "current material parameter",
+            "set material cursor parameter",
+        ),
+        required_payload_fields=("material_instance_path",),
+        optional_payload_fields=("project_id", "query", "parameter_name", "parameter_type"),
+        input_schema={
+            "type": "object",
+            "required": ["material_instance_path"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "material_instance_path": {"type": "string"},
+                "query": {"type": "string"},
+                "parameter_name": {"type": "string"},
+                "parameter_type": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": ["plan", "context_patch", "next_tool_hints"],
+            "properties": {
+                "plan": {"type": "object"},
+                "context_patch": {"type": "object"},
+                "next_tool_hints": {"type": "array"},
+            },
+        },
+    ),
     "editor_set_material_instance_texture_parameter": ToolSpec(
         tool_id="editor_set_material_instance_texture_parameter",
         task_type="editor_operation",

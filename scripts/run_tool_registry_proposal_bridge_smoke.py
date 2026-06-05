@@ -202,6 +202,26 @@ def _umg_plan_profile_manifest_ok(body: dict[str, Any]) -> tuple[bool, str]:
     return ok, "umg profile exposes plan-only context tools"
 
 
+def _material_plan_profile_manifest_ok(body: dict[str, Any]) -> tuple[bool, str]:
+    manifest = body.get("manifest") or {}
+    tools = {
+        item.get("annotations", {}).get("tool_id"): item.get("annotations", {})
+        for item in list(manifest.get("tools") or [])
+        if isinstance(item, dict)
+    }
+    instance_context = tools.get("editor_material_set_instance_context", {})
+    boundary = instance_context.get("execution_boundary", {})
+    ok = (
+        manifest.get("filters", {}).get("profile") == "material_demo"
+        and manifest.get("filters", {}).get("side_effect_level") == "plan_only"
+        and set(tools) == {"editor_material_set_instance_context", "editor_material_set_parameter_context"}
+        and instance_context.get("bridge_kind") == "plan_only_context"
+        and boundary.get("mode") == "plan_only"
+        and boundary.get("local_tool_registry_call_allowed") is True
+    )
+    return ok, "material profile exposes plan-only context tools"
+
+
 def _proposal_ok(expected_operation_type: str, expected_tool_id: str) -> Validator:
     def _validate(body: dict[str, Any]) -> tuple[bool, str]:
         proposal = body.get("proposal") or {}
@@ -277,6 +297,13 @@ def _case_specs() -> list[dict[str, Any]]:
             "profile": "umg_demo",
             "side_effect_level": "plan_only",
             "validator": _umg_plan_profile_manifest_ok,
+        },
+        {
+            "case_id": "manifest_material_plan_only_profile",
+            "kind": "manifest_profile",
+            "profile": "material_demo",
+            "side_effect_level": "plan_only",
+            "validator": _material_plan_profile_manifest_ok,
         },
         {
             "case_id": "create_blueprint_add_step_alias_proposal",
@@ -409,6 +436,26 @@ def _case_specs() -> list[dict[str, Any]]:
                 "value": 0.35,
             },
             "validator": _proposal_ok("set_material_instance_parameter", "editor_set_material_instance_parameter"),
+        },
+        {
+            "case_id": "create_material_scalar_from_parameter_context",
+            "tool_id": "editor_set_material_instance_parameter",
+            "arguments": {"value": 0.25},
+            "context": {
+                "material_edit_context": {
+                    "material_instance_path": "/Game/Materials/MI_Rock",
+                    "cursor_parameter": {"parameter_name": "Roughness", "parameter_type": "scalar"},
+                }
+            },
+            "validator": _proposal_payload_contains(
+                "set_material_instance_parameter",
+                {
+                    "material_instance_path": "/Game/Materials/MI_Rock",
+                    "parameter_name": "Roughness",
+                    "parameter_type": "scalar",
+                    "value": 0.25,
+                },
+            ),
         },
         {
             "case_id": "create_level_actor_place_proposal",

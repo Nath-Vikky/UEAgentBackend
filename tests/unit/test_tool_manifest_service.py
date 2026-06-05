@@ -145,6 +145,22 @@ def test_tool_manifest_marks_umg_plan_only_context_tools_as_local_plan_calls() -
     assert boundary["http_frontend_confirmation_required"] is False
 
 
+def test_tool_manifest_marks_material_plan_only_context_tools_as_local_plan_calls() -> None:
+    manifest = build_tool_manifest(profile="material_demo", side_effect_level="plan_only")
+    tool_ids = {tool["annotations"]["tool_id"] for tool in manifest["tools"]}
+    instance_context = _tool_by_annotation_tool_id(manifest, "editor_material_set_instance_context")
+    boundary = instance_context["annotations"]["execution_boundary"]
+
+    assert tool_ids == {"editor_material_set_instance_context", "editor_material_set_parameter_context"}
+    assert instance_context["annotations"]["operation_family"] == "material"
+    assert instance_context["annotations"]["bridge_kind"] == "plan_only_context"
+    assert instance_context["annotations"]["operation_type"] == "set_material_instance_context"
+    assert boundary["mode"] == "plan_only"
+    assert boundary["local_tool_registry_call_allowed"] is True
+    assert boundary["local_tool_registry_call_path"] == "POST /api/v1/mcp/tool-registry/plans/{tool}/call"
+    assert boundary["http_frontend_confirmation_required"] is False
+
+
 def test_tool_manifest_blueprint_profile_exposes_add_step_alias() -> None:
     manifest = build_tool_manifest(profile="blueprint_demo")
     tool_ids = {tool["annotations"]["tool_id"] for tool in manifest["tools"]}

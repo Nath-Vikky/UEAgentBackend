@@ -6804,6 +6804,79 @@ Latest deterministic smoke result:
 - Tool Registry Proposal Bridge smoke: 13/13 passed.
 - Aggregate editor demo smoke suite: 7/7 suites, 83/83 cases passed.
 
+## 2026-06-05 Material Plan-only Context Tools
+
+Material Instance editing now has the same plan-only context bridge as
+Blueprint and UMG.
+
+New local plan tools:
+
+- `editor_material_set_instance_context`
+- `editor_material_set_parameter_context`
+
+Typical flow:
+
+```text
+set material instance context
+-> set material parameter context
+-> confirmed-write material parameter Proposal
+-> user confirmation in UEAgentTool
+-> UE Editor API execution
+```
+
+Example:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/mcp/tool-registry/plans/editor_material_set_parameter_context/call" `
+  -ContentType "application/json" `
+  -Body '{
+    "arguments": {
+      "project_id": "RushBa",
+      "material_instance_path": "/Game/Materials/MI_Rock",
+      "parameter_name": "Roughness"
+    }
+  }'
+```
+
+Returned context:
+
+- `result.context_patch.material_edit_context.material_instance_path`
+- `result.context_patch.material_edit_context.cursor_parameter`
+- `result.context_patch.material_edit_context.parameter_counts`
+- `result.next_tool_hints`
+
+`POST /api/v1/mcp/tool-registry/proposals/prepare` and
+`POST /api/v1/mcp/tool-registry/proposals` can consume
+`context.material_edit_context`. Material write tools can inherit:
+
+- `material_instance_path`
+- `parameter_name`
+- `parameter_type` for scalar/vector parameter proposals
+
+Texture and static-switch proposals also inherit the material instance path and
+parameter name, while still requiring the actual new texture path or boolean
+value from the user/tool request.
+
+Frontend impact: no mandatory UI change. Existing Material Proposal execution
+is unchanged. Future UI/MCP panels can call these plan-only endpoints to make
+parameter editing less repetitive and less dependent on LLM guessing.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_manifest_service.py tests\unit\test_tool_proposal_bridge_service.py tests\integration\test_mcp_tools_api.py -q
+.\.venv\Scripts\python.exe scripts\run_tool_registry_proposal_bridge_smoke.py --output -
+.\.venv\Scripts\python.exe scripts\run_editor_demo_smoke_suite.py --output -
+.\.venv\Scripts\python.exe -m ruff check app\tools\registry.py app\services\tool_registry_plan_call_service.py app\services\tool_proposal_bridge_service.py app\services\tool_manifest_service.py tests\unit\test_tool_manifest_service.py tests\unit\test_tool_proposal_bridge_service.py tests\integration\test_mcp_tools_api.py scripts\run_tool_registry_proposal_bridge_smoke.py --no-cache
+```
+
+Latest deterministic smoke result:
+
+- Tool Registry Proposal Bridge smoke: 15/15 passed.
+- Aggregate editor demo smoke suite: 7/7 suites, 85/85 cases passed.
+
 ## 2026-06-04 Active Blueprint Graph Focus
 
 Agent Chat / Project QA now resolves the currently focused Blueprint graph from

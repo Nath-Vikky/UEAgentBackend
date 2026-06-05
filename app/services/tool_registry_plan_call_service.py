@@ -69,6 +69,8 @@ class ToolRegistryPlanCallService:
             "editor_blueprint_set_cursor_node": self._call_blueprint_set_cursor_node,
             "editor_umg_set_widget_blueprint_context": self._call_umg_set_widget_blueprint_context,
             "editor_umg_set_cursor_widget": self._call_umg_set_cursor_widget,
+            "editor_material_set_instance_context": self._call_material_set_instance_context,
+            "editor_material_set_parameter_context": self._call_material_set_parameter_context,
         }
         handler = handlers.get(spec.tool_id)
         if not handler:
@@ -507,6 +509,261 @@ class ToolRegistryPlanCallService:
             "asset_type": asset.get("asset_type"),
             "package_path": asset.get("package_path"),
         }
+
+    def _call_material_set_instance_context(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
+        del spec
+        project_id = _first_text(args.get("project_id")) or None
+        material_query = _first_text(args.get("material_instance_path"), args.get("query"))
+        material = self._find_material_instance(project_id=project_id, material_query=material_query)
+        resolved_path = _first_text(material_query, material.get("material_instance_path"))
+        context_patch = {
+            "material_edit_context": {
+                "material_instance_path": resolved_path,
+                "material_instance_name": _first_text(material.get("material_instance_name"), resolved_path),
+                "parent_material": _first_text(material.get("parent_material")),
+                "parameter_counts": self._material_parameter_counts(material),
+                "source_tool_id": "editor_material_set_instance_context",
+                "matched_inventory_material_instance": bool(material),
+            }
+        }
+        return {
+            "plan": {
+                "status": "ready" if resolved_path else "needs_material_instance_path",
+                "intent": "set_material_instance_context",
+                "side_effect_level": "plan_only",
+                "message": (
+                    f"Material edit context set to {resolved_path}."
+                    if resolved_path
+                    else "No Material Instance path was provided or found in inventory."
+                ),
+            },
+            "context_patch": context_patch,
+            "normalized_arguments": {
+                "project_id": project_id or "",
+                "material_instance_path": resolved_path,
+            },
+            "inventory_match": {"material_instance": self._material_preview(material)},
+            "next_tool_hints": [
+                {
+                    "tool_id": "editor_material_set_parameter_context",
+                    "arguments": {"material_instance_path": resolved_path},
+                },
+                {
+                    "tool_id": "editor_set_material_instance_parameter",
+                    "arguments": {"material_instance_path": resolved_path},
+                },
+            ],
+            "prompt_excerpt": (
+                "Use material_edit_context.material_instance_path as the default target for later "
+                "Material parameter Proposal tools."
+            ),
+        }
+
+    def _call_material_set_parameter_context(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
+        del spec
+        project_id = _first_text(args.get("project_id")) or None
+        material_query = _first_text(args.get("material_instance_path"), args.get("query"))
+        parameter_query = _first_text(args.get("parameter_name"), args.get("parameter"))
+        requested_type = _first_text(args.get("parameter_type"))
+        material = self._find_material_instance(project_id=project_id, material_query=material_query)
+        parameter = self._find_material_parameter(material, parameter_query, requested_type)
+        resolved_path = _first_text(material_query, material.get("material_instance_path"))
+        cursor_parameter = self._material_parameter_projection(parameter)
+        if cursor_parameter:
+            cursor_parameter["source_tool_id"] = "editor_material_set_parameter_context"
+            cursor_parameter["matched_inventory_parameter"] = True
+        elif parameter_query:
+            cursor_parameter = {
+                "parameter_name": parameter_query,
+                "parameter_type": requested_type,
+                "value": None,
+                "source_tool_id": "editor_material_set_parameter_context",
+                "matched_inventory_parameter": False,
+            }
+        context_patch = {
+            "material_edit_context": {
+                "material_instance_path": resolved_path,
+                "material_instance_name": _first_text(material.get("material_instance_name"), resolved_path),
+                "parent_material": _first_text(material.get("parent_material")),
+                "cursor_parameter": cursor_parameter,
+                "parameter_counts": self._material_parameter_counts(material),
+                "source_tool_id": "editor_material_set_parameter_context",
+                "matched_inventory_material_instance": bool(material),
+            }
+        }
+        resolved_parameter_name = _first_text(cursor_parameter.get("parameter_name") if cursor_parameter else "", parameter_query)
+        return {
+            "plan": {
+                "status": "ready" if resolved_path and resolved_parameter_name else "needs_parameter_identifier",
+                "intent": "set_material_parameter_context",
+                "side_effect_level": "plan_only",
+                "message": (
+                    f"Material cursor parameter set to {resolved_parameter_name} in {resolved_path}."
+                    if resolved_parameter_name
+                    else "No parameter identifier was provided or found in inventory."
+                ),
+            },
+            "context_patch": context_patch,
+            "normalized_arguments": {
+                "project_id": project_id or "",
+                "material_instance_path": resolved_path,
+                "parameter_name": resolved_parameter_name,
+                "parameter_type": _first_text(cursor_parameter.get("parameter_type") if cursor_parameter else "", requested_type),
+            },
+            "inventory_match": {
+                "material_instance": self._material_preview(material),
+                "parameter": parameter,
+            },
+            "next_tool_hints": self._material_next_tool_hints(resolved_path, cursor_parameter),
+            "prompt_excerpt": (
+                "Use material_edit_context.cursor_parameter as the default parameter for scalar/vector/texture/"
+                "static-switch Material Instance Proposal tools."
+            ),
+        }
+
+    def _find_material_instance(self, *, project_id: str | None, material_query: str) -> dict[str, Any]:
+        material = self.inventory.get_material_instance(material_query, project_id) if material_query else None
+        if material:
+            return material
+        matches = self.inventory.list_material_instances(
+            project_id=project_id,
+            query=material_query or None,
+            limit=1,
+        )
+        return matches[0] if matches else {}
+
+    @staticmethod
+    def _material_parameters(material: dict[str, Any]) -> list[dict[str, Any]]:
+        if not material:
+            return []
+        parameters: list[dict[str, Any]] = []
+        for key, parameter_type in (
+            ("scalar_parameters", "scalar"),
+            ("vector_parameters", "vector"),
+            ("texture_parameters", "texture"),
+            ("static_switch_parameters", "static_switch"),
+        ):
+            for raw in _as_list(material.get(key)):
+                if not isinstance(raw, dict):
+                    continue
+                item = dict(raw)
+                item.setdefault("parameter_type", parameter_type)
+                item.setdefault("type", parameter_type)
+                parameters.append(item)
+        for raw in _as_list(material.get("parameters")):
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            if not _first_text(item.get("parameter_type"), item.get("type")):
+                item["parameter_type"] = "unknown"
+            parameters.append(item)
+        return parameters
+
+    @staticmethod
+    def _find_material_parameter(
+        material: dict[str, Any],
+        parameter_query: str,
+        requested_type: str,
+    ) -> dict[str, Any]:
+        if not parameter_query:
+            return {}
+        normalized_query = _normalize_lookup(parameter_query)
+        normalized_type = _normalize_lookup(requested_type)
+        for parameter in ToolRegistryPlanCallService._material_parameters(material):
+            name = _first_text(parameter.get("name"), parameter.get("parameter_name"))
+            parameter_type = _first_text(parameter.get("parameter_type"), parameter.get("type"))
+            if normalized_type and _normalize_lookup(parameter_type) != normalized_type:
+                continue
+            if _normalize_lookup(name) == normalized_query:
+                return parameter
+        for parameter in ToolRegistryPlanCallService._material_parameters(material):
+            name = _first_text(parameter.get("name"), parameter.get("parameter_name"))
+            if normalized_query and normalized_query in _normalize_lookup(name):
+                return parameter
+        return {}
+
+    @staticmethod
+    def _material_parameter_projection(parameter: dict[str, Any]) -> dict[str, Any]:
+        if not parameter:
+            return {}
+        return {
+            "parameter_name": _first_text(parameter.get("name"), parameter.get("parameter_name")),
+            "parameter_type": _first_text(parameter.get("parameter_type"), parameter.get("type")),
+            "value": parameter.get("value"),
+        }
+
+    @staticmethod
+    def _material_parameter_counts(material: dict[str, Any]) -> dict[str, int]:
+        return {
+            "scalar": len(_as_list(material.get("scalar_parameters"))),
+            "vector": len(_as_list(material.get("vector_parameters"))),
+            "texture": len(_as_list(material.get("texture_parameters"))),
+            "static_switch": len(_as_list(material.get("static_switch_parameters"))),
+            "total": len(ToolRegistryPlanCallService._material_parameters(material)),
+        }
+
+    @staticmethod
+    def _material_preview(material: dict[str, Any]) -> dict[str, Any]:
+        if not material:
+            return {}
+        return {
+            "material_instance_path": material.get("material_instance_path"),
+            "material_instance_name": material.get("material_instance_name"),
+            "parent_material": material.get("parent_material"),
+            "parameter_count": material.get("parameter_count"),
+        }
+
+    @staticmethod
+    def _material_next_tool_hints(material_instance_path: str, cursor_parameter: dict[str, Any]) -> list[dict[str, Any]]:
+        parameter_name = _first_text(cursor_parameter.get("parameter_name") if cursor_parameter else "")
+        parameter_type = _normalize_lookup(cursor_parameter.get("parameter_type") if cursor_parameter else "")
+        if parameter_type in {"scalar", "vector"}:
+            return [
+                {
+                    "tool_id": "editor_set_material_instance_parameter",
+                    "arguments": {
+                        "material_instance_path": material_instance_path,
+                        "parameter_name": parameter_name,
+                        "parameter_type": parameter_type,
+                    },
+                }
+            ]
+        if parameter_type == "texture":
+            return [
+                {
+                    "tool_id": "editor_set_material_instance_texture_parameter",
+                    "arguments": {
+                        "material_instance_path": material_instance_path,
+                        "parameter_name": parameter_name,
+                    },
+                }
+            ]
+        if parameter_type == "static switch":
+            parameter_type = "static_switch"
+        if parameter_type == "static_switch":
+            return [
+                {
+                    "tool_id": "editor_set_material_instance_static_switch",
+                    "arguments": {
+                        "material_instance_path": material_instance_path,
+                        "parameter_name": parameter_name,
+                    },
+                }
+            ]
+        return [
+            {
+                "tool_id": "editor_set_material_instance_parameter",
+                "arguments": {"material_instance_path": material_instance_path},
+            },
+            {
+                "tool_id": "editor_set_material_instance_texture_parameter",
+                "arguments": {"material_instance_path": material_instance_path},
+            },
+            {
+                "tool_id": "editor_set_material_instance_static_switch",
+                "arguments": {"material_instance_path": material_instance_path},
+            },
+        ]
 
     @staticmethod
     def _find_node(graph: dict[str, Any], node_query: str) -> dict[str, Any]:

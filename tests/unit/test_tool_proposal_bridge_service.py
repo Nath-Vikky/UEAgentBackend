@@ -171,6 +171,56 @@ def test_prepare_umg_add_widget_uses_context_parent_defaults() -> None:
     assert payload["widget_class"] == "TextBlock"
 
 
+def test_prepare_material_scalar_uses_parameter_context_defaults() -> None:
+    bridge = ToolProposalBridgeService.prepare_proposal(
+        tool_id="editor_set_material_instance_parameter",
+        arguments={"value": 0.25},
+        context={
+            "material_edit_context": {
+                "material_instance_path": "/Game/Materials/MI_Rock",
+                "cursor_parameter": {
+                    "parameter_name": "Roughness",
+                    "parameter_type": "scalar",
+                    "value": 0.6,
+                },
+            }
+        },
+        requested_by="unit_test",
+    )
+
+    assert bridge["status"] == "prepared"
+    assert bridge["operation_type"] == "set_material_instance_parameter"
+    payload = bridge["proposal_request"]["payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Rock"
+    assert payload["parameter_name"] == "Roughness"
+    assert payload["parameter_type"] == "scalar"
+    assert payload["value"] == 0.25
+
+
+def test_prepare_material_texture_uses_parameter_context_defaults() -> None:
+    bridge = ToolProposalBridgeService.prepare_proposal(
+        tool_id="editor_set_material_instance_texture_parameter",
+        arguments={"texture_path": "/Game/Textures/T_Rock_D"},
+        context={
+            "material_edit_context": {
+                "material_instance_path": "/Game/Materials/MI_Rock",
+                "cursor_parameter": {
+                    "parameter_name": "BaseTexture",
+                    "parameter_type": "texture",
+                },
+            }
+        },
+        requested_by="unit_test",
+    )
+
+    assert bridge["status"] == "prepared"
+    assert bridge["operation_type"] == "set_material_instance_texture_parameter"
+    payload = bridge["proposal_request"]["payload"]
+    assert payload["material_instance_path"] == "/Game/Materials/MI_Rock"
+    assert payload["parameter_name"] == "BaseTexture"
+    assert payload["texture_path"] == "/Game/Textures/T_Rock_D"
+
+
 def test_prepare_blocks_unknown_tool() -> None:
     bridge = ToolProposalBridgeService.prepare_proposal(
         tool_id="editor_delete_everything",

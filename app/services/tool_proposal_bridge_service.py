@@ -44,6 +44,11 @@ UMG_CONTEXT_OPERATION_TYPES = {
     "delete_umg_widget",
 }
 UMG_CURSOR_TARGET_OPERATION_TYPES = UMG_CONTEXT_OPERATION_TYPES - {"add_umg_widget"}
+MATERIAL_CONTEXT_OPERATION_TYPES = {
+    "set_material_instance_parameter",
+    "set_material_instance_texture_parameter",
+    "set_material_instance_static_switch",
+}
 
 
 class ToolProposalBridgeService:
@@ -185,6 +190,12 @@ class ToolProposalBridgeService:
             return cls._apply_blueprint_context_defaults(operation_type=operation_type, arguments=arguments, context=context)
         if operation_type in UMG_CONTEXT_OPERATION_TYPES:
             return cls._apply_umg_context_defaults(operation_type=operation_type, arguments=arguments, context=context)
+        if operation_type in MATERIAL_CONTEXT_OPERATION_TYPES:
+            return cls._apply_material_context_defaults(
+                operation_type=operation_type,
+                arguments=arguments,
+                context=context,
+            )
         return arguments
 
     @classmethod
@@ -237,6 +248,28 @@ class ToolProposalBridgeService:
             _set_missing(payload, "widget_name", cursor_widget_name)
         if operation_type == "add_umg_widget":
             _set_missing(payload, "parent_widget_name", cursor_widget_name or umg_context.get("root_widget_name"))
+        return payload
+
+    @classmethod
+    def _apply_material_context_defaults(
+        cls,
+        *,
+        operation_type: str,
+        arguments: dict[str, Any],
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        material_context = _material_edit_context(context)
+        if not material_context:
+            return arguments
+        payload = dict(arguments)
+        _set_missing(payload, "material_instance_path", material_context.get("material_instance_path"))
+        cursor_parameter = material_context.get("cursor_parameter")
+        cursor_parameter = cursor_parameter if isinstance(cursor_parameter, dict) else {}
+        parameter_name = _first_text(cursor_parameter.get("parameter_name"), cursor_parameter.get("name"))
+        parameter_type = _normalize_parameter_type(cursor_parameter.get("parameter_type") or cursor_parameter.get("type"))
+        _set_missing(payload, "parameter_name", parameter_name)
+        if operation_type == "set_material_instance_parameter" and parameter_type in {"scalar", "vector"}:
+            _set_missing(payload, "parameter_type", parameter_type)
         return payload
 
     @classmethod
@@ -313,6 +346,25 @@ def _umg_edit_context(context: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _material_edit_context(context: dict[str, Any]) -> dict[str, Any]:
+    direct = context.get("material_edit_context")
+    if isinstance(direct, dict):
+        return direct
+    active_context = context.get("active_context")
+    if isinstance(active_context, dict):
+        nested = active_context.get("material_edit_context")
+        if isinstance(nested, dict):
+            return nested
+        material = active_context.get("material")
+        if isinstance(material, dict):
+            return {
+                "material_instance_path": material.get("current_material_instance_path")
+                or material.get("material_instance_path"),
+                "cursor_parameter": material.get("current_parameter_summary") or material.get("cursor_parameter"),
+            }
+    return {}
+
+
 def _set_missing(payload: dict[str, Any], key: str, value: Any) -> None:
     if payload.get(key) in (None, "") and value not in (None, ""):
         payload[key] = value
@@ -324,6 +376,19 @@ def _first_text(*values: Any) -> str:
         if text:
             return text
     return ""
+
+
+def _normalize_parameter_type(value: Any) -> str:
+    text = " ".join(str(value or "").replace("_", " ").strip().lower().split())
+    if text in {"scalar", "float"}:
+        return "scalar"
+    if text in {"vector", "color", "linear color", "linearcolor"}:
+        return "vector"
+    if text in {"texture", "texture2d", "texture 2d"}:
+        return "texture"
+    if text in {"static switch", "staticswitch", "switch", "bool", "boolean"}:
+        return "static_switch"
+    return text
 
 
 def _first_pin_name(cursor_node: dict[str, Any], *, direction: str, fallback: str) -> str:
