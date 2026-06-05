@@ -38,6 +38,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "editor_inspect_material_instance_detail",
             "mcp_get_blueprint_graph",
             "mcp_get_widget_tree",
+            "editor_inspect_umg_widget_detail",
         ),
     },
     "blueprint_demo": {
@@ -103,6 +104,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "tool_ids": (
             "mcp_get_widget_tree",
+            "editor_inspect_umg_widget_detail",
             "editor_umg_set_widget_blueprint_context",
             "editor_umg_set_cursor_widget",
             "editor_add_umg_widget",
@@ -271,6 +273,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "frontend_executor_id": _mcp_tool_name(spec),
             "operation_type": "inspect_widget_tree",
             "bridge_kind": "mcp_readonly_or_inventory_fallback",
+        }
+    if spec.tool_id == "editor_inspect_umg_widget_detail":
+        return {
+            "operation_family": "umg",
+            "frontend_executor_id": "inspect_umg_widget_detail",
+            "operation_type": "inspect_umg_widget_detail",
+            "bridge_kind": "inventory_readonly",
         }
     if spec.tool_id in BLUEPRINT_PLAN_ONLY_TOOL_IDS:
         return {

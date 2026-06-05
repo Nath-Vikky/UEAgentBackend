@@ -128,7 +128,18 @@ def _seed_inventory(client: TestClient) -> dict[str, Any]:
                             "root": "RootCanvas",
                             "widgets": [
                                 {"name": "RootCanvas", "class": "CanvasPanel"},
-                                {"name": "TitleText", "class": "TextBlock", "parent": "RootCanvas"},
+                                {
+                                    "name": "TitleText",
+                                    "class": "TextBlock",
+                                    "parent": "RootCanvas",
+                                    "slot": {
+                                        "type": "CanvasPanelSlot",
+                                        "position": {"x": 20, "y": 30},
+                                        "size": {"x": 300, "y": 48},
+                                    },
+                                    "properties": {"text": "Mission Ready", "visibility": "Visible"},
+                                    "style": {"opacity": 0.85},
+                                },
                             ],
                         }
                     },
@@ -206,6 +217,19 @@ def _widget_tree_ok(body: dict[str, Any]) -> tuple[bool, str]:
     return ok, "widget tree call returns submitted Widget Blueprint hierarchy"
 
 
+def _umg_widget_detail_ok(body: dict[str, Any]) -> tuple[bool, str]:
+    content = body.get("call", {}).get("result", {}).get("structuredContent", {})
+    ok = (
+        body.get("success") is True
+        and content.get("widget_name") == "TitleText"
+        and content.get("widget_class") == "TextBlock"
+        and content.get("parent_widget_name") == "RootCanvas"
+        and (content.get("slot") or {}).get("type") == "CanvasPanelSlot"
+        and (content.get("properties") or {}).get("text") == "Mission Ready"
+    )
+    return ok, "UMG widget detail call returns class, parent, slot, and properties"
+
+
 def _actor_inventory_ok(body: dict[str, Any]) -> tuple[bool, str]:
     items = list(body.get("call", {}).get("result", {}).get("items") or [])
     ok = body.get("success") is True and bool(items) and items[0].get("actor_label") == "BP_EnemySpawner_1"
@@ -250,6 +274,16 @@ def _case_specs() -> list[dict[str, Any]]:
                 "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
             },
             "validator": _widget_tree_ok,
+        },
+        {
+            "case_id": "call_umg_widget_detail_inventory",
+            "tool": "editor_inspect_umg_widget_detail",
+            "arguments": {
+                "project_id": "ReadonlyToolDemo",
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+            },
+            "validator": _umg_widget_detail_ok,
         },
         {
             "case_id": "call_level_actor_inventory",

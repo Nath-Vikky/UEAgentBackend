@@ -1948,6 +1948,54 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
     ),
+    "editor_inspect_umg_widget_detail": ToolSpec(
+        tool_id="editor_inspect_umg_widget_detail",
+        task_type="editor_operation",
+        title="Inspect UMG Widget Detail",
+        description=(
+            "Read one Widget Blueprint widget's class, parent, children, slot, layout, style, "
+            "and captured properties from Project Inventory."
+        ),
+        side_effect_level="read_only",
+        route_preference="single_tool",
+        category="sensing",
+        transport="http",
+        requires_confirmation=False,
+        active_context_keys=("project", "asset", "umg"),
+        owned_by_skill="UMGAutomationSkill",
+        allowed_in_free_chat=True,
+        permission_gate="read_only_whitelist",
+        context_cost="low",
+        trigger_keywords=(
+            "inspect umg widget",
+            "widget detail",
+            "widget properties",
+            "umg widget detail",
+            "umg widget properties",
+        ),
+        required_payload_fields=("widget_blueprint_path", "widget_name"),
+        optional_payload_fields=("project_id", "blueprint_path", "asset_path", "query", "target_widget"),
+        input_schema={
+            "type": "object",
+            "required": ["widget_blueprint_path", "widget_name"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "widget_blueprint_path": {"type": "string"},
+                "blueprint_path": {"type": "string"},
+                "asset_path": {"type": "string"},
+                "widget_name": {"type": "string"},
+                "target_widget": {"type": "string"},
+                "query": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "content": {"type": "array"},
+                "structuredContent": {"type": "object"},
+            },
+        },
+    ),
     "editor_add_umg_widget": ToolSpec(
         tool_id="editor_add_umg_widget",
         task_type="editor_operation",

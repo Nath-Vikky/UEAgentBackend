@@ -93,6 +93,7 @@ def test_tool_manifest_profiles_expose_compact_demo_tool_sets() -> None:
     assert manifest["filters"]["profile"] == "umg_demo"
     assert manifest["profiles"]["selected"]["profile_id"] == "umg_demo"
     assert "mcp_get_widget_tree" in tool_ids
+    assert "editor_inspect_umg_widget_detail" in tool_ids
     assert "editor_umg_set_widget_blueprint_context" in tool_ids
     assert "editor_umg_set_cursor_widget" in tool_ids
     assert "editor_add_umg_widget" in tool_ids

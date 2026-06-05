@@ -7407,3 +7407,44 @@ Validation:
 .\.venv\Scripts\python.exe -m pytest tests\integration\test_editor_operations.py::test_blueprint_node_template_result_summary_flags_missing_expected_links tests\integration\test_editor_operations.py::test_blueprint_compile_failed_result_includes_repair_advice tests\integration\test_editor_operations.py::test_editor_operation_follow_ups_require_result_before_suggesting -q
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
+## 2026-06-05 Update: UMG Widget Detail Read-only Tool
+
+后端新增一个 Project Inventory 驱动的 UMG 只读工具：
+
+- Tool ID: `editor_inspect_umg_widget_detail`
+- Local call: `POST /api/v1/mcp/tool-registry/tools/editor_inspect_umg_widget_detail/call`
+- Manifest profiles: `readonly_sensing`, `umg_demo`
+- Side effect: `read_only`
+
+示例：
+
+```json
+{
+  "arguments": {
+    "project_id": "YourProject",
+    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+    "widget_name": "TitleText"
+  }
+}
+```
+
+返回会包含：
+
+- `structuredContent.widget_name`
+- `structuredContent.widget_class`
+- `structuredContent.parent_widget_name`
+- `structuredContent.slot`
+- `structuredContent.layout`
+- `structuredContent.properties`
+- `structuredContent.style`
+- `structuredContent.children`
+- `structuredContent.widget_tree_summary`
+
+这个工具用于“先观察再提案”的工作流：Agent 或 MCP-style client 可以先读取某个 Widget 的属性、父子关系和布局，再创建 `editor_set_umg_widget_text`、`editor_set_umg_widget_layout`、`editor_set_umg_widget_appearance`、`editor_reparent_umg_widget` 等 confirmed-write Proposal。
+
+边界：
+
+- 不直接修改 Widget Blueprint。
+- 不绕过 Proposal confirmation。
+- 结果质量依赖 UEAgentTool 提交的 Project Inventory 是否包含 Widget Tree / slot / properties / style 字段。
+- 不强制 UE 前端改 UI；如果后续要做更好的 UMG 面板，可以把这个工具作为“Inspect Widget Detail”按钮或 Agent 自动观察步骤。

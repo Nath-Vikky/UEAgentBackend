@@ -249,7 +249,18 @@ def _save_demo_inventory_snapshot(client: TestClient) -> None:
                             "root": "RootCanvas",
                             "widgets": [
                                 {"name": "RootCanvas", "class": "CanvasPanel"},
-                                {"name": "TitleText", "class": "TextBlock", "parent": "RootCanvas"},
+                                {
+                                    "name": "TitleText",
+                                    "class": "TextBlock",
+                                    "parent": "RootCanvas",
+                                    "slot": {
+                                        "type": "CanvasPanelSlot",
+                                        "position": {"x": 20, "y": 30},
+                                        "size": {"x": 300, "y": 48},
+                                    },
+                                    "properties": {"text": "Mission Ready", "visibility": "Visible"},
+                                    "style": {"opacity": 0.85},
+                                },
                             ],
                         }
                     },
@@ -492,6 +503,33 @@ def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inven
     material_body = material_response.json()
     assert material_body["success"] is True
     assert material_body["call"]["result"]["item"]["scalar_parameters"][0]["name"] == "Roughness"
+
+
+def test_tool_registry_local_readonly_call_reads_umg_widget_detail(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/tools/editor_inspect_umg_widget_detail/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    result = body["call"]["result"]["structuredContent"]
+    assert result["schema_version"] == "inventory_umg_widget_detail_v1"
+    assert result["widget_name"] == "TitleText"
+    assert result["widget_class"] == "TextBlock"
+    assert result["parent_widget_name"] == "RootCanvas"
+    assert result["slot"]["type"] == "CanvasPanelSlot"
+    assert result["properties"]["text"] == "Mission Ready"
+    assert result["style"]["opacity"] == 0.85
 
 
 def test_tool_registry_local_readonly_call_blocks_write_tool(client: TestClient) -> None:
