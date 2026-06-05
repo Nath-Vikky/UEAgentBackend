@@ -120,6 +120,57 @@ def test_prepare_blueprint_connect_nodes_uses_cursor_context_defaults() -> None:
     assert payload["target_pin_name"] == "execute"
 
 
+def test_prepare_umg_set_text_uses_cursor_context_defaults() -> None:
+    bridge = ToolProposalBridgeService.prepare_proposal(
+        tool_id="editor_set_umg_widget_text",
+        arguments={"text": "Mission Ready"},
+        context={
+            "umg_edit_context": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "cursor_widget": {
+                    "widget_name": "TitleText",
+                    "widget_class": "TextBlock",
+                    "parent_widget_name": "RootCanvas",
+                },
+            }
+        },
+        requested_by="unit_test",
+    )
+
+    assert bridge["status"] == "prepared"
+    assert bridge["operation_type"] == "set_umg_widget_text"
+    payload = bridge["proposal_request"]["payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["widget_name"] == "TitleText"
+    assert payload["text"] == "Mission Ready"
+
+
+def test_prepare_umg_add_widget_uses_context_parent_defaults() -> None:
+    bridge = ToolProposalBridgeService.prepare_proposal(
+        tool_id="editor_add_umg_widget",
+        arguments={"widget_name": "SubtitleText", "widget_class": "TextBlock", "text": "Press Start"},
+        context={
+            "umg_edit_context": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "root_widget_name": "RootCanvas",
+                "cursor_widget": {
+                    "widget_name": "StatusPanel",
+                    "widget_class": "HorizontalBox",
+                },
+            }
+        },
+        requested_by="unit_test",
+    )
+
+    assert bridge["status"] == "prepared"
+    assert bridge["operation_type"] == "add_umg_widget"
+    payload = bridge["proposal_request"]["payload"]
+    assert payload["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert payload["parent_widget_name"] == "StatusPanel"
+    assert payload["widget_name"] == "SubtitleText"
+    assert payload["widget_class"] == "TextBlock"
+
+
 def test_prepare_blocks_unknown_tool() -> None:
     bridge = ToolProposalBridgeService.prepare_proposal(
         tool_id="editor_delete_everything",

@@ -26,6 +26,24 @@ BLUEPRINT_STEP_NAME_TO_TEMPLATE_ID = {
     "enhanced input": "enhanced_input_print_string",
     "enhanced input print": "enhanced_input_print_string",
 }
+BLUEPRINT_CONTEXT_OPERATION_TYPES = {
+    "add_blueprint_node_template",
+    "connect_blueprint_nodes",
+    "compile_blueprint",
+}
+UMG_CONTEXT_OPERATION_TYPES = {
+    "add_umg_widget",
+    "set_umg_widget_text",
+    "set_umg_widget_layout",
+    "set_umg_widget_visibility",
+    "set_umg_widget_appearance",
+    "set_umg_widget_brush",
+    "set_umg_slot_layout_v2",
+    "reparent_umg_widget",
+    "duplicate_umg_widget",
+    "delete_umg_widget",
+}
+UMG_CURSOR_TARGET_OPERATION_TYPES = UMG_CONTEXT_OPERATION_TYPES - {"add_umg_widget"}
 
 
 class ToolProposalBridgeService:
@@ -163,12 +181,20 @@ class ToolProposalBridgeService:
         context: dict[str, Any],
     ) -> dict[str, Any]:
         del tool_id
-        if operation_type not in {
-            "add_blueprint_node_template",
-            "connect_blueprint_nodes",
-            "compile_blueprint",
-        }:
-            return arguments
+        if operation_type in BLUEPRINT_CONTEXT_OPERATION_TYPES:
+            return cls._apply_blueprint_context_defaults(operation_type=operation_type, arguments=arguments, context=context)
+        if operation_type in UMG_CONTEXT_OPERATION_TYPES:
+            return cls._apply_umg_context_defaults(operation_type=operation_type, arguments=arguments, context=context)
+        return arguments
+
+    @classmethod
+    def _apply_blueprint_context_defaults(
+        cls,
+        *,
+        operation_type: str,
+        arguments: dict[str, Any],
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
         blueprint_context = _blueprint_edit_context(context)
         if not blueprint_context:
             return arguments
@@ -181,6 +207,36 @@ class ToolProposalBridgeService:
             cursor_node = cursor_node if isinstance(cursor_node, dict) else {}
             _set_missing(payload, "source_node_id", cursor_node.get("node_id"))
             _set_missing(payload, "source_pin_name", _first_pin_name(cursor_node, direction="output", fallback="then"))
+        return payload
+
+    @classmethod
+    def _apply_umg_context_defaults(
+        cls,
+        *,
+        operation_type: str,
+        arguments: dict[str, Any],
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        umg_context = _umg_edit_context(context)
+        if not umg_context:
+            return arguments
+        payload = dict(arguments)
+        _set_missing(
+            payload,
+            "widget_blueprint_path",
+            umg_context.get("widget_blueprint_path") or umg_context.get("blueprint_path"),
+        )
+        cursor_widget = umg_context.get("cursor_widget")
+        cursor_widget = cursor_widget if isinstance(cursor_widget, dict) else {}
+        cursor_widget_name = _first_text(
+            cursor_widget.get("widget_name"),
+            cursor_widget.get("name"),
+            cursor_widget.get("id"),
+        )
+        if operation_type in UMG_CURSOR_TARGET_OPERATION_TYPES:
+            _set_missing(payload, "widget_name", cursor_widget_name)
+        if operation_type == "add_umg_widget":
+            _set_missing(payload, "parent_widget_name", cursor_widget_name or umg_context.get("root_widget_name"))
         return payload
 
     @classmethod
@@ -237,9 +293,37 @@ def _blueprint_edit_context(context: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _umg_edit_context(context: dict[str, Any]) -> dict[str, Any]:
+    direct = context.get("umg_edit_context")
+    if isinstance(direct, dict):
+        return direct
+    active_context = context.get("active_context")
+    if isinstance(active_context, dict):
+        nested = active_context.get("umg_edit_context")
+        if isinstance(nested, dict):
+            return nested
+        umg = active_context.get("umg")
+        if isinstance(umg, dict):
+            return {
+                "widget_blueprint_path": umg.get("current_widget_blueprint_path")
+                or umg.get("widget_blueprint_path"),
+                "root_widget_name": umg.get("root_widget_name"),
+                "cursor_widget": umg.get("current_widget_summary") or umg.get("cursor_widget"),
+            }
+    return {}
+
+
 def _set_missing(payload: dict[str, Any], key: str, value: Any) -> None:
     if payload.get(key) in (None, "") and value not in (None, ""):
         payload[key] = value
+
+
+def _first_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def _first_pin_name(cursor_node: dict[str, Any], *, direction: str, fallback: str) -> str:

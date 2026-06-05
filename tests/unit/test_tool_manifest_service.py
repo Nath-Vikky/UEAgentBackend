@@ -93,6 +93,8 @@ def test_tool_manifest_profiles_expose_compact_demo_tool_sets() -> None:
     assert manifest["filters"]["profile"] == "umg_demo"
     assert manifest["profiles"]["selected"]["profile_id"] == "umg_demo"
     assert "mcp_get_widget_tree" in tool_ids
+    assert "editor_umg_set_widget_blueprint_context" in tool_ids
+    assert "editor_umg_set_cursor_widget" in tool_ids
     assert "editor_add_umg_widget" in tool_ids
     assert "editor_set_umg_widget_text" in tool_ids
     assert "editor_set_material_instance_parameter" not in tool_ids
@@ -121,6 +123,22 @@ def test_tool_manifest_marks_plan_only_context_tools_as_local_plan_calls() -> No
     assert edit_function["annotations"]["operation_family"] == "blueprint"
     assert edit_function["annotations"]["bridge_kind"] == "plan_only_context"
     assert edit_function["annotations"]["operation_type"] == "set_blueprint_edit_function_context"
+    assert boundary["mode"] == "plan_only"
+    assert boundary["local_tool_registry_call_allowed"] is True
+    assert boundary["local_tool_registry_call_path"] == "POST /api/v1/mcp/tool-registry/plans/{tool}/call"
+    assert boundary["http_frontend_confirmation_required"] is False
+
+
+def test_tool_manifest_marks_umg_plan_only_context_tools_as_local_plan_calls() -> None:
+    manifest = build_tool_manifest(profile="umg_demo", side_effect_level="plan_only")
+    tool_ids = {tool["annotations"]["tool_id"] for tool in manifest["tools"]}
+    widget_context = _tool_by_annotation_tool_id(manifest, "editor_umg_set_widget_blueprint_context")
+    boundary = widget_context["annotations"]["execution_boundary"]
+
+    assert tool_ids == {"editor_umg_set_widget_blueprint_context", "editor_umg_set_cursor_widget"}
+    assert widget_context["annotations"]["operation_family"] == "umg"
+    assert widget_context["annotations"]["bridge_kind"] == "plan_only_context"
+    assert widget_context["annotations"]["operation_type"] == "set_umg_widget_blueprint_context"
     assert boundary["mode"] == "plan_only"
     assert boundary["local_tool_registry_call_allowed"] is True
     assert boundary["local_tool_registry_call_path"] == "POST /api/v1/mcp/tool-registry/plans/{tool}/call"

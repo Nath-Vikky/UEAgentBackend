@@ -107,6 +107,56 @@ def _blueprint_edit_context(context: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _umg_edit_context(context: dict[str, Any]) -> dict[str, Any]:
+    direct = _as_dict(context.get("umg_edit_context"))
+    if direct:
+        return direct
+    nested = _context_section(context, "active_context", "umg_edit_context")
+    if nested:
+        return nested
+    context_pack = _context_section(context, "context_pack", "active_layer", "umg_edit_context")
+    if context_pack:
+        return context_pack
+    return {}
+
+
+def _active_widget_blueprint_path(context: dict[str, Any]) -> str:
+    edit_context = _umg_edit_context(context)
+    return _first_non_empty(
+        edit_context.get("widget_blueprint_path"),
+        edit_context.get("blueprint_path"),
+        _context_value(
+            context,
+            ("active_context", "umg", "current_widget_blueprint_path"),
+            ("active_context", "umg", "widget_blueprint_path"),
+            ("active_context", "editor_focus", "current_widget_blueprint_path"),
+            ("editor_context", "current_widget_blueprint_path"),
+            ("editor_context", "widget_blueprint_path"),
+            ("editor_state", "current_widget_blueprint_path"),
+            ("editor_state", "widget_blueprint_path"),
+            ("context_pack", "active_layer", "umg", "current_widget_blueprint_path"),
+        ),
+    )
+
+
+def _active_umg_parent_widget_name(context: dict[str, Any]) -> str:
+    edit_context = _umg_edit_context(context)
+    cursor_widget = _as_dict(edit_context.get("cursor_widget"))
+    return _first_non_empty(
+        cursor_widget.get("widget_name"),
+        cursor_widget.get("name"),
+        cursor_widget.get("id"),
+        edit_context.get("root_widget_name"),
+        _context_value(
+            context,
+            ("active_context", "umg", "current_widget_summary", "widget_name"),
+            ("active_context", "umg", "current_widget_summary", "name"),
+            ("active_context", "umg", "root_widget_name"),
+            ("context_pack", "active_layer", "umg", "root_widget_name"),
+        ),
+    )
+
+
 def _active_blueprint_path(context: dict[str, Any]) -> str:
     blueprint = _context_section(context, "active_context", "blueprint")
     last_operation = _as_dict(blueprint.get("last_successful_operation"))
@@ -493,7 +543,11 @@ class EditorWorkflowPlannerService:
         elif workflow_type == "umg_hud_group":
             plan_payload.setdefault(
                 "widget_blueprint_path",
-                _plan_asset_path(EditorOperationService._detect_widget_blueprint_path_from_request(request, goal, context_bundle) or ""),
+                _plan_asset_path(
+                    EditorOperationService._detect_widget_blueprint_path_from_request(request, goal, context_bundle)
+                    or _active_widget_blueprint_path(workflow_context)
+                    or ""
+                ),
             )
             parent_widget_name = EditorOperationService._detect_new_parent_widget_name_from_request(request, goal)
             detected_text = EditorOperationService._detect_umg_text_from_request(request, goal)
@@ -504,14 +558,21 @@ class EditorWorkflowPlannerService:
         elif workflow_type == "umg_text_widget":
             plan_payload.setdefault(
                 "widget_blueprint_path",
-                _plan_asset_path(EditorOperationService._detect_widget_blueprint_path_from_request(request, goal, context_bundle) or ""),
+                _plan_asset_path(
+                    EditorOperationService._detect_widget_blueprint_path_from_request(request, goal, context_bundle)
+                    or _active_widget_blueprint_path(workflow_context)
+                    or ""
+                ),
             )
             detected_widget_name = EditorOperationService._detect_widget_name_from_request(request, goal)
             detected_text = EditorOperationService._detect_umg_text_from_request(request, goal)
             detected_layout = EditorOperationService._detect_umg_layout_from_request(request, goal)
             detected_visibility = EditorOperationService._detect_umg_visibility_from_request(request, goal)
+            active_parent_widget_name = _active_umg_parent_widget_name(workflow_context)
             if detected_widget_name:
                 plan_payload.setdefault("widget_name", detected_widget_name)
+            if active_parent_widget_name:
+                plan_payload.setdefault("parent_widget_name", active_parent_widget_name)
             if detected_text:
                 plan_payload.setdefault("text", detected_text)
             if detected_layout:
@@ -996,6 +1057,7 @@ class EditorWorkflowPlannerService:
     ) -> dict[str, Any]:
         widget_blueprint_path = _first_non_empty(
             payload.get("widget_blueprint_path"),
+            _active_widget_blueprint_path(context),
             context.get("widget_blueprint_path"),
             context.get("current_widget_blueprint_path"),
         )
@@ -1003,7 +1065,7 @@ class EditorWorkflowPlannerService:
         widget_name = _first_non_empty(payload.get("widget_name"), payload.get("name"), "AgentText")
         widget_class = _first_non_empty(payload.get("widget_class"), "TextBlock")
         text = _first_non_empty(payload.get("text"), _quoted_text(goal))
-        parent_widget_name = _first_non_empty(payload.get("parent_widget_name"), payload.get("parent"))
+        parent_widget_name = _first_non_empty(payload.get("parent_widget_name"), payload.get("parent"), _active_umg_parent_widget_name(context))
         missing_base = [key for key, value in {"widget_blueprint_path": widget_blueprint_path, "text": text}.items() if not value]
         steps = [
             self._step(
@@ -1089,11 +1151,12 @@ class EditorWorkflowPlannerService:
     ) -> dict[str, Any]:
         widget_blueprint_path = _first_non_empty(
             payload.get("widget_blueprint_path"),
+            _active_widget_blueprint_path(context),
             context.get("widget_blueprint_path"),
             context.get("current_widget_blueprint_path"),
         )
         widget_blueprint_path = _plan_asset_path(widget_blueprint_path)
-        parent_widget_name = _first_non_empty(payload.get("parent_widget_name"), payload.get("parent"))
+        parent_widget_name = _first_non_empty(payload.get("parent_widget_name"), payload.get("parent"), _active_umg_parent_widget_name(context))
         group_name = _first_non_empty(payload.get("group_name"), "AgentHUDGroup")
         icon_name = _first_non_empty(payload.get("icon_widget_name"), "AgentHUDIcon")
         label_name = _first_non_empty(payload.get("label_widget_name"), payload.get("widget_name"), "AgentHUDText")

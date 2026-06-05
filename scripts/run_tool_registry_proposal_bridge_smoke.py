@@ -153,6 +153,8 @@ def _profile_manifest_ok(body: dict[str, Any]) -> tuple[bool, str]:
         and bool(manifest.get("profiles", {}).get("selected", {}).get("suggested_prompts"))
         and bool(manifest.get("profiles", {}).get("selected", {}).get("sample_tool_calls"))
         and "mcp_get_widget_tree" in tools
+        and "editor_umg_set_widget_blueprint_context" in tools
+        and "editor_umg_set_cursor_widget" in tools
         and "editor_add_umg_widget" in tools
         and "editor_set_umg_widget_text" in tools
         and "editor_set_material_instance_parameter" not in tools
@@ -178,6 +180,26 @@ def _plan_profile_manifest_ok(body: dict[str, Any]) -> tuple[bool, str]:
         and boundary.get("local_tool_registry_call_allowed") is True
     )
     return ok, "blueprint profile exposes plan-only context tools"
+
+
+def _umg_plan_profile_manifest_ok(body: dict[str, Any]) -> tuple[bool, str]:
+    manifest = body.get("manifest") or {}
+    tools = {
+        item.get("annotations", {}).get("tool_id"): item.get("annotations", {})
+        for item in list(manifest.get("tools") or [])
+        if isinstance(item, dict)
+    }
+    widget_context = tools.get("editor_umg_set_widget_blueprint_context", {})
+    boundary = widget_context.get("execution_boundary", {})
+    ok = (
+        manifest.get("filters", {}).get("profile") == "umg_demo"
+        and manifest.get("filters", {}).get("side_effect_level") == "plan_only"
+        and set(tools) == {"editor_umg_set_widget_blueprint_context", "editor_umg_set_cursor_widget"}
+        and widget_context.get("bridge_kind") == "plan_only_context"
+        and boundary.get("mode") == "plan_only"
+        and boundary.get("local_tool_registry_call_allowed") is True
+    )
+    return ok, "umg profile exposes plan-only context tools"
 
 
 def _proposal_ok(expected_operation_type: str, expected_tool_id: str) -> Validator:
@@ -248,6 +270,13 @@ def _case_specs() -> list[dict[str, Any]]:
             "profile": "blueprint_demo",
             "side_effect_level": "plan_only",
             "validator": _plan_profile_manifest_ok,
+        },
+        {
+            "case_id": "manifest_umg_plan_only_profile",
+            "kind": "manifest_profile",
+            "profile": "umg_demo",
+            "side_effect_level": "plan_only",
+            "validator": _umg_plan_profile_manifest_ok,
         },
         {
             "case_id": "create_blueprint_add_step_alias_proposal",
@@ -325,6 +354,50 @@ def _case_specs() -> list[dict[str, Any]]:
                 "text": "Mission Ready",
             },
             "validator": _proposal_ok("add_umg_widget", "editor_add_umg_widget"),
+        },
+        {
+            "case_id": "create_umg_widget_from_context",
+            "tool_id": "editor_add_umg_widget",
+            "arguments": {
+                "widget_name": "SubtitleText",
+                "widget_class": "TextBlock",
+                "text": "Press Start",
+            },
+            "context": {
+                "umg_edit_context": {
+                    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                    "root_widget_name": "RootCanvas",
+                    "cursor_widget": {"widget_name": "StatusPanel", "widget_class": "HorizontalBox"},
+                }
+            },
+            "validator": _proposal_payload_contains(
+                "add_umg_widget",
+                {
+                    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                    "parent_widget_name": "StatusPanel",
+                    "widget_name": "SubtitleText",
+                    "widget_class": "/Script/UMG.TextBlock",
+                },
+            ),
+        },
+        {
+            "case_id": "create_umg_set_text_from_cursor_context",
+            "tool_id": "editor_set_umg_widget_text",
+            "arguments": {"text": "Mission Ready"},
+            "context": {
+                "umg_edit_context": {
+                    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                    "cursor_widget": {"widget_name": "TitleText", "widget_class": "TextBlock"},
+                }
+            },
+            "validator": _proposal_payload_contains(
+                "set_umg_widget_text",
+                {
+                    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                    "widget_name": "TitleText",
+                    "text": "Mission Ready",
+                },
+            ),
         },
         {
             "case_id": "create_material_scalar_proposal",

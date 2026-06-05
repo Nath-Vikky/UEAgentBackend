@@ -14,6 +14,10 @@ def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _first_text(*values: Any) -> str:
     for value in values:
         text = str(value or "").strip()
@@ -63,6 +67,8 @@ class ToolRegistryPlanCallService:
         handlers = {
             "editor_blueprint_set_edit_function": self._call_blueprint_set_edit_function,
             "editor_blueprint_set_cursor_node": self._call_blueprint_set_cursor_node,
+            "editor_umg_set_widget_blueprint_context": self._call_umg_set_widget_blueprint_context,
+            "editor_umg_set_cursor_widget": self._call_umg_set_cursor_widget,
         }
         handler = handlers.get(spec.tool_id)
         if not handler:
@@ -247,6 +253,260 @@ class ToolRegistryPlanCallService:
             limit=1,
         )
         return graphs[0] if graphs else {}
+
+    def _call_umg_set_widget_blueprint_context(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
+        del spec
+        project_id = _first_text(args.get("project_id")) or None
+        widget_query = _first_text(
+            args.get("widget_blueprint_path"),
+            args.get("blueprint_path"),
+            args.get("asset_path"),
+            args.get("query"),
+        )
+        asset = self._find_widget_blueprint(project_id=project_id, widget_query=widget_query)
+        widget_tree = self._widget_tree_for_asset(asset)
+        widgets = self._widgets_from_tree(widget_tree)
+        root_widget_name = _first_text(
+            args.get("root_widget_name"),
+            widget_tree.get("root"),
+            widget_tree.get("root_widget_name"),
+            self._first_widget_name(widgets),
+        )
+        resolved_path = _first_text(widget_query, asset.get("asset_path") if asset else "")
+        context_patch = {
+            "umg_edit_context": {
+                "widget_blueprint_path": resolved_path,
+                "widget_blueprint_name": _first_text(asset.get("asset_name") if asset else "", resolved_path),
+                "root_widget_name": root_widget_name,
+                "widget_count": len(widgets),
+                "source_tool_id": "editor_umg_set_widget_blueprint_context",
+                "matched_inventory_widget_tree": bool(asset and widget_tree),
+            }
+        }
+        return {
+            "plan": {
+                "status": "ready" if resolved_path else "needs_widget_blueprint_path",
+                "intent": "set_umg_widget_blueprint_context",
+                "side_effect_level": "plan_only",
+                "message": (
+                    f"UMG edit context set to {resolved_path}; root={root_widget_name or 'unknown'}."
+                    if resolved_path
+                    else "No Widget Blueprint path was provided or found in inventory."
+                ),
+            },
+            "context_patch": context_patch,
+            "normalized_arguments": {
+                "project_id": project_id or "",
+                "widget_blueprint_path": resolved_path,
+                "root_widget_name": root_widget_name,
+            },
+            "inventory_match": {
+                "asset": self._asset_preview(asset),
+                "widget_tree": widget_tree,
+            },
+            "next_tool_hints": [
+                {
+                    "tool_id": "editor_add_umg_widget",
+                    "arguments": {
+                        "widget_blueprint_path": resolved_path,
+                        "parent_widget_name": root_widget_name,
+                    },
+                },
+                {
+                    "tool_id": "editor_set_umg_widget_text",
+                    "arguments": {"widget_blueprint_path": resolved_path},
+                },
+            ],
+            "prompt_excerpt": (
+                "Use umg_edit_context.widget_blueprint_path and root_widget_name as defaults for subsequent "
+                "UMG add/set/reparent/duplicate/delete Proposal tools."
+            ),
+        }
+
+    def _call_umg_set_cursor_widget(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
+        del spec
+        project_id = _first_text(args.get("project_id")) or None
+        widget_query = _first_text(
+            args.get("widget_blueprint_path"),
+            args.get("blueprint_path"),
+            args.get("asset_path"),
+            args.get("query"),
+        )
+        cursor_query = _first_text(
+            args.get("widget_name"),
+            args.get("cursor_widget"),
+            args.get("target_widget"),
+        )
+        asset = self._find_widget_blueprint(project_id=project_id, widget_query=widget_query)
+        widget_tree = self._widget_tree_for_asset(asset)
+        widgets = self._widgets_from_tree(widget_tree)
+        widget_match = self._find_widget(widgets, cursor_query)
+        root_widget_name = _first_text(widget_tree.get("root"), widget_tree.get("root_widget_name"), self._first_widget_name(widgets))
+        resolved_path = _first_text(widget_query, asset.get("asset_path") if asset else "")
+        cursor_widget = self._widget_projection(widget_match)
+        if cursor_widget:
+            cursor_widget["source_tool_id"] = "editor_umg_set_cursor_widget"
+            cursor_widget["matched_inventory_widget"] = True
+        elif cursor_query:
+            cursor_widget = {
+                "widget_name": cursor_query,
+                "widget_class": "",
+                "parent_widget_name": "",
+                "source_tool_id": "editor_umg_set_cursor_widget",
+                "matched_inventory_widget": False,
+            }
+        context_patch = {
+            "umg_edit_context": {
+                "widget_blueprint_path": resolved_path,
+                "widget_blueprint_name": _first_text(asset.get("asset_name") if asset else "", resolved_path),
+                "root_widget_name": root_widget_name,
+                "cursor_widget": cursor_widget,
+                "widget_count": len(widgets),
+                "source_tool_id": "editor_umg_set_cursor_widget",
+                "matched_inventory_widget_tree": bool(asset and widget_tree),
+            }
+        }
+        resolved_widget_name = _first_text(cursor_widget.get("widget_name") if cursor_widget else "", cursor_query)
+        return {
+            "plan": {
+                "status": "ready" if resolved_path and resolved_widget_name else "needs_widget_identifier",
+                "intent": "set_umg_cursor_widget",
+                "side_effect_level": "plan_only",
+                "message": (
+                    f"UMG cursor widget set to {resolved_widget_name} in {resolved_path}."
+                    if resolved_widget_name
+                    else "No widget identifier was provided or found in inventory."
+                ),
+            },
+            "context_patch": context_patch,
+            "normalized_arguments": {
+                "project_id": project_id or "",
+                "widget_blueprint_path": resolved_path,
+                "widget_query": cursor_query,
+                "widget_name": resolved_widget_name,
+            },
+            "inventory_match": {
+                "asset": self._asset_preview(asset),
+                "widget": widget_match,
+            },
+            "next_tool_hints": [
+                {
+                    "tool_id": "editor_set_umg_widget_text",
+                    "arguments": {
+                        "widget_blueprint_path": resolved_path,
+                        "widget_name": resolved_widget_name,
+                    },
+                },
+                {
+                    "tool_id": "editor_set_umg_widget_layout",
+                    "arguments": {
+                        "widget_blueprint_path": resolved_path,
+                        "widget_name": resolved_widget_name,
+                    },
+                },
+                {
+                    "tool_id": "editor_add_umg_widget",
+                    "arguments": {
+                        "widget_blueprint_path": resolved_path,
+                        "parent_widget_name": resolved_widget_name,
+                    },
+                },
+            ],
+            "prompt_excerpt": (
+                "Use umg_edit_context.cursor_widget as the default widget target for UMG set/layout/visibility "
+                "Proposal tools, or as the parent for adding a child widget."
+            ),
+        }
+
+    def _find_widget_blueprint(self, *, project_id: str | None, widget_query: str) -> dict[str, Any]:
+        asset = self.inventory.get_asset(widget_query, project_id) if widget_query else None
+        if asset:
+            return asset
+        matches = self.inventory.list_assets(
+            project_id=project_id,
+            query=widget_query or None,
+            asset_type="WidgetBlueprint",
+            limit=1,
+        )
+        return matches[0] if matches else {}
+
+    @staticmethod
+    def _widget_tree_for_asset(asset: dict[str, Any]) -> dict[str, Any]:
+        if not asset:
+            return {}
+        blueprint = _as_dict(asset.get("blueprint"))
+        properties = _as_dict(asset.get("properties"))
+        metadata = _as_dict(asset.get("metadata"))
+        for source in (blueprint, properties, metadata, asset):
+            for key in ("widget_tree", "widgets", "designer_tree", "hierarchy"):
+                value = source.get(key)
+                if isinstance(value, dict):
+                    return value
+                if isinstance(value, list):
+                    return {"widgets": value}
+        return {}
+
+    @staticmethod
+    def _widgets_from_tree(widget_tree: dict[str, Any]) -> list[Any]:
+        return _as_list(widget_tree.get("widgets") or widget_tree.get("children") or widget_tree.get("nodes"))
+
+    @staticmethod
+    def _first_widget_name(widgets: list[Any]) -> str:
+        for widget in widgets:
+            if not isinstance(widget, dict):
+                continue
+            name = _first_text(widget.get("name"), widget.get("widget_name"), widget.get("id"))
+            if name:
+                return name
+        return ""
+
+    @staticmethod
+    def _find_widget(widgets: list[Any], widget_query: str) -> dict[str, Any]:
+        if not widget_query:
+            return {}
+        normalized_query = _normalize_lookup(widget_query)
+        for widget in widgets:
+            if not isinstance(widget, dict):
+                continue
+            candidates = (
+                widget.get("name"),
+                widget.get("widget_name"),
+                widget.get("id"),
+                widget.get("display_name"),
+            )
+            if any(_normalize_lookup(value) == normalized_query for value in candidates):
+                return dict(widget)
+        for widget in widgets:
+            if not isinstance(widget, dict):
+                continue
+            label = _normalize_lookup(_first_text(widget.get("name"), widget.get("widget_name"), widget.get("display_name")))
+            if normalized_query and normalized_query in label:
+                return dict(widget)
+        return {}
+
+    @staticmethod
+    def _widget_projection(widget: dict[str, Any]) -> dict[str, Any]:
+        if not widget:
+            return {}
+        return {
+            "widget_name": _first_text(widget.get("name"), widget.get("widget_name"), widget.get("id")),
+            "widget_class": _first_text(widget.get("class"), widget.get("widget_class"), widget.get("type")),
+            "parent_widget_name": _first_text(widget.get("parent"), widget.get("parent_name"), widget.get("parent_widget_name")),
+            "is_variable": widget.get("is_variable"),
+            "slot": _as_dict(widget.get("slot")),
+            "layout": _as_dict(widget.get("layout")),
+        }
+
+    @staticmethod
+    def _asset_preview(asset: dict[str, Any]) -> dict[str, Any]:
+        if not asset:
+            return {}
+        return {
+            "asset_path": asset.get("asset_path"),
+            "asset_name": asset.get("asset_name"),
+            "asset_type": asset.get("asset_type"),
+            "package_path": asset.get("package_path"),
+        }
 
     @staticmethod
     def _find_node(graph: dict[str, Any], node_query: str) -> dict[str, Any]:

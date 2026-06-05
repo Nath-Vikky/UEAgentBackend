@@ -6732,6 +6732,78 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-05 UMG Plan-only Context Tools
+
+The Tool Registry now mirrors the Blueprint context-tool pattern for UMG. These
+tools are plan-only: they read Project Inventory and return a compact context
+patch, but they never mutate Unreal Editor state.
+
+New local plan tools:
+
+- `editor_umg_set_widget_blueprint_context`
+- `editor_umg_set_cursor_widget`
+
+Call path:
+
+```http
+POST /api/v1/mcp/tool-registry/plans/{tool}/call
+```
+
+Example:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/mcp/tool-registry/plans/editor_umg_set_cursor_widget/call" `
+  -ContentType "application/json" `
+  -Body '{
+    "arguments": {
+      "project_id": "RushBa",
+      "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+      "widget_name": "TitleText"
+    }
+  }'
+```
+
+Returned context:
+
+- `result.context_patch.umg_edit_context.widget_blueprint_path`
+- `result.context_patch.umg_edit_context.root_widget_name`
+- `result.context_patch.umg_edit_context.cursor_widget`
+- `result.next_tool_hints`
+
+`POST /api/v1/mcp/tool-registry/proposals/prepare` and
+`POST /api/v1/mcp/tool-registry/proposals` can now consume
+`context.umg_edit_context`. UMG write tools can inherit:
+
+- `widget_blueprint_path`
+- cursor widget name for set/layout/visibility/appearance/brush/slot/reparent/
+  duplicate/delete proposals
+- cursor widget or root widget as `parent_widget_name` for add-widget proposals
+
+Workflow Planner also consumes the same context for `umg_text_widget` and
+`umg_hud_group`, using the focused Widget Blueprint and current/root widget as
+safe defaults.
+
+Frontend impact: no mandatory UI change. Existing UEAgentTool Proposal
+execution remains unchanged. A future MCP/tool panel can call the plan-only UMG
+context endpoint before creating UMG Proposals to make the workflow feel closer
+to UMGMCP/UElink-style "observe target -> propose edit -> user confirms".
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_manifest_service.py tests\unit\test_tool_proposal_bridge_service.py tests\unit\test_editor_workflow_planner_service.py tests\integration\test_mcp_tools_api.py -q
+.\.venv\Scripts\python.exe scripts\run_tool_registry_proposal_bridge_smoke.py --output -
+.\.venv\Scripts\python.exe scripts\run_editor_demo_smoke_suite.py --output -
+.\.venv\Scripts\python.exe -m ruff check app\tools\registry.py app\services\tool_registry_plan_call_service.py app\services\tool_proposal_bridge_service.py app\services\tool_manifest_service.py app\services\editor_workflow_planner_service.py tests\unit\test_tool_manifest_service.py tests\unit\test_tool_proposal_bridge_service.py tests\unit\test_editor_workflow_planner_service.py tests\integration\test_mcp_tools_api.py scripts\run_tool_registry_proposal_bridge_smoke.py --no-cache
+```
+
+Latest deterministic smoke result:
+
+- Tool Registry Proposal Bridge smoke: 13/13 passed.
+- Aggregate editor demo smoke suite: 7/7 suites, 83/83 cases passed.
+
 ## 2026-06-04 Active Blueprint Graph Focus
 
 Agent Chat / Project QA now resolves the currently focused Blueprint graph from

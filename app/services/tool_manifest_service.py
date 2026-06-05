@@ -103,6 +103,8 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "tool_ids": (
             "mcp_get_widget_tree",
+            "editor_umg_set_widget_blueprint_context",
+            "editor_umg_set_cursor_widget",
             "editor_add_umg_widget",
             "editor_set_umg_widget_text",
             "editor_set_umg_widget_layout",
@@ -218,6 +220,10 @@ BLUEPRINT_PLAN_ONLY_TOOL_IDS = {
     "editor_blueprint_set_edit_function": "set_blueprint_edit_function_context",
     "editor_blueprint_set_cursor_node": "set_blueprint_cursor_node_context",
 }
+UMG_PLAN_ONLY_TOOL_IDS = {
+    "editor_umg_set_widget_blueprint_context": "set_umg_widget_blueprint_context",
+    "editor_umg_set_cursor_widget": "set_umg_cursor_widget_context",
+}
 TOOL_ID_TO_EDITOR_OPERATION = {str(spec["tool_id"]): operation_type for operation_type, spec in OPERATION_SPECS.items()}
 TOOL_ID_TO_EDITOR_OPERATION.update(TOOL_ID_TO_EDITOR_OPERATION_ALIASES)
 TOOL_ID_TO_READONLY_OPERATION = {
@@ -265,6 +271,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "operation_family": "blueprint",
             "frontend_executor_id": spec.tool_id,
             "operation_type": BLUEPRINT_PLAN_ONLY_TOOL_IDS[spec.tool_id],
+            "bridge_kind": "plan_only_context",
+        }
+    if spec.tool_id in UMG_PLAN_ONLY_TOOL_IDS:
+        return {
+            "operation_family": "umg",
+            "frontend_executor_id": spec.tool_id,
+            "operation_type": UMG_PLAN_ONLY_TOOL_IDS[spec.tool_id],
             "bridge_kind": "plan_only_context",
         }
     return {

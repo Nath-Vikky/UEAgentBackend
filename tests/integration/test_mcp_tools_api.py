@@ -357,6 +357,57 @@ def test_tool_registry_plan_call_sets_blueprint_cursor_node_context(client: Test
     assert body["call"]["result"]["next_tool_hints"][0]["tool_id"] == "editor_connect_blueprint_nodes"
 
 
+def test_tool_registry_plan_call_sets_umg_widget_blueprint_context(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/plans/editor_umg_set_widget_blueprint_context/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    result = body["call"]["result"]
+    context = result["context_patch"]["umg_edit_context"]
+    assert result["plan"]["intent"] == "set_umg_widget_blueprint_context"
+    assert context["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert context["root_widget_name"] == "RootCanvas"
+    assert context["matched_inventory_widget_tree"] is True
+    assert result["next_tool_hints"][0]["tool_id"] == "editor_add_umg_widget"
+
+
+def test_tool_registry_plan_call_sets_umg_cursor_widget_context(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/plans/editor_umg_set_cursor_widget/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    context = body["call"]["result"]["context_patch"]["umg_edit_context"]
+    cursor = context["cursor_widget"]
+    assert cursor["widget_name"] == "TitleText"
+    assert cursor["widget_class"] == "TextBlock"
+    assert cursor["parent_widget_name"] == "RootCanvas"
+    assert cursor["matched_inventory_widget"] is True
+    assert body["call"]["result"]["next_tool_hints"][0]["tool_id"] == "editor_set_umg_widget_text"
+
+
 def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inventory(
     client: TestClient,
 ) -> None:

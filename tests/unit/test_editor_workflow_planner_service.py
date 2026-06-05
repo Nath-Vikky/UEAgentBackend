@@ -309,6 +309,31 @@ def test_umg_text_workflow_reports_missing_inputs_without_executing() -> None:
     assert plan["steps"][0]["auto_execute"] is False
 
 
+def test_umg_text_workflow_uses_plan_only_umg_context() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal='Create HUD subtitle text "Ready"',
+        workflow_type="umg_text_widget",
+        payload={},
+        context={
+            "umg_edit_context": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "root_widget_name": "RootCanvas",
+                "cursor_widget": {
+                    "widget_name": "StatusPanel",
+                    "widget_class": "HorizontalBox",
+                },
+            }
+        },
+    )
+
+    first, second = plan["steps"][:2]
+    assert plan["status"] == "planned"
+    assert first["payload"]["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert first["payload"]["parent_widget_name"] == "StatusPanel"
+    assert second["payload"]["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
+    assert "widget_blueprint_path" not in first["missing_inputs"]
+
+
 def test_umg_hud_group_workflow_emits_bounded_add_widget_steps() -> None:
     plan = EditorWorkflowPlannerService().plan_workflow(
         goal="Plan a HUD group under RootCanvas with text 'HP 100'",
