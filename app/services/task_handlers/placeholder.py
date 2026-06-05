@@ -6,7 +6,10 @@ from app.agent.context_builder import build_context_summary
 from app.i18n.language import localized as _localized
 from app.schemas.common import QuickAction, UserViewBlock
 from app.services.task_handlers.base import TaskExecutionContext
-from app.services.task_handlers.read_only_tool_summaries import focused_blueprint_graph_result
+from app.services.task_handlers.read_only_tool_summaries import (
+    focused_blueprint_graph_result,
+    live_mcp_readonly_result,
+)
 
 
 class PlaceholderTaskHandler:
@@ -21,6 +24,15 @@ class PlaceholderTaskHandler:
 
         base_debug = host._base_debug(request=request, routing=routing, trace_id=context.trace_id)
         selected_tool_id = str((routing.get("route") or {}).get("selected_tool_id") or "")
+        if selected_tool_id in {"mcp_get_blueprint_graph", "mcp_get_widget_tree"}:
+            live_result = live_mcp_readonly_result(
+                context=context,
+                base_debug=base_debug,
+                output_language=output_language,
+                selected_tool_id=selected_tool_id,
+            )
+            if live_result:
+                return live_result
         if selected_tool_id == "mcp_get_blueprint_graph":
             graph_result = focused_blueprint_graph_result(
                 context=context,

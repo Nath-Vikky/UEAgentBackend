@@ -4062,7 +4062,9 @@ Content-Type: application/json
 
 - 后端不实现 MCP server；UE 插件可选暴露本地 TCP JSON-RPC 工具服务。
 - 不打包或依赖 UMG-MCP。
-- 不把 MCP 工具自动注册进 Agent Chat。
+- Agent Chat 不会自动执行未知 MCP 工具；当前只允许已路由、已 allow-list 的只读
+  `get_blueprint_graph` / `get_widget_tree` 尝试走 TCP live sensing，并在失败时回落到
+  Project Inventory / 普通 placeholder。
 - 不允许 LLM 自动调用未知 MCP 写入工具。
 - 写入类 MCP 工具未来也必须先转成 Editor Operation Proposal，由用户确认后再由 UE 前端执行。
 
@@ -6929,6 +6931,17 @@ To also call read-only graph tools, pass real project paths:
 The live smoke is intentionally not part of CI because it requires Unreal
 Editor and the plugin TCP server. It is useful for local demo readiness and
 transport troubleshooting.
+
+Agent Chat live sensing behavior:
+
+- When routing selects `mcp_get_blueprint_graph` or `mcp_get_widget_tree`, and
+  the MCP adapter is configured as ready, the backend now tries the live TCP
+  read-only tool first.
+- If the TCP call fails, the tool is not allow-listed, or the UE tool server
+  returns an error, the backend falls back to the existing Inventory summary or
+  placeholder path.
+- This does not grant Agent Chat permission to execute write tools. Writes still
+  require Editor Operation Proposal confirmation.
 
 ## 2026-06-04 UE Knowledge Domains Expansion
 
