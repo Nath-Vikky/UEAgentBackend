@@ -231,8 +231,35 @@ def _save_demo_inventory_snapshot(client: TestClient) -> None:
                                 "pin_count": 5,
                                 "link_count": 1,
                                 "nodes": [
-                                    {"node_id": "EventBeginPlay", "title": "Event BeginPlay"},
-                                    {"node_id": "PrintString_1", "title": "Print String"},
+                                    {
+                                        "node_id": "EventBeginPlay",
+                                        "title": "Event BeginPlay",
+                                        "node_class": "K2Node_Event",
+                                        "pins": [
+                                            {
+                                                "pin_name": "then",
+                                                "direction": "output",
+                                                "linked_to": [
+                                                    {"node_id": "PrintString_1", "pin_name": "execute"}
+                                                ],
+                                            }
+                                        ],
+                                    },
+                                    {
+                                        "node_id": "PrintString_1",
+                                        "title": "Print String",
+                                        "node_class": "K2Node_CallFunction",
+                                        "pins": [
+                                            {
+                                                "pin_name": "execute",
+                                                "direction": "input",
+                                                "linked_to": [
+                                                    {"node_id": "EventBeginPlay", "pin_name": "then"}
+                                                ],
+                                            },
+                                            {"pin_name": "InString", "direction": "input", "default_value": "Hello"},
+                                        ],
+                                    },
                                 ],
                             }
                         ],
@@ -341,6 +368,34 @@ def test_tool_registry_plan_call_sets_blueprint_edit_function_context(client: Te
     assert result["context_patch"]["blueprint_edit_context"]["graph_name"] == "EventGraph"
     assert result["context_patch"]["blueprint_edit_context"]["matched_inventory_graph"] is True
     assert result["next_tool_hints"][0]["tool_id"] == "editor_blueprint_add_step"
+
+
+def test_tool_registry_local_readonly_call_reads_blueprint_node_detail(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/tools/editor_inspect_blueprint_node_detail/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "node_title": "Print String",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    result = body["call"]["result"]["structuredContent"]
+    assert result["schema_version"] == "inventory_blueprint_node_detail_v1"
+    assert result["graph_name"] == "EventGraph"
+    assert result["node_id"] == "PrintString_1"
+    assert result["node_title"] == "Print String"
+    assert result["node_class"] == "K2Node_CallFunction"
+    assert result["pins"][0]["pin_name"] == "execute"
+    assert result["linked_pins"][0]["target_node_id"] == "EventBeginPlay"
 
 
 def test_tool_registry_plan_call_sets_blueprint_cursor_node_context(client: TestClient) -> None:

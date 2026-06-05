@@ -110,8 +110,35 @@ def _seed_inventory(client: TestClient) -> dict[str, Any]:
                                 "pin_count": 5,
                                 "link_count": 1,
                                 "nodes": [
-                                    {"node_id": "EventBeginPlay", "title": "Event BeginPlay"},
-                                    {"node_id": "PrintString_1", "title": "Print String"},
+                                    {
+                                        "node_id": "EventBeginPlay",
+                                        "title": "Event BeginPlay",
+                                        "node_class": "K2Node_Event",
+                                        "pins": [
+                                            {
+                                                "pin_name": "then",
+                                                "direction": "output",
+                                                "linked_to": [
+                                                    {"node_id": "PrintString_1", "pin_name": "execute"}
+                                                ],
+                                            }
+                                        ],
+                                    },
+                                    {
+                                        "node_id": "PrintString_1",
+                                        "title": "Print String",
+                                        "node_class": "K2Node_CallFunction",
+                                        "pins": [
+                                            {
+                                                "pin_name": "execute",
+                                                "direction": "input",
+                                                "linked_to": [
+                                                    {"node_id": "EventBeginPlay", "pin_name": "then"}
+                                                ],
+                                            },
+                                            {"pin_name": "InString", "direction": "input", "default_value": "Hello"},
+                                        ],
+                                    },
                                 ],
                             }
                         ],
@@ -211,6 +238,20 @@ def _blueprint_graph_ok(body: dict[str, Any]) -> tuple[bool, str]:
     return ok, "blueprint graph call returns EventGraph inventory"
 
 
+def _blueprint_node_detail_ok(body: dict[str, Any]) -> tuple[bool, str]:
+    content = body.get("call", {}).get("result", {}).get("structuredContent", {})
+    linked = list(content.get("linked_pins") or [])
+    ok = (
+        body.get("success") is True
+        and content.get("graph_name") == "EventGraph"
+        and content.get("node_id") == "PrintString_1"
+        and content.get("node_class") == "K2Node_CallFunction"
+        and bool(linked)
+        and linked[0].get("target_node_id") == "EventBeginPlay"
+    )
+    return ok, "blueprint node detail call returns node class, pins, and links"
+
+
 def _widget_tree_ok(body: dict[str, Any]) -> tuple[bool, str]:
     content = body.get("call", {}).get("result", {}).get("structuredContent", {})
     ok = body.get("success") is True and content.get("widget_count") == 2
@@ -265,6 +306,17 @@ def _case_specs() -> list[dict[str, Any]]:
                 "graph_name": "EventGraph",
             },
             "validator": _blueprint_graph_ok,
+        },
+        {
+            "case_id": "call_blueprint_node_detail_inventory",
+            "tool": "editor_inspect_blueprint_node_detail",
+            "arguments": {
+                "project_id": "ReadonlyToolDemo",
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "node_title": "Print String",
+            },
+            "validator": _blueprint_node_detail_ok,
         },
         {
             "case_id": "call_widget_tree_inventory",

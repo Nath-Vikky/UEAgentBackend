@@ -7448,3 +7448,45 @@ Validation:
 - 不绕过 Proposal confirmation。
 - 结果质量依赖 UEAgentTool 提交的 Project Inventory 是否包含 Widget Tree / slot / properties / style 字段。
 - 不强制 UE 前端改 UI；如果后续要做更好的 UMG 面板，可以把这个工具作为“Inspect Widget Detail”按钮或 Agent 自动观察步骤。
+
+## 2026-06-05 Update: Blueprint Node Detail Read-only Tool
+
+后端新增一个 Project Inventory 驱动的 Blueprint 节点只读工具：
+
+- Tool ID: `editor_inspect_blueprint_node_detail`
+- Local call: `POST /api/v1/mcp/tool-registry/tools/editor_inspect_blueprint_node_detail/call`
+- Manifest profiles: `readonly_sensing`, `blueprint_demo`
+- Side effect: `read_only`
+
+示例：
+
+```json
+{
+  "arguments": {
+    "project_id": "YourProject",
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "graph_name": "EventGraph",
+    "node_title": "Print String"
+  }
+}
+```
+
+返回会包含：
+
+- `structuredContent.blueprint_path`
+- `structuredContent.graph_name`
+- `structuredContent.node_id`
+- `structuredContent.node_title`
+- `structuredContent.node_class`
+- `structuredContent.pins`
+- `structuredContent.linked_pins`
+- `structuredContent.graph_summary`
+
+这个工具用于 Blueprint 自动化的“先观察再提案”流程。Agent 可以先读取某个节点的 pin 和连接关系，再决定是否创建 `editor_connect_blueprint_nodes`、`editor_blueprint_add_step` 或 `editor_compile_blueprint` Proposal。
+
+边界：
+
+- 不创建、不删除、不连接蓝图节点。
+- 不绕过 Proposal confirmation。
+- 结果质量依赖 UEAgentTool 提交的 `graph_summaries[].nodes[].pins` 是否足够完整。
+- 不强制 UE 前端改 UI；未来可以在 Blueprint 工具面板里增加“Inspect Node Detail”入口。

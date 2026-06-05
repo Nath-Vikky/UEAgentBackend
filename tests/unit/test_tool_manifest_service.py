@@ -111,7 +111,7 @@ def test_tool_manifest_profiles_can_combine_with_side_effect_filter() -> None:
 
     assert manifest["filters"]["profile"] == "blueprint_demo"
     assert manifest["filters"]["side_effect_level"] == "read_only"
-    assert tool_ids == {"mcp_get_blueprint_graph"}
+    assert tool_ids == {"mcp_get_blueprint_graph", "editor_inspect_blueprint_node_detail"}
 
 
 def test_tool_manifest_marks_plan_only_context_tools_as_local_plan_calls() -> None:
@@ -168,6 +168,7 @@ def test_tool_manifest_blueprint_profile_exposes_add_step_alias() -> None:
 
     assert "editor_blueprint_add_step" in tool_ids
     assert "editor_add_blueprint_node_template" in tool_ids
+    assert "editor_inspect_blueprint_node_detail" in tool_ids
     assert "editor_blueprint_set_edit_function" in tool_ids
     assert "editor_blueprint_set_cursor_node" in tool_ids
     selected = manifest["profiles"]["selected"]

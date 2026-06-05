@@ -37,6 +37,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "editor_inspect_material_instance_parameters",
             "editor_inspect_material_instance_detail",
             "mcp_get_blueprint_graph",
+            "editor_inspect_blueprint_node_detail",
             "mcp_get_widget_tree",
             "editor_inspect_umg_widget_detail",
         ),
@@ -70,6 +71,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "tool_ids": (
             "mcp_get_blueprint_graph",
+            "editor_inspect_blueprint_node_detail",
             "editor_blueprint_set_edit_function",
             "editor_blueprint_set_cursor_node",
             "editor_create_blueprint_asset",
@@ -266,6 +268,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "frontend_executor_id": _mcp_tool_name(spec),
             "operation_type": "inspect_blueprint_graph",
             "bridge_kind": "mcp_readonly_or_inventory_fallback",
+        }
+    if spec.tool_id == "editor_inspect_blueprint_node_detail":
+        return {
+            "operation_family": "blueprint",
+            "frontend_executor_id": "inspect_blueprint_node_detail",
+            "operation_type": "inspect_blueprint_node_detail",
+            "bridge_kind": "inventory_readonly",
         }
     if spec.tool_id == "mcp_get_widget_tree":
         return {

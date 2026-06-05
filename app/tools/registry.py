@@ -1807,6 +1807,56 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
     ),
+    "editor_inspect_blueprint_node_detail": ToolSpec(
+        tool_id="editor_inspect_blueprint_node_detail",
+        task_type="editor_operation",
+        title="Inspect Blueprint Node Detail",
+        description=(
+            "Read one Blueprint graph node's title, class, pins, linked pins, and graph summary "
+            "from Project Inventory."
+        ),
+        side_effect_level="read_only",
+        route_preference="single_tool",
+        category="sensing",
+        transport="http",
+        requires_confirmation=False,
+        active_context_keys=("project", "asset", "blueprint", "graph"),
+        owned_by_skill="BlueprintGraphAutomationSkill",
+        allowed_in_free_chat=True,
+        permission_gate="read_only_whitelist",
+        context_cost="low",
+        trigger_keywords=(
+            "inspect blueprint node",
+            "blueprint node detail",
+            "blueprint node pins",
+            "node connections",
+            "pin connections",
+        ),
+        required_payload_fields=("blueprint_path",),
+        optional_payload_fields=("project_id", "asset_path", "query", "node_title", "node_name", "node_query"),
+        input_schema={
+            "type": "object",
+            "required": ["blueprint_path"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "blueprint_path": {"type": "string"},
+                "asset_path": {"type": "string"},
+                "graph_name": {"type": "string"},
+                "node_id": {"type": "string"},
+                "node_title": {"type": "string"},
+                "node_name": {"type": "string"},
+                "node_query": {"type": "string"},
+                "query": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "content": {"type": "array"},
+                "structuredContent": {"type": "object"},
+            },
+        },
+    ),
     "editor_umg_set_widget_blueprint_context": ToolSpec(
         tool_id="editor_umg_set_widget_blueprint_context",
         task_type="editor_operation",
