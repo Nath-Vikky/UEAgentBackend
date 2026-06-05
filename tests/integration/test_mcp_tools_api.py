@@ -305,6 +305,58 @@ def test_tool_registry_local_readonly_call_reads_blueprint_graph_inventory(clien
     assert structured["graphs"][0]["nodes"][0]["title"] == "Event BeginPlay"
 
 
+def test_tool_registry_plan_call_sets_blueprint_edit_function_context(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/plans/editor_blueprint_set_edit_function/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    call = body["call"]
+    assert call["side_effect_level"] == "plan_only"
+    assert call["transport"] == "local_tool_registry"
+    result = call["result"]
+    assert result["plan"]["intent"] == "set_blueprint_edit_function"
+    assert result["context_patch"]["blueprint_edit_context"]["graph_name"] == "EventGraph"
+    assert result["context_patch"]["blueprint_edit_context"]["matched_inventory_graph"] is True
+    assert result["next_tool_hints"][0]["tool_id"] == "editor_blueprint_add_step"
+
+
+def test_tool_registry_plan_call_sets_blueprint_cursor_node_context(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/plans/editor_blueprint_set_cursor_node/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "node_title": "Event BeginPlay",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    cursor = body["call"]["result"]["context_patch"]["blueprint_edit_context"]["cursor_node"]
+    assert cursor["node_id"] == "EventBeginPlay"
+    assert cursor["title"] == "Event BeginPlay"
+    assert cursor["matched_inventory_node"] is True
+    assert body["call"]["result"]["next_tool_hints"][0]["tool_id"] == "editor_connect_blueprint_nodes"
+
+
 def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inventory(
     client: TestClient,
 ) -> None:
@@ -351,3 +403,16 @@ def test_tool_registry_local_readonly_call_blocks_write_tool(client: TestClient)
     assert body["success"] is False
     assert body["call"]["reason"] == "tool_is_not_read_only"
     assert body["errors"][0]["code"] == "tool_is_not_read_only"
+
+
+def test_tool_registry_plan_call_blocks_write_tool(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/mcp/tool-registry/plans/editor_blueprint_add_step/call",
+        json={"arguments": {"blueprint_path": "/Game/BP_Test", "step_name": "Print String"}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is False
+    assert body["call"]["reason"] == "tool_is_not_plan_only"
+    assert body["errors"][0]["code"] == "tool_is_not_plan_only"

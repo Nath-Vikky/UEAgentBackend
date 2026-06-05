@@ -6834,6 +6834,96 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-05 Tool Registry Plan-only Blueprint Context Calls
+
+The backend now has a local plan-only Tool Registry call path:
+
+```text
+POST /api/v1/mcp/tool-registry/plans/{tool}/call
+```
+
+This path is for MCP-style planning tools that prepare context for later editor
+operations but do not read/write Unreal Editor state directly. It complements
+the existing boundaries:
+
+- Read-only tools use `POST /api/v1/mcp/tool-registry/tools/{tool}/call`.
+- Plan-only tools use `POST /api/v1/mcp/tool-registry/plans/{tool}/call`.
+- Confirmed-write tools still use `POST /api/v1/editor-operations/proposals`
+  or the Tool Registry Proposal Bridge.
+
+New Blueprint Graph context tools:
+
+- `editor_blueprint_set_edit_function`: selects a Blueprint graph/function as
+  the default edit target for later add/connect/compile Proposal tools.
+- `editor_blueprint_set_cursor_node`: selects a Blueprint node as the default
+  cursor node for later pin connection or node insertion planning.
+
+Example:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/mcp/tool-registry/plans/editor_blueprint_set_edit_function/call" `
+  -ContentType "application/json" `
+  -Body '{
+    "arguments": {
+      "project_id": "RushBa",
+      "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+      "graph_name": "EventGraph"
+    }
+  }'
+```
+
+The response contains:
+
+- `result.context_patch.blueprint_edit_context`: compact context that a client
+  can merge into later tool calls.
+- `result.next_tool_hints`: suggested follow-up tools such as
+  `editor_blueprint_add_step`, `editor_connect_blueprint_nodes`, or
+  `editor_compile_blueprint`.
+- `result.inventory_match`: best-effort Project Inventory match for the graph
+  or node.
+
+Safety boundary:
+
+- These tools are `plan_only`.
+- They do not create Proposals by themselves.
+- They do not execute UE Editor API calls.
+- They are not enabled for free-chat auto execution.
+- They make the Blueprint workflow closer to UMG-MCP's `set_edit_function` /
+  `set_cursor_node` style without changing the existing HTTP Proposal safety
+  model.
+
+Frontend impact: no mandatory UI change. A future MCP/tool panel can call this
+endpoint before creating Blueprint add/connect/compile Proposals. The current
+UEAgentTool can continue using the existing Proposal flow.
+
+The Tool Registry Proposal Bridge can also consume this context. If a client
+passes `context.blueprint_edit_context` to
+`POST /api/v1/mcp/tool-registry/proposals/prepare` or
+`POST /api/v1/mcp/tool-registry/proposals`, Blueprint write tools can inherit:
+
+- `blueprint_path`
+- `graph_name`
+- cursor node `node_id`
+- cursor node output exec pin name when available
+
+This makes the practical flow:
+
+```text
+plan-only set_edit_function / set_cursor_node
+-> confirmed-write add_step / connect_blueprint_nodes / compile_blueprint proposal
+-> user confirmation in UEAgentTool
+-> UE Editor API execution
+```
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_proposal_bridge_service.py tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py -q
+.\.venv\Scripts\python.exe -m ruff check app\services\tool_registry_plan_call_service.py app\services\tool_proposal_bridge_service.py app\services\tool_manifest_service.py app\api\routes\mcp_tools.py app\tools\registry.py tests\unit\test_tool_proposal_bridge_service.py tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py --no-cache
+```
+
 ## 2026-06-05 Local Tool Registry Read-only Calls
 
 The backend now exposes a local read-only Tool Registry call path:

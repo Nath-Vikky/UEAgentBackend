@@ -4,6 +4,7 @@ from collections import Counter
 from typing import Any
 
 from app.services.editor_operations.catalog import OPERATION_GROUPS, OPERATION_SPECS, READ_ONLY_INSPECTION_SPECS
+from app.services.tool_registry_plan_call_service import LOCAL_PLAN_CALL_PATH
 from app.services.tool_registry_readonly_call_service import LOCAL_READONLY_CALL_PATH
 from app.tools.registry import ToolSpec, iter_tool_specs
 
@@ -43,10 +44,18 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         "title": "Blueprint Graph Demo",
         "description": "Blueprint graph sensing, node insertion, pin connection, and compile proposal tools.",
         "suggested_prompts": (
+            "Set BP_PlayerCharacter EventGraph as the edit function, add a Print String step, then compile.",
             "Add a Print String step to BP_PlayerCharacter BeginPlay, then compile.",
             "Connect the current Blueprint node to Print String, then compile.",
         ),
         "sample_tool_calls": (
+            {
+                "tool_id": "editor_blueprint_set_edit_function",
+                "arguments": {
+                    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                    "graph_name": "EventGraph",
+                },
+            },
             {
                 "tool_id": "editor_blueprint_add_step",
                 "arguments": {
@@ -60,6 +69,8 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "tool_ids": (
             "mcp_get_blueprint_graph",
+            "editor_blueprint_set_edit_function",
+            "editor_blueprint_set_cursor_node",
             "editor_create_blueprint_asset",
             "editor_add_blueprint_variable",
             "editor_add_blueprint_component",
@@ -203,6 +214,10 @@ def _mcp_tool_name(spec: ToolSpec) -> str:
 TOOL_ID_TO_EDITOR_OPERATION_ALIASES = {
     "editor_blueprint_add_step": "add_blueprint_node_template",
 }
+BLUEPRINT_PLAN_ONLY_TOOL_IDS = {
+    "editor_blueprint_set_edit_function": "set_blueprint_edit_function_context",
+    "editor_blueprint_set_cursor_node": "set_blueprint_cursor_node_context",
+}
 TOOL_ID_TO_EDITOR_OPERATION = {str(spec["tool_id"]): operation_type for operation_type, spec in OPERATION_SPECS.items()}
 TOOL_ID_TO_EDITOR_OPERATION.update(TOOL_ID_TO_EDITOR_OPERATION_ALIASES)
 TOOL_ID_TO_READONLY_OPERATION = {
@@ -245,6 +260,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "operation_type": "inspect_widget_tree",
             "bridge_kind": "mcp_readonly_or_inventory_fallback",
         }
+    if spec.tool_id in BLUEPRINT_PLAN_ONLY_TOOL_IDS:
+        return {
+            "operation_family": "blueprint",
+            "frontend_executor_id": spec.tool_id,
+            "operation_type": BLUEPRINT_PLAN_ONLY_TOOL_IDS[spec.tool_id],
+            "bridge_kind": "plan_only_context",
+        }
     return {
         "operation_family": spec.category,
         "frontend_executor_id": spec.executor or _mcp_tool_name(spec),
@@ -267,7 +289,8 @@ def _execution_boundary(spec: ToolSpec) -> dict[str, Any]:
         return {
             "mode": "plan_only",
             "direct_mcp_call_allowed": False,
-            "local_tool_registry_call_allowed": False,
+            "local_tool_registry_call_allowed": True,
+            "local_tool_registry_call_path": LOCAL_PLAN_CALL_PATH,
             "http_frontend_confirmation_required": False,
             "write_path": "draft_or_plan_only",
         }
@@ -400,6 +423,7 @@ def build_tool_manifest(
             "external_mcp_readonly_call": "POST /api/v1/mcp/tools/{tool_name}/call",
             "local_manifest": "GET /api/v1/mcp/tool-registry/manifest",
             "local_readonly_tool_call": LOCAL_READONLY_CALL_PATH,
+            "local_plan_tool_call": LOCAL_PLAN_CALL_PATH,
             "confirmed_write_proposal_prepare": "POST /api/v1/mcp/tool-registry/proposals/prepare",
             "confirmed_write_proposal_create": "POST /api/v1/mcp/tool-registry/proposals",
             "confirmed_write_proposal": "POST /api/v1/editor-operations/proposals",
@@ -408,6 +432,7 @@ def build_tool_manifest(
             "http_remains_primary_frontend_protocol": True,
             "mcp_manifest_is_descriptive": True,
             "read_only_local_tool_registry_call_allowed": True,
+            "plan_only_local_tool_registry_call_allowed": True,
             "confirmed_write_direct_mcp_call_allowed": False,
             "confirmed_write_requires_proposal_confirmation": True,
             "llm_output_never_executes_editor_write_directly": True,

@@ -1,0 +1,311 @@
+from __future__ import annotations
+
+from typing import Any
+
+from app.core.settings import Settings
+from app.services.project_inventory_service import ProjectInventoryService
+from app.tools.registry import ToolSpec, get_tool_spec, iter_tool_specs
+
+TOOL_REGISTRY_PLAN_CALL_VERSION = "tool_registry_plan_call_v1"
+LOCAL_PLAN_CALL_PATH = "POST /api/v1/mcp/tool-registry/plans/{tool}/call"
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _first_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _stable_tool_name(spec: ToolSpec) -> str:
+    return spec.mcp_tool_name if spec.transport.startswith("mcp") and spec.mcp_tool_name else spec.tool_id
+
+
+class ToolRegistryPlanCallService:
+    """Resolve plan-only ToolSpec calls into reusable planning context.
+
+    Plan-only tools never write Unreal Editor state and never create proposals by
+    themselves. They return a compact context patch that can be passed to later
+    confirmed-write Proposal tools such as add_step, connect pins, or compile.
+    """
+
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.inventory = ProjectInventoryService(settings)
+
+    def call(self, tool: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        spec = self._resolve_spec(tool)
+        args = arguments if isinstance(arguments, dict) else {}
+        if not spec:
+            return self._blocked(
+                tool_id=str(tool or "").strip(),
+                reason="tool_not_registered",
+                message="Tool is not registered in the local Tool Registry.",
+            )
+        if not spec.enabled:
+            return self._blocked(
+                spec=spec,
+                reason="tool_disabled",
+                message="Tool is disabled by Tool Registry configuration.",
+            )
+        if spec.side_effect_level != "plan_only":
+            return self._blocked(
+                spec=spec,
+                reason="tool_is_not_plan_only",
+                message="This endpoint only evaluates plan-only tools. Read-only tools use the local call endpoint; write tools create Proposals.",
+            )
+
+        handlers = {
+            "editor_blueprint_set_edit_function": self._call_blueprint_set_edit_function,
+            "editor_blueprint_set_cursor_node": self._call_blueprint_set_cursor_node,
+        }
+        handler = handlers.get(spec.tool_id)
+        if not handler:
+            return self._blocked(
+                spec=spec,
+                reason="local_plan_executor_missing",
+                message="This plan-only tool is registered, but no local plan executor is available yet.",
+            )
+
+        result = handler(spec, args)
+        return {
+            "ok": True,
+            "status": "completed",
+            "reason": "local_plan_tool_completed",
+            "protocol_version": TOOL_REGISTRY_PLAN_CALL_VERSION,
+            "tool_id": spec.tool_id,
+            "tool_name": _stable_tool_name(spec),
+            "side_effect_level": spec.side_effect_level,
+            "transport": "local_tool_registry",
+            "source": "plan_only_context",
+            "result": result,
+            "errors": [],
+        }
+
+    def _resolve_spec(self, tool: str) -> ToolSpec | None:
+        requested = str(tool or "").strip()
+        spec = get_tool_spec(requested)
+        if spec:
+            return spec
+        for candidate in iter_tool_specs(include_disabled=True):
+            if candidate.mcp_tool_name and candidate.mcp_tool_name == requested:
+                return candidate
+        return None
+
+    def _call_blueprint_set_edit_function(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
+        del spec
+        project_id = _first_text(args.get("project_id")) or None
+        blueprint_path = _first_text(
+            args.get("blueprint_path"),
+            args.get("asset_path"),
+            args.get("blueprint_query"),
+        )
+        graph_name = _first_text(
+            args.get("graph_name"),
+            args.get("function_name"),
+            args.get("edit_function"),
+        ) or "EventGraph"
+        graph_type = _first_text(args.get("graph_type")) or "unknown"
+        graph_match = self._first_graph(project_id=project_id, blueprint_query=blueprint_path, graph_name=graph_name)
+        resolved_graph_name = _first_text(graph_match.get("graph_name"), graph_name)
+        context_patch = {
+            "blueprint_edit_context": {
+                "blueprint_path": blueprint_path,
+                "graph_name": resolved_graph_name,
+                "edit_function": resolved_graph_name,
+                "graph_type": _first_text(graph_match.get("graph_type"), graph_type),
+                "source_tool_id": "editor_blueprint_set_edit_function",
+                "matched_inventory_graph": bool(graph_match),
+            }
+        }
+        return {
+            "plan": {
+                "status": "ready",
+                "intent": "set_blueprint_edit_function",
+                "side_effect_level": "plan_only",
+                "message": f"Blueprint edit context set to {blueprint_path or 'current Blueprint'}::{resolved_graph_name}.",
+            },
+            "context_patch": context_patch,
+            "normalized_arguments": {
+                "project_id": project_id or "",
+                "blueprint_path": blueprint_path,
+                "graph_name": resolved_graph_name,
+                "graph_type": graph_type,
+            },
+            "inventory_match": graph_match,
+            "next_tool_hints": [
+                {
+                    "tool_id": "editor_blueprint_add_step",
+                    "arguments": {
+                        "blueprint_path": blueprint_path,
+                        "graph_name": resolved_graph_name,
+                    },
+                },
+                {
+                    "tool_id": "editor_compile_blueprint",
+                    "arguments": {"blueprint_path": blueprint_path},
+                },
+            ],
+            "prompt_excerpt": (
+                "Use blueprint_edit_context.blueprint_path and graph_name as defaults for subsequent "
+                "Blueprint add/connect/compile Proposal tools."
+            ),
+        }
+
+    def _call_blueprint_set_cursor_node(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
+        del spec
+        project_id = _first_text(args.get("project_id")) or None
+        blueprint_path = _first_text(
+            args.get("blueprint_path"),
+            args.get("asset_path"),
+            args.get("blueprint_query"),
+        )
+        graph_name = _first_text(args.get("graph_name"), args.get("function_name")) or "EventGraph"
+        node_query = _first_text(
+            args.get("node_id"),
+            args.get("node_name"),
+            args.get("node_title"),
+            args.get("cursor_node"),
+        )
+        graph_match = self._first_graph(project_id=project_id, blueprint_query=blueprint_path, graph_name=graph_name)
+        node_match = self._find_node(graph_match, node_query)
+        resolved_node_id = _first_text(node_match.get("node_id"), args.get("node_id"), node_query)
+        resolved_node_title = _first_text(node_match.get("title"), node_match.get("node_title"), node_query)
+        resolved_graph_name = _first_text(graph_match.get("graph_name"), graph_name)
+        context_patch = {
+            "blueprint_edit_context": {
+                "blueprint_path": blueprint_path,
+                "graph_name": resolved_graph_name,
+                "cursor_node": {
+                    "node_id": resolved_node_id,
+                    "title": resolved_node_title,
+                    "pins": _as_list(node_match.get("pins"))[:24],
+                    "source_tool_id": "editor_blueprint_set_cursor_node",
+                    "matched_inventory_node": bool(node_match),
+                },
+            }
+        }
+        return {
+            "plan": {
+                "status": "ready" if resolved_node_id else "needs_node_identifier",
+                "intent": "set_blueprint_cursor_node",
+                "side_effect_level": "plan_only",
+                "message": (
+                    f"Blueprint cursor node set to {resolved_node_title or resolved_node_id} "
+                    f"in {blueprint_path or 'current Blueprint'}::{resolved_graph_name}."
+                    if resolved_node_id
+                    else "No cursor node identifier was provided or found in inventory."
+                ),
+            },
+            "context_patch": context_patch,
+            "normalized_arguments": {
+                "project_id": project_id or "",
+                "blueprint_path": blueprint_path,
+                "graph_name": resolved_graph_name,
+                "node_query": node_query,
+                "node_id": resolved_node_id,
+            },
+            "inventory_match": {
+                "graph": graph_match,
+                "node": node_match,
+            },
+            "next_tool_hints": [
+                {
+                    "tool_id": "editor_connect_blueprint_nodes",
+                    "arguments": {
+                        "blueprint_path": blueprint_path,
+                        "graph_name": resolved_graph_name,
+                        "source_node_id": resolved_node_id,
+                        "source_pin_name": "then",
+                    },
+                },
+                {
+                    "tool_id": "editor_blueprint_add_step",
+                    "arguments": {
+                        "blueprint_path": blueprint_path,
+                        "graph_name": resolved_graph_name,
+                    },
+                },
+            ],
+            "prompt_excerpt": (
+                "Use blueprint_edit_context.cursor_node as the default source/target node when building "
+                "a connect_blueprint_nodes Proposal."
+            ),
+        }
+
+    def _first_graph(self, *, project_id: str | None, blueprint_query: str, graph_name: str) -> dict[str, Any]:
+        graphs = self.inventory.list_blueprint_graphs(
+            project_id=project_id,
+            blueprint_query=blueprint_query or None,
+            graph_name=graph_name or None,
+            include_nodes=True,
+            limit=1,
+        )
+        return graphs[0] if graphs else {}
+
+    @staticmethod
+    def _find_node(graph: dict[str, Any], node_query: str) -> dict[str, Any]:
+        if not graph or not node_query:
+            return {}
+        normalized_query = _normalize_lookup(node_query)
+        for node in _as_list(graph.get("nodes")):
+            if not isinstance(node, dict):
+                continue
+            candidates = (
+                node.get("node_id"),
+                node.get("id"),
+                node.get("name"),
+                node.get("title"),
+                node.get("node_title"),
+            )
+            if any(_normalize_lookup(value) == normalized_query for value in candidates):
+                return dict(node)
+        for node in _as_list(graph.get("nodes")):
+            if not isinstance(node, dict):
+                continue
+            title = _normalize_lookup(_first_text(node.get("title"), node.get("node_title"), node.get("name")))
+            if normalized_query and normalized_query in title:
+                return dict(node)
+        return {}
+
+    @staticmethod
+    def _blocked(
+        *,
+        tool_id: str | None = None,
+        spec: ToolSpec | None = None,
+        reason: str,
+        message: str,
+    ) -> dict[str, Any]:
+        resolved_tool_id = spec.tool_id if spec else str(tool_id or "").strip()
+        return {
+            "ok": False,
+            "status": "blocked",
+            "reason": reason,
+            "message": message,
+            "protocol_version": TOOL_REGISTRY_PLAN_CALL_VERSION,
+            "tool_id": resolved_tool_id,
+            "tool_name": _stable_tool_name(spec) if spec else resolved_tool_id,
+            "side_effect_level": spec.side_effect_level if spec else "",
+            "transport": "local_tool_registry",
+            "source": "plan_only_context",
+            "result": {},
+            "errors": [
+                {
+                    "code": reason,
+                    "message": message,
+                    "details": {
+                        "tool_id": resolved_tool_id,
+                        "side_effect_level": spec.side_effect_level if spec else "",
+                    },
+                }
+            ],
+        }
+
+
+def _normalize_lookup(value: Any) -> str:
+    return " ".join(str(value or "").replace("_", " ").replace("-", " ").strip().lower().split())

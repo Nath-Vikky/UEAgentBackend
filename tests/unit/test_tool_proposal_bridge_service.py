@@ -63,6 +63,63 @@ def test_prepare_blueprint_add_step_alias_normalizes_to_node_template() -> None:
     assert "text" not in payload
 
 
+def test_prepare_blueprint_add_step_alias_uses_blueprint_context_defaults() -> None:
+    bridge = ToolProposalBridgeService.prepare_proposal(
+        tool_id="editor_blueprint_add_step",
+        arguments={
+            "step_name": "Print String",
+            "text": "Hello from context",
+        },
+        context={
+            "blueprint_edit_context": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+            }
+        },
+        requested_by="unit_test",
+    )
+
+    assert bridge["status"] == "prepared"
+    payload = bridge["proposal_request"]["payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
+    assert payload["graph_name"] == "EventGraph"
+    assert payload["template_id"] == "print_string"
+    assert payload["message"] == "Hello from context"
+
+
+def test_prepare_blueprint_connect_nodes_uses_cursor_context_defaults() -> None:
+    bridge = ToolProposalBridgeService.prepare_proposal(
+        tool_id="editor_connect_blueprint_nodes",
+        arguments={
+            "target_node_id": "PrintString_1",
+            "target_pin_name": "execute",
+        },
+        context={
+            "blueprint_edit_context": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "cursor_node": {
+                    "node_id": "EventBeginPlay",
+                    "pins": [
+                        {"pin_name": "then", "direction": "output", "pin_type": "exec"},
+                    ],
+                },
+            }
+        },
+        requested_by="unit_test",
+    )
+
+    assert bridge["status"] == "prepared"
+    assert bridge["operation_type"] == "connect_blueprint_nodes"
+    payload = bridge["proposal_request"]["payload"]
+    assert payload["blueprint_path"] == "/Game/Blueprints/BP_PlayerCharacter"
+    assert payload["graph_name"] == "EventGraph"
+    assert payload["source_node_id"] == "EventBeginPlay"
+    assert payload["source_pin_name"] == "then"
+    assert payload["target_node_id"] == "PrintString_1"
+    assert payload["target_pin_name"] == "execute"
+
+
 def test_prepare_blocks_unknown_tool() -> None:
     bridge = ToolProposalBridgeService.prepare_proposal(
         tool_id="editor_delete_everything",

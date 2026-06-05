@@ -19,8 +19,10 @@ def test_tool_manifest_exports_mcp_compatible_tool_shape() -> None:
     assert manifest["mode"] == "http_primary_mcp_compatible_manifest"
     assert manifest["summary"]["tool_count"] >= 25
     assert manifest["routes"]["local_readonly_tool_call"] == "POST /api/v1/mcp/tool-registry/tools/{tool}/call"
+    assert manifest["routes"]["local_plan_tool_call"] == "POST /api/v1/mcp/tool-registry/plans/{tool}/call"
     assert manifest["routes"]["confirmed_write_proposal"] == "POST /api/v1/editor-operations/proposals"
     assert manifest["safety_policy"]["read_only_local_tool_registry_call_allowed"] is True
+    assert manifest["safety_policy"]["plan_only_local_tool_registry_call_allowed"] is True
 
     sample = manifest["tools"][0]
     assert set(sample) == {"name", "description", "inputSchema", "annotations"}
@@ -109,15 +111,33 @@ def test_tool_manifest_profiles_can_combine_with_side_effect_filter() -> None:
     assert tool_ids == {"mcp_get_blueprint_graph"}
 
 
+def test_tool_manifest_marks_plan_only_context_tools_as_local_plan_calls() -> None:
+    manifest = build_tool_manifest(profile="blueprint_demo", side_effect_level="plan_only")
+    tool_ids = {tool["annotations"]["tool_id"] for tool in manifest["tools"]}
+    edit_function = _tool_by_annotation_tool_id(manifest, "editor_blueprint_set_edit_function")
+    boundary = edit_function["annotations"]["execution_boundary"]
+
+    assert tool_ids == {"editor_blueprint_set_edit_function", "editor_blueprint_set_cursor_node"}
+    assert edit_function["annotations"]["operation_family"] == "blueprint"
+    assert edit_function["annotations"]["bridge_kind"] == "plan_only_context"
+    assert edit_function["annotations"]["operation_type"] == "set_blueprint_edit_function_context"
+    assert boundary["mode"] == "plan_only"
+    assert boundary["local_tool_registry_call_allowed"] is True
+    assert boundary["local_tool_registry_call_path"] == "POST /api/v1/mcp/tool-registry/plans/{tool}/call"
+    assert boundary["http_frontend_confirmation_required"] is False
+
+
 def test_tool_manifest_blueprint_profile_exposes_add_step_alias() -> None:
     manifest = build_tool_manifest(profile="blueprint_demo")
     tool_ids = {tool["annotations"]["tool_id"] for tool in manifest["tools"]}
 
     assert "editor_blueprint_add_step" in tool_ids
     assert "editor_add_blueprint_node_template" in tool_ids
+    assert "editor_blueprint_set_edit_function" in tool_ids
+    assert "editor_blueprint_set_cursor_node" in tool_ids
     selected = manifest["profiles"]["selected"]
     assert selected["suggested_prompts"]
-    assert selected["sample_tool_calls"][0]["tool_id"] == "editor_blueprint_add_step"
+    assert selected["sample_tool_calls"][0]["tool_id"] == "editor_blueprint_set_edit_function"
 
 
 def test_tool_manifest_unknown_profile_falls_back_to_full() -> None:

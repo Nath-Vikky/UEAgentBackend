@@ -83,10 +83,16 @@ class ToolProposalBridgeService:
                 message="Tool has no matching editor operation proposal type.",
             )
 
-        payload = cls._normalize_arguments(
+        arguments_with_context = cls._apply_context_defaults(
             tool_id=spec.tool_id,
             operation_type=operation_type,
             arguments=dict(arguments or {}),
+            context=dict(context or {}),
+        )
+        payload = cls._normalize_arguments(
+            tool_id=spec.tool_id,
+            operation_type=operation_type,
+            arguments=arguments_with_context,
         )
         proposal_request = {
             "operation_type": operation_type,
@@ -148,6 +154,36 @@ class ToolProposalBridgeService:
         return payload
 
     @classmethod
+    def _apply_context_defaults(
+        cls,
+        *,
+        tool_id: str,
+        operation_type: str,
+        arguments: dict[str, Any],
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        del tool_id
+        if operation_type not in {
+            "add_blueprint_node_template",
+            "connect_blueprint_nodes",
+            "compile_blueprint",
+        }:
+            return arguments
+        blueprint_context = _blueprint_edit_context(context)
+        if not blueprint_context:
+            return arguments
+        payload = dict(arguments)
+        _set_missing(payload, "blueprint_path", blueprint_context.get("blueprint_path"))
+        if operation_type in {"add_blueprint_node_template", "connect_blueprint_nodes"}:
+            _set_missing(payload, "graph_name", blueprint_context.get("graph_name"))
+        if operation_type == "connect_blueprint_nodes":
+            cursor_node = blueprint_context.get("cursor_node")
+            cursor_node = cursor_node if isinstance(cursor_node, dict) else {}
+            _set_missing(payload, "source_node_id", cursor_node.get("node_id"))
+            _set_missing(payload, "source_pin_name", _first_pin_name(cursor_node, direction="output", fallback="then"))
+        return payload
+
+    @classmethod
     def _blocked(
         cls,
         *,
@@ -180,3 +216,43 @@ class ToolProposalBridgeService:
 
 def _normalize_step_name(value: str) -> str:
     return " ".join(value.replace("-", " ").replace("_", " ").strip().lower().split())
+
+
+def _blueprint_edit_context(context: dict[str, Any]) -> dict[str, Any]:
+    direct = context.get("blueprint_edit_context")
+    if isinstance(direct, dict):
+        return direct
+    active_context = context.get("active_context")
+    if isinstance(active_context, dict):
+        nested = active_context.get("blueprint_edit_context")
+        if isinstance(nested, dict):
+            return nested
+        blueprint = active_context.get("blueprint")
+        if isinstance(blueprint, dict):
+            return {
+                "blueprint_path": blueprint.get("current_blueprint_path"),
+                "graph_name": blueprint.get("current_graph_name"),
+                "cursor_node": blueprint.get("current_node_summary"),
+            }
+    return {}
+
+
+def _set_missing(payload: dict[str, Any], key: str, value: Any) -> None:
+    if payload.get(key) in (None, "") and value not in (None, ""):
+        payload[key] = value
+
+
+def _first_pin_name(cursor_node: dict[str, Any], *, direction: str, fallback: str) -> str:
+    for pin in cursor_node.get("pins") or []:
+        if not isinstance(pin, dict):
+            continue
+        pin_direction = str(pin.get("direction") or pin.get("pin_direction") or "").strip().lower()
+        pin_type = str(pin.get("pin_type") or pin.get("type") or pin.get("category") or "").strip().lower()
+        if direction and pin_direction and direction not in pin_direction:
+            continue
+        if pin_type and "exec" not in pin_type:
+            continue
+        name = str(pin.get("pin_name") or pin.get("name") or "").strip()
+        if name:
+            return name
+    return fallback

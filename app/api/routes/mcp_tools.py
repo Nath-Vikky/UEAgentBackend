@@ -17,6 +17,7 @@ from app.services.editor_operation_service import (
 from app.services.mcp_executor import MCPToolExecutor
 from app.services.tool_manifest_service import build_tool_manifest
 from app.services.tool_proposal_bridge_service import ToolProposalBridgeService
+from app.services.tool_registry_plan_call_service import ToolRegistryPlanCallService
 from app.services.tool_registry_readonly_call_service import ToolRegistryReadOnlyCallService
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
@@ -36,6 +37,10 @@ class ToolRegistryProposalBridgeRequest(BaseModel):
 
 
 class ToolRegistryReadOnlyCallRequest(BaseModel):
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolRegistryPlanCallRequest(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -73,6 +78,20 @@ def call_tool_registry_readonly_tool(
     settings: Settings = Depends(get_app_settings),
 ) -> dict[str, Any]:
     call = ToolRegistryReadOnlyCallService(settings).call(tool, request.arguments)
+    return {
+        "success": bool(call.get("ok")),
+        "call": call,
+        "errors": [] if call.get("ok") else call.get("errors", []),
+    }
+
+
+@router.post("/tool-registry/plans/{tool}/call")
+def call_tool_registry_plan_tool(
+    tool: str,
+    request: ToolRegistryPlanCallRequest,
+    settings: Settings = Depends(get_app_settings),
+) -> dict[str, Any]:
+    call = ToolRegistryPlanCallService(settings).call(tool, request.arguments)
     return {
         "success": bool(call.get("ok")),
         "call": call,
