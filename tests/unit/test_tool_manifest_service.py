@@ -48,8 +48,25 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
 
     assert blueprint_graph["name"] == "get_blueprint_graph"
     assert blueprint_graph["annotations"]["transport"] == "mcp_tcp"
+    assert blueprint_graph["annotations"]["operation_family"] == "blueprint"
+    assert blueprint_graph["annotations"]["frontend_executor_id"] == "get_blueprint_graph"
+    assert blueprint_graph["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
     assert blueprint_graph["annotations"]["execution_boundary"]["mode"] == "readonly_tool"
     assert blueprint_graph["annotations"]["execution_boundary"]["local_tool_registry_call_allowed"] is True
+
+
+def test_tool_manifest_adds_frontend_executor_metadata_for_editor_tools() -> None:
+    manifest = build_tool_manifest()
+    arrange = _tool_by_annotation_tool_id(manifest, "editor_arrange_actors_pattern")
+    material_detail = _tool_by_annotation_tool_id(manifest, "editor_inspect_material_instance_detail")
+
+    assert arrange["annotations"]["operation_family"] == "level"
+    assert arrange["annotations"]["frontend_executor_id"] == "arrange_actors_pattern"
+    assert arrange["annotations"]["operation_type"] == "arrange_actors_pattern"
+    assert arrange["annotations"]["bridge_kind"] == "editor_operation_proposal"
+    assert material_detail["annotations"]["operation_family"] == "material"
+    assert material_detail["annotations"]["frontend_executor_id"] == "inspect_material_instance_detail"
+    assert material_detail["annotations"]["bridge_kind"] == "inventory_readonly"
 
 
 def test_tool_manifest_filters_category_and_enabled_tools() -> None:

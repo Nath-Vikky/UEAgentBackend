@@ -176,7 +176,16 @@ def _manifest_has_local_readonly_call(body: dict[str, Any]) -> tuple[bool, str]:
         "POST /api/v1/mcp/tool-registry/tools/{tool}/call"
     )
     safety_ok = manifest.get("safety_policy", {}).get("read_only_local_tool_registry_call_allowed") is True
-    return route_ok and safety_ok, "manifest exposes local read-only route and safety flag"
+    tools = {
+        item.get("annotations", {}).get("tool_id"): item.get("annotations", {})
+        for item in list(manifest.get("tools") or [])
+        if isinstance(item, dict)
+    }
+    metadata_ok = (
+        tools.get("editor_arrange_actors_pattern", {}).get("frontend_executor_id") == "arrange_actors_pattern"
+        and tools.get("editor_inspect_material_instance_detail", {}).get("operation_family") == "material"
+    )
+    return route_ok and safety_ok and metadata_ok, "manifest exposes local route, safety flag, and tool metadata"
 
 
 def _blueprint_graph_ok(body: dict[str, Any]) -> tuple[bool, str]:

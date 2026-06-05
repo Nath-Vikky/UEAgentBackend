@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from app.services.editor_operations.catalog import OPERATION_GROUPS, OPERATION_SPECS, READ_ONLY_INSPECTION_SPECS
 from app.services.tool_registry_readonly_call_service import LOCAL_READONLY_CALL_PATH
 from app.tools.registry import ToolSpec, iter_tool_specs
 
@@ -18,6 +19,55 @@ def _mcp_tool_name(spec: ToolSpec) -> str:
     if spec.transport.startswith("mcp") and spec.mcp_tool_name:
         return spec.mcp_tool_name
     return spec.tool_id
+
+
+TOOL_ID_TO_EDITOR_OPERATION = {str(spec["tool_id"]): operation_type for operation_type, spec in OPERATION_SPECS.items()}
+TOOL_ID_TO_READONLY_OPERATION = {
+    str(spec["tool_id"]): operation_type for operation_type, spec in READ_ONLY_INSPECTION_SPECS.items()
+}
+TOOL_ID_TO_READONLY_GROUP = {str(spec["tool_id"]): str(spec["group"]) for spec in READ_ONLY_INSPECTION_SPECS.values()}
+
+
+def _operation_group(operation_type: str) -> str:
+    for group_id, group in OPERATION_GROUPS.items():
+        if operation_type in set(group["operation_types"]):
+            return group_id
+    return "misc"
+
+
+def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
+    editor_operation = TOOL_ID_TO_EDITOR_OPERATION.get(spec.tool_id, "")
+    readonly_operation = TOOL_ID_TO_READONLY_OPERATION.get(spec.tool_id, "")
+    operation_type = editor_operation or readonly_operation
+    if operation_type:
+        return {
+            "operation_family": _operation_group(operation_type)
+            if editor_operation
+            else TOOL_ID_TO_READONLY_GROUP.get(spec.tool_id, "sensing"),
+            "frontend_executor_id": operation_type,
+            "operation_type": operation_type,
+            "bridge_kind": "editor_operation_proposal" if editor_operation else "inventory_readonly",
+        }
+    if spec.tool_id == "mcp_get_blueprint_graph":
+        return {
+            "operation_family": "blueprint",
+            "frontend_executor_id": _mcp_tool_name(spec),
+            "operation_type": "inspect_blueprint_graph",
+            "bridge_kind": "mcp_readonly_or_inventory_fallback",
+        }
+    if spec.tool_id == "mcp_get_widget_tree":
+        return {
+            "operation_family": "umg",
+            "frontend_executor_id": _mcp_tool_name(spec),
+            "operation_type": "inspect_widget_tree",
+            "bridge_kind": "mcp_readonly_or_inventory_fallback",
+        }
+    return {
+        "operation_family": spec.category,
+        "frontend_executor_id": spec.executor or _mcp_tool_name(spec),
+        "operation_type": "",
+        "bridge_kind": "tool_registry",
+    }
 
 
 def _execution_boundary(spec: ToolSpec) -> dict[str, Any]:
@@ -57,6 +107,7 @@ def _execution_boundary(spec: ToolSpec) -> dict[str, Any]:
 
 def _manifest_tool(spec: ToolSpec) -> dict[str, Any]:
     boundary = _execution_boundary(spec)
+    derived = _derived_manifest_metadata(spec)
     return {
         "name": _mcp_tool_name(spec),
         "description": spec.description,
@@ -76,6 +127,10 @@ def _manifest_tool(spec: ToolSpec) -> dict[str, Any]:
             "enabled": spec.enabled,
             "tier": spec.tier,
             "context_cost": spec.context_cost,
+            "operation_family": derived["operation_family"],
+            "frontend_executor_id": derived["frontend_executor_id"],
+            "operation_type": derived["operation_type"],
+            "bridge_kind": derived["bridge_kind"],
             "trigger_keywords": list(spec.trigger_keywords),
             "required_payload_fields": list(spec.required_payload_fields),
             "optional_payload_fields": list(spec.optional_payload_fields),

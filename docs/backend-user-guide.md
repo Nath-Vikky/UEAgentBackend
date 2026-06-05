@@ -6839,6 +6839,15 @@ The result is sourced from the latest Project Inventory snapshot and returns a
 snapshot summary metadata. `get_widget_tree` similarly reads Widget Blueprint
 tree data when the UE plugin has submitted it in the Inventory snapshot.
 
+The Tool Registry manifest also exposes UI / transport friendly metadata on
+each tool annotation:
+
+- `operation_family`: `asset`, `blueprint`, `umg`, `level`, `material`, etc.
+- `frontend_executor_id`: the UEAgentTool operation id or read-only executor id.
+- `operation_type`: the editor-operation type when the tool maps to one.
+- `bridge_kind`: `editor_operation_proposal`, `inventory_readonly`,
+  `mcp_readonly_or_inventory_fallback`, or plain `tool_registry`.
+
 Safety boundary:
 
 - This endpoint executes read-only sensing tools only.
