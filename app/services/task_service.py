@@ -1167,6 +1167,7 @@ class TaskService:
             action_proposals=execution["action_proposals"],
             task_status=task_status,
             finish_reason=finish_reason,
+            output_complete=output_complete,
         )
         execution["debug_view"]["react_trace"] = react_v2_trace
         execution["data"]["react_trace"] = react_v2_trace

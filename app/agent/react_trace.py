@@ -25,6 +25,12 @@ def _step(
     }
 
 
+def _contract_ok(item: Any) -> bool:
+    if isinstance(item, dict):
+        return bool(item.get("ok", False))
+    return False
+
+
 def build_react_v2_trace(
     *,
     request: UnifiedTaskRequest,
@@ -37,6 +43,7 @@ def build_react_v2_trace(
     action_proposals: list[dict[str, Any]],
     task_status: str,
     finish_reason: str,
+    output_complete: bool | None = None,
 ) -> dict[str, Any]:
     """Build a display-safe ReAct trace without exposing raw chain-of-thought."""
 
@@ -51,6 +58,29 @@ def build_react_v2_trace(
     observations = list(tool_layer.get("tool_observation_summary") or [])
     editor_operations = list(tool_layer.get("recent_editor_operations") or [])
     selected_memory = list(memory_layer.get("selected_items") or [])
+    tool_contracts = dict(data.get("tool_contracts") or debug_view.get("tool_contracts") or {})
+    input_contracts = list(tool_contracts.get("input_contracts") or [])
+    result_contracts = list(tool_contracts.get("result_contracts") or [])
+    warning_items = list(data.get("warnings") or debug_view.get("warnings") or [])
+    completed_marker = (
+        output_complete
+        if output_complete is not None
+        else data.get("output_complete", debug_view.get("output_complete"))
+    )
+    failed_input_contracts = sum(1 for item in input_contracts if not _contract_ok(item))
+    failed_result_contracts = sum(1 for item in result_contracts if not _contract_ok(item))
+    validation_available = (
+        bool(input_contracts)
+        or bool(result_contracts)
+        or completed_marker is not None
+        or bool(warning_items)
+        or bool(action_proposals)
+    )
+    validation_passed = (
+        failed_input_contracts == 0
+        and failed_result_contracts == 0
+        and completed_marker is not False
+    )
 
     steps = [
         _step(
@@ -113,6 +143,23 @@ def build_react_v2_trace(
             },
         ),
         _step(
+            step_id="validation_summary",
+            phase="validation",
+            status="completed" if validation_available else "skipped",
+            summary="Validated tool contracts, completion markers, warnings, and write boundaries before response projection.",
+            details={
+                "input_contract_count": len(input_contracts),
+                "result_contract_count": len(result_contracts),
+                "failed_input_contract_count": failed_input_contracts,
+                "failed_result_contract_count": failed_result_contracts,
+                "warning_count": len(warning_items),
+                "output_complete": completed_marker,
+                "proposal_count": len(action_proposals),
+                "confirmed_write_required": bool(action_proposals),
+                "validation_passed": validation_passed,
+            },
+        ),
+        _step(
             step_id="final",
             phase="final",
             status=task_status,
@@ -135,10 +182,13 @@ def build_react_v2_trace(
             "proposal_count": len(action_proposals),
             "task_status": task_status,
             "finish_reason": finish_reason,
+            "validation_passed": validation_passed,
+            "warning_count": len(warning_items),
         },
         "boundary": {
             "raw_chain_of_thought_exposed": False,
             "max_write_proposals_per_turn": 1,
             "confirmed_write_required": True,
+            "display_safe_summary_only": True,
         },
     }

@@ -1819,6 +1819,7 @@ input
   -> plan_summary
   -> observation_summary
   -> reflection_summary
+  -> validation_summary
   -> final
 ```
 
@@ -1831,6 +1832,13 @@ Boundary:
   traces. Prefer `react_trace` for the new full-task Debug View summary.
 - Write operations still create at most one pending Proposal per turn and still
   require UEAgentTool confirmation.
+- `validation_summary` records display-safe contract diagnostics only:
+  tool input/result contract counts, failed contract counts, warning count,
+  output completion marker, Proposal count, and whether the final projection
+  passed these lightweight checks.
+- UEAgentTool does not need a UI change for this stage. The field is already
+  available in `debug_view.react_trace` and `data.react_trace` for optional
+  inspection.
 
 ### 18.12 RAG Readiness 与本地评测
 
