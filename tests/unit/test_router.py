@@ -165,6 +165,40 @@ def test_agent_chat_with_blueprint_graph_node_question_routes_to_inventory() -> 
     assert routing["route"]["project_inventory_query"] is True
 
 
+def test_agent_chat_with_explicit_read_blueprint_graph_routes_to_mcp_readonly_tool() -> None:
+    request = _request(
+        content="Show the current Blueprint graph for /Game/Blueprints/BP_PlayerCharacter",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "editor_state": {"current_blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"},
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_blueprint_graph"
+    assert routing["route"]["decision_source"] == "heuristic_task_signal"
+
+
+def test_agent_chat_with_explicit_read_widget_tree_routes_to_mcp_readonly_tool() -> None:
+    request = _request(
+        content="Inspect the Widget Tree for /Game/UI/WBP_MainHUD",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "selected_assets": ["/Game/UI/WBP_MainHUD"],
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_widget_tree"
+    assert routing["route"]["decision_source"] == "heuristic_task_signal"
+
+
 def test_agent_chat_with_chinese_level_actor_list_routes_to_inventory() -> None:
     content = "\u5f53\u524d\u5173\u5361\u6709\u54ea\u4e9bActor"
     request = _request(

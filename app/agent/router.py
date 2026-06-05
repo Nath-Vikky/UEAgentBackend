@@ -156,6 +156,7 @@ DETERMINISTIC_PANELS = {
     "perfanalysis",
 }
 PROJECT_QA_PANELS = {"projectqa"}
+READONLY_MCP_TOOL_IDS = {"mcp_get_blueprint_graph", "mcp_get_widget_tree"}
 PROJECT_INVENTORY_SCOPE_HINTS = {
     "current project",
     "current game project",
@@ -587,9 +588,83 @@ def _looks_like_blueprint_node_template_request(latest_text: str, text_lower: st
     return has_blueprint_target and has_print_string and has_action
 
 
+def _looks_like_readonly_mcp_blueprint_graph_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = _has_readonly_sensing_intent(latest_text, text_lower)
+    has_graph_target = (
+        "blueprint graph" in text_lower
+        or "eventgraph" in text_lower
+        or "event graph" in text_lower
+        or ("blueprint" in text_lower and "graph" in text_lower)
+        or "\u84dd\u56fe\u56fe\u8868" in latest_text
+        or "\u84dd\u56fe\u8282\u70b9" in latest_text
+    )
+    return has_read_intent and has_graph_target
+
+
+def _looks_like_readonly_mcp_widget_tree_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = _has_readonly_sensing_intent(latest_text, text_lower)
+    has_widget_tree_target = (
+        "widget tree" in text_lower
+        or "umg tree" in text_lower
+        or ("widget" in text_lower and "tree" in text_lower)
+        or "\u63a7\u4ef6\u6811" in latest_text
+        or ("UMG" in latest_text and "\u5c42\u7ea7" in latest_text)
+    )
+    return has_read_intent and has_widget_tree_target
+
+
+def _has_readonly_sensing_intent(latest_text: str, text_lower: str) -> bool:
+    return bool(re.search(r"\b(?:get|read|show|inspect|list|view|describe)\b", text_lower)) or any(
+        token in latest_text
+        for token in (
+            "\u8bfb\u53d6",
+            "\u67e5\u770b",
+            "\u67e5\u8be2",
+            "\u5217\u51fa",
+            "\u663e\u793a",
+            "\u770b\u4e00\u4e0b",
+            "\u6709\u54ea\u4e9b",
+        )
+    )
+
+
+def _looks_like_editor_write_request(latest_text: str, text_lower: str) -> bool:
+    if re.search(
+        r"\b(?:add|create|insert|place|set|update|change|delete|remove|move|rename|duplicate|connect|compile)\b",
+        text_lower,
+    ):
+        return True
+    return any(
+        token in latest_text
+        for token in (
+            "\u6dfb\u52a0",
+            "\u52a0\u4e0a",
+            "\u63d2\u5165",
+            "\u521b\u5efa",
+            "\u653e\u7f6e",
+            "\u8bbe\u7f6e",
+            "\u4fee\u6539",
+            "\u5220\u9664",
+            "\u79fb\u52a8",
+            "\u91cd\u547d\u540d",
+            "\u590d\u5236",
+            "\u8fde\u63a5",
+            "\u7f16\u8bd1",
+        )
+    )
+
+
 def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
     if _looks_like_blueprint_node_template_request(latest_text, text_lower):
         return "editor_add_blueprint_node_template"
+    if _looks_like_readonly_mcp_widget_tree_request(latest_text, text_lower):
+        return "mcp_get_widget_tree"
+    if _looks_like_readonly_mcp_blueprint_graph_request(latest_text, text_lower):
+        return "mcp_get_blueprint_graph"
     return detect_tool_for_text(latest_text) or detect_tool_for_text(text_lower)
 
 
@@ -1010,7 +1085,7 @@ def classify_request(
         signal_min_margin=signal_min_margin,
     )
 
-    if signals["project_inventory_query"]:
+    if signals["project_inventory_query"] and selected_engineering_tool_id not in READONLY_MCP_TOOL_IDS:
         reason = _localized(
             language,
             "用户在自由聊天中询问当前项目的资产、代码或元数据事实，因此后端选择查询 Project Inventory。",

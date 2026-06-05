@@ -6937,6 +6937,10 @@ Agent Chat live sensing behavior:
 - When routing selects `mcp_get_blueprint_graph` or `mcp_get_widget_tree`, and
   the MCP adapter is configured as ready, the backend now tries the live TCP
   read-only tool first.
+- Explicit read-style prompts such as `Show the current Blueprint graph` or
+  `Inspect the Widget Tree for /Game/UI/WBP_MainHUD` can select those read-only
+  MCP tools. Broader current-project fact questions still prefer Project
+  Inventory.
 - If the TCP call fails, the tool is not allow-listed, or the UE tool server
   returns an error, the backend falls back to the existing Inventory summary or
   placeholder path.
