@@ -141,6 +141,8 @@ def _profile_manifest_ok(body: dict[str, Any]) -> tuple[bool, str]:
     ok = (
         manifest.get("filters", {}).get("profile") == "umg_demo"
         and manifest.get("profiles", {}).get("selected", {}).get("profile_id") == "umg_demo"
+        and bool(manifest.get("profiles", {}).get("selected", {}).get("suggested_prompts"))
+        and bool(manifest.get("profiles", {}).get("selected", {}).get("sample_tool_calls"))
         and "mcp_get_widget_tree" in tools
         and "editor_add_umg_widget" in tools
         and "editor_set_umg_widget_text" in tools

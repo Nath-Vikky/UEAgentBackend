@@ -5841,6 +5841,12 @@ not change permissions, side-effect levels, confirmation rules, or executor
 paths. You can still combine a profile with filters, for example
 `profile=blueprint_demo&side_effect_level=read_only`.
 
+Each selected profile also returns:
+
+- `profiles.selected.suggested_prompts`: short natural-language demo prompts.
+- `profiles.selected.sample_tool_calls`: compact Tool Registry call examples
+  for external clients or future UI affordances.
+
 Safety boundary:
 
 - The manifest is descriptive metadata, not a new write execution path.

@@ -19,6 +19,15 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
     "readonly_sensing": {
         "title": "Read-only Editor Sensing",
         "description": "Compact read-only tool surface for current project/editor facts.",
+        "suggested_prompts": (
+            "Show the current Blueprint graph.",
+            "Inspect the Widget Tree for /Game/UI/WBP_MainHUD.",
+            "Show selected Material Instance parameters.",
+        ),
+        "sample_tool_calls": (
+            {"tool_id": "mcp_get_blueprint_graph", "arguments": {"blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"}},
+            {"tool_id": "mcp_get_widget_tree", "arguments": {"widget_blueprint_path": "/Game/UI/WBP_MainHUD"}},
+        ),
         "tool_ids": (
             "editor_inspect_assets",
             "editor_inspect_asset_detail",
@@ -33,6 +42,22 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
     "blueprint_demo": {
         "title": "Blueprint Graph Demo",
         "description": "Blueprint graph sensing, node insertion, pin connection, and compile proposal tools.",
+        "suggested_prompts": (
+            "Add a Print String step to BP_PlayerCharacter BeginPlay, then compile.",
+            "Connect the current Blueprint node to Print String, then compile.",
+        ),
+        "sample_tool_calls": (
+            {
+                "tool_id": "editor_blueprint_add_step",
+                "arguments": {
+                    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                    "step_name": "PrintString",
+                    "graph_name": "EventGraph",
+                    "text": "Hello from UEAgent",
+                    "entry_event": "BeginPlay",
+                },
+            },
+        ),
         "tool_ids": (
             "mcp_get_blueprint_graph",
             "editor_create_blueprint_asset",
@@ -48,6 +73,23 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
     "umg_demo": {
         "title": "UMG Widget Demo",
         "description": "UMG sensing and common Widget Blueprint edit proposal tools.",
+        "suggested_prompts": (
+            "Add a TextBlock named TitleText to WBP_MainHUD under RootCanvas.",
+            "Set WBP_MainHUD TitleText text to Mission Ready.",
+            "Move WBP_MainHUD IconImage under RootCanvas.",
+        ),
+        "sample_tool_calls": (
+            {
+                "tool_id": "editor_add_umg_widget",
+                "arguments": {
+                    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                    "widget_name": "TitleText",
+                    "widget_class": "TextBlock",
+                    "parent_widget_name": "RootCanvas",
+                    "text": "Mission Ready",
+                },
+            },
+        ),
         "tool_ids": (
             "mcp_get_widget_tree",
             "editor_add_umg_widget",
@@ -65,6 +107,22 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
     "material_demo": {
         "title": "Material Instance Demo",
         "description": "Material Instance inspection and safe parameter proposal tools.",
+        "suggested_prompts": (
+            "Show MI_Player material parameters.",
+            "Set MI_Player Roughness to 0.35.",
+            "Set MI_Player BaseTexture to T_Player_D.",
+        ),
+        "sample_tool_calls": (
+            {
+                "tool_id": "editor_set_material_instance_parameter",
+                "arguments": {
+                    "material_instance_path": "/Game/Materials/MI_Player",
+                    "parameter_name": "Roughness",
+                    "parameter_type": "scalar",
+                    "value": 0.35,
+                },
+            },
+        ),
         "tool_ids": (
             "editor_inspect_material_instance_parameters",
             "editor_inspect_material_instance_detail",
@@ -76,6 +134,21 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
     "level_demo": {
         "title": "Level Actor Demo",
         "description": "Level Actor inspection, placement, transform, metadata, and arrangement proposal tools.",
+        "suggested_prompts": (
+            "Place a PointLight named KeyLight_A at 120 50 300.",
+            "Move this actor right 200.",
+            "Arrange selected patrol actors in a grid.",
+        ),
+        "sample_tool_calls": (
+            {
+                "tool_id": "editor_place_actor_in_level",
+                "arguments": {
+                    "actor_class": "/Script/Engine.PointLight",
+                    "actor_label": "KeyLight_A",
+                    "transform": {"location": {"x": 120.0, "y": 50.0, "z": 300.0}},
+                },
+            },
+        ),
         "tool_ids": (
             "editor_inspect_level_actors",
             "editor_inspect_level_actor_detail",
@@ -88,6 +161,21 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
     "asset_maintenance": {
         "title": "Asset Maintenance Demo",
         "description": "Asset inventory, rename/move/duplicate, Static Mesh settings, and redirector maintenance tools.",
+        "suggested_prompts": (
+            "Show recent project assets.",
+            "Duplicate BP_EnemySpawner to BP_EnemySpawner_Copy.",
+            "Fix redirectors under /Game/Blueprints.",
+        ),
+        "sample_tool_calls": (
+            {
+                "tool_id": "editor_duplicate_asset",
+                "arguments": {
+                    "source_asset_path": "/Game/Blueprints/BP_EnemySpawner",
+                    "new_name": "BP_EnemySpawner_Copy",
+                    "target_folder": "/Game/Blueprints",
+                },
+            },
+        ),
         "tool_ids": (
             "editor_inspect_assets",
             "editor_inspect_asset_detail",
@@ -291,6 +379,8 @@ def build_tool_manifest(
                 "profile_id": profile_id,
                 "title": str(profile_spec.get("title") or profile_id),
                 "description": str(profile_spec.get("description") or ""),
+                "suggested_prompts": list(profile_spec.get("suggested_prompts") or ()),
+                "sample_tool_calls": list(profile_spec.get("sample_tool_calls") or ()),
                 "tool_ids": list(profile_tool_ids),
             },
             "available": [
@@ -298,6 +388,8 @@ def build_tool_manifest(
                     "profile_id": item_id,
                     "title": str(item.get("title") or item_id),
                     "description": str(item.get("description") or ""),
+                    "suggested_prompt_count": len(tuple(item.get("suggested_prompts") or ())),
+                    "sample_tool_call_count": len(tuple(item.get("sample_tool_calls") or ())),
                     "tool_count": len(tuple(item.get("tool_ids") or ())),
                 }
                 for item_id, item in TOOL_MANIFEST_PROFILES.items()

@@ -105,6 +105,8 @@ def test_tool_registry_manifest_api_supports_demo_profiles(client: TestClient) -
     tool_ids = {item["annotations"]["tool_id"] for item in manifest["tools"]}
     assert manifest["filters"]["profile"] == "material_demo"
     assert manifest["profiles"]["selected"]["profile_id"] == "material_demo"
+    assert manifest["profiles"]["selected"]["suggested_prompts"]
+    assert manifest["profiles"]["selected"]["sample_tool_calls"][0]["tool_id"] == "editor_set_material_instance_parameter"
     assert "editor_inspect_material_instance_detail" in tool_ids
     assert "editor_set_material_instance_parameter" in tool_ids
     assert "editor_add_umg_widget" not in tool_ids

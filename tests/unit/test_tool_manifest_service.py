@@ -115,6 +115,9 @@ def test_tool_manifest_blueprint_profile_exposes_add_step_alias() -> None:
 
     assert "editor_blueprint_add_step" in tool_ids
     assert "editor_add_blueprint_node_template" in tool_ids
+    selected = manifest["profiles"]["selected"]
+    assert selected["suggested_prompts"]
+    assert selected["sample_tool_calls"][0]["tool_id"] == "editor_blueprint_add_step"
 
 
 def test_tool_manifest_unknown_profile_falls_back_to_full() -> None:
