@@ -26,10 +26,12 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "Show selected Material Instance parameters.",
         ),
         "sample_tool_calls": (
+            {"tool_id": "mcp_get_editor_context", "arguments": {}},
             {"tool_id": "mcp_get_blueprint_graph", "arguments": {"blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"}},
             {"tool_id": "mcp_get_widget_tree", "arguments": {"widget_blueprint_path": "/Game/UI/WBP_MainHUD"}},
         ),
         "tool_ids": (
+            "mcp_get_editor_context",
             "editor_inspect_assets",
             "editor_inspect_asset_detail",
             "editor_inspect_level_actors",
@@ -214,6 +216,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
         "title": "Observe current project facts",
         "summary": "Use read-only inventory/MCP-compatible tools to inspect assets, graphs, widgets, actors, and materials.",
         "observe_tools": (
+            "mcp_get_editor_context",
             "editor_inspect_assets",
             "mcp_get_blueprint_graph",
             "editor_inspect_blueprint_node_detail",
@@ -386,6 +389,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "frontend_executor_id": operation_type,
             "operation_type": operation_type,
             "bridge_kind": "editor_operation_proposal" if editor_operation else "inventory_readonly",
+        }
+    if spec.tool_id == "mcp_get_editor_context":
+        return {
+            "operation_family": "editor",
+            "frontend_executor_id": _mcp_tool_name(spec),
+            "operation_type": "inspect_editor_context",
+            "bridge_kind": "mcp_readonly_live_editor",
         }
     if spec.tool_id == "mcp_get_blueprint_graph":
         return {

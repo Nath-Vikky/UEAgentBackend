@@ -11,9 +11,11 @@ from app.services.tool_registry_readonly_call_service import ToolRegistryReadOnl
 
 
 LIVE_MCP_TOOL_NAMES = {
+    "mcp_get_editor_context": "get_editor_context",
     "mcp_get_blueprint_graph": "get_blueprint_graph",
     "mcp_get_widget_tree": "get_widget_tree",
 }
+LOCAL_INVENTORY_READONLY_TOOL_IDS = {"mcp_get_blueprint_graph", "mcp_get_widget_tree"}
 
 
 def live_mcp_readonly_result(
@@ -30,7 +32,7 @@ def live_mcp_readonly_result(
     if not tool_name:
         return None
     arguments = _live_mcp_arguments(context, selected_tool_id=selected_tool_id)
-    if not arguments:
+    if arguments is None:
         return None
 
     result = MCPToolExecutor(dependencies.settings).call_readonly_tool(tool_name, arguments)
@@ -158,10 +160,10 @@ def local_tool_registry_readonly_result(
     selected_tool_id: str,
 ) -> dict[str, Any] | None:
     dependencies = context.dependencies
-    if dependencies is None or selected_tool_id not in LIVE_MCP_TOOL_NAMES:
+    if dependencies is None or selected_tool_id not in LOCAL_INVENTORY_READONLY_TOOL_IDS:
         return None
     arguments = _live_mcp_arguments(context, selected_tool_id=selected_tool_id)
-    if not arguments:
+    if arguments is None:
         return None
 
     call = ToolRegistryReadOnlyCallService(dependencies.settings).call(selected_tool_id, arguments)
@@ -433,11 +435,13 @@ def _focused_graph_answer(
     return "\n\n".join(answer_parts)
 
 
-def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str) -> dict[str, Any]:
+def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str) -> dict[str, Any] | None:
     request = context.request
     payload = dict(request.payload or {})
     editor_state = dict(getattr(request.context, "editor_state", {}) or {})
     inventory_context = dict((context.context_bundle or {}).get("project_inventory_context") or {})
+    if selected_tool_id == "mcp_get_editor_context":
+        return {}
     if selected_tool_id == "mcp_get_blueprint_graph":
         blueprint = inventory_context.get("current_blueprint") if isinstance(inventory_context, dict) else {}
         graph = inventory_context.get("current_blueprint_graph") if isinstance(inventory_context, dict) else {}
@@ -448,7 +452,7 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
             blueprint.get("asset_path") if isinstance(blueprint, dict) else "",
         )
         if not blueprint_path:
-            return {}
+            return None
         graph_name = _first_non_empty(
             payload.get("graph_name"),
             editor_state.get("current_graph_name"),
@@ -474,9 +478,9 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
             _first_widget_path_from_strings(selected_assets),
         )
         if not widget_blueprint_path:
-            return {}
+            return None
         return {"widget_blueprint_path": widget_blueprint_path}
-    return {}
+    return None
 
 
 def _live_mcp_answer(
@@ -489,6 +493,26 @@ def _live_mcp_answer(
     source_label_en: str = "UEAgentTool TCP read-only tool",
 ) -> str:
     structured = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
+    if selected_tool_id == "mcp_get_editor_context":
+        tool_summary = structured.get("tool_summary") if isinstance(structured.get("tool_summary"), dict) else {}
+        editor_world = structured.get("editor_world") if isinstance(structured.get("editor_world"), dict) else {}
+        parts = [
+            _localized(
+                output_language,
+                f"已通过 {source_label_zh}读取当前编辑器上下文。",
+                f"Read current editor context through {source_label_en}.",
+            ),
+            (
+                f"- server_status={structured.get('server_status') or 'unknown'}"
+                f"\n- editor_available={editor_world.get('editor_available')}"
+                f"\n- world={editor_world.get('world_name') or 'n/a'}"
+                f"\n- selected_actors={editor_world.get('selected_actor_count', 0)}"
+                f"\n- tools={tool_summary.get('tool_count', 0)}"
+                f" | read_only={tool_summary.get('read_only_tool_count', 0)}"
+                f" | confirmed_write={tool_summary.get('confirmed_write_tool_count', 0)}"
+            ),
+        ]
+        return "\n\n".join(parts)
     if selected_tool_id == "mcp_get_blueprint_graph":
         graphs = list(structured.get("graphs") or [])
         graph_lines = []

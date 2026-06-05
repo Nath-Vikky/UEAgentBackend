@@ -24,6 +24,11 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_editor_context",
+        "description": "Read lightweight live Unreal Editor context.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "get_blueprint_graph",
         "description": "Read Blueprint graph metadata.",
         "inputSchema": {
@@ -104,6 +109,26 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
             return {
                 "content": [{"type": "text", "text": json.dumps({"tools": UE_AGENT_TOOL_FIXTURE_TOOLS})}],
                 "structuredContent": {"tools": UE_AGENT_TOOL_FIXTURE_TOOLS},
+            }
+        if tool_name == "get_editor_context":
+            structured = {
+                "context_schema_version": "ue_agent_tool_editor_context_fixture_v1",
+                "server_status": "listening:127.0.0.1:fixture",
+                "tool_summary": {
+                    "tool_count": 4,
+                    "read_only_tool_count": 3,
+                    "confirmed_write_tool_count": 1,
+                },
+                "editor_world": {
+                    "editor_available": True,
+                    "world_name": "FixtureEditorWorld",
+                    "selected_actor_count": 2,
+                },
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
             }
         if tool_name == "get_blueprint_graph":
             structured = {
@@ -221,7 +246,20 @@ def _status_ready(payload: dict[str, Any]) -> tuple[bool, str]:
 
 def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     names = [item.get("name") for item in list(payload.get("tools") or [])]
-    return names == ["get_blueprint_graph", "get_widget_tree"], "discovery filters to read-only allow-list"
+    return (
+        names == ["get_editor_context", "get_blueprint_graph", "get_widget_tree"],
+        "discovery filters to read-only allow-list",
+    )
+
+
+def _editor_context_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    ok = (
+        payload.get("ok") is True
+        and structured.get("context_schema_version") == "ue_agent_tool_editor_context_fixture_v1"
+        and structured.get("editor_world", {}).get("selected_actor_count") == 2
+    )
+    return ok, "TCP call returns editor context structuredContent"
 
 
 def _blueprint_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
@@ -266,9 +304,16 @@ def _run_case(case_id: str, payload: dict[str, Any], validator: Validator) -> di
 
 def _run_smoke() -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
-    with _fixture_adapter(["get_blueprint_graph", "get_widget_tree"]) as adapter:
+    with _fixture_adapter(["get_editor_context", "get_blueprint_graph", "get_widget_tree"]) as adapter:
         cases.append(_run_case("adapter_status_ready", adapter.status(), _status_ready))
         cases.append(_run_case("discover_readonly_tools", adapter.discover_tools(), _discover_readonly_ok))
+        cases.append(
+            _run_case(
+                "call_get_editor_context",
+                adapter.call_readonly_tool("get_editor_context", {}),
+                _editor_context_call_ok,
+            )
+        )
         cases.append(
             _run_case(
                 "call_get_blueprint_graph",

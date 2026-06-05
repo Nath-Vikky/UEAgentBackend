@@ -46,7 +46,14 @@ def test_tool_manifest_marks_confirmed_write_as_proposal_only() -> None:
 
 def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     manifest = build_tool_manifest(transport="mcp_tcp")
+    editor_context = _tool_by_annotation_tool_id(manifest, "mcp_get_editor_context")
     blueprint_graph = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_graph")
+
+    assert editor_context["name"] == "get_editor_context"
+    assert editor_context["annotations"]["transport"] == "mcp_tcp"
+    assert editor_context["annotations"]["operation_family"] == "editor"
+    assert editor_context["annotations"]["bridge_kind"] == "mcp_readonly_live_editor"
+    assert editor_context["annotations"]["allowed_in_free_chat"] is True
 
     assert blueprint_graph["name"] == "get_blueprint_graph"
     assert blueprint_graph["annotations"]["transport"] == "mcp_tcp"
@@ -122,6 +129,15 @@ def test_tool_manifest_profiles_can_combine_with_side_effect_filter() -> None:
     assert manifest["filters"]["profile"] == "blueprint_demo"
     assert manifest["filters"]["side_effect_level"] == "read_only"
     assert tool_ids == {"mcp_get_blueprint_graph", "editor_inspect_blueprint_node_detail"}
+
+
+def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
+    manifest = build_tool_manifest(profile="readonly_sensing", side_effect_level="read_only")
+    tool_ids = {tool["annotations"]["tool_id"] for tool in manifest["tools"]}
+    preview = manifest["profiles"]["selected"]["workflow_preview"]
+
+    assert "mcp_get_editor_context" in tool_ids
+    assert "mcp_get_editor_context" in preview["observe_tools"]
 
 
 def test_tool_manifest_marks_plan_only_context_tools_as_local_plan_calls() -> None:

@@ -25,7 +25,7 @@ class PlaceholderTaskHandler:
 
         base_debug = host._base_debug(request=request, routing=routing, trace_id=context.trace_id)
         selected_tool_id = str((routing.get("route") or {}).get("selected_tool_id") or "")
-        if selected_tool_id in {"mcp_get_blueprint_graph", "mcp_get_widget_tree"}:
+        if selected_tool_id in {"mcp_get_editor_context", "mcp_get_blueprint_graph", "mcp_get_widget_tree"}:
             live_result = live_mcp_readonly_result(
                 context=context,
                 base_debug=base_debug,

@@ -7553,3 +7553,48 @@ Important boundary:
 - Workflow previews are metadata only.
 - They do not execute editor operations.
 - Confirmed-write operations still require Proposal confirmation in UE.
+
+## 2026-06-06 Update: Live MCP Editor Context Tool
+
+When the optional UEAgentTool TCP editor tool server is enabled, the backend can
+use a new read-only MCP-style tool:
+
+```text
+mcp_get_editor_context -> get_editor_context
+```
+
+Purpose:
+
+- Verify that the live UE editor tool server is reachable.
+- Read lightweight editor status before doing deeper Blueprint, UMG, Material,
+  or Level sensing.
+- Give Agent Chat a grounded answer for explicit questions such as
+  "Show the current editor status".
+
+Returned `structuredContent` includes:
+
+- `context_schema_version`
+- `server_status`
+- `transport`
+- `tool_summary.tool_count`
+- `tool_summary.read_only_tool_count`
+- `tool_summary.confirmed_write_tool_count`
+- `tool_summary.category_counts`
+- `editor_world.world_name`
+- `editor_world.map_name`
+- `editor_world.current_level_name`
+- `editor_world.selected_actor_count`
+
+Safety boundary:
+
+- This tool is read-only.
+- It does not execute editor writes.
+- It does not replace Project Inventory; it only complements Inventory with
+  live editor status when TCP MCP is enabled.
+- Write operations still require HTTP Proposal confirmation in UEAgentTool.
+
+Optional live smoke:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --output -
+```

@@ -156,7 +156,7 @@ DETERMINISTIC_PANELS = {
     "perfanalysis",
 }
 PROJECT_QA_PANELS = {"projectqa"}
-READONLY_MCP_TOOL_IDS = {"mcp_get_blueprint_graph", "mcp_get_widget_tree"}
+READONLY_MCP_TOOL_IDS = {"mcp_get_editor_context", "mcp_get_blueprint_graph", "mcp_get_widget_tree"}
 PROJECT_INVENTORY_SCOPE_HINTS = {
     "current project",
     "current game project",
@@ -617,6 +617,24 @@ def _looks_like_readonly_mcp_widget_tree_request(latest_text: str, text_lower: s
     return has_read_intent and has_widget_tree_target
 
 
+def _looks_like_readonly_mcp_editor_context_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = _has_readonly_sensing_intent(latest_text, text_lower)
+    has_editor_context_target = (
+        "editor context" in text_lower
+        or "editor status" in text_lower
+        or "editor state" in text_lower
+        or "live editor" in text_lower
+        or "current editor status" in text_lower
+        or "current editor state" in text_lower
+        or "当前编辑器状态" in latest_text
+        or "编辑器上下文" in latest_text
+        or "实时编辑器状态" in latest_text
+    )
+    return has_read_intent and has_editor_context_target
+
+
 def _has_readonly_sensing_intent(latest_text: str, text_lower: str) -> bool:
     return bool(re.search(r"\b(?:get|read|show|inspect|list|view|describe)\b", text_lower)) or any(
         token in latest_text
@@ -661,6 +679,8 @@ def _looks_like_editor_write_request(latest_text: str, text_lower: str) -> bool:
 def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
     if _looks_like_blueprint_node_template_request(latest_text, text_lower):
         return "editor_add_blueprint_node_template"
+    if _looks_like_readonly_mcp_editor_context_request(latest_text, text_lower):
+        return "mcp_get_editor_context"
     if _looks_like_readonly_mcp_widget_tree_request(latest_text, text_lower):
         return "mcp_get_widget_tree"
     if _looks_like_readonly_mcp_blueprint_graph_request(latest_text, text_lower):
