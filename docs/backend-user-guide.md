@@ -7530,3 +7530,26 @@ Validation:
 - `material_demo`
 - `level_demo`
 - `asset_maintenance`
+
+## 2026-06-06 Update: Aggregated Tool Workflow Previews
+
+`GET /api/v1/mcp/tool-registry/manifest?profile=full` now also returns
+`manifest.profiles.workflow_previews`.
+
+This field is an aggregate list of all available profile workflow previews. It
+is designed for user-facing clients such as the UE plugin:
+
+- Show users the recommended operation path.
+- Explain which tools are read-only observe tools.
+- Explain which tools only set temporary context.
+- Explain which tools create confirmed-write Proposals.
+
+The UE plugin `Show Tools` action now displays a compact
+`Suggested Tool Workflows` card after the editor-operation catalog. If workflow
+preview loading fails, the original tool catalog still works.
+
+Important boundary:
+
+- Workflow previews are metadata only.
+- They do not execute editor operations.
+- Confirmed-write operations still require Proposal confirmation in UE.

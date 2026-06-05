@@ -531,6 +531,16 @@ def _profile_workflow_preview(profile_id: str) -> dict[str, Any]:
     }
 
 
+def _all_profile_workflow_previews() -> list[dict[str, Any]]:
+    previews: list[dict[str, Any]] = []
+    for profile_id in TOOL_MANIFEST_PROFILES:
+        preview = _profile_workflow_preview(profile_id)
+        if preview:
+            preview["profile_id"] = profile_id
+            previews.append(preview)
+    return previews
+
+
 def build_tool_manifest(
     *,
     include_disabled: bool = True,
@@ -592,6 +602,7 @@ def build_tool_manifest(
                 "workflow_preview": _profile_workflow_preview(profile_id),
                 "tool_ids": list(profile_tool_ids),
             },
+            "workflow_previews": _all_profile_workflow_previews(),
             "available": [
                 {
                     "profile_id": item_id,

@@ -109,6 +109,10 @@ def test_tool_manifest_profiles_expose_compact_demo_tool_sets() -> None:
     assert "editor_umg_set_cursor_widget" in preview["context_tools"]
     assert "editor_set_umg_widget_text" in preview["proposal_tools"]
     assert preview["confirmation_required"] is True
+    previews_by_profile = {item["profile_id"]: item for item in manifest["profiles"]["workflow_previews"]}
+    assert "blueprint_demo" in previews_by_profile
+    assert "material_demo" in previews_by_profile
+    assert previews_by_profile["umg_demo"]["workflow_id"] == "umg_widget_edit_preview_v1"
 
 
 def test_tool_manifest_profiles_can_combine_with_side_effect_filter() -> None:
