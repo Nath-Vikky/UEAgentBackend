@@ -208,6 +208,131 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
     },
 }
 
+TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
+    "readonly_sensing": {
+        "workflow_id": "readonly_sensing_preview_v1",
+        "title": "Observe current project facts",
+        "summary": "Use read-only inventory/MCP-compatible tools to inspect assets, graphs, widgets, actors, and materials.",
+        "observe_tools": (
+            "editor_inspect_assets",
+            "mcp_get_blueprint_graph",
+            "editor_inspect_blueprint_node_detail",
+            "mcp_get_widget_tree",
+            "editor_inspect_umg_widget_detail",
+            "editor_inspect_level_actors",
+            "editor_inspect_material_instance_detail",
+        ),
+        "context_tools": (),
+        "proposal_tools": (),
+        "happy_path": (
+            "Sync or submit Project Inventory.",
+            "Call one read-only sensing tool.",
+            "Use the structuredContent as grounding for chat or a later Proposal.",
+        ),
+        "confirmation_required": False,
+    },
+    "blueprint_demo": {
+        "workflow_id": "blueprint_graph_edit_preview_v1",
+        "title": "Observe Blueprint graph, select context, then propose graph edits",
+        "summary": "Read the graph/node detail first, set graph/cursor context when useful, then create confirmed Blueprint Proposals.",
+        "observe_tools": ("mcp_get_blueprint_graph", "editor_inspect_blueprint_node_detail"),
+        "context_tools": ("editor_blueprint_set_edit_function", "editor_blueprint_set_cursor_node"),
+        "proposal_tools": (
+            "editor_blueprint_add_step",
+            "editor_connect_blueprint_nodes",
+            "editor_compile_blueprint",
+        ),
+        "happy_path": (
+            "Inspect Blueprint graph.",
+            "Optionally inspect the target node detail.",
+            "Set edit function or cursor node context.",
+            "Create a pending Proposal.",
+            "Let the user confirm execution in UEAgentTool.",
+        ),
+        "confirmation_required": True,
+    },
+    "umg_demo": {
+        "workflow_id": "umg_widget_edit_preview_v1",
+        "title": "Observe Widget Tree, select Widget context, then propose UMG edits",
+        "summary": "Read Widget Tree/detail first, set Widget Blueprint/current Widget context, then create confirmed UMG Proposals.",
+        "observe_tools": ("mcp_get_widget_tree", "editor_inspect_umg_widget_detail"),
+        "context_tools": ("editor_umg_set_widget_blueprint_context", "editor_umg_set_cursor_widget"),
+        "proposal_tools": (
+            "editor_add_umg_widget",
+            "editor_set_umg_widget_text",
+            "editor_set_umg_widget_layout",
+            "editor_set_umg_widget_appearance",
+            "editor_reparent_umg_widget",
+        ),
+        "happy_path": (
+            "Inspect Widget Tree.",
+            "Inspect or select the target Widget.",
+            "Create a pending UMG Proposal.",
+            "Let the user confirm execution in UEAgentTool.",
+        ),
+        "confirmation_required": True,
+    },
+    "material_demo": {
+        "workflow_id": "material_instance_edit_preview_v1",
+        "title": "Observe Material parameters, select parameter context, then propose edits",
+        "summary": "Read Material Instance parameters first, set instance/parameter context, then create confirmed parameter Proposals.",
+        "observe_tools": ("editor_inspect_material_instance_parameters", "editor_inspect_material_instance_detail"),
+        "context_tools": ("editor_material_set_instance_context", "editor_material_set_parameter_context"),
+        "proposal_tools": (
+            "editor_set_material_instance_parameter",
+            "editor_set_material_instance_texture_parameter",
+            "editor_set_material_instance_static_switch",
+        ),
+        "happy_path": (
+            "Inspect Material Instance parameters.",
+            "Set Material Instance and parameter context.",
+            "Create a pending Material Proposal.",
+            "Let the user confirm execution in UEAgentTool.",
+        ),
+        "confirmation_required": True,
+    },
+    "level_demo": {
+        "workflow_id": "level_actor_edit_preview_v1",
+        "title": "Observe level actors, then propose placement or transform edits",
+        "summary": "Read Level Actor facts before proposing actor placement, transform, metadata, or arrangement edits.",
+        "observe_tools": ("editor_inspect_level_actors", "editor_inspect_level_actor_detail"),
+        "context_tools": (),
+        "proposal_tools": (
+            "editor_place_actor_in_level",
+            "editor_set_actor_transform",
+            "editor_set_actor_metadata",
+            "editor_arrange_actors_pattern",
+        ),
+        "happy_path": (
+            "Inspect current level actors.",
+            "Create a pending Level Actor Proposal.",
+            "Let the user confirm execution in UEAgentTool.",
+        ),
+        "confirmation_required": True,
+    },
+    "asset_maintenance": {
+        "workflow_id": "asset_maintenance_preview_v1",
+        "title": "Inspect assets, then propose safe maintenance actions",
+        "summary": "Read asset detail before proposing rename, move, duplicate, redirector fix, or Static Mesh setting edits.",
+        "observe_tools": ("editor_inspect_assets", "editor_inspect_asset_detail"),
+        "context_tools": (),
+        "proposal_tools": (
+            "editor_rename_asset",
+            "editor_batch_rename_assets",
+            "editor_move_assets",
+            "editor_duplicate_asset",
+            "editor_fixup_redirectors",
+            "editor_apply_static_mesh_settings",
+        ),
+        "happy_path": (
+            "Inspect asset list or one asset detail.",
+            "Create a pending asset maintenance Proposal.",
+            "Let the user confirm execution in UEAgentTool.",
+        ),
+        "confirmation_required": True,
+    },
+}
+
 
 def _empty_schema() -> dict[str, Any]:
     return {"type": "object", "properties": {}}
@@ -390,6 +515,22 @@ def _manifest_tool(spec: ToolSpec) -> dict[str, Any]:
     }
 
 
+def _profile_workflow_preview(profile_id: str) -> dict[str, Any]:
+    raw = TOOL_MANIFEST_WORKFLOW_PREVIEWS.get(profile_id) or {}
+    if not raw:
+        return {}
+    return {
+        "workflow_id": str(raw.get("workflow_id") or ""),
+        "title": str(raw.get("title") or ""),
+        "summary": str(raw.get("summary") or ""),
+        "observe_tools": list(raw.get("observe_tools") or ()),
+        "context_tools": list(raw.get("context_tools") or ()),
+        "proposal_tools": list(raw.get("proposal_tools") or ()),
+        "happy_path": list(raw.get("happy_path") or ()),
+        "confirmation_required": bool(raw.get("confirmation_required")),
+    }
+
+
 def build_tool_manifest(
     *,
     include_disabled: bool = True,
@@ -448,6 +589,7 @@ def build_tool_manifest(
                 "description": str(profile_spec.get("description") or ""),
                 "suggested_prompts": list(profile_spec.get("suggested_prompts") or ()),
                 "sample_tool_calls": list(profile_spec.get("sample_tool_calls") or ()),
+                "workflow_preview": _profile_workflow_preview(profile_id),
                 "tool_ids": list(profile_tool_ids),
             },
             "available": [
@@ -457,6 +599,7 @@ def build_tool_manifest(
                     "description": str(item.get("description") or ""),
                     "suggested_prompt_count": len(tuple(item.get("suggested_prompts") or ())),
                     "sample_tool_call_count": len(tuple(item.get("sample_tool_calls") or ())),
+                    "has_workflow_preview": bool(TOOL_MANIFEST_WORKFLOW_PREVIEWS.get(item_id)),
                     "tool_count": len(tuple(item.get("tool_ids") or ())),
                 }
                 for item_id, item in TOOL_MANIFEST_PROFILES.items()

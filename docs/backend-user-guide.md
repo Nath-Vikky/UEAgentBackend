@@ -7500,3 +7500,33 @@ Validation:
 - `app/services/tool_registry_readonly/umg.py`：负责 Widget Tree / Widget Detail 的纯结果构建。
 
 这个拆分不改变任何 API，也不要求 UE 前端修改。它的目的只是让后续继续补 MCP-style sensing 工具时，不把主执行器重新堆成巨型文件。
+
+## 2026-06-05 Update: Tool Manifest Workflow Preview
+
+`GET /api/v1/mcp/tool-registry/manifest?profile=umg_demo` 等 profile 现在会在 `profiles.selected.workflow_preview` 中返回轻量流程提示。
+
+示例字段：
+
+- `workflow_id`
+- `title`
+- `summary`
+- `observe_tools`
+- `context_tools`
+- `proposal_tools`
+- `happy_path`
+- `confirmation_required`
+
+用途：
+
+- 帮助前端或演示页展示“先观察 -> 选上下文 -> 生成 Proposal -> 用户确认”的推荐路径。
+- 帮助 MCP-style client 理解哪些工具适合只读观察，哪些工具只做 context，哪些工具会进入 confirmed-write Proposal。
+- 不改变任何工具执行行为；confirmed-write 仍然必须走 Proposal confirmation。
+
+当前提供 preview 的 profile：
+
+- `readonly_sensing`
+- `blueprint_demo`
+- `umg_demo`
+- `material_demo`
+- `level_demo`
+- `asset_maintenance`

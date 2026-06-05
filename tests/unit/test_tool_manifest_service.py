@@ -103,6 +103,12 @@ def test_tool_manifest_profiles_expose_compact_demo_tool_sets() -> None:
         tool["annotations"]["operation_family"] in {"umg"}
         for tool in manifest["tools"]
     )
+    preview = manifest["profiles"]["selected"]["workflow_preview"]
+    assert preview["workflow_id"] == "umg_widget_edit_preview_v1"
+    assert "mcp_get_widget_tree" in preview["observe_tools"]
+    assert "editor_umg_set_cursor_widget" in preview["context_tools"]
+    assert "editor_set_umg_widget_text" in preview["proposal_tools"]
+    assert preview["confirmation_required"] is True
 
 
 def test_tool_manifest_profiles_can_combine_with_side_effect_filter() -> None:
