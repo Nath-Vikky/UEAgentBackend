@@ -7490,3 +7490,13 @@ Validation:
 - 不绕过 Proposal confirmation。
 - 结果质量依赖 UEAgentTool 提交的 `graph_summaries[].nodes[].pins` 是否足够完整。
 - 不强制 UE 前端改 UI；未来可以在 Blueprint 工具面板里增加“Inspect Node Detail”入口。
+
+## 2026-06-05 Update: Read-only Tool Builder Split
+
+后端把 Tool Registry local read-only executor 做了一次小型模块化拆分：
+
+- `app/services/tool_registry_readonly_call_service.py`：保留工具调度、权限边界和统一响应 envelope。
+- `app/services/tool_registry_readonly/blueprint.py`：负责 Blueprint Node Detail 的纯结果构建。
+- `app/services/tool_registry_readonly/umg.py`：负责 Widget Tree / Widget Detail 的纯结果构建。
+
+这个拆分不改变任何 API，也不要求 UE 前端修改。它的目的只是让后续继续补 MCP-style sensing 工具时，不把主执行器重新堆成巨型文件。

@@ -4,6 +4,12 @@ from typing import Any
 
 from app.core.settings import Settings
 from app.services.project_inventory_service import ProjectInventoryService
+from app.services.tool_registry_readonly.blueprint import build_blueprint_node_detail_result
+from app.services.tool_registry_readonly.umg import (
+    build_umg_widget_detail_result,
+    extract_widget_tree,
+    find_widget_blueprint,
+)
 from app.tools.registry import ToolSpec, get_tool_spec, iter_tool_specs
 
 TOOL_REGISTRY_READONLY_CALL_VERSION = "tool_registry_readonly_call_v1"
@@ -187,197 +193,12 @@ class ToolRegistryReadOnlyCallService:
     def _call_inspect_blueprint_node_detail(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
         del spec
         project_id = _first_text(args.get("project_id")) or None
-        blueprint_query = _first_text(
-            args.get("blueprint_path"),
-            args.get("asset_path"),
-            args.get("blueprint_query"),
-            args.get("query"),
-        )
-        graph_name = _first_text(args.get("graph_name")) or None
-        node_query = _first_text(
-            args.get("node_id"),
-            args.get("node_title"),
-            args.get("node_name"),
-            args.get("target_node"),
-            args.get("node_query"),
-        )
-        summary = self._summary(project_id)
-        graphs = self.inventory.list_blueprint_graphs(
+        return build_blueprint_node_detail_result(
+            inventory=self.inventory,
+            summary=self._summary(project_id),
             project_id=project_id,
-            blueprint_query=blueprint_query or None,
-            graph_name=graph_name,
-            include_nodes=True,
-            limit=50,
+            args=args,
         )
-        blueprints = self.inventory.list_blueprints(project_id=project_id, query=blueprint_query or None, limit=1)
-        blueprint = blueprints[0] if blueprints else {}
-        graph, node = self._find_blueprint_graph_node(graphs, node_query)
-        pins = self._blueprint_node_pins(node)
-        empty_reason = ""
-        if not summary.get("has_snapshot"):
-            empty_reason = "no_project_inventory_snapshot"
-        elif not graphs:
-            empty_reason = "no_matching_blueprint_graphs"
-        elif not node:
-            empty_reason = "no_matching_blueprint_node"
-        node_title = self._blueprint_node_title(node)
-        node_id = self._blueprint_node_id(node)
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": self._blueprint_node_detail_text(
-                        blueprint_name=blueprint.get("asset_name") or blueprint_query,
-                        graph_name=_first_text(graph.get("graph_name")),
-                        node_title=node_title or node_query,
-                        node_class=self._blueprint_node_class(node),
-                        empty_reason=empty_reason,
-                    ),
-                }
-            ],
-            "structuredContent": {
-                "schema_version": "inventory_blueprint_node_detail_v1",
-                "blueprint_path": blueprint.get("asset_path") or blueprint_query,
-                "blueprint_name": blueprint.get("asset_name") or "",
-                "parent_class": blueprint.get("parent_class") or "",
-                "graph_name": _first_text(graph.get("graph_name")),
-                "graph_type": _first_text(graph.get("graph_type")),
-                "node_id": node_id,
-                "node_title": node_title,
-                "node_class": self._blueprint_node_class(node),
-                "node": node,
-                "pins": pins,
-                "linked_pins": self._blueprint_linked_pins(pins),
-                "graph_summary": {
-                    "node_count": graph.get("node_count"),
-                    "pin_count": graph.get("pin_count"),
-                    "link_count": graph.get("link_count"),
-                },
-                "summary": summary,
-                "empty_reason": empty_reason,
-            },
-        }
-
-    @classmethod
-    def _find_blueprint_graph_node(
-        cls,
-        graphs: list[dict[str, Any]],
-        node_query: str,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        if not graphs:
-            return {}, {}
-        query = cls._norm(node_query)
-        first_graph = graphs[0]
-        first_node: dict[str, Any] = {}
-        for graph in graphs:
-            nodes = [item for item in _as_list(graph.get("nodes")) if isinstance(item, dict)]
-            if nodes and not first_node:
-                first_graph = graph
-                first_node = nodes[0]
-            if not query:
-                continue
-            for node in nodes:
-                if any(cls._norm(value) == query for value in cls._blueprint_node_identity_values(node)):
-                    return graph, node
-            for node in nodes:
-                if any(query in cls._norm(value) for value in cls._blueprint_node_identity_values(node)):
-                    return graph, node
-        return first_graph, first_node if not query else {}
-
-    @staticmethod
-    def _blueprint_node_identity_values(node: dict[str, Any]) -> list[str]:
-        return [
-            _first_text(node.get("node_id")),
-            _first_text(node.get("id")),
-            _first_text(node.get("guid")),
-            _first_text(node.get("title")),
-            _first_text(node.get("node_title")),
-            _first_text(node.get("name")),
-            _first_text(node.get("node_name")),
-            _first_text(node.get("template_id")),
-        ]
-
-    @staticmethod
-    def _blueprint_node_id(node: dict[str, Any]) -> str:
-        return _first_text(node.get("node_id"), node.get("id"), node.get("guid"), node.get("name"))
-
-    @staticmethod
-    def _blueprint_node_title(node: dict[str, Any]) -> str:
-        return _first_text(node.get("title"), node.get("node_title"), node.get("name"), node.get("node_id"))
-
-    @staticmethod
-    def _blueprint_node_class(node: dict[str, Any]) -> str:
-        return _first_text(node.get("node_class"), node.get("class"), node.get("type"), node.get("node_type"))
-
-    @classmethod
-    def _blueprint_node_pins(cls, node: dict[str, Any]) -> list[dict[str, Any]]:
-        pins: list[dict[str, Any]] = []
-        for key, direction in (("pins", ""), ("input_pins", "input"), ("output_pins", "output")):
-            for raw_pin in _as_list(node.get(key)):
-                if not isinstance(raw_pin, dict):
-                    continue
-                pin = dict(raw_pin)
-                pin.setdefault("direction", direction or _first_text(raw_pin.get("direction"), raw_pin.get("pin_direction")))
-                pin.setdefault("pin_name", cls._blueprint_pin_name(pin))
-                pins.append(pin)
-        return pins[:128]
-
-    @staticmethod
-    def _blueprint_pin_name(pin: dict[str, Any]) -> str:
-        return _first_text(pin.get("pin_name"), pin.get("name"), pin.get("display_name"), pin.get("id"))
-
-    @classmethod
-    def _blueprint_linked_pins(cls, pins: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        linked: list[dict[str, Any]] = []
-        for pin in pins:
-            links = _as_list(pin.get("linked_to") or pin.get("links") or pin.get("connections"))
-            for raw_link in links:
-                if isinstance(raw_link, dict):
-                    linked.append(
-                        {
-                            "pin_name": cls._blueprint_pin_name(pin),
-                            "direction": _first_text(pin.get("direction"), pin.get("pin_direction")),
-                            "target_node_id": _first_text(
-                                raw_link.get("node_id"),
-                                raw_link.get("target_node_id"),
-                                raw_link.get("node"),
-                            ),
-                            "target_pin_name": _first_text(
-                                raw_link.get("pin_name"),
-                                raw_link.get("target_pin_name"),
-                                raw_link.get("pin"),
-                            ),
-                        }
-                    )
-                else:
-                    linked.append(
-                        {
-                            "pin_name": cls._blueprint_pin_name(pin),
-                            "direction": _first_text(pin.get("direction"), pin.get("pin_direction")),
-                            "target": str(raw_link),
-                        }
-                    )
-        return linked[:128]
-
-    @staticmethod
-    def _blueprint_node_detail_text(
-        *,
-        blueprint_name: Any,
-        graph_name: str,
-        node_title: str,
-        node_class: str,
-        empty_reason: str,
-    ) -> str:
-        if empty_reason:
-            return f"Blueprint node detail unavailable: {empty_reason}."
-        parts = [f"Found {node_title or 'node'}"]
-        if node_class:
-            parts.append(f"class={node_class}")
-        if graph_name:
-            parts.append(f"graph={graph_name}")
-        if blueprint_name:
-            parts.append(f"in {blueprint_name}")
-        return "; ".join(parts) + "."
 
     def _call_widget_tree(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
         del spec
@@ -389,11 +210,11 @@ class ToolRegistryReadOnlyCallService:
             args.get("query"),
         )
         summary = self._summary(project_id)
-        asset = self._find_widget_blueprint(project_id=project_id, widget_query=widget_query)
+        asset = find_widget_blueprint(inventory=self.inventory, project_id=project_id, widget_query=widget_query)
         blueprint = _as_dict(asset.get("blueprint") if asset else {})
         properties = _as_dict(asset.get("properties") if asset else {})
         metadata = _as_dict(asset.get("metadata") if asset else {})
-        widget_tree = self._extract_widget_tree(blueprint=blueprint, properties=properties, metadata=metadata)
+        widget_tree = extract_widget_tree(blueprint=blueprint, properties=properties, metadata=metadata)
         widgets = _as_list(widget_tree.get("widgets") or widget_tree.get("children") or widget_tree.get("nodes"))
         empty_reason = ""
         if not summary.get("has_snapshot"):
@@ -427,273 +248,12 @@ class ToolRegistryReadOnlyCallService:
     def _call_inspect_umg_widget_detail(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
         del spec
         project_id = _first_text(args.get("project_id")) or None
-        widget_query = _first_text(
-            args.get("widget_blueprint_path"),
-            args.get("blueprint_path"),
-            args.get("asset_path"),
-            args.get("widget_blueprint_query"),
-            args.get("query"),
-        )
-        widget_name = _first_text(args.get("widget_name"), args.get("target_widget"), args.get("cursor_widget"))
-        summary = self._summary(project_id)
-        asset = self._find_widget_blueprint(project_id=project_id, widget_query=widget_query)
-        blueprint = _as_dict(asset.get("blueprint") if asset else {})
-        properties = _as_dict(asset.get("properties") if asset else {})
-        metadata = _as_dict(asset.get("metadata") if asset else {})
-        widget_tree = self._extract_widget_tree(blueprint=blueprint, properties=properties, metadata=metadata)
-        widgets = self._flatten_widgets(widget_tree)
-        widget = self._find_widget(widgets, widget_name)
-        children = self._widget_children(widgets, widget)
-        empty_reason = ""
-        if not summary.get("has_snapshot"):
-            empty_reason = "no_project_inventory_snapshot"
-        elif not asset:
-            empty_reason = "no_matching_widget_blueprint"
-        elif not widget_tree:
-            empty_reason = "widget_tree_not_in_inventory_snapshot"
-        elif not widget:
-            empty_reason = "no_matching_widget"
-        resolved_widget_name = self._widget_name(widget)
-        resolved_widget_class = self._widget_class(widget)
-        parent_widget_name = self._widget_parent(widget)
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": self._widget_detail_text(
-                        widget_blueprint_name=asset.get("asset_name") if asset else widget_query,
-                        widget_name=resolved_widget_name or widget_name,
-                        widget_class=resolved_widget_class,
-                        parent_widget_name=parent_widget_name,
-                        empty_reason=empty_reason,
-                    ),
-                }
-            ],
-            "structuredContent": {
-                "schema_version": "inventory_umg_widget_detail_v1",
-                "widget_blueprint_path": asset.get("asset_path") if asset else widget_query,
-                "widget_blueprint_name": asset.get("asset_name") if asset else "",
-                "parent_class": asset.get("parent_class") or blueprint.get("parent_class") if asset else "",
-                "widget_name": resolved_widget_name or widget_name,
-                "widget_class": resolved_widget_class,
-                "parent_widget_name": parent_widget_name,
-                "widget": widget,
-                "slot": self._widget_slot(widget),
-                "layout": self._widget_layout(widget),
-                "properties": self._widget_properties(widget),
-                "style": self._widget_style(widget),
-                "children": children[:64],
-                "widget_tree_summary": {
-                    "widget_count": len(widgets),
-                    "root_widget_name": _first_text(widget_tree.get("root"), widget_tree.get("root_widget")),
-                },
-                "summary": summary,
-                "empty_reason": empty_reason,
-            },
-        }
-
-    def _find_widget_blueprint(self, *, project_id: str | None, widget_query: str) -> dict[str, Any] | None:
-        asset = self.inventory.get_asset(widget_query, project_id) if widget_query else None
-        if asset:
-            return asset
-        matches = self.inventory.list_assets(
+        return build_umg_widget_detail_result(
+            inventory=self.inventory,
+            summary=self._summary(project_id),
             project_id=project_id,
-            query=widget_query or None,
-            asset_type="WidgetBlueprint",
-            limit=1,
+            args=args,
         )
-        return matches[0] if matches else None
-
-    @staticmethod
-    def _extract_widget_tree(
-        *,
-        blueprint: dict[str, Any],
-        properties: dict[str, Any],
-        metadata: dict[str, Any],
-    ) -> dict[str, Any]:
-        for source in (blueprint, properties, metadata):
-            for key in ("widget_tree", "widgets", "designer_tree", "hierarchy"):
-                value = source.get(key)
-                if isinstance(value, dict):
-                    return value
-                if isinstance(value, list):
-                    return {"widgets": value}
-        return {}
-
-    @classmethod
-    def _flatten_widgets(cls, widget_tree: dict[str, Any]) -> list[dict[str, Any]]:
-        widgets: list[dict[str, Any]] = []
-
-        def walk(value: Any, *, parent_name: str = "") -> None:
-            if isinstance(value, list):
-                for item in value:
-                    walk(item, parent_name=parent_name)
-                return
-            if not isinstance(value, dict):
-                return
-
-            name = _first_text(
-                value.get("name"),
-                value.get("widget_name"),
-                value.get("id"),
-                value.get("display_name"),
-                value.get("object_name"),
-            )
-            widget_class = _first_text(value.get("class"), value.get("widget_class"), value.get("type"))
-            if name or widget_class:
-                item = dict(value)
-                if parent_name and not cls._widget_parent(item):
-                    item["parent"] = parent_name
-                widgets.append(item)
-            next_parent = name or parent_name
-            for key in ("widgets", "children", "nodes"):
-                walk(value.get(key), parent_name=next_parent)
-
-        for key in ("widgets", "children", "nodes"):
-            walk(widget_tree.get(key), parent_name="")
-        if not widgets:
-            walk(widget_tree, parent_name="")
-        return widgets
-
-    @classmethod
-    def _find_widget(cls, widgets: list[dict[str, Any]], widget_name: str) -> dict[str, Any]:
-        query = cls._norm(widget_name)
-        if not query:
-            return widgets[0] if widgets else {}
-        for widget in widgets:
-            if any(cls._norm(value) == query for value in cls._widget_identity_values(widget)):
-                return widget
-        for widget in widgets:
-            if any(query in cls._norm(value) for value in cls._widget_identity_values(widget)):
-                return widget
-        return {}
-
-    @staticmethod
-    def _widget_identity_values(widget: dict[str, Any]) -> list[str]:
-        return [
-            _first_text(widget.get("name")),
-            _first_text(widget.get("widget_name")),
-            _first_text(widget.get("id")),
-            _first_text(widget.get("display_name")),
-            _first_text(widget.get("object_name")),
-        ]
-
-    @staticmethod
-    def _norm(value: Any) -> str:
-        return str(value or "").strip().lower()
-
-    @staticmethod
-    def _widget_name(widget: dict[str, Any]) -> str:
-        return _first_text(
-            widget.get("name"),
-            widget.get("widget_name"),
-            widget.get("id"),
-            widget.get("display_name"),
-            widget.get("object_name"),
-        )
-
-    @staticmethod
-    def _widget_class(widget: dict[str, Any]) -> str:
-        return _first_text(widget.get("class"), widget.get("widget_class"), widget.get("type"))
-
-    @staticmethod
-    def _widget_parent(widget: dict[str, Any]) -> str:
-        return _first_text(
-            widget.get("parent"),
-            widget.get("parent_name"),
-            widget.get("parent_widget"),
-            widget.get("parent_widget_name"),
-            _as_dict(widget.get("slot")).get("parent"),
-            _as_dict(widget.get("slot")).get("parent_widget_name"),
-        )
-
-    @classmethod
-    def _widget_children(cls, widgets: list[dict[str, Any]], widget: dict[str, Any]) -> list[dict[str, Any]]:
-        widget_name = cls._norm(cls._widget_name(widget))
-        if not widget_name:
-            return []
-        children: list[dict[str, Any]] = []
-        for item in widgets:
-            parent_name = cls._norm(cls._widget_parent(item))
-            if parent_name == widget_name:
-                children.append(
-                    {
-                        "widget_name": cls._widget_name(item),
-                        "widget_class": cls._widget_class(item),
-                    }
-                )
-        return children
-
-    @staticmethod
-    def _widget_slot(widget: dict[str, Any]) -> dict[str, Any]:
-        return dict(_as_dict(widget.get("slot") or widget.get("slot_data") or widget.get("layout_slot")))
-
-    @staticmethod
-    def _widget_layout(widget: dict[str, Any]) -> dict[str, Any]:
-        layout = dict(_as_dict(widget.get("layout") or widget.get("layout_data")))
-        for key in ("position", "size", "anchors", "alignment", "padding", "offsets"):
-            if key in widget and key not in layout:
-                layout[key] = widget[key]
-        return layout
-
-    @staticmethod
-    def _widget_style(widget: dict[str, Any]) -> dict[str, Any]:
-        source_key = "style"
-        source = widget.get("style")
-        if not isinstance(source, dict):
-            source_key = "appearance"
-            source = widget.get("appearance")
-        if not isinstance(source, dict):
-            source_key = "brush"
-            source = widget.get("brush")
-        style = dict(_as_dict(source))
-        for key in ("color", "opacity", "font", "brush", "tint"):
-            if key != source_key and key in widget and key not in style:
-                style[key] = widget[key]
-        return style
-
-    @staticmethod
-    def _widget_properties(widget: dict[str, Any]) -> dict[str, Any]:
-        properties = dict(_as_dict(widget.get("properties") or widget.get("details")))
-        ignored = {
-            "children",
-            "widgets",
-            "nodes",
-            "properties",
-            "details",
-            "slot",
-            "slot_data",
-            "layout_slot",
-            "layout",
-            "layout_data",
-            "style",
-            "appearance",
-            "brush",
-        }
-        for key, value in widget.items():
-            if key not in ignored and key not in properties:
-                properties[key] = value
-        return properties
-
-    @staticmethod
-    def _widget_detail_text(
-        *,
-        widget_blueprint_name: Any,
-        widget_name: str,
-        widget_class: str,
-        parent_widget_name: str,
-        empty_reason: str,
-    ) -> str:
-        if empty_reason:
-            return f"UMG widget detail unavailable: {empty_reason}."
-        parts = [f"Found {widget_name or 'widget'}"]
-        if widget_class:
-            parts.append(f"class={widget_class}")
-        if parent_widget_name:
-            parts.append(f"parent={parent_widget_name}")
-        if widget_blueprint_name:
-            parts.append(f"in {widget_blueprint_name}")
-        return "; ".join(parts) + "."
 
     def _call_inspect_assets(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
         del spec
