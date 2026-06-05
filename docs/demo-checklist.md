@@ -111,6 +111,22 @@ Recommended order:
 4. Logs Analyze: paste a short error log or provide a safe log file path.
 5. Assets Inspect: select one asset in Content Browser and run inspection.
 
+Optional live TCP tool-server check:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --output -
+```
+
+If you want to test live read-only graph calls, pass real paths from your
+project:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --blueprint-path /Game/Blueprints/BP_PlayerCharacter --widget-blueprint-path /Game/UI/WBP_MainHUD --output -
+```
+
+This check requires UEAgentTool's optional TCP tool server to be running. It
+does not execute editor writes.
+
 ## 5. Demo Confirmed Editor Operations
 
 Keep the first demo project disposable. The backend does not auto-save, but the

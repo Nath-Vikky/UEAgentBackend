@@ -6914,6 +6914,22 @@ The smoke emulates the UEAgentTool TCP server and validates:
 - UEAgentTool-style server-side rejection if a raw write tool is explicitly
   allow-listed by mistake.
 
+Optional live check when UEAgentTool is open and its TCP tool server is enabled:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --output -
+```
+
+To also call read-only graph tools, pass real project paths:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --blueprint-path /Game/Blueprints/BP_PlayerCharacter --widget-blueprint-path /Game/UI/WBP_MainHUD --output -
+```
+
+The live smoke is intentionally not part of CI because it requires Unreal
+Editor and the plugin TCP server. It is useful for local demo readiness and
+transport troubleshooting.
+
 ## 2026-06-04 UE Knowledge Domains Expansion
 
 The local knowledge base now includes additional UE-focused domains for
