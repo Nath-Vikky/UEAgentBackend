@@ -158,6 +158,35 @@ def test_tool_registry_proposal_api_creates_pending_editor_proposal(client: Test
     assert proposal["operation"]["tool_id"] == "editor_arrange_actors_pattern"
 
 
+def test_tool_registry_proposal_api_creates_blueprint_add_step_alias_proposal(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/mcp/tool-registry/proposals",
+        json={
+            "tool_id": "editor_blueprint_add_step",
+            "arguments": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "step_name": "Print String",
+                "graph_name": "EventGraph",
+                "text": "Hello from MCP-style add_step",
+                "entry_event": "BeginPlay",
+            },
+            "requested_by": "integration_test",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["bridge"]["tool_id"] == "editor_blueprint_add_step"
+    proposal = body["proposal"]
+    assert proposal["item"]["confirmation"]["state"] == "pending"
+    assert proposal["operation"]["operation_type"] == "add_blueprint_node_template"
+    assert proposal["operation"]["tool_id"] == "editor_add_blueprint_node_template"
+    payload = proposal["operation"]["operation_payload"]
+    assert payload["template_id"] == "print_string"
+    assert payload["message"] == "Hello from MCP-style add_step"
+
+
 def test_tool_registry_proposal_prepare_api_blocks_readonly_tool(client: TestClient) -> None:
     response = client.post(
         "/api/v1/mcp/tool-registry/proposals/prepare",

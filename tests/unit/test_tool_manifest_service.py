@@ -109,6 +109,14 @@ def test_tool_manifest_profiles_can_combine_with_side_effect_filter() -> None:
     assert tool_ids == {"mcp_get_blueprint_graph"}
 
 
+def test_tool_manifest_blueprint_profile_exposes_add_step_alias() -> None:
+    manifest = build_tool_manifest(profile="blueprint_demo")
+    tool_ids = {tool["annotations"]["tool_id"] for tool in manifest["tools"]}
+
+    assert "editor_blueprint_add_step" in tool_ids
+    assert "editor_add_blueprint_node_template" in tool_ids
+
+
 def test_tool_manifest_unknown_profile_falls_back_to_full() -> None:
     manifest = build_tool_manifest(profile="does_not_exist")
 

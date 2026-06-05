@@ -39,6 +39,30 @@ def test_prepare_blocks_readonly_tool() -> None:
     assert bridge["proposal_request_hint"] == {}
 
 
+def test_prepare_blueprint_add_step_alias_normalizes_to_node_template() -> None:
+    bridge = ToolProposalBridgeService.prepare_proposal(
+        tool_id="editor_blueprint_add_step",
+        arguments={
+            "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+            "step_name": "PrintString",
+            "graph_name": "EventGraph",
+            "text": "Hello from alias",
+            "entry_event": "BeginPlay",
+            "compile_after_edit": True,
+        },
+        requested_by="unit_test",
+    )
+
+    assert bridge["status"] == "prepared"
+    assert bridge["tool_id"] == "editor_blueprint_add_step"
+    assert bridge["operation_type"] == "add_blueprint_node_template"
+    payload = bridge["proposal_request"]["payload"]
+    assert payload["template_id"] == "print_string"
+    assert payload["message"] == "Hello from alias"
+    assert "step_name" not in payload
+    assert "text" not in payload
+
+
 def test_prepare_blocks_unknown_tool() -> None:
     bridge = ToolProposalBridgeService.prepare_proposal(
         tool_id="editor_delete_everything",

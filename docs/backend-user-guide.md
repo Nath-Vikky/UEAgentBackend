@@ -6041,8 +6041,11 @@ Deterministic smoke coverage:
 
 The smoke simulates MCP/Tool Registry clients creating pending Proposals for
 Blueprint graph editing, UMG widget creation, Material Instance parameter
-tuning, and Level Actor placement. It also verifies that read-only tools cannot
-enter the confirmed-write Proposal bridge.
+tuning, and Level Actor placement. The Blueprint case uses
+`editor_blueprint_add_step`, a high-level MCP-style alias that normalizes
+`step_name=PrintString` into the existing `add_blueprint_node_template`
+operation. It also verifies that read-only tools cannot enter the
+confirmed-write Proposal bridge.
 
 ## 2026-05-24 Agent Chat Workflow Plan Integration
 

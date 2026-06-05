@@ -40,6 +40,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "editor_add_blueprint_component",
             "editor_create_blueprint_event_stub",
             "editor_add_blueprint_node_template",
+            "editor_blueprint_add_step",
             "editor_connect_blueprint_nodes",
             "editor_compile_blueprint",
         ),
@@ -111,7 +112,11 @@ def _mcp_tool_name(spec: ToolSpec) -> str:
     return spec.tool_id
 
 
+TOOL_ID_TO_EDITOR_OPERATION_ALIASES = {
+    "editor_blueprint_add_step": "add_blueprint_node_template",
+}
 TOOL_ID_TO_EDITOR_OPERATION = {str(spec["tool_id"]): operation_type for operation_type, spec in OPERATION_SPECS.items()}
+TOOL_ID_TO_EDITOR_OPERATION.update(TOOL_ID_TO_EDITOR_OPERATION_ALIASES)
 TOOL_ID_TO_READONLY_OPERATION = {
     str(spec["tool_id"]): operation_type for operation_type, spec in READ_ONLY_INSPECTION_SPECS.items()
 }

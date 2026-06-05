@@ -196,14 +196,14 @@ def _case_specs() -> list[dict[str, Any]]:
             "validator": _profile_manifest_ok,
         },
         {
-            "case_id": "create_blueprint_print_string_proposal",
-            "tool_id": "editor_add_blueprint_node_template",
+            "case_id": "create_blueprint_add_step_alias_proposal",
+            "tool_id": "editor_blueprint_add_step",
             "arguments": {
                 "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
-                "template_id": "print_string",
+                "step_name": "PrintString",
                 "graph_name": "EventGraph",
                 "entry_event": "BeginPlay",
-                "message": "Hello from UEAgent",
+                "text": "Hello from UEAgent",
                 "compile_after_edit": True,
             },
             "validator": _proposal_ok("add_blueprint_node_template", "editor_add_blueprint_node_template"),

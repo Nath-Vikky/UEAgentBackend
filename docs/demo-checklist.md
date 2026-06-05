@@ -100,9 +100,9 @@ Expected:
   Actor, Material Instance, and write-tool blocking.
 - Tool Registry Proposal bridge smoke: `7/7 passed`; this simulates an
   MCP/Tool Registry client requesting Blueprint, UMG, Material, and Level Actor
-  writes, verifies compact demo tool profiles such as `umg_demo`, and checks
-  that the backend creates pending Proposals instead of executing editor writes
-  directly.
+  writes, verifies compact demo tool profiles such as `umg_demo`, checks the
+  high-level Blueprint `editor_blueprint_add_step` alias, and confirms that the
+  backend creates pending Proposals instead of executing editor writes directly.
 - MCP TCP adapter smoke: `6/6 passed`; this emulates the UEAgentTool JSON-RPC
   line TCP server and checks `get_blueprint_graph`, `get_widget_tree`, allow-list
   blocking, and raw-write rejection.
