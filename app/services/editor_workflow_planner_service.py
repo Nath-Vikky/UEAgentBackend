@@ -94,11 +94,26 @@ def _context_value(context: dict[str, Any], *paths: tuple[str, ...]) -> str:
     return ""
 
 
+def _blueprint_edit_context(context: dict[str, Any]) -> dict[str, Any]:
+    direct = _as_dict(context.get("blueprint_edit_context"))
+    if direct:
+        return direct
+    nested = _context_section(context, "active_context", "blueprint_edit_context")
+    if nested:
+        return nested
+    context_pack = _context_section(context, "context_pack", "active_layer", "blueprint_edit_context")
+    if context_pack:
+        return context_pack
+    return {}
+
+
 def _active_blueprint_path(context: dict[str, Any]) -> str:
     blueprint = _context_section(context, "active_context", "blueprint")
     last_operation = _as_dict(blueprint.get("last_successful_operation"))
     last_target = _as_dict(last_operation.get("target"))
+    edit_context = _blueprint_edit_context(context)
     return _first_non_empty(
+        edit_context.get("blueprint_path"),
         _context_value(
             context,
             ("active_context", "blueprint", "current_blueprint_path"),
@@ -119,7 +134,10 @@ def _active_graph_name(context: dict[str, Any]) -> str:
     blueprint = _context_section(context, "active_context", "blueprint")
     last_operation = _as_dict(blueprint.get("last_successful_operation"))
     last_target = _as_dict(last_operation.get("target"))
+    edit_context = _blueprint_edit_context(context)
     return _first_non_empty(
+        edit_context.get("graph_name"),
+        edit_context.get("edit_function"),
         _context_value(
             context,
             ("active_context", "blueprint", "current_graph_name"),
@@ -137,11 +155,20 @@ def _active_graph_name(context: dict[str, Any]) -> str:
 
 
 def _active_current_node_summary(context: dict[str, Any]) -> dict[str, Any]:
-    return _context_section(context, "active_context", "blueprint", "current_node_summary")
+    edit_context = _blueprint_edit_context(context)
+    cursor_node = _as_dict(edit_context.get("cursor_node"))
+    return cursor_node or _context_section(context, "active_context", "blueprint", "current_node_summary")
 
 
 def _active_current_graph_summary(context: dict[str, Any]) -> dict[str, Any]:
-    return _context_section(context, "active_context", "blueprint", "current_graph_summary")
+    graph_summary = _context_section(context, "active_context", "blueprint", "current_graph_summary")
+    if graph_summary:
+        return graph_summary
+    edit_context = _blueprint_edit_context(context)
+    graph_name = _first_non_empty(edit_context.get("graph_name"), edit_context.get("edit_function"))
+    if not graph_name:
+        return {}
+    return {"graph_name": graph_name, "nodes": []}
 
 
 def _node_reference(value: Any) -> str:
@@ -205,7 +232,7 @@ def _pin_name_from_node(node: dict[str, Any], *, direction: str) -> str:
     pins = [item for item in list(node.get("pins") or []) if isinstance(item, dict)]
     for pin in pins:
         pin_direction = _clean_text(pin.get("direction")).lower()
-        pin_category = _clean_text(pin.get("category") or pin.get("pin_category")).lower()
+        pin_category = _clean_text(pin.get("category") or pin.get("pin_category") or pin.get("pin_type")).lower()
         if pin_direction == expected_direction and (pin_category == "exec" or not pin_category):
             return _first_non_empty(pin.get("pin_name"), pin.get("name"), pin.get("pin_id"), pin.get("id"))
     return ""

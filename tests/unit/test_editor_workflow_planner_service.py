@@ -80,6 +80,27 @@ def test_blueprint_workflow_uses_active_context_blueprint_focus() -> None:
     assert second["payload"]["blueprint_path"] == "/Game/Blueprints/BP_FocusedActor"
 
 
+def test_blueprint_workflow_uses_plan_only_blueprint_edit_context() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal='Add "Ready" Print String and compile it',
+        workflow_type="blueprint_print_then_compile",
+        payload={},
+        context={
+            "blueprint_edit_context": {
+                "blueprint_path": "/Game/Blueprints/BP_ContextActor",
+                "graph_name": "ConstructionScript",
+            }
+        },
+    )
+
+    first, second = plan["steps"]
+    assert plan["status"] == "planned"
+    assert first["payload"]["blueprint_path"] == "/Game/Blueprints/BP_ContextActor"
+    assert first["payload"]["graph_name"] == "ConstructionScript"
+    assert first["payload"]["entry_event"] == ""
+    assert second["payload"]["blueprint_path"] == "/Game/Blueprints/BP_ContextActor"
+
+
 def test_blueprint_workflow_explicit_eventgraph_overrides_active_graph() -> None:
     plan = EditorWorkflowPlannerService().plan_workflow(
         goal='Add "Ready" Print String in EventGraph and compile it',
@@ -165,6 +186,44 @@ def test_blueprint_connect_workflow_uses_current_node_and_graph_summary() -> Non
     assert first["payload"]["target_pin_name"] == "execute"
     assert second["operation_type"] == "compile_blueprint"
     assert second["depends_on_step_ids"] == ["step_0_connect_blueprint_nodes"]
+
+
+def test_blueprint_connect_workflow_uses_plan_only_cursor_context() -> None:
+    plan = EditorWorkflowPlannerService().plan_workflow(
+        goal="Connect the current node to Print String then compile",
+        workflow_type="blueprint_connect_then_compile",
+        payload={
+            "target_node_id": "print-string",
+            "target_pin_name": "execute",
+        },
+        context={
+            "blueprint_edit_context": {
+                "blueprint_path": "/Game/Blueprints/BP_ContextActor",
+                "graph_name": "EventGraph",
+                "cursor_node": {
+                    "node_id": "event-begin-play",
+                    "title": "Event BeginPlay",
+                    "pins": [
+                        {
+                            "pin_name": "then",
+                            "direction": "output",
+                            "pin_type": "exec",
+                        }
+                    ],
+                },
+            }
+        },
+    )
+
+    first, second = plan["steps"]
+    assert plan["status"] == "planned"
+    assert first["payload"]["blueprint_path"] == "/Game/Blueprints/BP_ContextActor"
+    assert first["payload"]["graph_name"] == "EventGraph"
+    assert first["payload"]["source_node_id"] == "event-begin-play"
+    assert first["payload"]["source_pin_name"] == "then"
+    assert first["payload"]["target_node_id"] == "print-string"
+    assert first["payload"]["target_pin_name"] == "execute"
+    assert second["payload"]["blueprint_path"] == "/Game/Blueprints/BP_ContextActor"
 
 
 def test_blueprint_connect_workflow_reports_missing_explicit_target() -> None:

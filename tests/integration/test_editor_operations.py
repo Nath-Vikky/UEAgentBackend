@@ -4885,6 +4885,51 @@ def test_editor_workflow_plan_api_returns_proposal_steps(client: TestClient) -> 
     )
 
 
+def test_editor_workflow_plan_api_uses_blueprint_edit_context(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Connect the current node to Print String then compile",
+            "workflow_type": "blueprint_connect_then_compile",
+            "payload": {
+                "target_node_id": "PrintString_1",
+                "target_pin_name": "execute",
+            },
+            "context": {
+                "blueprint_edit_context": {
+                    "blueprint_path": "/Game/Blueprints/BP_ContextActor",
+                    "graph_name": "EventGraph",
+                    "cursor_node": {
+                        "node_id": "EventBeginPlay",
+                        "pins": [
+                            {
+                                "pin_name": "then",
+                                "direction": "output",
+                                "pin_type": "exec",
+                            }
+                        ],
+                    },
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    plan = body["workflow_plan"]
+    first, second = plan["steps"]
+    assert body["success"] is True
+    assert plan["status"] == "planned"
+    assert first["operation_type"] == "connect_blueprint_nodes"
+    assert first["payload"]["blueprint_path"] == "/Game/Blueprints/BP_ContextActor"
+    assert first["payload"]["graph_name"] == "EventGraph"
+    assert first["payload"]["source_node_id"] == "EventBeginPlay"
+    assert first["payload"]["source_pin_name"] == "then"
+    assert first["payload"]["target_node_id"] == "PrintString_1"
+    assert first["payload"]["target_pin_name"] == "execute"
+    assert second["operation_type"] == "compile_blueprint"
+
+
 def test_editor_workflow_step_can_materialize_pending_proposal(client: TestClient) -> None:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",

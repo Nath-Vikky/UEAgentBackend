@@ -6917,10 +6917,32 @@ plan-only set_edit_function / set_cursor_node
 -> UE Editor API execution
 ```
 
+Workflow Planner also consumes the same context. If
+`context.blueprint_edit_context` is passed to
+`POST /api/v1/editor-operations/workflows/plan`, Blueprint workflow templates
+can inherit:
+
+- the focused Blueprint path;
+- the focused graph/function name;
+- the cursor node id;
+- the cursor node output exec pin.
+
+This lets a tool panel or future MCP adapter run:
+
+```text
+set_edit_function / set_cursor_node
+-> /editor-operations/workflows/plan
+-> /editor-operations/workflows/steps/proposal
+```
+
+The workflow planner still creates plan steps only. Step materialization creates
+pending Proposals, and UE writes still require user confirmation.
+
 Validation:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_proposal_bridge_service.py tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py -q
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_editor_workflow_planner_service.py tests\integration\test_editor_operations.py::test_editor_workflow_plan_api_uses_blueprint_edit_context tests\integration\test_editor_operations.py::test_editor_workflow_plan_api_returns_proposal_steps -q
 .\.venv\Scripts\python.exe scripts\run_tool_registry_proposal_bridge_smoke.py --output -
 .\.venv\Scripts\python.exe scripts\run_editor_demo_smoke_suite.py --output -
 .\.venv\Scripts\python.exe -m ruff check app\services\tool_registry_plan_call_service.py app\services\tool_proposal_bridge_service.py app\services\tool_manifest_service.py app\api\routes\mcp_tools.py app\tools\registry.py tests\unit\test_tool_proposal_bridge_service.py tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py --no-cache
