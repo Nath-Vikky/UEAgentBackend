@@ -89,7 +89,8 @@ Expected:
 - Blueprint graph proposal/result smoke: `17/17 passed`
 - Agent Chat editor-operation smoke: `30/30 passed`
 - Editor workflow materialization smoke: `9/9 passed`
-- Project Inventory chat smoke: `1/1 passed`
+- Project Inventory chat smoke: `1/1 passed`; this case also checks that
+  `react_trace` includes the display-safe `validation` phase.
 - Aggregated editor demo smoke suite: `4/4 suites`, `57/57 cases`
 
 ## 4. Demo The Agent Features

@@ -88,6 +88,16 @@ def _contains(name: str, needle: str, haystack: str) -> dict[str, Any]:
     return {"name": name, "ok": needle in haystack, "expected": f"contains {needle}", "actual": haystack}
 
 
+def _react_validation_details(body: dict[str, Any]) -> dict[str, Any]:
+    react_trace = dict(body.get("debug_view", {}).get("react_trace") or {})
+    for step in react_trace.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        if step.get("phase") == "validation":
+            return dict(step.get("details") or {})
+    return {}
+
+
 def _seed_inventory(client: TestClient) -> Any:
     return client.post(
         "/api/v1/project-inventory/snapshot",
@@ -162,6 +172,9 @@ def _run_blueprint_graph_chat_grounding(client: TestClient) -> dict[str, Any]:
     body = chat_response.json()
     graph_body = graph_response.json()
     assistant_message = str(body.get("assistant_message") or "")
+    react_trace = dict(body.get("debug_view", {}).get("react_trace") or {})
+    react_phases = [str(step.get("phase") or "") for step in react_trace.get("steps") or [] if isinstance(step, dict)]
+    validation_details = _react_validation_details(body)
     checks = [
         _check("snapshot_status_code", 200, snapshot_response.status_code),
         _check("graph_status_code", 200, graph_response.status_code),
@@ -173,6 +186,11 @@ def _run_blueprint_graph_chat_grounding(client: TestClient) -> dict[str, Any]:
         _contains("assistant_mentions_event_graph", "EventGraph", assistant_message),
         _contains("assistant_mentions_begin_play", "Event BeginPlay", assistant_message),
         _contains("assistant_mentions_print_string", "Print String", assistant_message),
+        _check("react_trace_version", "react_v2_trace_v1", react_trace.get("version")),
+        _check("react_trace_display_safe", False, react_trace.get("boundary", {}).get("raw_chain_of_thought_exposed")),
+        _check("react_trace_has_validation_phase", True, "validation" in react_phases),
+        _check("react_trace_validation_passed", True, react_trace.get("summary", {}).get("validation_passed")),
+        _check("react_trace_output_complete", True, validation_details.get("output_complete")),
     ]
     return {
         "case_id": "blueprint_graph_chat_grounding",
