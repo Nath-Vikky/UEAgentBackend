@@ -6921,8 +6921,15 @@ Validation:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_proposal_bridge_service.py tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py -q
+.\.venv\Scripts\python.exe scripts\run_tool_registry_proposal_bridge_smoke.py --output -
+.\.venv\Scripts\python.exe scripts\run_editor_demo_smoke_suite.py --output -
 .\.venv\Scripts\python.exe -m ruff check app\services\tool_registry_plan_call_service.py app\services\tool_proposal_bridge_service.py app\services\tool_manifest_service.py app\api\routes\mcp_tools.py app\tools\registry.py tests\unit\test_tool_proposal_bridge_service.py tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py --no-cache
 ```
+
+Latest deterministic smoke result for this slice:
+
+- Tool Registry Proposal Bridge smoke: 10/10 passed.
+- Aggregate editor demo smoke suite: 7/7 suites, 80/80 cases passed.
 
 ## 2026-06-05 Local Tool Registry Read-only Calls
 

@@ -84,7 +84,13 @@ def _isolated_runtime() -> Iterator[None]:
         shutil.rmtree(runtime_root, ignore_errors=True)
 
 
-def _post_proposal(client: TestClient, *, tool_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def _post_proposal(
+    client: TestClient,
+    *,
+    tool_id: str,
+    arguments: dict[str, Any],
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     response = client.post(
         "/api/v1/mcp/tool-registry/proposals",
         json={
@@ -92,7 +98,10 @@ def _post_proposal(client: TestClient, *, tool_id: str, arguments: dict[str, Any
             "arguments": arguments,
             "reason": f"Smoke-test Tool Registry Proposal bridge for {tool_id}.",
             "requested_by": "tool_registry_proposal_bridge_smoke",
-            "context": {"demo_source": "mcp_compatible_tool_registry_smoke"},
+            "context": {
+                "demo_source": "mcp_compatible_tool_registry_smoke",
+                **dict(context or {}),
+            },
         },
     )
     body = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
@@ -151,6 +160,26 @@ def _profile_manifest_ok(body: dict[str, Any]) -> tuple[bool, str]:
     return ok, "profile manifest exposes a compact UMG demo tool set"
 
 
+def _plan_profile_manifest_ok(body: dict[str, Any]) -> tuple[bool, str]:
+    manifest = body.get("manifest") or {}
+    tools = {
+        item.get("annotations", {}).get("tool_id"): item.get("annotations", {})
+        for item in list(manifest.get("tools") or [])
+        if isinstance(item, dict)
+    }
+    edit_function = tools.get("editor_blueprint_set_edit_function", {})
+    boundary = edit_function.get("execution_boundary", {})
+    ok = (
+        manifest.get("filters", {}).get("profile") == "blueprint_demo"
+        and manifest.get("filters", {}).get("side_effect_level") == "plan_only"
+        and set(tools) == {"editor_blueprint_set_edit_function", "editor_blueprint_set_cursor_node"}
+        and edit_function.get("bridge_kind") == "plan_only_context"
+        and boundary.get("mode") == "plan_only"
+        and boundary.get("local_tool_registry_call_allowed") is True
+    )
+    return ok, "blueprint profile exposes plan-only context tools"
+
+
 def _proposal_ok(expected_operation_type: str, expected_tool_id: str) -> Validator:
     def _validate(body: dict[str, Any]) -> tuple[bool, str]:
         proposal = body.get("proposal") or {}
@@ -167,6 +196,22 @@ def _proposal_ok(expected_operation_type: str, expected_tool_id: str) -> Validat
             and item.get("confirmation", {}).get("state") == "pending"
         )
         return ok, f"{expected_tool_id} creates pending {expected_operation_type} Proposal"
+
+    return _validate
+
+
+def _proposal_payload_contains(expected_operation_type: str, expected_payload: dict[str, Any]) -> Validator:
+    def _validate(body: dict[str, Any]) -> tuple[bool, str]:
+        proposal = body.get("proposal") or {}
+        operation = proposal.get("operation") or {}
+        payload = operation.get("operation_payload") or {}
+        ok = (
+            body.get("success") is True
+            and (body.get("bridge") or {}).get("status") == "prepared"
+            and operation.get("operation_type") == expected_operation_type
+            and all(payload.get(key) == value for key, value in expected_payload.items())
+        )
+        return ok, f"{expected_operation_type} Proposal payload inherits expected context defaults"
 
     return _validate
 
@@ -198,6 +243,13 @@ def _case_specs() -> list[dict[str, Any]]:
             "validator": _profile_manifest_ok,
         },
         {
+            "case_id": "manifest_blueprint_plan_only_profile",
+            "kind": "manifest_profile",
+            "profile": "blueprint_demo",
+            "side_effect_level": "plan_only",
+            "validator": _plan_profile_manifest_ok,
+        },
+        {
             "case_id": "create_blueprint_add_step_alias_proposal",
             "tool_id": "editor_blueprint_add_step",
             "arguments": {
@@ -209,6 +261,58 @@ def _case_specs() -> list[dict[str, Any]]:
                 "compile_after_edit": True,
             },
             "validator": _proposal_ok("add_blueprint_node_template", "editor_add_blueprint_node_template"),
+        },
+        {
+            "case_id": "create_blueprint_add_step_from_context",
+            "tool_id": "editor_blueprint_add_step",
+            "arguments": {
+                "step_name": "Print String",
+                "text": "Hello from context",
+            },
+            "context": {
+                "blueprint_edit_context": {
+                    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                    "graph_name": "EventGraph",
+                }
+            },
+            "validator": _proposal_payload_contains(
+                "add_blueprint_node_template",
+                {
+                    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                    "graph_name": "EventGraph",
+                    "template_id": "print_string",
+                    "message": "Hello from context",
+                },
+            ),
+        },
+        {
+            "case_id": "create_blueprint_connect_from_cursor_context",
+            "tool_id": "editor_connect_blueprint_nodes",
+            "arguments": {
+                "target_node_id": "PrintString_1",
+                "target_pin_name": "execute",
+            },
+            "context": {
+                "blueprint_edit_context": {
+                    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                    "graph_name": "EventGraph",
+                    "cursor_node": {
+                        "node_id": "EventBeginPlay",
+                        "pins": [{"pin_name": "then", "direction": "output", "pin_type": "exec"}],
+                    },
+                }
+            },
+            "validator": _proposal_payload_contains(
+                "connect_blueprint_nodes",
+                {
+                    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                    "graph_name": "EventGraph",
+                    "source_node_id": "EventBeginPlay",
+                    "source_pin_name": "then",
+                    "target_node_id": "PrintString_1",
+                    "target_pin_name": "execute",
+                },
+            ),
         },
         {
             "case_id": "create_umg_text_widget_proposal",
@@ -265,7 +369,10 @@ def _run_case(client: TestClient, spec: dict[str, Any]) -> dict[str, Any]:
             "body": response.json() if response.headers.get("content-type", "").startswith("application/json") else {},
         }
     elif spec.get("kind") == "manifest_profile":
-        response = client.get(f"/api/v1/mcp/tool-registry/manifest?profile={spec['profile']}")
+        query = f"profile={spec['profile']}"
+        if spec.get("side_effect_level"):
+            query += f"&side_effect_level={spec['side_effect_level']}"
+        response = client.get(f"/api/v1/mcp/tool-registry/manifest?{query}")
         payload = {
             "status_code": response.status_code,
             "body": response.json() if response.headers.get("content-type", "").startswith("application/json") else {},
@@ -273,7 +380,12 @@ def _run_case(client: TestClient, spec: dict[str, Any]) -> dict[str, Any]:
     elif spec.get("kind") == "prepare":
         payload = _post_prepare(client, tool_id=str(spec["tool_id"]), arguments=dict(spec.get("arguments") or {}))
     else:
-        payload = _post_proposal(client, tool_id=str(spec["tool_id"]), arguments=dict(spec.get("arguments") or {}))
+        payload = _post_proposal(
+            client,
+            tool_id=str(spec["tool_id"]),
+            arguments=dict(spec.get("arguments") or {}),
+            context=dict(spec.get("context") or {}),
+        )
 
     validator: Validator = spec["validator"]
     valid, reason = validator(payload["body"])
