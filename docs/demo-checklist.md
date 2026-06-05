@@ -70,6 +70,7 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 .\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py
 .\.venv\Scripts\python.exe scripts\run_editor_workflow_materialization_smoke.py
 .\.venv\Scripts\python.exe scripts\run_project_inventory_chat_smoke.py
+.\.venv\Scripts\python.exe scripts\run_tool_registry_readonly_smoke.py
 ```
 
 If the local shell cannot write smoke report files under `storage/artifacts`,
@@ -91,7 +92,10 @@ Expected:
 - Editor workflow materialization smoke: `9/9 passed`
 - Project Inventory chat smoke: `1/1 passed`; this case also checks that
   `react_trace` includes the display-safe `validation` phase.
-- Aggregated editor demo smoke suite: `4/4 suites`, `57/57 cases`
+- Tool Registry read-only smoke: `6/6 passed`; this checks the local
+  MCP-compatible read-only call path for Blueprint graph, Widget tree, Level
+  Actor, Material Instance, and write-tool blocking.
+- Aggregated editor demo smoke suite: `5/5 suites`, `63/63 cases`
 
 ## 4. Demo The Agent Features
 

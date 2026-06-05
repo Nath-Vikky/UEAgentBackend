@@ -6853,6 +6853,8 @@ Validation:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py tests\integration\test_editor_operations.py::test_editor_operation_capabilities_and_registry -q
+.\.venv\Scripts\python.exe scripts\run_tool_registry_readonly_smoke.py --output -
+.\.venv\Scripts\python.exe scripts\run_editor_demo_smoke_suite.py --output -
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
