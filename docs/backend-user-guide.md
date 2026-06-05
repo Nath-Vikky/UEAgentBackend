@@ -6863,9 +6863,56 @@ Validation:
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py tests\integration\test_editor_operations.py::test_editor_operation_capabilities_and_registry -q
 .\.venv\Scripts\python.exe scripts\run_tool_registry_readonly_smoke.py --output -
+.\.venv\Scripts\python.exe scripts\run_mcp_tcp_adapter_smoke.py --output -
 .\.venv\Scripts\python.exe scripts\run_editor_demo_smoke_suite.py --output -
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
+
+## 2026-06-05 UEAgentTool TCP / MCP Adapter Smoke
+
+The optional TCP adapter can connect to the UEAgentTool editor tool server when
+the plugin exposes its local JSON-RPC line server. This is separate from the
+local Inventory-backed Tool Registry call above:
+
+- Local Tool Registry read-only call: no UE TCP server required; reads the
+  latest Project Inventory snapshot.
+- MCP TCP adapter call: connects to a live TCP JSON-RPC tool server such as
+  UEAgentTool's optional editor tool server.
+
+Typical local configuration:
+
+```env
+MCP_TOOL_ADAPTER_ENABLED=true
+MCP_TRANSPORT=tcp
+MCP_TCP_HOST=127.0.0.1
+MCP_TCP_PORT=8765
+MCP_ALLOWED_TOOLS=get_blueprint_graph,get_widget_tree,ue_agent_tools_list
+MCP_TCP_TIMEOUT_MS=3000
+```
+
+Safety boundary:
+
+- `MCP_ALLOWED_TOOLS` is still mandatory and should include read-only tools by
+  default.
+- Confirmed-write editor operations still use HTTP Proposal Bridge.
+- UEAgentTool's raw TCP tool server also rejects write tools and points back to
+  the Proposal confirmation flow.
+
+Validation without launching Unreal:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_mcp_tcp_adapter_smoke.py --output -
+```
+
+The smoke emulates the UEAgentTool TCP server and validates:
+
+- backend adapter status for `mcp_tcp`;
+- `tools/list` discovery filtered by allow-list;
+- `tools/call` for `get_blueprint_graph`;
+- `tools/call` for `get_widget_tree`;
+- backend allow-list blocking for a write tool;
+- UEAgentTool-style server-side rejection if a raw write tool is explicitly
+  allow-listed by mistake.
 
 ## 2026-06-04 UE Knowledge Domains Expansion
 

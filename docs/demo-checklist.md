@@ -71,6 +71,7 @@ These checks do not launch Unreal Editor, call an LLM, or write a project.
 .\.venv\Scripts\python.exe scripts\run_editor_workflow_materialization_smoke.py
 .\.venv\Scripts\python.exe scripts\run_project_inventory_chat_smoke.py
 .\.venv\Scripts\python.exe scripts\run_tool_registry_readonly_smoke.py
+.\.venv\Scripts\python.exe scripts\run_mcp_tcp_adapter_smoke.py
 ```
 
 If the local shell cannot write smoke report files under `storage/artifacts`,
@@ -95,7 +96,10 @@ Expected:
 - Tool Registry read-only smoke: `6/6 passed`; this checks the local
   MCP-compatible read-only call path for Blueprint graph, Widget tree, Level
   Actor, Material Instance, and write-tool blocking.
-- Aggregated editor demo smoke suite: `5/5 suites`, `63/63 cases`
+- MCP TCP adapter smoke: `6/6 passed`; this emulates the UEAgentTool JSON-RPC
+  line TCP server and checks `get_blueprint_graph`, `get_widget_tree`, allow-list
+  blocking, and raw-write rejection.
+- Aggregated editor demo smoke suite: `6/6 suites`, `69/69 cases`
 
 ## 4. Demo The Agent Features
 

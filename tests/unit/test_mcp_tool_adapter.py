@@ -18,6 +18,37 @@ TIMEOUT_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "timeout_mcp
 
 
 class _JsonRpcTcpHandler(socketserver.StreamRequestHandler):
+    TOOLS = [
+        {
+            "name": "ue_agent_tools_list",
+            "description": "Return UE editor tool metadata.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "get_blueprint_graph",
+            "description": "Read Blueprint graph metadata.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"blueprint_path": {"type": "string"}},
+                "required": ["blueprint_path"],
+            },
+        },
+        {
+            "name": "get_widget_tree",
+            "description": "Read Widget Blueprint tree metadata.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"widget_blueprint_path": {"type": "string"}},
+                "required": ["widget_blueprint_path"],
+            },
+        },
+        {
+            "name": "rename_asset",
+            "description": "Confirmed-write fixture tool that should not be allow-listed in read-only demos.",
+            "inputSchema": {"type": "object", "properties": {"asset_path": {"type": "string"}}},
+        },
+    ]
+
     def handle(self) -> None:
         for raw_line in self.rfile:
             request = json.loads(raw_line.decode("utf-8"))
@@ -39,21 +70,15 @@ class _JsonRpcTcpHandler(socketserver.StreamRequestHandler):
                 response = {
                     "jsonrpc": "2.0",
                     "id": request_id,
-                    "result": {
-                        "tools": [
-                            {
-                                "name": "ue_agent_tools_list",
-                                "description": "Return UE editor tool metadata.",
-                                "inputSchema": {"type": "object", "properties": {}},
-                            }
-                        ]
-                    },
+                    "result": {"tools": self.TOOLS},
                 }
             elif method == "tools/call":
+                params = request.get("params") if isinstance(request.get("params"), dict) else {}
+                tool_name = str(params.get("name") or "")
                 response = {
                     "jsonrpc": "2.0",
                     "id": request_id,
-                    "result": {"content": [{"type": "text", "text": "tool catalog"}]},
+                    "result": self._tool_call_result(tool_name),
                 }
             else:
                 response = {
@@ -63,6 +88,39 @@ class _JsonRpcTcpHandler(socketserver.StreamRequestHandler):
                 }
             self.wfile.write(json.dumps(response).encode("utf-8") + b"\n")
             self.wfile.flush()
+
+    @staticmethod
+    def _tool_call_result(tool_name: str) -> dict:
+        if tool_name == "ue_agent_tools_list":
+            return {"content": [{"type": "text", "text": "tool catalog"}]}
+        if tool_name == "get_blueprint_graph":
+            return {
+                "content": [{"type": "text", "text": "BP graph"}],
+                "structuredContent": {
+                    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                    "graphs": [{"graph_name": "EventGraph", "node_count": 2}],
+                },
+                "isError": False,
+            }
+        if tool_name == "get_widget_tree":
+            return {
+                "content": [{"type": "text", "text": "Widget tree"}],
+                "structuredContent": {
+                    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                    "root": "RootCanvas",
+                    "widgets": [{"name": "RootCanvas", "class": "CanvasPanel"}],
+                },
+                "isError": False,
+            }
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Tool '{tool_name}' requires the HTTP Proposal confirmation flow.",
+                }
+            ],
+            "isError": True,
+        }
 
 
 class _TcpFixture:
@@ -223,6 +281,39 @@ def test_mcp_adapter_calls_allowed_tcp_tool() -> None:
     assert result["ok"] is True
     assert result["transport"] == "mcp_tcp"
     assert result["result"]["content"][0]["text"] == "tool catalog"
+
+
+def test_mcp_adapter_discovers_and_calls_ue_agent_tool_tcp_readonly_tools() -> None:
+    with _TcpFixture() as fixture:
+        settings = Settings(
+            mcp_tool_adapter_enabled=True,
+            mcp_transport="tcp",
+            mcp_tcp_host="127.0.0.1",
+            mcp_tcp_port=fixture.port,
+            mcp_tcp_timeout_ms=1000,
+            mcp_allowed_tools=["get_blueprint_graph", "get_widget_tree"],
+        )
+        adapter = MCPToolAdapter(settings)
+
+        tools_result = adapter.discover_tools()
+        graph_result = adapter.call_readonly_tool(
+            "get_blueprint_graph",
+            {"blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"},
+        )
+        widget_result = adapter.call_readonly_tool(
+            "get_widget_tree",
+            {"widget_blueprint_path": "/Game/UI/WBP_MainHUD"},
+        )
+        blocked_result = adapter.call_readonly_tool("rename_asset", {"asset_path": "/Game/A"})
+
+    assert tools_result["ok"] is True
+    assert [item["name"] for item in tools_result["tools"]] == ["get_blueprint_graph", "get_widget_tree"]
+    assert graph_result["ok"] is True
+    assert graph_result["result"]["structuredContent"]["graphs"][0]["graph_name"] == "EventGraph"
+    assert widget_result["ok"] is True
+    assert widget_result["result"]["structuredContent"]["root"] == "RootCanvas"
+    assert blocked_result["ok"] is False
+    assert blocked_result["reason"] == "tool_not_in_mcp_allowed_tools"
 
 
 def test_mcp_adapter_blocks_unlisted_fixture_tool_before_process_call() -> None:
