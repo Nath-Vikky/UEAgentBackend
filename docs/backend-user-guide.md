@@ -887,6 +887,7 @@ Snapshot freshness:
 - `POST /snapshot`、`GET /summary`、`POST /query`、Agent Chat 的 `data.inventory.summary` 和 `debug_view.active_context.inventory` 都会返回 `freshness`。
 - `freshness.status` 可能是 `fresh`、`stale`、`missing` 或 `unknown`。
 - `freshness.should_refresh=true` 时，UE 插件可以提示用户点击 `Sync Inventory Now`，但后端仍会基于最近一次快照回答，并在回答中说明该快照可能不是最新。
+- 如果 Project QA 使用在线 LLM 综合回答，后端也会把 `freshness` 写入提示词，要求模型说明 stale 快照的边界。
 
 兼容边界：
 

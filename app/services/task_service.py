@@ -349,11 +349,21 @@ class TaskService:
                     ]
                 )
             )
+        inventory_summary = dict(qa_result.get("inventory_summary") or {})
+        inventory_freshness = dict(inventory_summary.get("freshness") or {})
+        inventory_freshness_line = (
+            "Project inventory freshness: "
+            f"status={inventory_freshness.get('status', 'unknown')}, "
+            f"should_refresh={inventory_freshness.get('should_refresh')}, "
+            f"age_minutes={inventory_freshness.get('age_minutes')}, "
+            f"stale_after_seconds={inventory_freshness.get('stale_after_seconds')}."
+        )
         system_prompt = (
             "You are synthesizing an answer from project knowledge-base evidence. "
             f"Reply in {self._language_label(output_language)}. "
             "Use only the supplied knowledge-base evidence, controlled web evidence, project inventory facts, and explicitly read project file excerpts. "
             "Treat local KB, project inventory, and team rules as higher priority than web search; web evidence is supplemental. "
+            "If project inventory freshness is stale, state that the project facts come from the latest submitted snapshot and recommend syncing before final decisions. "
             "If the evidence is insufficient, say so clearly instead of guessing. "
             "Prefer a short answer followed by 2-4 concrete evidence-backed points."
         )
@@ -364,6 +374,7 @@ class TaskService:
                 "Evidence:",
                 "\n\n".join(evidence_lines) if evidence_lines else "No retrieved evidence.",
                 "Project inventory facts:",
+                inventory_freshness_line,
                 "\n\n".join(inventory_lines) if inventory_lines else "No project inventory facts.",
                 "Explicit project file excerpts:",
                 "\n\n".join(project_file_lines) if project_file_lines else "No project file excerpt.",
