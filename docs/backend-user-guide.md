@@ -6941,6 +6941,8 @@ Agent Chat live sensing behavior:
   `Inspect the Widget Tree for /Game/UI/WBP_MainHUD` can select those read-only
   MCP tools. Broader current-project fact questions still prefer Project
   Inventory.
+- The Tool Registry marks these two tools as `allowed_in_free_chat=true`
+  because they are read-only and still gated by `MCP_ALLOWED_TOOLS`.
 - If the TCP call fails, the tool is not allow-listed, or the UE tool server
   returns an error, the backend falls back to the existing Inventory summary or
   placeholder path.

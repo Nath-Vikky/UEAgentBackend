@@ -51,8 +51,14 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert blueprint_graph["annotations"]["operation_family"] == "blueprint"
     assert blueprint_graph["annotations"]["frontend_executor_id"] == "get_blueprint_graph"
     assert blueprint_graph["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
+    assert blueprint_graph["annotations"]["allowed_in_free_chat"] is True
     assert blueprint_graph["annotations"]["execution_boundary"]["mode"] == "readonly_tool"
     assert blueprint_graph["annotations"]["execution_boundary"]["local_tool_registry_call_allowed"] is True
+
+    widget_tree = _tool_by_annotation_tool_id(manifest, "mcp_get_widget_tree")
+    assert widget_tree["name"] == "get_widget_tree"
+    assert widget_tree["annotations"]["allowed_in_free_chat"] is True
+    assert widget_tree["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
 
 
 def test_tool_manifest_adds_frontend_executor_metadata_for_editor_tools() -> None:
