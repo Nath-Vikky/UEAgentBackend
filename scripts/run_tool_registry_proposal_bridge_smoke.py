@@ -131,6 +131,24 @@ def _manifest_boundary_ok(body: dict[str, Any]) -> tuple[bool, str]:
     return ok, "manifest exposes confirmed-write proposal bridge and direct-write block"
 
 
+def _profile_manifest_ok(body: dict[str, Any]) -> tuple[bool, str]:
+    manifest = body.get("manifest") or {}
+    tools = {
+        item.get("annotations", {}).get("tool_id"): item.get("annotations", {})
+        for item in list(manifest.get("tools") or [])
+        if isinstance(item, dict)
+    }
+    ok = (
+        manifest.get("filters", {}).get("profile") == "umg_demo"
+        and manifest.get("profiles", {}).get("selected", {}).get("profile_id") == "umg_demo"
+        and "mcp_get_widget_tree" in tools
+        and "editor_add_umg_widget" in tools
+        and "editor_set_umg_widget_text" in tools
+        and "editor_set_material_instance_parameter" not in tools
+    )
+    return ok, "profile manifest exposes a compact UMG demo tool set"
+
+
 def _proposal_ok(expected_operation_type: str, expected_tool_id: str) -> Validator:
     def _validate(body: dict[str, Any]) -> tuple[bool, str]:
         proposal = body.get("proposal") or {}
@@ -170,6 +188,12 @@ def _case_specs() -> list[dict[str, Any]]:
             "case_id": "manifest_confirmed_write_proposal_boundary",
             "kind": "manifest",
             "validator": _manifest_boundary_ok,
+        },
+        {
+            "case_id": "manifest_umg_demo_profile",
+            "kind": "manifest_profile",
+            "profile": "umg_demo",
+            "validator": _profile_manifest_ok,
         },
         {
             "case_id": "create_blueprint_print_string_proposal",
@@ -234,6 +258,12 @@ def _case_specs() -> list[dict[str, Any]]:
 def _run_case(client: TestClient, spec: dict[str, Any]) -> dict[str, Any]:
     if spec.get("kind") == "manifest":
         response = client.get("/api/v1/mcp/tool-registry/manifest?side_effect_level=confirmed_write")
+        payload = {
+            "status_code": response.status_code,
+            "body": response.json() if response.headers.get("content-type", "").startswith("application/json") else {},
+        }
+    elif spec.get("kind") == "manifest_profile":
+        response = client.get(f"/api/v1/mcp/tool-registry/manifest?profile={spec['profile']}")
         payload = {
             "status_code": response.status_code,
             "body": response.json() if response.headers.get("content-type", "").startswith("application/json") else {},

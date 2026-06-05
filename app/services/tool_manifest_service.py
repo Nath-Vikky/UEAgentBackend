@@ -10,6 +10,96 @@ from app.tools.registry import ToolSpec, iter_tool_specs
 TOOL_MANIFEST_PROTOCOL_VERSION = "tool_manifest_v1"
 MCP_COMPATIBLE_SCHEMA_VERSION = "mcp_tools_list_compatible_v1"
 
+TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
+    "full": {
+        "title": "Full Tool Registry",
+        "description": "Expose all enabled Tool Registry entries after optional filters.",
+        "tool_ids": (),
+    },
+    "readonly_sensing": {
+        "title": "Read-only Editor Sensing",
+        "description": "Compact read-only tool surface for current project/editor facts.",
+        "tool_ids": (
+            "editor_inspect_assets",
+            "editor_inspect_asset_detail",
+            "editor_inspect_level_actors",
+            "editor_inspect_level_actor_detail",
+            "editor_inspect_material_instance_parameters",
+            "editor_inspect_material_instance_detail",
+            "mcp_get_blueprint_graph",
+            "mcp_get_widget_tree",
+        ),
+    },
+    "blueprint_demo": {
+        "title": "Blueprint Graph Demo",
+        "description": "Blueprint graph sensing, node insertion, pin connection, and compile proposal tools.",
+        "tool_ids": (
+            "mcp_get_blueprint_graph",
+            "editor_create_blueprint_asset",
+            "editor_add_blueprint_variable",
+            "editor_add_blueprint_component",
+            "editor_create_blueprint_event_stub",
+            "editor_add_blueprint_node_template",
+            "editor_connect_blueprint_nodes",
+            "editor_compile_blueprint",
+        ),
+    },
+    "umg_demo": {
+        "title": "UMG Widget Demo",
+        "description": "UMG sensing and common Widget Blueprint edit proposal tools.",
+        "tool_ids": (
+            "mcp_get_widget_tree",
+            "editor_add_umg_widget",
+            "editor_set_umg_widget_text",
+            "editor_set_umg_widget_layout",
+            "editor_set_umg_widget_visibility",
+            "editor_set_umg_widget_appearance",
+            "editor_set_umg_widget_brush",
+            "editor_set_umg_slot_layout_v2",
+            "editor_reparent_umg_widget",
+            "editor_duplicate_umg_widget",
+            "editor_delete_umg_widget",
+        ),
+    },
+    "material_demo": {
+        "title": "Material Instance Demo",
+        "description": "Material Instance inspection and safe parameter proposal tools.",
+        "tool_ids": (
+            "editor_inspect_material_instance_parameters",
+            "editor_inspect_material_instance_detail",
+            "editor_set_material_instance_parameter",
+            "editor_set_material_instance_texture_parameter",
+            "editor_set_material_instance_static_switch",
+        ),
+    },
+    "level_demo": {
+        "title": "Level Actor Demo",
+        "description": "Level Actor inspection, placement, transform, metadata, and arrangement proposal tools.",
+        "tool_ids": (
+            "editor_inspect_level_actors",
+            "editor_inspect_level_actor_detail",
+            "editor_place_actor_in_level",
+            "editor_set_actor_transform",
+            "editor_set_actor_metadata",
+            "editor_arrange_actors_pattern",
+        ),
+    },
+    "asset_maintenance": {
+        "title": "Asset Maintenance Demo",
+        "description": "Asset inventory, rename/move/duplicate, Static Mesh settings, and redirector maintenance tools.",
+        "tool_ids": (
+            "editor_inspect_assets",
+            "editor_inspect_asset_detail",
+            "editor_rename_asset",
+            "editor_batch_rename_assets",
+            "editor_move_assets",
+            "editor_duplicate_asset",
+            "editor_fixup_redirectors",
+            "editor_apply_static_mesh_settings",
+        ),
+    },
+}
+
 
 def _empty_schema() -> dict[str, Any]:
     return {"type": "object", "properties": {}}
@@ -146,8 +236,15 @@ def build_tool_manifest(
     category: str | None = None,
     side_effect_level: str | None = None,
     transport: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     specs = iter_tool_specs(include_disabled=include_disabled)
+    profile_id = _normalize_profile_id(profile)
+    profile_spec = TOOL_MANIFEST_PROFILES[profile_id]
+    profile_tool_ids = tuple(profile_spec.get("tool_ids") or ())
+    if profile_tool_ids:
+        allowed_tool_ids = set(profile_tool_ids)
+        specs = [spec for spec in specs if spec.tool_id in allowed_tool_ids]
     if category:
         specs = [spec for spec in specs if spec.category == category]
     if side_effect_level:
@@ -181,6 +278,25 @@ def build_tool_manifest(
             "category": category or "",
             "side_effect_level": side_effect_level or "",
             "transport": transport or "",
+            "profile": profile_id,
+            "profile_tool_count": len(profile_tool_ids),
+        },
+        "profiles": {
+            "selected": {
+                "profile_id": profile_id,
+                "title": str(profile_spec.get("title") or profile_id),
+                "description": str(profile_spec.get("description") or ""),
+                "tool_ids": list(profile_tool_ids),
+            },
+            "available": [
+                {
+                    "profile_id": item_id,
+                    "title": str(item.get("title") or item_id),
+                    "description": str(item.get("description") or ""),
+                    "tool_count": len(tuple(item.get("tool_ids") or ())),
+                }
+                for item_id, item in TOOL_MANIFEST_PROFILES.items()
+            ],
         },
         "routes": {
             "external_mcp_discovery": "GET /api/v1/mcp/tools",
@@ -201,3 +317,10 @@ def build_tool_manifest(
         },
         "tools": tools,
     }
+
+
+def _normalize_profile_id(profile: str | None) -> str:
+    profile_id = str(profile or "full").strip().lower()
+    if not profile_id:
+        return "full"
+    return profile_id if profile_id in TOOL_MANIFEST_PROFILES else "full"

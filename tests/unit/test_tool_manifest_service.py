@@ -82,3 +82,35 @@ def test_tool_manifest_filters_category_and_enabled_tools() -> None:
     assert manifest["filters"]["category"] == "write"
     assert manifest["summary"]["tool_count"] == manifest["summary"]["enabled_tool_count"]
     assert all(tool["annotations"]["category"] == "write" for tool in manifest["tools"])
+
+
+def test_tool_manifest_profiles_expose_compact_demo_tool_sets() -> None:
+    manifest = build_tool_manifest(profile="umg_demo")
+    tool_ids = {tool["annotations"]["tool_id"] for tool in manifest["tools"]}
+
+    assert manifest["filters"]["profile"] == "umg_demo"
+    assert manifest["profiles"]["selected"]["profile_id"] == "umg_demo"
+    assert "mcp_get_widget_tree" in tool_ids
+    assert "editor_add_umg_widget" in tool_ids
+    assert "editor_set_umg_widget_text" in tool_ids
+    assert "editor_set_material_instance_parameter" not in tool_ids
+    assert all(
+        tool["annotations"]["operation_family"] in {"umg"}
+        for tool in manifest["tools"]
+    )
+
+
+def test_tool_manifest_profiles_can_combine_with_side_effect_filter() -> None:
+    manifest = build_tool_manifest(profile="blueprint_demo", side_effect_level="read_only")
+    tool_ids = {tool["annotations"]["tool_id"] for tool in manifest["tools"]}
+
+    assert manifest["filters"]["profile"] == "blueprint_demo"
+    assert manifest["filters"]["side_effect_level"] == "read_only"
+    assert tool_ids == {"mcp_get_blueprint_graph"}
+
+
+def test_tool_manifest_unknown_profile_falls_back_to_full() -> None:
+    manifest = build_tool_manifest(profile="does_not_exist")
+
+    assert manifest["filters"]["profile"] == "full"
+    assert manifest["summary"]["tool_count"] >= 25

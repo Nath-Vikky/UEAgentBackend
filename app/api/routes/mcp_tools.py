@@ -51,6 +51,7 @@ def tool_registry_manifest(
     category: str | None = None,
     side_effect_level: str | None = None,
     transport: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     return {
         "success": True,
@@ -59,6 +60,7 @@ def tool_registry_manifest(
             category=category,
             side_effect_level=side_effect_level,
             transport=transport,
+            profile=profile,
         ),
         "errors": [],
     }

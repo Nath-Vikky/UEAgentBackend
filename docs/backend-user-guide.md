@@ -5824,6 +5824,23 @@ GET /api/v1/mcp/tool-registry/manifest?transport=mcp_tcp
 GET /api/v1/mcp/tool-registry/manifest?include_disabled=false
 ```
 
+Compact demo profiles:
+
+```http
+GET /api/v1/mcp/tool-registry/manifest?profile=readonly_sensing
+GET /api/v1/mcp/tool-registry/manifest?profile=blueprint_demo
+GET /api/v1/mcp/tool-registry/manifest?profile=umg_demo
+GET /api/v1/mcp/tool-registry/manifest?profile=material_demo
+GET /api/v1/mcp/tool-registry/manifest?profile=level_demo
+GET /api/v1/mcp/tool-registry/manifest?profile=asset_maintenance
+```
+
+Profiles are inspired by UMG-MCP's prompt/tool enablement idea: expose only the
+small tool set relevant to the current demo or external client context. They do
+not change permissions, side-effect levels, confirmation rules, or executor
+paths. You can still combine a profile with filters, for example
+`profile=blueprint_demo&side_effect_level=read_only`.
+
 Safety boundary:
 
 - The manifest is descriptive metadata, not a new write execution path.

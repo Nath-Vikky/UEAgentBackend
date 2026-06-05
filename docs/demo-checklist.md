@@ -98,14 +98,15 @@ Expected:
 - Tool Registry read-only smoke: `6/6 passed`; this checks the local
   MCP-compatible read-only call path for Blueprint graph, Widget tree, Level
   Actor, Material Instance, and write-tool blocking.
-- Tool Registry Proposal bridge smoke: `6/6 passed`; this simulates an
+- Tool Registry Proposal bridge smoke: `7/7 passed`; this simulates an
   MCP/Tool Registry client requesting Blueprint, UMG, Material, and Level Actor
-  writes, and verifies that the backend creates pending Proposals instead of
-  executing editor writes directly.
+  writes, verifies compact demo tool profiles such as `umg_demo`, and checks
+  that the backend creates pending Proposals instead of executing editor writes
+  directly.
 - MCP TCP adapter smoke: `6/6 passed`; this emulates the UEAgentTool JSON-RPC
   line TCP server and checks `get_blueprint_graph`, `get_widget_tree`, allow-list
   blocking, and raw-write rejection.
-- Aggregated editor demo smoke suite: `7/7 suites`, `76/76 cases`
+- Aggregated editor demo smoke suite: `7/7 suites`, `77/77 cases`
 
 ## 4. Demo The Agent Features
 

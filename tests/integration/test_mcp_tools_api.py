@@ -96,6 +96,20 @@ def test_tool_registry_manifest_api_exposes_proposal_boundary(client: TestClient
     assert boundary["write_path"] == "POST /api/v1/editor-operations/proposals"
 
 
+def test_tool_registry_manifest_api_supports_demo_profiles(client: TestClient) -> None:
+    response = client.get("/api/v1/mcp/tool-registry/manifest?profile=material_demo")
+
+    assert response.status_code == 200
+    body = response.json()
+    manifest = body["manifest"]
+    tool_ids = {item["annotations"]["tool_id"] for item in manifest["tools"]}
+    assert manifest["filters"]["profile"] == "material_demo"
+    assert manifest["profiles"]["selected"]["profile_id"] == "material_demo"
+    assert "editor_inspect_material_instance_detail" in tool_ids
+    assert "editor_set_material_instance_parameter" in tool_ids
+    assert "editor_add_umg_widget" not in tool_ids
+
+
 def test_tool_registry_proposal_prepare_api_maps_confirmed_write_tool(client: TestClient) -> None:
     response = client.post(
         "/api/v1/mcp/tool-registry/proposals/prepare",
