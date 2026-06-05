@@ -204,6 +204,10 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_set_material_instance_static_switch" in tool_ids
     assert "editor_inspect_assets" in tool_ids
     assert "editor_inspect_asset_detail" in tool_ids
+    assert "editor_inspect_level_actors" in tool_ids
+    assert "editor_inspect_level_actor_detail" in tool_ids
+    assert "editor_inspect_material_instance_parameters" in tool_ids
+    assert "editor_inspect_material_instance_detail" in tool_ids
     tools_by_id = {
         item["tool_id"]: item
         for item in capabilities["capabilities"]["tool_registry"]["tools"]

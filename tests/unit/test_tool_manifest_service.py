@@ -18,7 +18,9 @@ def test_tool_manifest_exports_mcp_compatible_tool_shape() -> None:
     assert manifest["schema_version"] == "mcp_tools_list_compatible_v1"
     assert manifest["mode"] == "http_primary_mcp_compatible_manifest"
     assert manifest["summary"]["tool_count"] >= 25
+    assert manifest["routes"]["local_readonly_tool_call"] == "POST /api/v1/mcp/tool-registry/tools/{tool}/call"
     assert manifest["routes"]["confirmed_write_proposal"] == "POST /api/v1/editor-operations/proposals"
+    assert manifest["safety_policy"]["read_only_local_tool_registry_call_allowed"] is True
 
     sample = manifest["tools"][0]
     assert set(sample) == {"name", "description", "inputSchema", "annotations"}
@@ -47,6 +49,7 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert blueprint_graph["name"] == "get_blueprint_graph"
     assert blueprint_graph["annotations"]["transport"] == "mcp_tcp"
     assert blueprint_graph["annotations"]["execution_boundary"]["mode"] == "readonly_tool"
+    assert blueprint_graph["annotations"]["execution_boundary"]["local_tool_registry_call_allowed"] is True
 
 
 def test_tool_manifest_filters_category_and_enabled_tools() -> None:

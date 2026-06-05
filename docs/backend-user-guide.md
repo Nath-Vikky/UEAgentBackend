@@ -6795,6 +6795,67 @@ Validation:
 .\.venv\Scripts\python.exe -m ruff check app tests --no-cache
 ```
 
+## 2026-06-05 Local Tool Registry Read-only Calls
+
+The backend now exposes a local read-only Tool Registry call path:
+
+```http
+POST /api/v1/mcp/tool-registry/tools/{tool}/call
+```
+
+This endpoint is intentionally MCP-compatible in shape, but it does not require
+an external MCP server. It is meant for demo scripts, optional tool panels, and
+future MCP-compatible adapters that need to inspect project facts before
+creating a Proposal.
+
+Supported local read-only calls in this slice:
+
+- `get_blueprint_graph` / `mcp_get_blueprint_graph`
+- `get_widget_tree` / `mcp_get_widget_tree`
+- `editor_inspect_assets`
+- `editor_inspect_asset_detail`
+- `editor_inspect_level_actors`
+- `editor_inspect_level_actor_detail`
+- `editor_inspect_material_instance_parameters`
+- `editor_inspect_material_instance_detail`
+
+Example:
+
+```http
+POST /api/v1/mcp/tool-registry/tools/get_blueprint_graph/call
+Content-Type: application/json
+
+{
+  "arguments": {
+    "project_id": "RushBa",
+    "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+    "graph_name": "EventGraph"
+  }
+}
+```
+
+The result is sourced from the latest Project Inventory snapshot and returns a
+`structuredContent` block with graph metrics, nodes, variables, components, and
+snapshot summary metadata. `get_widget_tree` similarly reads Widget Blueprint
+tree data when the UE plugin has submitted it in the Inventory snapshot.
+
+Safety boundary:
+
+- This endpoint executes read-only sensing tools only.
+- It never creates, confirms, or executes editor writes.
+- Confirmed-write tools such as `editor_set_actor_transform` are rejected with
+  `tool_is_not_read_only`.
+- The normal UE integration path remains HTTP Proposal Bridge:
+  Agent creates Proposal -> user confirms in UEAgentTool -> UEAgentTool executes
+  Editor API -> backend records result.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_tool_manifest_service.py tests\integration\test_mcp_tools_api.py tests\integration\test_editor_operations.py::test_editor_operation_capabilities_and_registry -q
+.\.venv\Scripts\python.exe -m ruff check app tests --no-cache
+```
+
 ## 2026-06-04 UE Knowledge Domains Expansion
 
 The local knowledge base now includes additional UE-focused domains for

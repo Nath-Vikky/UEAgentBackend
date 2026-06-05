@@ -158,3 +158,151 @@ def test_tool_registry_proposal_prepare_api_blocks_readonly_tool(client: TestCli
     assert body["success"] is False
     assert body["bridge"]["status"] == "blocked"
     assert body["errors"][0]["code"] == "tool_is_not_confirmed_write"
+
+
+def _save_demo_inventory_snapshot(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/project-inventory/snapshot",
+        json={
+            "project_id": "MCPDemoProject",
+            "project_name": "MCPDemoProject",
+            "assets": [
+                {
+                    "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                    "asset_name": "BP_PlayerCharacter",
+                    "asset_type": "Blueprint",
+                    "package_path": "/Game/Blueprints",
+                    "blueprint": {
+                        "parent_class": "ACharacter",
+                        "components": ["CapsuleComponent", "FollowCamera"],
+                        "variables": ["Health"],
+                        "functions": ["SetupPlayerInputComponent"],
+                        "graphs": ["EventGraph"],
+                        "graph_summaries": [
+                            {
+                                "graph_name": "EventGraph",
+                                "graph_type": "Ubergraph",
+                                "node_count": 2,
+                                "pin_count": 5,
+                                "link_count": 1,
+                                "nodes": [
+                                    {"node_id": "EventBeginPlay", "title": "Event BeginPlay"},
+                                    {"node_id": "PrintString_1", "title": "Print String"},
+                                ],
+                            }
+                        ],
+                    },
+                },
+                {
+                    "asset_path": "/Game/UI/WBP_MainHUD.WBP_MainHUD",
+                    "asset_name": "WBP_MainHUD",
+                    "asset_type": "WidgetBlueprint",
+                    "package_path": "/Game/UI",
+                    "blueprint": {"parent_class": "UUserWidget"},
+                    "properties": {
+                        "widget_tree": {
+                            "root": "RootCanvas",
+                            "widgets": [
+                                {"name": "RootCanvas", "class": "CanvasPanel"},
+                                {"name": "TitleText", "class": "TextBlock", "parent": "RootCanvas"},
+                            ],
+                        }
+                    },
+                },
+            ],
+            "level_actors": [
+                {
+                    "actor_label": "BP_EnemySpawner_1",
+                    "actor_class": "BP_EnemySpawner_C",
+                    "level_name": "L_Test",
+                    "transform": {"location": {"x": 100, "y": 0, "z": 20}},
+                    "components": [{"component_name": "SceneRoot", "component_class": "SceneComponent"}],
+                }
+            ],
+            "material_instances": [
+                {
+                    "material_instance_path": "/Game/Materials/MI_Rock.MI_Rock",
+                    "material_instance_name": "MI_Rock",
+                    "parent_material": "/Game/Materials/M_Rock.M_Rock",
+                    "scalar_parameters": [{"name": "Roughness", "value": 0.6}],
+                    "static_switch_parameters": [{"name": "UseDetail", "value": True}],
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+
+
+def test_tool_registry_local_readonly_call_reads_blueprint_graph_inventory(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/tools/get_blueprint_graph/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    call = body["call"]
+    assert call["transport"] == "local_tool_registry"
+    assert call["tool_id"] == "mcp_get_blueprint_graph"
+    structured = call["result"]["structuredContent"]
+    assert structured["graph_schema_version"] == "inventory_blueprint_graph_snapshot_v2"
+    assert structured["graph_metrics"]["graph_count"] == 1
+    assert structured["graphs"][0]["graph_name"] == "EventGraph"
+    assert structured["graphs"][0]["nodes"][0]["title"] == "Event BeginPlay"
+
+
+def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inventory(
+    client: TestClient,
+) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    widget_response = client.post(
+        "/api/v1/mcp/tool-registry/tools/get_widget_tree/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+            }
+        },
+    )
+    actor_response = client.post(
+        "/api/v1/mcp/tool-registry/tools/editor_inspect_level_actors/call",
+        json={"arguments": {"project_id": "MCPDemoProject", "query": "EnemySpawner"}},
+    )
+    material_response = client.post(
+        "/api/v1/mcp/tool-registry/tools/editor_inspect_material_instance_detail/call",
+        json={"arguments": {"project_id": "MCPDemoProject", "material_instance_path": "MI_Rock"}},
+    )
+
+    assert widget_response.status_code == 200
+    widget_body = widget_response.json()
+    assert widget_body["success"] is True
+    assert widget_body["call"]["result"]["structuredContent"]["widget_count"] == 2
+    assert actor_response.status_code == 200
+    assert actor_response.json()["call"]["result"]["items"][0]["actor_label"] == "BP_EnemySpawner_1"
+    assert material_response.status_code == 200
+    material_body = material_response.json()
+    assert material_body["success"] is True
+    assert material_body["call"]["result"]["item"]["scalar_parameters"][0]["name"] == "Roughness"
+
+
+def test_tool_registry_local_readonly_call_blocks_write_tool(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/mcp/tool-registry/tools/editor_set_actor_transform/call",
+        json={"arguments": {"actor_reference": "BP_EnemySpawner_1"}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is False
+    assert body["call"]["reason"] == "tool_is_not_read_only"
+    assert body["errors"][0]["code"] == "tool_is_not_read_only"

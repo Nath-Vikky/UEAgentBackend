@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from app.services.tool_registry_readonly_call_service import LOCAL_READONLY_CALL_PATH
 from app.tools.registry import ToolSpec, iter_tool_specs
 
 TOOL_MANIFEST_PROTOCOL_VERSION = "tool_manifest_v1"
@@ -24,6 +25,8 @@ def _execution_boundary(spec: ToolSpec) -> dict[str, Any]:
         return {
             "mode": "readonly_tool",
             "direct_mcp_call_allowed": spec.transport.startswith("mcp"),
+            "local_tool_registry_call_allowed": True,
+            "local_tool_registry_call_path": LOCAL_READONLY_CALL_PATH,
             "http_frontend_confirmation_required": False,
             "write_path": "not_applicable",
         }
@@ -31,6 +34,7 @@ def _execution_boundary(spec: ToolSpec) -> dict[str, Any]:
         return {
             "mode": "plan_only",
             "direct_mcp_call_allowed": False,
+            "local_tool_registry_call_allowed": False,
             "http_frontend_confirmation_required": False,
             "write_path": "draft_or_plan_only",
         }
@@ -38,12 +42,14 @@ def _execution_boundary(spec: ToolSpec) -> dict[str, Any]:
         return {
             "mode": "confirmed_write_proposal",
             "direct_mcp_call_allowed": False,
+            "local_tool_registry_call_allowed": False,
             "http_frontend_confirmation_required": True,
             "write_path": "POST /api/v1/editor-operations/proposals",
         }
     return {
         "mode": "controlled_tool",
         "direct_mcp_call_allowed": False,
+        "local_tool_registry_call_allowed": False,
         "http_frontend_confirmation_required": False,
         "write_path": "service_owned",
     }
@@ -125,6 +131,7 @@ def build_tool_manifest(
             "external_mcp_discovery": "GET /api/v1/mcp/tools",
             "external_mcp_readonly_call": "POST /api/v1/mcp/tools/{tool_name}/call",
             "local_manifest": "GET /api/v1/mcp/tool-registry/manifest",
+            "local_readonly_tool_call": LOCAL_READONLY_CALL_PATH,
             "confirmed_write_proposal_prepare": "POST /api/v1/mcp/tool-registry/proposals/prepare",
             "confirmed_write_proposal_create": "POST /api/v1/mcp/tool-registry/proposals",
             "confirmed_write_proposal": "POST /api/v1/editor-operations/proposals",
@@ -132,6 +139,7 @@ def build_tool_manifest(
         "safety_policy": {
             "http_remains_primary_frontend_protocol": True,
             "mcp_manifest_is_descriptive": True,
+            "read_only_local_tool_registry_call_allowed": True,
             "confirmed_write_direct_mcp_call_allowed": False,
             "confirmed_write_requires_proposal_confirmation": True,
             "llm_output_never_executes_editor_write_directly": True,
