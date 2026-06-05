@@ -142,8 +142,7 @@ def _seed_inventory(client: TestClient) -> Any:
     )
 
 
-def _run_blueprint_graph_chat_grounding(client: TestClient) -> dict[str, Any]:
-    snapshot_response = _seed_inventory(client)
+def _run_blueprint_graph_chat_grounding(client: TestClient, snapshot_response: Any) -> dict[str, Any]:
     graph_response = client.get(
         "/api/v1/project-inventory/blueprint-graphs",
         params={"project_id": "GraphSmokeProject", "blueprint_query": "BP_PlayerCharacter", "include_nodes": True},
@@ -199,10 +198,70 @@ def _run_blueprint_graph_chat_grounding(client: TestClient) -> dict[str, Any]:
     }
 
 
+def _run_mcp_blueprint_graph_fallback(client: TestClient) -> dict[str, Any]:
+    query = "Show the current Blueprint graph"
+    chat_response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "mcp_blueprint_graph_fallback_smoke_session",
+                "messages": [{"role": "user", "content": query, "language": "auto"}],
+            },
+            "context": {
+                "project_name": "GraphSmokeProject",
+                "active_panel": "AgentChat",
+                "editor_state": {
+                    "current_blueprint_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                    "current_graph_name": "EventGraph",
+                },
+            },
+            "payload": {"user_query": query},
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = chat_response.json()
+    assistant_message = str(body.get("assistant_message") or "")
+    debug_view = dict(body.get("debug_view") or {})
+    checks = [
+        _check("chat_status_code", 200, chat_response.status_code),
+        _check("route_type", "single_tool", body.get("intent", {}).get("route_type")),
+        _check("selected_tool_id", "mcp_get_blueprint_graph", debug_view.get("route", {}).get("selected_tool_id")),
+        _check("retrieval_mode", "project_inventory_focus", body.get("retrieval_trace", {}).get("mode")),
+        _contains("assistant_mentions_event_graph", "EventGraph", assistant_message),
+        _contains("assistant_mentions_print_string", "Print String", assistant_message),
+    ]
+    return {
+        "case_id": "mcp_blueprint_graph_fallback_to_inventory",
+        "ok": all(item["ok"] for item in checks),
+        "checks": checks,
+    }
+
+
 def main() -> int:
     args = _parse_args()
     with _isolated_runtime(), TestClient(create_app()) as client:
-        cases = [_run_blueprint_graph_chat_grounding(client)]
+        snapshot_response = _seed_inventory(client)
+        if snapshot_response.status_code == 200:
+            cases = [
+                _run_blueprint_graph_chat_grounding(client, snapshot_response),
+                _run_mcp_blueprint_graph_fallback(client),
+            ]
+        else:
+            cases = [
+                {
+                    "case_id": "seed_inventory",
+                    "ok": False,
+                    "checks": [_check("snapshot_status_code", 200, snapshot_response.status_code)],
+                }
+            ]
     report = {
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": "deterministic_no_ue_no_llm",
