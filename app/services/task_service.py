@@ -403,19 +403,30 @@ class TaskService:
     ) -> str:
         items = inventory_result.get("items") or []
         summary = inventory_result.get("summary") or {}
+        freshness = dict(summary.get("freshness") or {})
+        stale_note = ""
+        if freshness.get("status") == "stale":
+            age_minutes = freshness.get("age_minutes")
+            stale_note = _localized(
+                output_language,
+                f"提示：当前 Project Inventory 快照可能已过期（约 {age_minutes} 分钟前同步），以下内容代表最近一次快照。建议点击 Sync Inventory Now 后再做最终判断。",
+                f"Note: the current Project Inventory snapshot may be stale (synced about {age_minutes} minutes ago). The facts below represent the latest submitted snapshot. Use Sync Inventory Now before making a final decision.",
+            )
         if not items:
             if not summary.get("has_snapshot"):
                 return _localized(
                     output_language,
-                    "当前没有找到可用的 Project Inventory 快照，所以我无法列出当前工程里的资产或代码文件。请先在 UE 插件 Debug View 点击 Submit Inventory，提交一次项目快照后再询问。",
-                    "No Project Inventory snapshot is available yet, so I cannot list assets or code files from the current project. Submit a Project Inventory snapshot from the UE plugin Debug View first, then ask again.",
+                    "当前没有找到可用的 Project Inventory 快照，所以我无法列出当前工程里的资产或代码文件。请先打开 UE 插件等待自动同步，或点击 Sync Inventory Now 手动提交一次项目快照后再询问。",
+                    "No Project Inventory snapshot is available yet, so I cannot list assets or code files from the current project. Open the UE plugin and wait for automatic sync, or click Sync Inventory Now to submit a project snapshot, then ask again.",
                 )
-            return _localized(
+            no_match = _localized(
                 output_language,
                 "Project Inventory 已有快照，但本次问题没有命中匹配的资产或代码文件。你可以换一个更具体的资产名、类型、模块名，或重新提交一次最新快照。",
                 "A Project Inventory snapshot exists, but no assets or code files matched this question. Try a more specific asset name, asset type, module name, or submit a fresh snapshot.",
             )
+            return "\n".join(item for item in (stale_note, no_match) if item)
         lines = [
+            *([stale_note] if stale_note else []),
             _localized(
                 output_language,
                 f"我从 Project Inventory 中找到了 {len(items)} 条相关项目事实：",
@@ -932,6 +943,7 @@ class TaskService:
             "has_snapshot": inventory_context.get("has_snapshot"),
             "snapshot_id": inventory_context.get("snapshot_id"),
             "project_id": inventory_context.get("project_id"),
+            "freshness": inventory_context.get("freshness") or {},
             "asset_count": (inventory_context.get("summary") or {}).get("asset_count", 0),
             "code_file_count": (inventory_context.get("summary") or {}).get("code_file_count", 0),
             "selected_asset_count": len(inventory_context.get("selected_assets") or []),

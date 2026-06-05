@@ -124,6 +124,7 @@ class Settings(BaseSettings):
     kb_max_file_bytes: int = 5_000_000
     kb_chunk_size: int = 600
     kb_chunk_overlap: int = 100
+    project_inventory_stale_after_seconds: int = 300
 
     mcp_tool_adapter_enabled: bool = False
     mcp_transport: Literal["stdio", "tcp"] = "stdio"

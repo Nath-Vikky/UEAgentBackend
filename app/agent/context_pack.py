@@ -139,6 +139,7 @@ def _inventory_focus(context_bundle: dict[str, Any]) -> dict[str, Any]:
         "has_snapshot": bool(inventory.get("has_snapshot")),
         "snapshot_id": inventory.get("snapshot_id"),
         "project_id": inventory.get("project_id"),
+        "freshness": dict(inventory.get("freshness") or summary.get("freshness") or {}),
         "summary": {
             "asset_count": summary.get("asset_count", 0),
             "code_file_count": summary.get("code_file_count", 0),
@@ -370,10 +371,12 @@ def context_pack_prompt_excerpt(context_pack: dict[str, Any]) -> str:
     inventory = dict(project_layer.get("inventory") or {})
     if project or inventory:
         inventory_summary = dict(inventory.get("summary") or {})
+        freshness = dict(inventory.get("freshness") or inventory_summary.get("freshness") or {})
         lines.append(
             "- Project: "
             f"name={project.get('project_name')}, "
             f"active_panel={project.get('active_panel')}, "
+            f"inventory_freshness={freshness.get('status', 'unknown')}, "
             f"assets={inventory_summary.get('asset_count', 0)}, "
             f"code_files={inventory_summary.get('code_file_count', 0)}"
         )

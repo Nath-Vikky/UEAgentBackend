@@ -405,7 +405,10 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert snapshot.status_code == 200
     assert snapshot.json()["snapshot"]["status"] == "saved"
     assert snapshot.json()["snapshot"]["asset_count"] == 2
+    assert snapshot.json()["snapshot"]["freshness"]["status"] == "stale"
+    assert snapshot.json()["snapshot"]["freshness"]["should_refresh"] is True
     assert snapshot.json()["snapshot"]["summary"]["asset_count"] == 2
+    assert snapshot.json()["snapshot"]["summary"]["freshness"]["status"] == "stale"
     assert snapshot.json()["snapshot"]["summary"]["code_file_count"] == 1
     assert snapshot.json()["snapshot"]["summary"]["level_actor_count"] == 1
     assert snapshot.json()["snapshot"]["summary"]["material_instance_count"] == 1
@@ -416,10 +419,12 @@ def test_project_inventory_snapshot_and_query(client: TestClient) -> None:
     assert summary.status_code == 200
     assert summary.json()["summary"]["asset_type_counts"]["StaticMesh"] == 1
     assert summary.json()["summary"]["scan_diagnostics"]["code_file_count_from_scanner"] == 1
+    assert summary.json()["summary"]["freshness"]["status"] == "stale"
     assert static_meshes.status_code == 200
     assert static_meshes.json()["items"][0]["settings"]["nanite_enabled"] is True
     assert nanite_query.status_code == 200
     assert nanite_query.json()["items"][0]["asset_name"] == "SM_Rock"
+    assert nanite_query.json()["summary"]["freshness"]["status"] == "stale"
     assert code_files.status_code == 200
     assert code_files.json()["items"][0]["classes"] == ["ARBPlayerCharacter"]
     assert code_files.json()["items"][0]["symbols"] == ["ARBPlayerCharacter", "SetupPlayerInputComponent"]
@@ -889,6 +894,8 @@ def test_agent_chat_project_asset_listing_handles_prefix_and_missing_snapshot(cl
     assert body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
     assert body["data"]["inventory"]["items"] == []
     assert body["data"]["inventory"]["summary"]["empty_reason"] == "no_project_inventory_snapshot"
+    assert body["data"]["inventory"]["summary"]["freshness"]["status"] == "missing"
+    assert body["debug_view"]["active_context"]["inventory"]["freshness"]["status"] == "missing"
     assert body["data"]["tool_plan"]["use_inventory"] is True
     assert body["assistant_message"].strip()
     assert "Project Inventory" in body["assistant_message"]
@@ -940,9 +947,13 @@ def test_agent_chat_project_asset_listing_supports_compact_chinese_query(client:
     body = response.json()
 
     assert snapshot.status_code == 200
+    assert snapshot.json()["snapshot"]["freshness"]["status"] == "fresh"
     assert response.status_code == 200
     assert body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
     assert body["data"]["inventory"]["summary"]["inferred_asset_type"] == "Blueprint"
+    assert body["data"]["inventory"]["summary"]["freshness"]["status"] == "fresh"
+    assert body["debug_view"]["active_context"]["inventory"]["freshness"]["status"] == "fresh"
+    assert body["debug_view"]["context_pack"]["project_layer"]["inventory"]["freshness"]["status"] == "fresh"
     assert len(body["data"]["inventory"]["items"]) == 2
     assert "BP_PlayerCharacter" in body["assistant_message"]
     assert "BP_EnemySpawner" in body["assistant_message"]

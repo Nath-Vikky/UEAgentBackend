@@ -216,6 +216,11 @@ class ProjectQAHandler:
         qa_result["inventory_items"] = inventory_result["items"]
         qa_result["inventory_summary"] = inventory_result["summary"]
         qa_result["project_file"] = project_file_result
+        inventory_freshness = dict((inventory_result.get("summary") or {}).get("freshness") or {})
+        if tool_plan["use_inventory"] and inventory_freshness.get("status") == "stale":
+            qa_result["warnings"] = list(qa_result.get("warnings") or [])
+            if "project_inventory_snapshot_stale" not in qa_result["warnings"]:
+                qa_result["warnings"].append("project_inventory_snapshot_stale")
         base_debug = host._base_debug(
             request=request,
             routing=routing,

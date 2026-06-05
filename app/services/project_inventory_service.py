@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.core.settings import Settings
 from app.schemas.requests import ProjectInventorySnapshotRequest
-from app.utils.time import utc_isoformat
+from app.utils.time import now_utc, utc_isoformat
 
 
 def _slug(value: str) -> str:
@@ -88,10 +89,66 @@ def _first_present(*values: Any) -> Any:
     return None
 
 
+def _parse_snapshot_time(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
 class ProjectInventoryService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.inventory_path = Path(settings.storage_dir) / "project_inventory.json"
+
+    def _freshness_for_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        created_at = snapshot.get("created_at")
+        parsed = _parse_snapshot_time(created_at)
+        threshold = max(int(getattr(self.settings, "project_inventory_stale_after_seconds", 300) or 300), 1)
+        if parsed is None:
+            return {
+                "status": "unknown",
+                "reason": "snapshot_time_unparseable",
+                "created_at": created_at,
+                "age_seconds": None,
+                "age_minutes": None,
+                "stale_after_seconds": threshold,
+                "is_stale": True,
+                "should_refresh": True,
+            }
+        age_seconds = max(int((now_utc() - parsed).total_seconds()), 0)
+        is_stale = age_seconds > threshold
+        return {
+            "status": "stale" if is_stale else "fresh",
+            "reason": "age_exceeds_threshold" if is_stale else "within_threshold",
+            "created_at": created_at,
+            "age_seconds": age_seconds,
+            "age_minutes": round(age_seconds / 60, 2),
+            "stale_after_seconds": threshold,
+            "is_stale": is_stale,
+            "should_refresh": is_stale,
+        }
+
+    def _missing_freshness(self) -> dict[str, Any]:
+        threshold = max(int(getattr(self.settings, "project_inventory_stale_after_seconds", 300) or 300), 1)
+        return {
+            "status": "missing",
+            "reason": "no_project_inventory_snapshot",
+            "created_at": None,
+            "age_seconds": None,
+            "age_minutes": None,
+            "stale_after_seconds": threshold,
+            "is_stale": True,
+            "should_refresh": True,
+        }
 
     def save_snapshot(self, request: ProjectInventorySnapshotRequest) -> dict[str, Any]:
         store = self._load_store()
@@ -153,15 +210,20 @@ class ProjectInventoryService:
         store["latest_by_project"][project_id] = snapshot_id
         store["latest_snapshot_id"] = snapshot_id
         self._save_store(store)
-        return {
+        response_snapshot = {
             key: value
             for key, value in snapshot.items()
             if key not in {"assets", "code_files", "level_actors", "material_instances"}
         }
+        freshness = self._freshness_for_snapshot(response_snapshot)
+        response_snapshot["freshness"] = freshness
+        response_snapshot["summary"] = {**dict(response_snapshot.get("summary") or {}), "freshness": freshness}
+        return response_snapshot
 
     def summary(self, project_id: str | None = None) -> dict[str, Any]:
         snapshot = self._resolve_snapshot(project_id)
         if not snapshot:
+            freshness = self._missing_freshness()
             return {
                 "has_snapshot": False,
                 "asset_count": 0,
@@ -174,6 +236,7 @@ class ProjectInventoryService:
                 "level_actor_level_counts": {},
                 "material_instance_parent_counts": {},
                 "material_parameter_count": 0,
+                "freshness": freshness,
             }
         assets = list(snapshot.get("assets") or [])
         code_files = list(snapshot.get("code_files") or [])
@@ -181,6 +244,7 @@ class ProjectInventoryService:
         material_instances = list(snapshot.get("material_instances") or [])
         asset_type_counts = self._count_by(assets, "asset_type")
         code_file_type_counts = self._count_by(code_files, "file_type")
+        freshness = self._freshness_for_snapshot(snapshot)
         return {
             "has_snapshot": True,
             "snapshot_id": snapshot["snapshot_id"],
@@ -204,6 +268,7 @@ class ProjectInventoryService:
             "source": snapshot.get("source"),
             "plugin_version": snapshot.get("plugin_version"),
             "scan_diagnostics": snapshot.get("scan_diagnostics", {}),
+            "freshness": freshness,
         }
 
     def list_assets(
@@ -577,6 +642,7 @@ class ProjectInventoryService:
             return {
                 "status": "missing_snapshot",
                 "has_snapshot": False,
+                "freshness": self._missing_freshness(),
                 "summary": self.summary(project_id),
                 "selected_assets": [],
                 "current_file": None,
@@ -642,6 +708,7 @@ class ProjectInventoryService:
             "project_id": snapshot.get("project_id"),
             "project_name": snapshot.get("project_name"),
             "created_at": snapshot.get("created_at"),
+            "freshness": self._freshness_for_snapshot(snapshot),
             "summary": self.summary(project_id),
             "selected_assets": selected_items[:limit],
             "current_file": current_file_item,

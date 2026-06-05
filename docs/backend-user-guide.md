@@ -881,10 +881,17 @@ Code Review collector，成功时 `data.review_scope.read_status = "ok"` 或 `in
 
 Project Inventory 已经接入 Agent Chat / Project QA。用户问“工程里有哪些资产”“有哪些开启 Nanite 的静态网格体”“某模块有哪些 C++ 文件”“当前项目有哪些蓝图”“BP_PlayerCharacter 有哪些变量/函数/图表/节点摘要”“当前关卡有哪些 Actor”“MI_Player 有哪些材质参数”这类项目事实问题时，后端会先查询项目快照，并把命中的资产 / 代码 / 蓝图结构 / 蓝图图表摘要 / 关卡 Actor / 材质实例摘要并入回答上下文。LLM 不可用时也会返回基于快照的基础回答。
 
+Snapshot freshness:
+
+- `PROJECT_INVENTORY_STALE_AFTER_SECONDS` 默认是 `300`，表示快照超过 5 分钟会标记为 `stale`。
+- `POST /snapshot`、`GET /summary`、`POST /query`、Agent Chat 的 `data.inventory.summary` 和 `debug_view.active_context.inventory` 都会返回 `freshness`。
+- `freshness.status` 可能是 `fresh`、`stale`、`missing` 或 `unknown`。
+- `freshness.should_refresh=true` 时，UE 插件可以提示用户点击 `Sync Inventory Now`，但后端仍会基于最近一次快照回答，并在回答中说明该快照可能不是最新。
+
 兼容边界：
 
 - 旧版 UE 插件只提交 `assets` 和 `code_files` 仍然完全可用。
-- `level_actors` 和 `material_instances` 是可选增强字段；新版 UEAgentTool 打开面板时会自动静默提交一次 Inventory，也可以通过 `Submit Inventory` 手动重试。它会补采集当前已加载关卡 Actor 和 Material Instance 参数，自由聊天才能回答“当前关卡摆了哪些对象”“某个材质实例参数值是多少”等更具体问题。
+- `level_actors` 和 `material_instances` 是可选增强字段；新版 UEAgentTool 打开面板时会自动静默提交一次 Inventory，也可以通过 `Sync Inventory Now` 手动重试。它会补采集当前已加载关卡 Actor 和 Material Instance 参数，自由聊天才能回答“当前关卡摆了哪些对象”“某个材质实例参数值是多少”等更具体问题。
 - 后端只信任快照字段，不直接读取 `.umap`、`.uasset`，也不会推断快照里没有的 Actor 或材质参数。
 
 ## 16. 用户可见语言与 Code Review 输出质量
@@ -1414,6 +1421,13 @@ UE 插件提交项目快照时，后端会保存资产和代码索引，并返�
 
 代码文件时间字段可传 `last_modified` 或 `modified_at`，后端会同时保留这两个别名，方便前端列表和 Debug View 复用。
 
+`freshness` 是运行时计算字段，不要求 UE 前端改变提交格式：
+
+- `status=fresh`：快照仍在 `PROJECT_INVENTORY_STALE_AFTER_SECONDS` 阈值内。
+- `status=stale`：快照已超过阈值，回答仍可用但应提示用户重新同步。
+- `status=missing`：当前 project 没有快照。
+- `status=unknown`：快照时间无法解析，建议重新同步。
+
 成功响应示例：
 
 ```json
@@ -1429,7 +1443,17 @@ UE 插件提交项目快照时，后端会保存资产和代码索引，并返�
       "asset_count": 2,
       "code_file_count": 1,
       "asset_type_counts": {"StaticMesh": 1, "Blueprint": 1},
-      "code_file_type_counts": {"cpp": 1}
+      "code_file_type_counts": {"cpp": 1},
+      "freshness": {
+        "status": "fresh",
+        "should_refresh": false,
+        "stale_after_seconds": 300
+      }
+    },
+    "freshness": {
+      "status": "fresh",
+      "should_refresh": false,
+      "stale_after_seconds": 300
     },
     "scan_diagnostics": {
       "asset_count_from_editor": 2,
@@ -2862,6 +2886,7 @@ POST /api/v1/project-inventory/snapshot
 - `material_instance_count`
 - `material_instance_parent_counts`
 - `material_parameter_count`
+- `freshness`：当前快照是否 `fresh/stale/missing/unknown`，以及 `should_refresh`、`age_seconds`、`stale_after_seconds`
 
 Agent Chat / Project QA 会把最近项目快照注入：
 
@@ -2875,6 +2900,15 @@ Agent Chat / Project QA 会把最近项目快照注入：
 - `debug_view.active_context.editor_focus`
 - `debug_view.context_bundle.project_inventory_context.top_level_actors`
 - `debug_view.context_bundle.project_inventory_context.top_material_instances`
+
+`freshness` 同时会进入：
+
+- `data.inventory.summary.freshness`
+- `debug_view.context_bundle.project_inventory_context.freshness`
+- `debug_view.context_pack.project_layer.inventory.freshness`
+- `debug_view.active_context.inventory.freshness`
+
+当 `freshness.status=stale` 时，Agent Chat 的 Inventory fallback 回答会在正文开头提示该结果来自最近一次同步快照，并建议用户点击 `Sync Inventory Now` 后再做最终判断。UEAgentTool 如果要做用户体验增强，只需要在普通用户视图里显示一个轻量提示，不需要增加 Debug 面板。
 
 因此用户问“当前项目有哪些蓝图资产”“这个蓝图有哪些组件/变量”“当前文件属于哪个模块”“当前关卡有哪些 Actor”“某个材质实例有哪些参数”时，后端可以优先用项目快照回答；如果问题包含“为什么、怎么做、建议、风险”，再组合知识库和 LLM 综合。
 
