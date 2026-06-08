@@ -5906,6 +5906,59 @@ Expected UE result callback fields:
 - `dirty_packages`
 - `save_policy=mark_dirty_only`
 
+## 2026-06-09 Level Actor Tags Proposal
+
+`Editor Operation Bridge` now includes `set_actor_tags`, a confirmed Proposal
+for replacing, appending, or removing tags on a bounded set of current-level
+Actors.
+
+Use it when Agent Chat needs to prepare gameplay/query tags after live Actor
+sensing or Actor selection:
+
+- `Add tag Combat to actors tagged Enemy`
+- `Append tags Interactable, QuestTarget to selected actors`
+- `Remove tag Debug from actors in folder Gameplay/Test`
+
+Explicit proposal API:
+
+```json
+{
+  "operation_type": "set_actor_tags",
+  "payload": {
+    "selection": {
+      "tag": "Enemy",
+      "max_count": 8
+    },
+    "tags": ["Combat", "Spawner"],
+    "tag_mode": "append"
+  }
+}
+```
+
+Supported `tag_mode` values:
+
+- `append`: add tags without removing existing tags.
+- `replace`: clear existing tags and set the provided list.
+- `remove`: remove the provided tags if present.
+
+Safety boundary:
+
+- Requires user confirmation before execution.
+- Reuses the same bounded selector as `select_level_actors`.
+- Only changes `AActor.Tags` on matched current-level Actors.
+- Does not move transforms, rename assets, delete Actors, or auto-save levels.
+- The level is marked dirty so the user can review and save manually.
+
+Expected UE result callback fields:
+
+- `updated_actor_count`
+- `updated_actors`
+- `tags`
+- `tag_mode`
+- `level_dirty`
+- `dirty_packages`
+- `save_policy=mark_dirty_only`
+
 ## 2026-05-24 Tool Registry Manifest for MCP-compatible Transport
 
 The backend now exposes a descriptive Tool Registry manifest:

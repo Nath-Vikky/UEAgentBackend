@@ -4,8 +4,8 @@ This catalog is generated from the backend editor operation registry.
 
 ## Summary
 
-- Operation count: `32`
-- Implemented frontend count: `32`
+- Operation count: `33`
+- Implemented frontend count: `33`
 - Read-only inspection count: `6`
 - Transport: `http`
 - Proposal type: `editor_operation`
@@ -77,6 +77,7 @@ Place actors and adjust transforms in the current editor level.
 | `place_actor_in_level` | `MEDIUM` | `actor_class` | `actor_label`, `actor_path`, `level_dirty`, `dirty_packages` |
 | `select_level_actors` | `LOW` | `selection` | `selected_actor_count`, `selected_actors`, `selection_changed` |
 | `set_actor_folder` | `MEDIUM` | `selection`, `target_folder_path` | `updated_actor_count`, `updated_actors`, `target_folder_path`, `level_dirty`, `dirty_packages` |
+| `set_actor_tags` | `MEDIUM` | `selection`, `tags` | `updated_actor_count`, `updated_actors`, `tags`, `tag_mode`, `level_dirty`, `dirty_packages` |
 | `set_actor_transform` | `MEDIUM` | `actor_reference`, `transform_mode` | `actor_reference`, `transform_mode`, `level_dirty`, `dirty_packages` |
 | `set_actor_metadata` | `MEDIUM` | `actor_reference`, `metadata` | `actor_reference`, `actor_label`, `folder_path`, `tags`, `level_dirty`, `dirty_packages` |
 | `arrange_actors_pattern` | `MEDIUM` | `actor_references`, `pattern` | `arranged_actors`, `pattern_type`, `item_count`, `level_dirty`, `dirty_packages` |

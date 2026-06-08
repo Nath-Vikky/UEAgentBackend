@@ -138,6 +138,14 @@ OPERATION_RESULT_FIELDS: dict[str, list[str]] = {
         "level_dirty",
         "dirty_packages",
     ],
+    "set_actor_tags": [
+        "updated_actor_count",
+        "updated_actors",
+        "tags",
+        "tag_mode",
+        "level_dirty",
+        "dirty_packages",
+    ],
     "set_actor_transform": ["actor_reference", "transform_mode", "level_dirty", "dirty_packages"],
     "set_actor_metadata": ["actor_reference", "actor_label", "folder_path", "tags", "level_dirty", "dirty_packages"],
     "arrange_actors_pattern": [

@@ -218,6 +218,19 @@ def build_operation_summaries(operation_type: str, payload: dict[str, Any]) -> t
             f"Actor folder before change: Actors matching {selector_text}.",
             f"Move matched Actors to World Outliner folder `{payload['target_folder_path']}`. The level is marked dirty, not auto-saved.",
         )
+    if operation_type == "set_actor_tags":
+        selection = payload["selection"]
+        selector_parts = []
+        if selection.get("actor_references"):
+            selector_parts.append(f"{len(selection['actor_references'])} explicit references")
+        for key in ("query", "class_contains", "tag", "folder_path"):
+            if selection.get(key):
+                selector_parts.append(f"{key}={selection[key]}")
+        selector_text = ", ".join(selector_parts) or "current selection criteria"
+        return (
+            f"Actor tags before change: Actors matching {selector_text}.",
+            f"{payload['tag_mode'].title()} tags `{', '.join(payload['tags'])}` on matched Actors. The level is marked dirty, not auto-saved.",
+        )
     if operation_type == "set_actor_transform":
         transform_key = "transform_delta" if payload["transform_mode"] == "delta" else "transform"
         fields = ", ".join(sorted(payload[transform_key].keys()))

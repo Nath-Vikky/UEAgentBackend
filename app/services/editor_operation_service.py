@@ -1890,6 +1890,38 @@ class EditorOperationService:
         return None
 
     @staticmethod
+    def _detect_actor_target_tags_from_request(request: UnifiedTaskRequest, query_text: str) -> tuple[list[str], str]:
+        tag_mode = str(request.payload.get("tag_mode") or request.payload.get("mode") or "").strip().lower()
+        query_lower = query_text.lower()
+        if not tag_mode:
+            if re.search(r"\b(?:remove|delete|clear)\s+tags?\b", query_lower):
+                tag_mode = "remove"
+            elif re.search(r"\b(?:replace|set)\s+tags?\b", query_lower):
+                tag_mode = "replace"
+            else:
+                tag_mode = "append"
+        tags_value = request.payload.get("target_tags")
+        if tags_value is None:
+            tags_value = request.payload.get("tags")
+        if isinstance(tags_value, str):
+            tags = [item.strip() for item in re.split(r"[,，;；\n]+", tags_value) if item.strip()]
+            return tags, tag_mode
+        if isinstance(tags_value, list | tuple):
+            return [str(item).strip() for item in tags_value if str(item).strip()], tag_mode
+
+        patterns = (
+            r"\b(?:add|append|set|replace|remove|delete)\s+tags?\s+['\"]?([A-Za-z0-9_, ;\-]{1,200})",
+            r"\btags?\s*(?:to|=|:)\s*['\"]?([A-Za-z0-9_, ;\-]{1,200})",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, query_text, flags=re.IGNORECASE)
+            if match:
+                tags_text = match.group(1).strip().strip("'\".。")
+                tags = [item.strip() for item in re.split(r"[,，;；]+", tags_text) if item.strip()]
+                return tags, tag_mode
+        return [], tag_mode
+
+    @staticmethod
     def _detect_material_parameter_name(query_text: str) -> str | None:
         for known_name in (
             "Roughness",
@@ -2132,6 +2164,53 @@ class EditorOperationService:
             return EditorOperationProposalRequest(
                 operation_type="set_actor_folder",
                 payload={"selection": selection, "target_folder_path": target_folder_path},
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        explicit_actor_tags_selection = request.payload.get("selection") if isinstance(request.payload.get("selection"), dict) else {}
+        has_actor_tags_selector_payload = bool(explicit_actor_tags_selection) or any(
+            key in request.payload
+            for key in ("actor_references", "selected_actor_references", "class_contains", "tag", "max_count")
+        )
+        actor_tags_target_signal = (
+            re.search(r"\b(?:actor|actors|level actors|selected actors)\b", query_lower) is not None
+            or has_actor_tags_selector_payload
+            or any(token in query_text for token in ("关卡Actor", "场景Actor"))
+        )
+        wants_set_actor_tags = actor_tags_target_signal and (
+            "target_tags" in request.payload
+            or "tags" in request.payload
+            or re.search(r"\b(?:add|append|set|replace|remove|delete)\s+tags?\b", query_lower) is not None
+        )
+        if wants_set_actor_tags:
+            selection: dict[str, Any] = dict(explicit_actor_tags_selection)
+            for key in ("query", "class_contains", "tag", "folder_path", "max_count"):
+                if key in request.payload and key not in selection:
+                    selection[key] = request.payload.get(key)
+            references = EditorOperationService._detect_actor_references_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            if references and "actor_references" not in selection:
+                selection["actor_references"] = references
+            if "tag" not in selection:
+                tag_match = re.search(r"\b(?:tagged|with tag)\s+([A-Za-z][A-Za-z0-9_]{1,63})\b", query_text, flags=re.IGNORECASE)
+                if tag_match:
+                    selection["tag"] = tag_match.group(1)
+            if "class_contains" not in selection:
+                class_match = re.search(r"\b(?:class|type)\s+([A-Za-z][A-Za-z0-9_]{1,63})\b", query_text, flags=re.IGNORECASE)
+                if class_match:
+                    selection["class_contains"] = class_match.group(1)
+            if "query" not in selection and not any(selection.get(key) for key in ("actor_references", "class_contains", "tag", "folder_path")):
+                label = EditorOperationService._extract_actor_label_from_text(query_text)
+                selection["query"] = label or query_text[:120]
+            target_tags, tag_mode = EditorOperationService._detect_actor_target_tags_from_request(request, query_text)
+            return EditorOperationProposalRequest(
+                operation_type="set_actor_tags",
+                payload={"selection": selection, "tags": target_tags, "tag_mode": tag_mode},
                 reason=query_text,
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
@@ -4272,6 +4351,21 @@ class EditorOperationService:
             )
         return folder_path
 
+    def _normalize_actor_tag_update(self, value: dict[str, Any]) -> tuple[list[str], str]:
+        tags_value = value.get("tags")
+        if tags_value is None:
+            tags_value = value.get("target_tags")
+        tags = self._normalize_string_list(tags_value, "tags", max_items=24, max_length=64)
+        if not tags:
+            raise EditorOperationValidationError("tags_required")
+        tag_mode = str(value.get("tag_mode") or value.get("mode") or "append").strip().lower()
+        if tag_mode not in {"replace", "append", "remove"}:
+            raise EditorOperationValidationError(
+                "tag_mode_not_supported",
+                {"tag_mode": tag_mode, "allowed_modes": ["replace", "append", "remove"]},
+            )
+        return tags, tag_mode
+
     def _normalize_arrange_pattern(self, value: Any, *, actor_count: int) -> dict[str, Any]:
         if not isinstance(value, dict):
             raise EditorOperationValidationError("pattern_must_be_object")
@@ -4869,6 +4963,20 @@ class EditorOperationService:
                     or payload.get("actor_folder_path")
                     or ""
                 ),
+                "save_policy": "mark_dirty_only",
+            }
+
+        if operation_type == "set_actor_tags":
+            selection_input = payload.get("selection") if isinstance(payload.get("selection"), dict) else {
+                key: payload.get(key)
+                for key in ("actor_references", "query", "class_contains", "tag", "folder_path", "max_count")
+                if key in payload
+            }
+            tags, tag_mode = self._normalize_actor_tag_update(payload)
+            return {
+                "selection": self._normalize_actor_selection(selection_input),
+                "tags": tags,
+                "tag_mode": tag_mode,
                 "save_policy": "mark_dirty_only",
             }
 

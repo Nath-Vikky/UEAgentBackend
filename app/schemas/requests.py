@@ -105,6 +105,7 @@ class EditorOperationProposalRequest(BaseModel):
         "place_actor_in_level",
         "select_level_actors",
         "set_actor_folder",
+        "set_actor_tags",
         "set_actor_transform",
         "set_actor_metadata",
         "arrange_actors_pattern",

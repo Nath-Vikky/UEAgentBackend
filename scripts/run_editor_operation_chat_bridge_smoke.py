@@ -631,6 +631,26 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_set_actor_tags",
+            "request": _chat_request(
+                case_id="chat_set_actor_tags",
+                query="Add tag Combat to actors tagged Enemy",
+                payload={
+                    "selection": {"tag": "Enemy", "max_count": 6},
+                    "tags": ["Combat"],
+                    "tag_mode": "append",
+                },
+            ),
+            "expected_operation_type": "set_actor_tags",
+            "expected_payload": {
+                "selection.tag": "Enemy",
+                "selection.max_count": 6,
+                "tags": ["Combat"],
+                "tag_mode": "append",
+                "save_policy": "mark_dirty_only",
+            },
+        },
+        {
             "case_id": "chat_arrange_actors_pattern",
             "request": _chat_request(
                 case_id="chat_arrange_actors_pattern",
