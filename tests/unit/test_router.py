@@ -264,6 +264,22 @@ def test_agent_chat_with_explicit_material_parameters_routes_to_mcp_readonly_too
     assert routing["route"]["decision_source"] == "heuristic_task_signal"
 
 
+def test_agent_chat_with_chinese_material_parameter_value_routes_to_focused_parameter_tool() -> None:
+    request = _request(
+        content="What is MI_Player Roughness value?",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "selected_assets": ["/Game/Materials/MI_Player.MI_Player"],
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_material_parameter_details"
+
+
 def test_agent_chat_with_explicit_editor_context_routes_to_mcp_readonly_tool() -> None:
     request = _request(
         content="Show the current editor status",
@@ -404,7 +420,7 @@ def test_agent_chat_with_chinese_level_object_list_routes_to_inventory() -> None
     assert routing["route"]["project_inventory_query"] is True
 
 
-def test_agent_chat_with_material_parameter_value_routes_to_inventory() -> None:
+def test_agent_chat_with_material_parameter_value_routes_to_focused_parameter_tool() -> None:
     request = _request(
         content="当前项目 MI_Rock 的 Roughness 是多少？",
         context={
@@ -415,9 +431,9 @@ def test_agent_chat_with_material_parameter_value_routes_to_inventory() -> None:
 
     routing = classify_request(request)
 
-    assert routing["intent"]["route_type"] == "project_qa"
-    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
-    assert routing["route"]["project_inventory_query"] is True
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_material_parameter_details"
+    assert routing["route"].get("project_inventory_query") is not True
 
 
 def test_agent_chat_with_selected_actor_and_material_focus_routes_to_inventory() -> None:

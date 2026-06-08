@@ -38,6 +38,7 @@ class PlaceholderTaskHandler:
             "mcp_get_widget_tree",
             "mcp_get_umg_widget_details",
             "mcp_get_material_instance_parameters",
+            "mcp_get_material_parameter_details",
         }:
             live_result = live_mcp_readonly_result(
                 context=context,

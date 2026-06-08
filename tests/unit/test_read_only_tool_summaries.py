@@ -225,6 +225,32 @@ class _FakeMCPToolExecutor:
                 },
                 "errors": [],
             }
+        if tool_name == "get_material_parameter_details":
+            material_path = (arguments or {}).get("material_instance_path") or "/Game/Materials/MI_Player.MI_Player"
+            return {
+                "ok": True,
+                "status": "completed",
+                "reason": "mcp_tool_call_completed",
+                "tool_name": tool_name,
+                "transport": "mcp_tcp",
+                "result": {
+                    "structuredContent": {
+                        "material_parameter_schema_version": "ue_agent_material_parameter_details_v1",
+                        "material_instance_path": material_path,
+                        "material_instance_name": "MI_Player",
+                        "parent_material": "/Game/Materials/M_Player.M_Player",
+                        "parameter": {
+                            "name": "Roughness",
+                            "parameter_name": "Roughness",
+                            "parameter_type": "scalar",
+                            "value": 0.35,
+                        },
+                    },
+                    "content": [{"type": "text", "text": "material parameter"}],
+                    "isError": False,
+                },
+                "errors": [],
+            }
         if tool_name == "get_selected_assets":
             return {
                 "ok": True,
@@ -772,6 +798,30 @@ def test_live_mcp_readonly_result_reads_material_instance_parameters(monkeypatch
     assert "MI_Player" in result["assistant_message"]
     assert "Roughness" in result["assistant_message"]
     assert base_debug["mcp_live_attempt"]["tool_name"] == "get_material_instance_parameters"
+
+
+def test_live_mcp_readonly_result_reads_material_parameter_details(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "what is MI_Player Roughness value"}]},
+        context={"selected_assets": ["/Game/Materials/MI_Player.MI_Player"]},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.live_mcp_readonly_result(
+        context=_context(selected_tool_id="mcp_get_material_parameter_details", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_material_parameter_details",
+    )
+
+    assert result is not None
+    assert result["data"]["mcp_tool"]["tool_name"] == "get_material_parameter_details"
+    assert result["data"]["mcp_tool"]["arguments"]["material_instance_path"] == "/Game/Materials/MI_Player.MI_Player"
+    assert result["data"]["mcp_tool"]["arguments"]["parameter_name"] == "Roughness"
+    assert "Roughness" in result["assistant_message"]
+    assert "value=0.35" in result["assistant_message"]
 
 
 def test_live_mcp_readonly_result_summarizes_static_mesh_selected_asset(monkeypatch) -> None:

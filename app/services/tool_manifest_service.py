@@ -47,6 +47,10 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
                 "arguments": {"widget_blueprint_path": "/Game/UI/WBP_MainHUD", "widget_name": "TitleText"},
             },
             {"tool_id": "mcp_get_material_instance_parameters", "arguments": {"material_instance_path": "/Game/Materials/MI_Player"}},
+            {
+                "tool_id": "mcp_get_material_parameter_details",
+                "arguments": {"material_instance_path": "/Game/Materials/MI_Player", "parameter_name": "Roughness"},
+            },
         ),
         "tool_ids": (
             "mcp_get_editor_context",
@@ -69,6 +73,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "mcp_get_umg_widget_details",
             "editor_inspect_umg_widget_detail",
             "mcp_get_material_instance_parameters",
+            "mcp_get_material_parameter_details",
         ),
     },
     "blueprint_demo": {
@@ -173,6 +178,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "tool_ids": (
             "mcp_get_material_instance_parameters",
+            "mcp_get_material_parameter_details",
             "editor_inspect_material_instance_parameters",
             "editor_inspect_material_instance_detail",
             "editor_material_set_instance_context",
@@ -263,6 +269,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
             "editor_inspect_umg_widget_detail",
             "editor_inspect_level_actors",
             "mcp_get_material_instance_parameters",
+            "mcp_get_material_parameter_details",
             "editor_inspect_material_instance_detail",
         ),
         "context_tools": (),
@@ -321,6 +328,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
         "summary": "Read Material Instance parameters first, set instance/parameter context, then create confirmed parameter Proposals.",
         "observe_tools": (
             "mcp_get_material_instance_parameters",
+            "mcp_get_material_parameter_details",
             "editor_inspect_material_instance_parameters",
             "editor_inspect_material_instance_detail",
         ),
@@ -535,6 +543,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "operation_family": "material",
             "frontend_executor_id": _mcp_tool_name(spec),
             "operation_type": "inspect_material_instance_parameters",
+            "bridge_kind": "mcp_readonly_or_inventory_fallback",
+        }
+    if spec.tool_id == "mcp_get_material_parameter_details":
+        return {
+            "operation_family": "material",
+            "frontend_executor_id": _mcp_tool_name(spec),
+            "operation_type": "inspect_material_parameter_detail",
             "bridge_kind": "mcp_readonly_or_inventory_fallback",
         }
     if spec.tool_id == "editor_inspect_umg_widget_detail":

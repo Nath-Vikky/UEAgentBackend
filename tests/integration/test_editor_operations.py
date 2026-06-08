@@ -190,6 +190,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "mcp_get_widget_tree" in tool_ids
     assert "mcp_get_umg_widget_details" in tool_ids
     assert "mcp_get_material_instance_parameters" in tool_ids
+    assert "mcp_get_material_parameter_details" in tool_ids
     assert "editor_add_umg_widget" in tool_ids
     assert "editor_set_umg_widget_text" in tool_ids
     assert "editor_set_umg_widget_layout" in tool_ids

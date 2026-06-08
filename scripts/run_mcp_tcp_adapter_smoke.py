@@ -148,6 +148,20 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         },
     },
     {
+        "name": "get_material_parameter_details",
+        "description": "Read one Material Instance parameter detail.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "material_instance_path": {"type": "string"},
+                "parameter_name": {"type": "string"},
+                "parameter_type": {"type": "string"},
+                "query": {"type": "string"},
+            },
+            "required": ["parameter_name"],
+        },
+    },
+    {
         "name": "rename_asset",
         "description": "Confirmed-write fixture tool; UEAgentTool rejects raw TCP execution.",
         "inputSchema": {
@@ -638,6 +652,28 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                 "structuredContent": structured,
                 "isError": False,
             }
+        if tool_name == "get_material_parameter_details":
+            structured = {
+                "material_parameter_schema_version": "ue_agent_material_parameter_details_v1",
+                "transport": "tcp_jsonrpc_line",
+                "server_status": "running",
+                "material_instance_path": "/Game/Materials/MI_Player.MI_Player",
+                "material_instance_name": "MI_Player",
+                "parent_material": "/Game/Materials/M_Player.M_Player",
+                "requested_parameter": "Roughness",
+                "parameter_count": 4,
+                "parameter": {
+                    "name": "Roughness",
+                    "parameter_name": "Roughness",
+                    "parameter_type": "scalar",
+                    "value": 0.35,
+                },
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
+            }
         return {
             "isError": True,
             "content": [
@@ -733,6 +769,7 @@ def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
             "get_widget_tree",
             "get_widget_details",
             "get_material_instance_parameters",
+            "get_material_parameter_details",
         ],
         "discovery filters to read-only allow-list",
     )
@@ -896,6 +933,20 @@ def _material_parameters_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     return ok, "TCP call returns Material Instance parameter structuredContent"
 
 
+def _material_parameter_details_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    parameter = structured.get("parameter") if isinstance(structured.get("parameter"), dict) else {}
+    ok = (
+        payload.get("ok") is True
+        and structured.get("material_parameter_schema_version") == "ue_agent_material_parameter_details_v1"
+        and structured.get("material_instance_name") == "MI_Player"
+        and parameter.get("parameter_name") == "Roughness"
+        and parameter.get("parameter_type") == "scalar"
+        and parameter.get("value") == 0.35
+    )
+    return ok, "TCP call returns focused Material parameter detail structuredContent"
+
+
 def _write_blocked_by_allowlist(payload: dict[str, Any]) -> tuple[bool, str]:
     ok = payload.get("ok") is False and payload.get("reason") == "tool_not_in_mcp_allowed_tools"
     return ok, "confirmed-write tool is blocked before raw TCP call"
@@ -939,6 +990,7 @@ def _run_smoke() -> list[dict[str, Any]]:
             "get_widget_tree",
             "get_widget_details",
             "get_material_instance_parameters",
+            "get_material_parameter_details",
         ]
     ) as adapter:
         cases.append(_run_case("adapter_status_ready", adapter.status(), _status_ready))
@@ -1044,6 +1096,16 @@ def _run_smoke() -> list[dict[str, Any]]:
                     {"material_instance_path": "/Game/Materials/MI_Player"},
                 ),
                 _material_parameters_call_ok,
+            )
+        )
+        cases.append(
+            _run_case(
+                "call_get_material_parameter_details",
+                adapter.call_readonly_tool(
+                    "get_material_parameter_details",
+                    {"material_instance_path": "/Game/Materials/MI_Player", "parameter_name": "Roughness"},
+                ),
+                _material_parameter_details_call_ok,
             )
         )
         cases.append(

@@ -2529,6 +2529,68 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
     ),
+    "mcp_get_material_parameter_details": ToolSpec(
+        tool_id="mcp_get_material_parameter_details",
+        task_type="editor_operation",
+        title="Get Material Parameter Details",
+        description=(
+            "Read one Material Instance parameter's type and value from the optional UEAgentTool TCP tool server. "
+            "If no material_instance_path is provided, the frontend may use the currently selected Content Browser Material Instance."
+        ),
+        side_effect_level="read_only",
+        route_preference="single_tool",
+        category="sensing",
+        transport="mcp_tcp",
+        mcp_tool_name="get_material_parameter_details",
+        requires_confirmation=False,
+        active_context_keys=("project", "asset", "material"),
+        owned_by_skill="MaterialAutomationSkill",
+        allowed_in_free_chat=True,
+        permission_gate="mcp_allowed_tools",
+        context_cost="low",
+        trigger_keywords=(
+            "get material parameter details",
+            "material parameter value",
+            "material parameter detail",
+            "roughness value",
+            "base color value",
+            "scalar parameter value",
+            "vector parameter value",
+            "texture parameter value",
+            "static switch value",
+        ),
+        required_payload_fields=("parameter_name",),
+        optional_payload_fields=("project_id", "material_instance_path", "asset_path", "parameter_type", "target_parameter", "query"),
+        input_schema={
+            "type": "object",
+            "required": ["parameter_name"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "material_instance_path": {"type": "string"},
+                "asset_path": {"type": "string"},
+                "parameter_name": {"type": "string"},
+                "target_parameter": {"type": "string"},
+                "parameter_type": {"type": "string"},
+                "query": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "content": {"type": "array"},
+                "structuredContent": {
+                    "type": "object",
+                    "properties": {
+                        "material_parameter_schema_version": {"type": "string"},
+                        "material_instance_path": {"type": "string"},
+                        "material_instance_name": {"type": "string"},
+                        "parent_material": {"type": "string"},
+                        "parameter": {"type": "object"},
+                    },
+                },
+            },
+        },
+    ),
     "editor_inspect_umg_widget_detail": ToolSpec(
         tool_id="editor_inspect_umg_widget_detail",
         task_type="editor_operation",

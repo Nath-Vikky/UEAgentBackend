@@ -169,6 +169,7 @@ READONLY_MCP_TOOL_IDS = {
     "mcp_get_widget_tree",
     "mcp_get_umg_widget_details",
     "mcp_get_material_instance_parameters",
+    "mcp_get_material_parameter_details",
 }
 PROJECT_INVENTORY_SCOPE_HINTS = {
     "current project",
@@ -724,6 +725,39 @@ def _looks_like_readonly_mcp_material_parameters_request(latest_text: str, text_
     return has_read_intent and has_material_target
 
 
+def _looks_like_readonly_mcp_material_parameter_details_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = (
+        _has_readonly_sensing_intent(latest_text, text_lower)
+        or bool(re.search(r"\b(?:what|which)\b", text_lower))
+        or any(token in latest_text for token in ("\u4ec0\u4e48", "\u591a\u5c11", "\u662f\u591a\u5c11", "\u662f\u4ec0\u4e48"))
+    )
+    has_material_target = (
+        "material" in text_lower
+        or "material instance" in text_lower
+        or re.search(r"\bMI_[A-Za-z0-9_]+\b", latest_text) is not None
+        or "\u6750\u8d28" in latest_text
+    )
+    has_parameter_target = (
+        "parameter value" in text_lower
+        or "parameter detail" in text_lower
+        or "roughness" in text_lower
+        or "metallic" in text_lower
+        or "base color" in text_lower
+        or "opacity" in text_lower
+        or "tint" in text_lower
+        or "static switch" in text_lower
+        or "\u53c2\u6570\u503c" in latest_text
+        or "\u7c97\u7cd9\u5ea6" in latest_text
+        or "\u91d1\u5c5e\u5ea6" in latest_text
+        or "\u989c\u8272" in latest_text
+        or "\u4e0d\u900f\u660e\u5ea6" in latest_text
+    )
+    asks_list = any(token in text_lower for token in ("list", "all parameters", "parameters list"))
+    return has_read_intent and has_material_target and has_parameter_target and not asks_list
+
+
 def _looks_like_readonly_mcp_editor_context_request(latest_text: str, text_lower: str) -> bool:
     if _looks_like_editor_write_request(latest_text, text_lower):
         return False
@@ -978,6 +1012,8 @@ def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
         return "mcp_get_umg_widget_details"
     if _looks_like_readonly_mcp_widget_tree_request(latest_text, text_lower):
         return "mcp_get_widget_tree"
+    if _looks_like_readonly_mcp_material_parameter_details_request(latest_text, text_lower):
+        return "mcp_get_material_parameter_details"
     if _looks_like_readonly_mcp_material_parameters_request(latest_text, text_lower):
         return "mcp_get_material_instance_parameters"
     if _looks_like_readonly_mcp_blueprint_node_details_request(latest_text, text_lower):

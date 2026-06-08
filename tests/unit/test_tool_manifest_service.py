@@ -57,6 +57,7 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     blueprint_graph = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_graph")
     blueprint_node_details = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_node_details")
     material_parameters = _tool_by_annotation_tool_id(manifest, "mcp_get_material_instance_parameters")
+    material_parameter_detail = _tool_by_annotation_tool_id(manifest, "mcp_get_material_parameter_details")
 
     assert editor_context["name"] == "get_editor_context"
     assert editor_context["annotations"]["transport"] == "mcp_tcp"
@@ -119,6 +120,12 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert material_parameters["annotations"]["frontend_executor_id"] == "get_material_instance_parameters"
     assert material_parameters["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
     assert material_parameters["annotations"]["allowed_in_free_chat"] is True
+    assert material_parameter_detail["name"] == "get_material_parameter_details"
+    assert material_parameter_detail["annotations"]["operation_family"] == "material"
+    assert material_parameter_detail["annotations"]["frontend_executor_id"] == "get_material_parameter_details"
+    assert material_parameter_detail["annotations"]["operation_type"] == "inspect_material_parameter_detail"
+    assert material_parameter_detail["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
+    assert material_parameter_detail["annotations"]["allowed_in_free_chat"] is True
 
 
 def test_tool_manifest_adds_frontend_executor_metadata_for_editor_tools() -> None:
@@ -203,6 +210,7 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_blueprint_node_details" in tool_ids
     assert "mcp_get_umg_widget_details" in tool_ids
     assert "mcp_get_material_instance_parameters" in tool_ids
+    assert "mcp_get_material_parameter_details" in tool_ids
     assert "mcp_get_editor_context" in preview["observe_tools"]
     assert "mcp_get_selected_assets" in preview["observe_tools"]
     assert "mcp_get_asset_details" in preview["observe_tools"]
@@ -213,6 +221,7 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_blueprint_node_details" in preview["observe_tools"]
     assert "mcp_get_umg_widget_details" in preview["observe_tools"]
     assert "mcp_get_material_instance_parameters" in preview["observe_tools"]
+    assert "mcp_get_material_parameter_details" in preview["observe_tools"]
 
 
 def test_tool_manifest_marks_plan_only_context_tools_as_local_plan_calls() -> None:

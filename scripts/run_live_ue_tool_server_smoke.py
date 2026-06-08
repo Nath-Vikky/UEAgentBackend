@@ -13,7 +13,7 @@ from app.services.mcp_tool_adapter import MCPToolAdapter
 DEFAULT_ALLOWED_TOOLS = (
     "ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_selected_actors,"
     "get_level_actors,get_level_actor_details,get_static_mesh_details,get_blueprint_graph,get_blueprint_node_details,"
-    "get_widget_tree,get_widget_details,get_material_instance_parameters"
+    "get_widget_tree,get_widget_details,get_material_instance_parameters,get_material_parameter_details"
 )
 
 
@@ -71,6 +71,11 @@ def _parse_args() -> argparse.Namespace:
         "--material-instance-path",
         default="",
         help="Optional Material Instance path to call get_material_instance_parameters, e.g. /Game/Materials/MI_Player.",
+    )
+    parser.add_argument(
+        "--material-parameter-name",
+        default="",
+        help="Optional Material parameter name to call get_material_parameter_details, e.g. Roughness.",
     )
     parser.add_argument(
         "--timeout-ms",
@@ -226,6 +231,16 @@ def _run_smoke(args: argparse.Namespace) -> list[dict[str, Any]]:
                 adapter.call_readonly_tool("get_material_instance_parameters", material_args),
             )
         )
+    if args.material_parameter_name and "get_material_parameter_details" in allowed_tools:
+        parameter_args = {"parameter_name": args.material_parameter_name}
+        if args.material_instance_path:
+            parameter_args["material_instance_path"] = args.material_instance_path
+        cases.append(
+            _case(
+                "call_get_material_parameter_details",
+                adapter.call_readonly_tool("get_material_parameter_details", parameter_args),
+            )
+        )
     return cases
 
 
@@ -252,6 +267,7 @@ def main() -> int:
             "blueprint_node_query": args.blueprint_node_query,
             "widget_blueprint_path": args.widget_blueprint_path,
             "material_instance_path": args.material_instance_path,
+            "material_parameter_name": args.material_parameter_name,
         },
         "cases": cases,
         "notes": [

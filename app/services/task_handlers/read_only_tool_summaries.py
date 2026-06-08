@@ -23,6 +23,7 @@ LIVE_MCP_TOOL_NAMES = {
     "mcp_get_widget_tree": "get_widget_tree",
     "mcp_get_umg_widget_details": "get_widget_details",
     "mcp_get_material_instance_parameters": "get_material_instance_parameters",
+    "mcp_get_material_parameter_details": "get_material_parameter_details",
 }
 LOCAL_INVENTORY_READONLY_TOOL_IDS = {
     "mcp_get_blueprint_graph",
@@ -30,6 +31,7 @@ LOCAL_INVENTORY_READONLY_TOOL_IDS = {
     "mcp_get_widget_tree",
     "mcp_get_umg_widget_details",
     "mcp_get_material_instance_parameters",
+    "mcp_get_material_parameter_details",
     "mcp_get_level_actors",
     "mcp_get_level_actor_details",
     "mcp_get_asset_details",
@@ -818,6 +820,50 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
         if material_instance_path:
             return {"material_instance_path": material_instance_path}
         return {}
+    if selected_tool_id == "mcp_get_material_parameter_details":
+        selected_assets = list(getattr(request.context, "selected_assets", []) or [])
+        selected_inventory_assets = [
+            item
+            for item in list(inventory_context.get("selected_assets") or [])
+            if isinstance(item, dict)
+        ]
+        material_instances = [
+            item
+            for item in list(inventory_context.get("material_instances") or [])
+            if isinstance(item, dict)
+        ]
+        material_context = dict((context.context_bundle or {}).get("material_edit_context") or {})
+        cursor_parameter = material_context.get("cursor_parameter") if isinstance(material_context.get("cursor_parameter"), dict) else {}
+        latest_text = str(request.session.messages[-1].content or "") if request.session.messages else ""
+        material_instance_path = _first_non_empty(
+            payload.get("material_instance_path"),
+            payload.get("asset_path"),
+            editor_state.get("current_material_instance_path"),
+            editor_state.get("material_instance_path"),
+            material_context.get("material_instance_path"),
+            _first_material_instance_path_from_inventory(selected_inventory_assets),
+            _first_material_instance_path_from_inventory(material_instances),
+            _first_material_instance_path_from_strings(selected_assets),
+        )
+        parameter_name = _first_non_empty(
+            payload.get("parameter_name"),
+            payload.get("target_parameter"),
+            editor_state.get("current_material_parameter"),
+            editor_state.get("parameter_name"),
+            material_context.get("parameter_name"),
+            cursor_parameter.get("parameter_name"),
+            cursor_parameter.get("name"),
+            _material_parameter_name_from_text(latest_text),
+        )
+        if not parameter_name:
+            return None
+        arguments = {"parameter_name": parameter_name}
+        if material_instance_path:
+            arguments["material_instance_path"] = material_instance_path
+        parameter_type = _first_non_empty(payload.get("parameter_type"), cursor_parameter.get("parameter_type"))
+        if parameter_type:
+            arguments["parameter_type"] = parameter_type
+        return arguments
     return None
 
 
@@ -1071,6 +1117,35 @@ def _live_mcp_answer(
                 )
             )
         return "\n\n".join(parts)
+    if selected_tool_id == "mcp_get_material_parameter_details":
+        parameter = structured.get("parameter") if isinstance(structured.get("parameter"), dict) else {}
+        if not parameter:
+            parameter = structured.get("item") if isinstance(structured.get("item"), dict) else structured
+        material_item = structured.get("material_instance") if isinstance(structured.get("material_instance"), dict) else {}
+        parameter_name = _first_non_empty(parameter.get("parameter_name"), parameter.get("name"), arguments.get("parameter_name")) or "Unknown"
+        material_path = _first_non_empty(
+            structured.get("material_instance_path"),
+            material_item.get("material_instance_path"),
+            arguments.get("material_instance_path"),
+            _localized(output_language, "当前选中材质实例", "current selected Material Instance"),
+        )
+        parameter_type = _first_non_empty(parameter.get("parameter_type"), parameter.get("type"), arguments.get("parameter_type"))
+        parts = [
+            _localized(
+                output_language,
+                f"已通过 {source_label_zh}读取材质参数详情：{parameter_name}",
+                f"Read Material parameter detail through {source_label_en}: {parameter_name}",
+            ),
+            (
+                f"- material_instance={structured.get('material_instance_name') or material_item.get('material_instance_name') or material_path}"
+                f"\n- path={material_path}"
+                f"\n- parent_material={structured.get('parent_material') or material_item.get('parent_material') or 'n/a'}"
+                f"\n- parameter={parameter_name}"
+                f"\n- type={parameter_type or 'n/a'}"
+                f"\n- value={_material_parameter_value_text(parameter)}"
+            ),
+        ]
+        return "\n\n".join(parts)
     if selected_tool_id == "mcp_get_widget_tree":
         widgets = list(structured.get("widgets") or [])
         widget_lines = []
@@ -1114,6 +1189,7 @@ def _structured_content_for_answer(*, selected_tool_id: str, tool_result: dict[s
     structured = tool_result.get("structuredContent") if isinstance(tool_result.get("structuredContent"), dict) else {}
     if selected_tool_id in {
         "mcp_get_material_instance_parameters",
+        "mcp_get_material_parameter_details",
         "mcp_get_level_actors",
         "mcp_get_asset_details",
         "mcp_get_static_mesh_details",
@@ -1168,6 +1244,12 @@ def _local_readonly_result_is_empty(*, selected_tool_id: str, tool_result: dict[
             return True
         material_item = _material_instance_item_from_structured(normalized)
         return not bool(_material_parameters_from_item(material_item))
+    if selected_tool_id == "mcp_get_material_parameter_details":
+        normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
+        inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
+        if inspection.get("empty_reason"):
+            return True
+        return not bool(normalized.get("parameter") or normalized.get("item") or normalized.get("parameter_name"))
     if selected_tool_id == "mcp_get_level_actors":
         normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
         inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
@@ -1464,6 +1546,37 @@ def _first_material_instance_path_from_strings(values: list[str]) -> str:
         if text and ("materialinstance" in lowered or "material instance" in lowered or "/mi_" in lowered or ".mi_" in lowered):
             return text
     return ""
+
+
+def _material_parameter_name_from_text(text: str) -> str:
+    import re
+
+    raw = str(text or "")
+    known_parameters = (
+        "Roughness",
+        "Metallic",
+        "Specular",
+        "Opacity",
+        "Emissive",
+        "BaseColor",
+        "Base Color",
+        "Tint",
+        "Color",
+        "Alpha",
+        "Normal",
+        "Texture",
+    )
+    lowered = raw.lower()
+    for name in known_parameters:
+        if name.lower() in lowered:
+            return name
+    for match in re.findall(r"\b[A-Z][A-Za-z0-9_]*(?:Color|Tint|Roughness|Metallic|Opacity|Alpha|Texture|Switch)\b", raw):
+        lowered_match = match.lower()
+        if lowered_match.startswith(("mi_", "m_", "t_", "sm_", "bp_", "wbp_")):
+            continue
+        return match
+    quoted = re.findall(r"[`'\"]([A-Za-z][A-Za-z0-9_ ]{1,48})[`'\"]", raw)
+    return quoted[0].strip() if quoted else ""
 
 
 def _first_static_mesh_path_from_inventory(items: list[dict[str, Any]]) -> str:

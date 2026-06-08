@@ -94,6 +94,7 @@ class ToolRegistryReadOnlyCallService:
             "mcp_get_widget_tree": self._call_widget_tree,
             "mcp_get_umg_widget_details": self._call_inspect_umg_widget_detail,
             "mcp_get_material_instance_parameters": self._call_inspect_material_instance_parameters,
+            "mcp_get_material_parameter_details": self._call_inspect_material_parameter_detail,
             "mcp_get_level_actors": self._call_inspect_level_actors,
             "mcp_get_level_actor_details": self._call_inspect_level_actor_detail,
             "mcp_get_asset_details": self._call_inspect_asset_detail,
@@ -391,6 +392,71 @@ class ToolRegistryReadOnlyCallService:
                 "query": _first_text(args.get("query")),
             },
         )
+
+    def _call_inspect_material_parameter_detail(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
+        del spec
+        project_id = _first_text(args.get("project_id")) or None
+        material_query = _first_text(args.get("material_instance_path"), args.get("asset_path"))
+        parameter_query = _first_text(args.get("parameter_name"), args.get("target_parameter"), args.get("query"))
+        parameter_type = _first_text(args.get("parameter_type"))
+        material = self.inventory.get_material_instance(material_query, project_id) if material_query else None
+        if not material and material_query:
+            matches = self.inventory.list_material_instances(project_id=project_id, query=material_query, limit=1)
+            material = matches[0] if matches else None
+        parameter = self._find_material_parameter(material or {}, parameter_query, parameter_type)
+        summary = self._summary(project_id)
+        reason = "" if parameter else self._empty_inventory_reason(summary, "no_matching_material_parameter")
+        return {
+            "inspection": {
+                "operation_type": "inspect_material_parameter_detail",
+                "side_effect_level": "read_only",
+                "source": "project_inventory",
+                "match_count": 1 if parameter else 0,
+                "empty_reason": reason,
+                "material_instance_path": material_query,
+                "parameter_name": parameter_query,
+                "parameter_type": parameter_type,
+            },
+            "summary": summary,
+            "material_instance": material or {},
+            "parameter": parameter,
+            "item": parameter or {},
+        }
+
+    @staticmethod
+    def _material_parameters(material: dict[str, Any]) -> list[dict[str, Any]]:
+        parameters: list[dict[str, Any]] = []
+        for key in (
+            "parameters",
+            "scalar_parameters",
+            "vector_parameters",
+            "texture_parameters",
+            "static_switch_parameters",
+        ):
+            for item in _as_list(material.get(key)):
+                if isinstance(item, dict) and item not in parameters:
+                    parameters.append(item)
+        return parameters
+
+    @classmethod
+    def _find_material_parameter(
+        cls,
+        material: dict[str, Any],
+        parameter_query: str,
+        parameter_type: str,
+    ) -> dict[str, Any] | None:
+        needle = str(parameter_query or "").strip().lower()
+        requested_type = str(parameter_type or "").strip().lower()
+        if not needle:
+            return None
+        for parameter in cls._material_parameters(material):
+            name = _first_text(parameter.get("parameter_name"), parameter.get("name")).lower()
+            kind = _first_text(parameter.get("parameter_type"), parameter.get("type")).lower()
+            if requested_type and kind != requested_type:
+                continue
+            if name == needle or needle in name:
+                return parameter
+        return None
 
     @staticmethod
     def _empty_inventory_reason(summary: dict[str, Any], fallback: str) -> str:

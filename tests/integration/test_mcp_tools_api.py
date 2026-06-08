@@ -599,6 +599,16 @@ def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inven
         "/api/v1/mcp/tool-registry/tools/get_material_instance_parameters/call",
         json={"arguments": {"project_id": "MCPDemoProject", "material_instance_path": "MI_Rock"}},
     )
+    mcp_material_parameter_response = client.post(
+        "/api/v1/mcp/tool-registry/tools/get_material_parameter_details/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "material_instance_path": "MI_Rock",
+                "parameter_name": "Roughness",
+            }
+        },
+    )
 
     assert widget_response.status_code == 200
     widget_body = widget_response.json()
@@ -615,6 +625,12 @@ def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inven
     assert mcp_material_body["success"] is True
     assert mcp_material_body["call"]["tool_id"] == "mcp_get_material_instance_parameters"
     assert mcp_material_body["call"]["result"]["items"][0]["scalar_parameters"][0]["name"] == "Roughness"
+    assert mcp_material_parameter_response.status_code == 200
+    mcp_material_parameter_body = mcp_material_parameter_response.json()
+    assert mcp_material_parameter_body["success"] is True
+    assert mcp_material_parameter_body["call"]["tool_id"] == "mcp_get_material_parameter_details"
+    assert mcp_material_parameter_body["call"]["result"]["parameter"]["name"] == "Roughness"
+    assert mcp_material_parameter_body["call"]["result"]["inspection"]["operation_type"] == "inspect_material_parameter_detail"
 
 
 def test_tool_registry_local_readonly_call_maps_mcp_level_actor_detail_to_inventory(client: TestClient) -> None:

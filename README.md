@@ -150,8 +150,8 @@ Agent 判断意图
 Optional live MCP/TCP sensing currently covers editor context, selected assets,
 focused Asset details, Static Mesh details, selected actors, current level
 actors, Blueprint graph, focused Level Actor details, focused Blueprint node
-details, Widget Tree, focused UMG Widget details, and Material Instance
-parameters.
+details, Widget Tree, focused UMG Widget details, Material Instance parameters,
+and focused Material parameter details.
 Widget sensing also returns common UMG details such as visibility, TextBlock
 text/font size, Image brush resource, and CanvasPanelSlot layout when available.
 Write operations still use HTTP Proposal confirmation.

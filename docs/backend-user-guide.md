@@ -7190,7 +7190,7 @@ MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
 MCP_TCP_HOST=127.0.0.1
 MCP_TCP_PORT=8765
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters,get_material_parameter_details
 MCP_TCP_TIMEOUT_MS=3000
 ```
 
@@ -7667,7 +7667,7 @@ Safety boundary:
 Suggested TCP allow-list:
 
 ```env
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters,get_material_parameter_details
 ```
 
 ## 2026-06-08 Update: Live MCP Selected Assets Tool
@@ -7770,8 +7770,43 @@ Optional live smoke:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py `
-  --material-instance-path "/Game/Materials/MI_Player"
+  --material-instance-path "/Game/Materials/MI_Player" `
+  --material-parameter-name "Roughness"
 ```
+
+## 2026-06-08 Update: Live MCP Focused Material Parameter Details
+
+`get_material_parameter_details` is the focused read-only version of Material
+Instance sensing. It is useful when the user asks one concrete question such as
+`What is MI_Player Roughness value?` or `这个材质的 Roughness 是多少？`.
+
+Tool mapping:
+
+```text
+mcp_get_material_parameter_details -> get_material_parameter_details
+```
+
+Arguments:
+
+- `parameter_name` is required by the backend Tool Registry path. The frontend
+  TCP tool also accepts `query` or `target_parameter` as aliases.
+- `material_instance_path` is optional for live TCP. If omitted, UEAgentTool
+  tries the currently selected Content Browser Material Instance.
+- `parameter_type` is optional and can narrow matching to `scalar`, `vector`,
+  `texture`, or `static_switch`.
+
+Provider order:
+
+```text
+frontend MCP/TCP get_material_parameter_details
+  -> local Project Inventory material instance fallback
+```
+
+Returned `structuredContent` is expected to include the resolved Material
+Instance, parent material, matched parameter name/type/value, and a compact
+summary string for Agent Chat. This remains read-only: it does not modify
+parameters, save assets, compile shaders, or edit Material Graphs. Any Material
+write still uses the confirmed Editor Operation Proposal chain.
 
 ## 2026-06-08 Update: Frontend MCP Tool Provider View
 
@@ -7820,7 +7855,7 @@ Recommended UEAgentTool TCP allow-list:
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters,get_material_parameter_details
 ```
 
 ### Live Focused Asset Details
