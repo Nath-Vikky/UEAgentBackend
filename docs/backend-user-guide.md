@@ -5853,6 +5853,59 @@ Expected UE result callback fields:
 - `selection_changed`
 - `save_policy=selection_only_no_save`
 
+## 2026-06-08 Level Actor Folder Proposal
+
+`Editor Operation Bridge` now also includes `set_actor_folder`, a confirmed
+Proposal for moving a bounded set of current-level Actors into one World
+Outliner folder.
+
+Use it after live Actor sensing or Actor selection when the user wants to
+organize the level hierarchy:
+
+- `Move actors tagged Enemy into folder Gameplay/EncounterA`
+- `Put BP_EnemySpawner_1 and BP_PatrolPoint_1 under folder Gameplay/Spawners`
+- `Organize selected actors into folder Lighting/KeyLights`
+
+Explicit proposal API:
+
+```json
+{
+  "operation_type": "set_actor_folder",
+  "payload": {
+    "selection": {
+      "actor_references": ["BP_EnemySpawner_1", "BP_PatrolPoint_1"],
+      "max_count": 12
+    },
+    "target_folder_path": "Gameplay/EncounterA"
+  }
+}
+```
+
+Selector fields are the same as `select_level_actors`:
+
+- `actor_references`: exact actor label/name/path list.
+- `query`: fuzzy match against actor label/name/path.
+- `class_contains`: substring match against actor class name/path.
+- `tag`: exact Actor tag match.
+- `folder_path`: source outliner folder substring.
+- `max_count`: 1-50, default 20.
+
+Safety boundary:
+
+- Requires user confirmation before execution.
+- Only calls `AActor.SetFolderPath` on matched current-level Actors.
+- Does not move transforms, rename assets, delete Actors, or auto-save levels.
+- The level is marked dirty so the user can review and save manually.
+
+Expected UE result callback fields:
+
+- `updated_actor_count`
+- `updated_actors`
+- `target_folder_path`
+- `level_dirty`
+- `dirty_packages`
+- `save_policy=mark_dirty_only`
+
 ## 2026-05-24 Tool Registry Manifest for MCP-compatible Transport
 
 The backend now exposes a descriptive Tool Registry manifest:

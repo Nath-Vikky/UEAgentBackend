@@ -171,6 +171,21 @@ def build_affected_targets(operation_type: str, payload: dict[str, Any]) -> list
                 "max_count": selection.get("max_count"),
             }
         ]
+    if operation_type == "set_actor_folder":
+        selection = payload["selection"]
+        return [
+            {
+                "kind": "level_actor",
+                "action": "set_actor_folder",
+                "actor_references": selection.get("actor_references", []),
+                "query": selection.get("query"),
+                "class_contains": selection.get("class_contains"),
+                "tag": selection.get("tag"),
+                "source_folder_path": selection.get("folder_path"),
+                "max_count": selection.get("max_count"),
+                "target_folder_path": payload["target_folder_path"],
+            }
+        ]
     if operation_type == "set_actor_metadata":
         return [
             {

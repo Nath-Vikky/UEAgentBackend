@@ -352,6 +352,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["selection"],
         "frontend_status": "implemented_v1",
     },
+    "set_actor_folder": {
+        "tool_id": "editor_set_actor_folder",
+        "title": "Set Actor Folder",
+        "risk_flags": "MEDIUM",
+        "summary": "Move a bounded Actor set into one World Outliner folder after user confirmation.",
+        "required_fields": ["selection", "target_folder_path"],
+        "frontend_status": "implemented_v1",
+    },
     "set_actor_transform": {
         "tool_id": "editor_set_actor_transform",
         "title": "Set Actor Transform",
@@ -450,6 +458,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
         "operation_types": [
             "place_actor_in_level",
             "select_level_actors",
+            "set_actor_folder",
             "set_actor_transform",
             "set_actor_metadata",
             "arrange_actors_pattern",

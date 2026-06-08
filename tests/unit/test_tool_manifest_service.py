@@ -132,6 +132,7 @@ def test_tool_manifest_adds_frontend_executor_metadata_for_editor_tools() -> Non
     manifest = build_tool_manifest()
     arrange = _tool_by_annotation_tool_id(manifest, "editor_arrange_actors_pattern")
     select_actors = _tool_by_annotation_tool_id(manifest, "editor_select_level_actors")
+    set_actor_folder = _tool_by_annotation_tool_id(manifest, "editor_set_actor_folder")
     material_detail = _tool_by_annotation_tool_id(manifest, "editor_inspect_material_instance_detail")
 
     assert arrange["annotations"]["operation_family"] == "level"
@@ -142,6 +143,10 @@ def test_tool_manifest_adds_frontend_executor_metadata_for_editor_tools() -> Non
     assert select_actors["annotations"]["frontend_executor_id"] == "select_level_actors"
     assert select_actors["annotations"]["operation_type"] == "select_level_actors"
     assert select_actors["annotations"]["bridge_kind"] == "editor_operation_proposal"
+    assert set_actor_folder["annotations"]["operation_family"] == "level"
+    assert set_actor_folder["annotations"]["frontend_executor_id"] == "set_actor_folder"
+    assert set_actor_folder["annotations"]["operation_type"] == "set_actor_folder"
+    assert set_actor_folder["annotations"]["bridge_kind"] == "editor_operation_proposal"
     assert material_detail["annotations"]["operation_family"] == "material"
     assert material_detail["annotations"]["frontend_executor_id"] == "inspect_material_instance_detail"
     assert material_detail["annotations"]["bridge_kind"] == "inventory_readonly"

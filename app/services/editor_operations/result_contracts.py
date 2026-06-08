@@ -131,6 +131,13 @@ OPERATION_RESULT_FIELDS: dict[str, list[str]] = {
         "selected_actors",
         "selection_changed",
     ],
+    "set_actor_folder": [
+        "updated_actor_count",
+        "updated_actors",
+        "target_folder_path",
+        "level_dirty",
+        "dirty_packages",
+    ],
     "set_actor_transform": ["actor_reference", "transform_mode", "level_dirty", "dirty_packages"],
     "set_actor_metadata": ["actor_reference", "actor_label", "folder_path", "tags", "level_dirty", "dirty_packages"],
     "arrange_actors_pattern": [

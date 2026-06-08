@@ -613,6 +613,24 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_set_actor_folder",
+            "request": _chat_request(
+                case_id="chat_set_actor_folder",
+                query="Move actors tagged Enemy into folder Gameplay/EncounterA",
+                payload={
+                    "selection": {"tag": "Enemy", "max_count": 6},
+                    "target_folder_path": "Gameplay/EncounterA",
+                },
+            ),
+            "expected_operation_type": "set_actor_folder",
+            "expected_payload": {
+                "selection.tag": "Enemy",
+                "selection.max_count": 6,
+                "target_folder_path": "Gameplay/EncounterA",
+                "save_policy": "mark_dirty_only",
+            },
+        },
+        {
             "case_id": "chat_arrange_actors_pattern",
             "request": _chat_request(
                 case_id="chat_arrange_actors_pattern",

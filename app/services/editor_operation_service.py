@@ -1868,6 +1868,28 @@ class EditorOperationService:
         return metadata
 
     @staticmethod
+    def _detect_actor_target_folder_from_request(request: UnifiedTaskRequest, query_text: str) -> str | None:
+        for key in ("target_folder_path", "target_folder", "new_folder_path", "actor_folder_path"):
+            value = request.payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        payload_metadata = request.payload.get("metadata")
+        if isinstance(payload_metadata, dict):
+            value = payload_metadata.get("folder_path") or payload_metadata.get("folder")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        patterns = (
+            r"\b(?:to|into|under)\s+(?:world\s+outliner\s+)?(?:folder|folder path)\s+['\"]?([A-Za-z0-9_ /\-]{1,200})",
+            r"\b(?:folder|folder path)\s*(?:to|=|:)\s*['\"]?([A-Za-z0-9_ /\-]{1,200})",
+            r"\b(?:organize|move|put).{0,80}\b(?:to|into|under)\s+['\"]?([A-Za-z0-9_ /\-]{1,200})",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, query_text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1).strip().strip("'\".。")
+        return None
+
+    @staticmethod
     def _detect_material_parameter_name(query_text: str) -> str | None:
         for known_name in (
             "Roughness",
@@ -2064,6 +2086,52 @@ class EditorOperationService:
             return EditorOperationProposalRequest(
                 operation_type="place_actor_in_level",
                 payload=payload,
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        explicit_actor_folder_selection = request.payload.get("selection") if isinstance(request.payload.get("selection"), dict) else {}
+        has_actor_folder_selector_payload = bool(explicit_actor_folder_selection) or any(
+            key in request.payload
+            for key in ("actor_references", "selected_actor_references", "class_contains", "tag", "max_count")
+        )
+        actor_folder_target_signal = (
+            re.search(r"\b(?:actor|actors|level actors|selected actors)\b", query_lower) is not None
+            or has_actor_folder_selector_payload
+            or any(token in query_text for token in ("关卡Actor", "场景Actor"))
+        )
+        wants_set_actor_folder = actor_folder_target_signal and any(
+            token in query_lower or token in query_text
+            for token in ("folder", "outliner", "organize actors", "move actors", "move selected", "整理", "文件夹")
+        )
+        if wants_set_actor_folder:
+            selection: dict[str, Any] = dict(explicit_actor_folder_selection)
+            for key in ("query", "class_contains", "tag", "folder_path", "max_count"):
+                if key in request.payload and key not in selection:
+                    selection[key] = request.payload.get(key)
+            references = EditorOperationService._detect_actor_references_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            if references and "actor_references" not in selection:
+                selection["actor_references"] = references
+            if "tag" not in selection:
+                tag_match = re.search(r"\b(?:tagged|tag|with tag)\s+([A-Za-z][A-Za-z0-9_]{1,63})\b", query_text, flags=re.IGNORECASE)
+                if tag_match:
+                    selection["tag"] = tag_match.group(1)
+            if "class_contains" not in selection:
+                class_match = re.search(r"\b(?:class|type)\s+([A-Za-z][A-Za-z0-9_]{1,63})\b", query_text, flags=re.IGNORECASE)
+                if class_match:
+                    selection["class_contains"] = class_match.group(1)
+            if "query" not in selection and not any(selection.get(key) for key in ("actor_references", "class_contains", "tag", "folder_path")):
+                label = EditorOperationService._extract_actor_label_from_text(query_text)
+                selection["query"] = label or query_text[:120]
+            target_folder_path = EditorOperationService._detect_actor_target_folder_from_request(request, query_text) or ""
+            return EditorOperationProposalRequest(
+                operation_type="set_actor_folder",
+                payload={"selection": selection, "target_folder_path": target_folder_path},
                 reason=query_text,
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
@@ -4190,6 +4258,20 @@ class EditorOperationService:
             )
         return selection
 
+    def _normalize_actor_folder_path(self, value: Any) -> str:
+        folder_path = self._normalize_optional_string(value or "", max_length=200)
+        if not folder_path:
+            raise EditorOperationValidationError("target_folder_path_required")
+        folder_path = folder_path.replace("\\", "/").strip("/")
+        if not folder_path:
+            raise EditorOperationValidationError("target_folder_path_required")
+        if ".." in folder_path or any(char in folder_path for char in ('"', "'", ":", "*", "?", "<", ">", "|")):
+            raise EditorOperationValidationError(
+                "target_folder_path_invalid",
+                {"rule": "Use a World Outliner folder path such as Gameplay/Enemies."},
+            )
+        return folder_path
+
     def _normalize_arrange_pattern(self, value: Any, *, actor_count: int) -> dict[str, Any]:
         if not isinstance(value, dict):
             raise EditorOperationValidationError("pattern_must_be_object")
@@ -4770,6 +4852,24 @@ class EditorOperationService:
             return {
                 "selection": self._normalize_actor_selection(selection_input),
                 "save_policy": "selection_only_no_save",
+            }
+
+        if operation_type == "set_actor_folder":
+            selection_input = payload.get("selection") if isinstance(payload.get("selection"), dict) else {
+                key: payload.get(key)
+                for key in ("actor_references", "query", "class_contains", "tag", "folder_path", "max_count")
+                if key in payload
+            }
+            return {
+                "selection": self._normalize_actor_selection(selection_input),
+                "target_folder_path": self._normalize_actor_folder_path(
+                    payload.get("target_folder_path")
+                    or payload.get("target_folder")
+                    or payload.get("new_folder_path")
+                    or payload.get("actor_folder_path")
+                    or ""
+                ),
+                "save_policy": "mark_dirty_only",
             }
 
         if operation_type == "set_actor_metadata":
