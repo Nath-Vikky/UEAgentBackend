@@ -7190,7 +7190,7 @@ MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
 MCP_TCP_HOST=127.0.0.1
 MCP_TCP_PORT=8765
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
 MCP_TCP_TIMEOUT_MS=3000
 ```
 
@@ -7663,7 +7663,7 @@ Safety boundary:
 Suggested TCP allow-list:
 
 ```env
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
 ```
 
 ## 2026-06-08 Update: Live MCP Selected Assets Tool
@@ -7816,7 +7816,7 @@ Recommended UEAgentTool TCP allow-list:
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
 ```
 
 ### Live Selected Static Mesh Details
@@ -7835,3 +7835,21 @@ Agent Chat can route explicit prompts such as `Show selected static mesh
 Nanite, LOD and collision settings` to this live MCP/TCP tool. The backend
 summarizes these fields in the normal answer card; raw JSON stays in Debug View.
 No asset edit is performed by this tool.
+
+### Live Level Actor Query
+
+`get_level_actors` is a read-only live MCP/TCP sensing tool for current map /
+level Actor inspection. It supports optional `query`, `class_contains`, `tag`,
+`folder_path`, and `limit` arguments.
+
+Typical Agent Chat prompts:
+
+- `List current level actors`
+- `Find level actors by tag Player`
+- `Show current level actors whose class contains Character`
+
+The backend prefers the live UEAgentTool MCP/TCP tool when available. If the TCP
+tool is unavailable, it can fall back to local Project Inventory level Actor
+inspection. The answer card summarizes world/map, total and matched Actor
+counts, filters, Actor labels/classes/folders/tags, and component counts. No
+Actor is selected, moved, renamed, tagged, or otherwise modified by this tool.

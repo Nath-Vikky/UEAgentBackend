@@ -34,6 +34,20 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_level_actors",
+        "description": "Read current level Actors with optional filters.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "class_contains": {"type": "string"},
+                "tag": {"type": "string"},
+                "folder_path": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+        },
+    },
+    {
         "name": "get_selected_assets",
         "description": "Read currently selected Content Browser assets.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -171,6 +185,43 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                         "actor_path": "PersistentLevel.BP_PatrolPoint_C_1",
                         "component_count": 1,
                         "components": [{"component_name": "DefaultSceneRoot", "component_class": "SceneComponent"}],
+                    },
+                ],
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
+            }
+        if tool_name == "get_level_actors":
+            structured = {
+                "level_actor_schema_version": "ue_agent_level_actors_v1",
+                "transport": "tcp_jsonrpc_line",
+                "server_status": "running",
+                "world_name": "DemoWorld",
+                "map_name": "DemoMap",
+                "total_actor_count": 3,
+                "matched_actor_count": 2,
+                "max_actors_returned": 20,
+                "filters": {"class_contains": "Character", "tag": "Player", "limit": 20},
+                "actors": [
+                    {
+                        "actor_label": "BP_PlayerCharacter_1",
+                        "actor_name": "BP_PlayerCharacter_C_1",
+                        "actor_class": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter_C",
+                        "actor_path": "PersistentLevel.BP_PlayerCharacter_C_1",
+                        "folder_path": "Gameplay/Player",
+                        "tags": ["Player"],
+                        "component_count": 3,
+                    },
+                    {
+                        "actor_label": "BP_NPCCharacter_1",
+                        "actor_name": "BP_NPCCharacter_C_1",
+                        "actor_class": "/Game/Blueprints/BP_NPCCharacter.BP_NPCCharacter_C",
+                        "actor_path": "PersistentLevel.BP_NPCCharacter_C_1",
+                        "folder_path": "Gameplay/NPC",
+                        "tags": ["Player"],
+                        "component_count": 2,
                     },
                 ],
             }
@@ -409,6 +460,7 @@ def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
         names == [
             "get_editor_context",
             "get_selected_actors",
+            "get_level_actors",
             "get_selected_assets",
             "get_blueprint_graph",
             "get_widget_tree",
@@ -444,6 +496,19 @@ def _selected_actors_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
         and structured.get("actors", [{}])[0].get("component_count") == 2
     )
     return ok, "TCP call returns selected actor structuredContent"
+
+
+def _level_actors_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    actors = [item for item in list(structured.get("actors") or []) if isinstance(item, dict)]
+    ok = (
+        payload.get("ok") is True
+        and structured.get("level_actor_schema_version") == "ue_agent_level_actors_v1"
+        and structured.get("matched_actor_count") == 2
+        and actors
+        and actors[0].get("actor_label") == "BP_PlayerCharacter_1"
+    )
+    return ok, "TCP call returns current level Actor query structuredContent"
 
 
 def _selected_assets_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
@@ -511,6 +576,7 @@ def _run_smoke() -> list[dict[str, Any]]:
         [
             "get_editor_context",
             "get_selected_actors",
+            "get_level_actors",
             "get_selected_assets",
             "get_blueprint_graph",
             "get_widget_tree",
@@ -531,6 +597,13 @@ def _run_smoke() -> list[dict[str, Any]]:
                 "call_get_selected_actors",
                 adapter.call_readonly_tool("get_selected_actors", {}),
                 _selected_actors_call_ok,
+            )
+        )
+        cases.append(
+            _run_case(
+                "call_get_level_actors",
+                adapter.call_readonly_tool("get_level_actors", {"class_contains": "Character", "tag": "Player", "limit": 20}),
+                _level_actors_call_ok,
             )
         )
         cases.append(

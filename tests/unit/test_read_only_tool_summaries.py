@@ -148,6 +148,37 @@ class _FakeMCPToolExecutor:
                 },
                 "errors": [],
             }
+        if tool_name == "get_level_actors":
+            return {
+                "ok": True,
+                "status": "completed",
+                "reason": "mcp_tool_call_completed",
+                "tool_name": tool_name,
+                "transport": "mcp_tcp",
+                "result": {
+                    "structuredContent": {
+                        "level_actor_schema_version": "ue_agent_level_actors_v1",
+                        "world_name": "DemoWorld",
+                        "map_name": "DemoMap",
+                        "total_actor_count": 3,
+                        "matched_actor_count": 2,
+                        "filters": arguments or {},
+                        "actors": [
+                            {
+                                "actor_label": "BP_PlayerCharacter_1",
+                                "actor_name": "BP_PlayerCharacter_C_1",
+                                "actor_class": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter_C",
+                                "folder_path": "Gameplay/Player",
+                                "tags": ["Player"],
+                                "component_count": 3,
+                            }
+                        ],
+                    },
+                    "content": [{"type": "text", "text": "level actors"}],
+                    "isError": False,
+                },
+                "errors": [],
+            }
         return {
             "ok": False,
             "status": "blocked",
@@ -242,6 +273,37 @@ class _FakeLocalMaterialReadOnlyCallService:
                         ],
                     }
                 ],
+            },
+            "errors": [],
+        }
+
+
+class _FakeLocalLevelActorsReadOnlyCallService:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+
+    def call(self, tool: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "status": "completed",
+            "reason": "local_readonly_tool_completed",
+            "tool_id": tool,
+            "tool_name": "get_level_actors",
+            "transport": "local_tool_registry",
+            "source": "project_inventory",
+            "result": {
+                "items": [
+                    {
+                        "actor_label": "BP_PlayerCharacter_1",
+                        "actor_name": "BP_PlayerCharacter_C_1",
+                        "actor_class": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter_C",
+                        "folder_path": "Gameplay/Player",
+                        "tags": ["Player"],
+                        "component_count": 3,
+                    }
+                ],
+                "summary": {"has_snapshot": True},
+                "inspection": {"empty_reason": "", "match_count": 1},
             },
             "errors": [],
         }
@@ -407,6 +469,29 @@ def test_live_mcp_readonly_result_summarizes_static_mesh_selected_asset(monkeypa
     assert "Rock_Base" in result["assistant_message"]
 
 
+def test_live_mcp_readonly_result_reads_level_actors(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "list current level actors"}]},
+        context={},
+        payload={"class_contains": "Character", "tag": "Player", "limit": 20},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.live_mcp_readonly_result(
+        context=_context(selected_tool_id="mcp_get_level_actors", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_level_actors",
+    )
+
+    assert result is not None
+    assert result["data"]["mcp_tool"]["arguments"]["class_contains"] == "Character"
+    assert "BP_PlayerCharacter_1" in result["assistant_message"]
+    assert "matched_actor_count=2" in result["assistant_message"]
+    assert "tags=Player" in result["assistant_message"]
+
+
 def test_live_mcp_readonly_result_returns_none_when_tcp_fails(monkeypatch) -> None:
     monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FailingMCPToolExecutor)
     request = UnifiedTaskRequest(
@@ -475,6 +560,32 @@ def test_local_tool_registry_readonly_result_reads_material_parameters(monkeypat
     assert result["data"]["local_tool"]["transport"] == "local_tool_registry"
     assert "MI_Player" in result["assistant_message"]
     assert "Roughness" in result["assistant_message"]
+
+
+def test_local_tool_registry_readonly_result_reads_level_actors(monkeypatch) -> None:
+    monkeypatch.setattr(
+        read_only_tool_summaries,
+        "ToolRegistryReadOnlyCallService",
+        _FakeLocalLevelActorsReadOnlyCallService,
+    )
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "list current level actors"}]},
+        context={},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.local_tool_registry_readonly_result(
+        context=_context(selected_tool_id="mcp_get_level_actors", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_level_actors",
+    )
+
+    assert result is not None
+    assert result["retrieval_trace"]["mode"] == "local_tool_registry_readonly"
+    assert "BP_PlayerCharacter_1" in result["assistant_message"]
+    assert "Gameplay/Player" in result["assistant_message"]
 
 
 def test_local_tool_registry_readonly_result_reads_selected_assets_context() -> None:

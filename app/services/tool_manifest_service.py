@@ -24,11 +24,13 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "Show the current Blueprint graph.",
             "Inspect the Widget Tree for /Game/UI/WBP_MainHUD.",
             "Show selected Material Instance parameters.",
+            "List current level Actors by class or tag.",
         ),
         "sample_tool_calls": (
             {"tool_id": "mcp_get_editor_context", "arguments": {}},
             {"tool_id": "mcp_get_selected_assets", "arguments": {}},
             {"tool_id": "mcp_get_selected_actors", "arguments": {}},
+            {"tool_id": "mcp_get_level_actors", "arguments": {"class_contains": "Character", "limit": 20}},
             {"tool_id": "mcp_get_blueprint_graph", "arguments": {"blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"}},
             {"tool_id": "mcp_get_widget_tree", "arguments": {"widget_blueprint_path": "/Game/UI/WBP_MainHUD"}},
             {"tool_id": "mcp_get_material_instance_parameters", "arguments": {"material_instance_path": "/Game/Materials/MI_Player"}},
@@ -37,6 +39,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "mcp_get_editor_context",
             "mcp_get_selected_assets",
             "mcp_get_selected_actors",
+            "mcp_get_level_actors",
             "editor_inspect_assets",
             "editor_inspect_asset_detail",
             "editor_inspect_level_actors",
@@ -226,6 +229,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
             "mcp_get_editor_context",
             "mcp_get_selected_assets",
             "mcp_get_selected_actors",
+            "mcp_get_level_actors",
             "editor_inspect_assets",
             "mcp_get_blueprint_graph",
             "editor_inspect_blueprint_node_detail",
@@ -312,7 +316,12 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
         "workflow_id": "level_actor_edit_preview_v1",
         "title": "Observe level actors, then propose placement or transform edits",
         "summary": "Read Level Actor facts before proposing actor placement, transform, metadata, or arrangement edits.",
-        "observe_tools": ("mcp_get_selected_actors", "editor_inspect_level_actors", "editor_inspect_level_actor_detail"),
+        "observe_tools": (
+            "mcp_get_selected_actors",
+            "mcp_get_level_actors",
+            "editor_inspect_level_actors",
+            "editor_inspect_level_actor_detail",
+        ),
         "context_tools": (),
         "proposal_tools": (
             "editor_place_actor_in_level",
@@ -417,6 +426,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "frontend_executor_id": _mcp_tool_name(spec),
             "operation_type": "inspect_selected_actors",
             "bridge_kind": "mcp_readonly_live_editor",
+        }
+    if spec.tool_id == "mcp_get_level_actors":
+        return {
+            "operation_family": "level",
+            "frontend_executor_id": _mcp_tool_name(spec),
+            "operation_type": "inspect_level_actors",
+            "bridge_kind": "mcp_readonly_or_inventory_fallback",
         }
     if spec.tool_id == "mcp_get_selected_assets":
         return {

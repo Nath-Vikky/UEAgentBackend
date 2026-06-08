@@ -92,6 +92,7 @@ class ToolRegistryReadOnlyCallService:
             "editor_inspect_blueprint_node_detail": self._call_inspect_blueprint_node_detail,
             "mcp_get_widget_tree": self._call_widget_tree,
             "mcp_get_material_instance_parameters": self._call_inspect_material_instance_parameters,
+            "mcp_get_level_actors": self._call_inspect_level_actors,
             "editor_inspect_umg_widget_detail": self._call_inspect_umg_widget_detail,
             "editor_inspect_assets": self._call_inspect_assets,
             "editor_inspect_asset_detail": self._call_inspect_asset_detail,

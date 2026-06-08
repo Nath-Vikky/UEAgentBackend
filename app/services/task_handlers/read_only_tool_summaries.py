@@ -14,6 +14,7 @@ LIVE_MCP_TOOL_NAMES = {
     "mcp_get_editor_context": "get_editor_context",
     "mcp_get_selected_assets": "get_selected_assets",
     "mcp_get_selected_actors": "get_selected_actors",
+    "mcp_get_level_actors": "get_level_actors",
     "mcp_get_blueprint_graph": "get_blueprint_graph",
     "mcp_get_widget_tree": "get_widget_tree",
     "mcp_get_material_instance_parameters": "get_material_instance_parameters",
@@ -22,6 +23,7 @@ LOCAL_INVENTORY_READONLY_TOOL_IDS = {
     "mcp_get_blueprint_graph",
     "mcp_get_widget_tree",
     "mcp_get_material_instance_parameters",
+    "mcp_get_level_actors",
 }
 
 
@@ -595,6 +597,16 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
         return {}
     if selected_tool_id == "mcp_get_selected_actors":
         return {}
+    if selected_tool_id == "mcp_get_level_actors":
+        arguments: dict[str, Any] = {}
+        for key in ("query", "class_contains", "actor_class", "tag", "folder_path"):
+            value = _first_non_empty(payload.get(key), editor_state.get(key))
+            if value:
+                arguments[key] = value
+        limit = payload.get("limit") or editor_state.get("limit")
+        if limit is not None:
+            arguments["limit"] = limit
+        return arguments
     if selected_tool_id == "mcp_get_blueprint_graph":
         blueprint = inventory_context.get("current_blueprint") if isinstance(inventory_context, dict) else {}
         graph = inventory_context.get("current_blueprint_graph") if isinstance(inventory_context, dict) else {}
@@ -714,6 +726,41 @@ def _live_mcp_answer(
         else:
             parts.append(_localized(output_language, "当前没有选中的 Actor。", "No actors are currently selected."))
         return "\n\n".join(parts)
+    if selected_tool_id == "mcp_get_level_actors":
+        actors = [
+            item
+            for item in list(structured.get("actors") or structured.get("items") or [])
+            if isinstance(item, dict)
+        ]
+        actor_lines = []
+        for actor in actors[:12]:
+            actor_lines.append(
+                f"- {actor.get('actor_label') or actor.get('actor_name') or 'Unknown'}"
+                + (f" | class={actor.get('actor_class')}" if actor.get("actor_class") else "")
+                + (f" | folder={actor.get('folder_path')}" if actor.get("folder_path") else "")
+                + (f" | tags={', '.join(str(tag) for tag in list(actor.get('tags') or [])[:6])}" if actor.get("tags") else "")
+                + (f" | components={actor.get('component_count')}" if actor.get("component_count") is not None else "")
+            )
+        filters = structured.get("filters") if isinstance(structured.get("filters"), dict) else {}
+        parts = [
+            _localized(
+                output_language,
+                f"已通过 {source_label_zh}读取当前关卡 Actor。",
+                f"Read current level Actors through {source_label_en}.",
+            ),
+            (
+                f"- world={structured.get('world_name') or 'n/a'}"
+                f"\n- map={structured.get('map_name') or 'n/a'}"
+                f"\n- total_actor_count={structured.get('total_actor_count', 'n/a')}"
+                f"\n- matched_actor_count={structured.get('matched_actor_count', len(actors))}"
+                f"\n- filters={filters}"
+            ),
+        ]
+        if actor_lines:
+            parts.append(_localized(output_language, "Actor 预览:", "Actor preview:") + "\n" + "\n".join(actor_lines))
+        else:
+            parts.append(_localized(output_language, "没有匹配到关卡 Actor。", "No matching level Actors were found."))
+        return "\n\n".join(parts)
     if selected_tool_id == "mcp_get_selected_assets":
         assets = [item for item in list(structured.get("assets") or []) if isinstance(item, dict)]
         asset_lines = []
@@ -822,7 +869,7 @@ def _live_mcp_answer(
 
 def _structured_content_for_answer(*, selected_tool_id: str, tool_result: dict[str, Any]) -> dict[str, Any]:
     structured = tool_result.get("structuredContent") if isinstance(tool_result.get("structuredContent"), dict) else {}
-    if selected_tool_id == "mcp_get_material_instance_parameters" and not structured:
+    if selected_tool_id in {"mcp_get_material_instance_parameters", "mcp_get_level_actors"} and not structured:
         return tool_result
     if selected_tool_id != "mcp_get_widget_tree":
         return structured
@@ -852,6 +899,12 @@ def _local_readonly_result_is_empty(*, selected_tool_id: str, tool_result: dict[
             return True
         material_item = _material_instance_item_from_structured(normalized)
         return not bool(_material_parameters_from_item(material_item))
+    if selected_tool_id == "mcp_get_level_actors":
+        normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
+        inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
+        if inspection.get("empty_reason"):
+            return True
+        return not bool(list(normalized.get("actors") or normalized.get("items") or []))
     return False
 
 

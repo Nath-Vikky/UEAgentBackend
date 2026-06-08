@@ -133,7 +133,7 @@ def test_agent_chat_with_current_project_asset_list_routes_to_inventory() -> Non
     assert routing["route"]["top_signal_detector"]["detector"] == "inventory_query"
 
 
-def test_agent_chat_with_current_level_actor_list_routes_to_inventory() -> None:
+def test_agent_chat_with_current_level_actor_by_class_routes_to_live_level_actors() -> None:
     request = _request(
         content="List current level actors",
         context={
@@ -144,9 +144,8 @@ def test_agent_chat_with_current_level_actor_list_routes_to_inventory() -> None:
 
     routing = classify_request(request)
 
-    assert routing["intent"]["route_type"] == "project_qa"
-    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
-    assert routing["route"]["project_inventory_query"] is True
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_level_actors"
 
 
 def test_agent_chat_with_blueprint_graph_node_question_routes_to_inventory() -> None:
@@ -279,7 +278,7 @@ def test_agent_chat_with_selected_static_mesh_detail_routes_to_mcp_selected_asse
     assert routing["route"]["selected_tool_id"] == "mcp_get_selected_assets"
 
 
-def test_agent_chat_with_chinese_level_actor_list_routes_to_inventory() -> None:
+def test_agent_chat_with_chinese_level_actor_list_routes_to_live_level_actors() -> None:
     content = "\u5f53\u524d\u5173\u5361\u6709\u54ea\u4e9bActor"
     request = _request(
         content=content,
@@ -291,9 +290,23 @@ def test_agent_chat_with_chinese_level_actor_list_routes_to_inventory() -> None:
 
     routing = classify_request(request)
 
-    assert routing["intent"]["route_type"] == "project_qa"
-    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
-    assert routing["route"]["project_inventory_query"] is True
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_level_actors"
+
+
+def test_agent_chat_with_current_level_actor_list_routes_to_live_level_actors() -> None:
+    request = _request(
+        content="List current level actors by class",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_level_actors"
 
 
 def test_agent_chat_with_chinese_level_object_list_routes_to_inventory() -> None:

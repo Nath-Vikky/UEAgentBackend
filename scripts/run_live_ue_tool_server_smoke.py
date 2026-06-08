@@ -12,7 +12,7 @@ from app.services.mcp_tool_adapter import MCPToolAdapter
 
 DEFAULT_ALLOWED_TOOLS = (
     "ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,"
-    "get_blueprint_graph,get_widget_tree,get_material_instance_parameters"
+    "get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters"
 )
 
 
@@ -123,6 +123,8 @@ def _run_smoke(args: argparse.Namespace) -> list[dict[str, Any]]:
         cases.append(_case("call_get_selected_assets", adapter.call_readonly_tool("get_selected_assets", {})))
     if "get_selected_actors" in allowed_tools:
         cases.append(_case("call_get_selected_actors", adapter.call_readonly_tool("get_selected_actors", {})))
+    if "get_level_actors" in allowed_tools:
+        cases.append(_case("call_get_level_actors", adapter.call_readonly_tool("get_level_actors", {"limit": 40})))
     if args.blueprint_path:
         cases.append(
             _case(

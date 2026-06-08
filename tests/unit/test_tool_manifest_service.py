@@ -50,6 +50,7 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     editor_context = _tool_by_annotation_tool_id(manifest, "mcp_get_editor_context")
     selected_assets = _tool_by_annotation_tool_id(manifest, "mcp_get_selected_assets")
     selected_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_selected_actors")
+    level_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_level_actors")
     blueprint_graph = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_graph")
     material_parameters = _tool_by_annotation_tool_id(manifest, "mcp_get_material_instance_parameters")
 
@@ -66,6 +67,10 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert selected_actors["annotations"]["operation_family"] == "level"
     assert selected_actors["annotations"]["bridge_kind"] == "mcp_readonly_live_editor"
     assert selected_actors["annotations"]["allowed_in_free_chat"] is True
+    assert level_actors["name"] == "get_level_actors"
+    assert level_actors["annotations"]["operation_family"] == "level"
+    assert level_actors["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
+    assert level_actors["annotations"]["allowed_in_free_chat"] is True
 
     assert blueprint_graph["name"] == "get_blueprint_graph"
     assert blueprint_graph["annotations"]["transport"] == "mcp_tcp"
@@ -156,10 +161,12 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_editor_context" in tool_ids
     assert "mcp_get_selected_assets" in tool_ids
     assert "mcp_get_selected_actors" in tool_ids
+    assert "mcp_get_level_actors" in tool_ids
     assert "mcp_get_material_instance_parameters" in tool_ids
     assert "mcp_get_editor_context" in preview["observe_tools"]
     assert "mcp_get_selected_assets" in preview["observe_tools"]
     assert "mcp_get_selected_actors" in preview["observe_tools"]
+    assert "mcp_get_level_actors" in preview["observe_tools"]
     assert "mcp_get_material_instance_parameters" in preview["observe_tools"]
 
 
