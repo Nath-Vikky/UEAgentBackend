@@ -8272,3 +8272,34 @@ frontend MCP/TCP get_blueprint_node_details
 This tool is read-only. It does not add, delete, connect, compile, save, or
 rewrite Blueprint nodes. Blueprint graph writes still go through confirmed
 Editor Operation Proposal tools.
+
+## 2026-06-09 Improv5 Quality Gate Snapshot
+
+This snapshot records the current backend-only deterministic verification for
+the Improv5 editor-operation and live sensing work. It does not replace real UE
+Editor testing, but it is the recommended fast regression gate before packaging
+or demo rehearsal.
+
+Commands:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_editor_demo_smoke_suite.py --output -
+.\.venv\Scripts\python.exe -m pytest tests\unit tests\contract -q
+$env:RUFF_CACHE_DIR='.tmp_ruff_cache'; .\.venv\Scripts\python.exe -m ruff check app tests scripts
+```
+
+Latest result:
+
+- Aggregate editor demo smoke suite: 7/7 suites, 102/102 cases passed.
+- Unit and contract tests: 386 passed.
+- Ruff: all checks passed.
+
+Covered deterministic smoke suites:
+
+- Blueprint Graph operation Proposal contracts.
+- Agent Chat to Editor Operation Proposal routing.
+- Workflow materialization to pending Proposals.
+- Project Inventory grounded chat.
+- Local Tool Registry read-only calls.
+- Tool Registry confirmed-write Proposal bridge.
+- MCP TCP adapter fixture for read-only live editor sensing.
