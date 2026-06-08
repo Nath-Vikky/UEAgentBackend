@@ -18,6 +18,7 @@ def test_tool_manifest_exports_mcp_compatible_tool_shape() -> None:
     assert manifest["schema_version"] == "mcp_tools_list_compatible_v1"
     assert manifest["mode"] == "http_primary_mcp_compatible_manifest"
     assert manifest["summary"]["tool_count"] >= 25
+    assert manifest["routes"]["tool_provider_view"] == "GET /api/v1/mcp/tool-providers"
     assert manifest["routes"]["local_readonly_tool_call"] == "POST /api/v1/mcp/tool-registry/tools/{tool}/call"
     assert manifest["routes"]["local_plan_tool_call"] == "POST /api/v1/mcp/tool-registry/plans/{tool}/call"
     assert manifest["routes"]["confirmed_write_proposal"] == "POST /api/v1/editor-operations/proposals"

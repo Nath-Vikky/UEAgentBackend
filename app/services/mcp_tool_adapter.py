@@ -110,6 +110,7 @@ def build_mcp_capability(settings: Settings) -> dict[str, Any]:
         "debug_endpoints": {
             "list_tools": "/api/v1/mcp/tools",
             "call_tool": "/api/v1/mcp/tools/{tool_name}/call",
+            "tool_providers": "/api/v1/mcp/tool-providers",
             "tool_registry_manifest": "/api/v1/mcp/tool-registry/manifest",
         },
         "safety_policy": status["safety_policy"],

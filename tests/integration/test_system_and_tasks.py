@@ -160,6 +160,7 @@ def test_system_capabilities_expose_core_and_deferred_scope(client: TestClient) 
     assert body["capabilities"]["mcp_adapter"]["mode"] == "optional_tool_transport"
     assert body["capabilities"]["mcp_adapter"]["frontend_protocol"] == "http"
     assert body["capabilities"]["mcp_adapter"]["tool_layer_only"] is True
+    assert body["capabilities"]["mcp_adapter"]["debug_endpoints"]["tool_providers"] == "/api/v1/mcp/tool-providers"
     assert body["capabilities"]["web_memory"]["status"] == "disabled"
     assert any(
         item["tool_id"] == "query_project_inventory"

@@ -7712,3 +7712,53 @@ Safety boundary:
 - It does not rename, move, duplicate, delete, save, or fix up assets.
 - Asset write operations still require HTTP Editor Operation Proposal
   confirmation in UEAgentTool.
+
+## 2026-06-08 Update: Frontend MCP Tool Provider View
+
+The backend now exposes a provider view that merges the static Tool Registry
+with optional live frontend MCP discovery:
+
+```text
+GET /api/v1/mcp/tool-providers
+GET /api/v1/mcp/tool-providers?include_live_discovery=true
+```
+
+Use the first form for a fast static view. It does not connect to Unreal Editor
+or any MCP server. Use `include_live_discovery=true` only when the UEAgentTool
+TCP server or another user-provided MCP server is running and you want the
+backend to call `tools/list`.
+
+Provider priority:
+
+- `frontend_mcp_live`: live MCP tools exposed by UEAgentTool or another frontend
+  MCP server. These are preferred only for matched read-only tools.
+- `local_tool_registry`: backend local read-only or plan-only Tool Registry
+  tools, usually backed by Project Inventory.
+- `http_proposal_bridge`: confirmed-write path. The backend creates a Proposal
+  and UEAgentTool executes it only after user confirmation.
+
+Important safety rules:
+
+- Unknown external MCP tools are shown as `trust_state=external_unmapped`.
+- Unknown external tools are not automatically available to Agent free-chat
+  routing.
+- Raw MCP write execution is not trusted. Write tools must be mapped to
+  `ToolSpec`, converted to a Proposal, and confirmed in UEAgentTool.
+- HTTP remains the primary UE frontend/backend protocol; MCP is a tool-provider
+  layer for observation, compatibility, and future extension.
+
+Example PowerShell check:
+
+```powershell
+Invoke-RestMethod `
+  -Method Get `
+  -Uri "http://127.0.0.1:8000/api/v1/mcp/tool-providers?include_live_discovery=true"
+```
+
+Recommended UEAgentTool TCP allow-list:
+
+```env
+MCP_TOOL_ADAPTER_ENABLED=true
+MCP_TRANSPORT=tcp
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree
+```

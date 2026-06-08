@@ -16,6 +16,7 @@ from app.services.editor_operation_service import (
 )
 from app.services.mcp_executor import MCPToolExecutor
 from app.services.tool_manifest_service import build_tool_manifest
+from app.services.tool_provider_service import build_tool_provider_view
 from app.services.tool_proposal_bridge_service import ToolProposalBridgeService
 from app.services.tool_registry_plan_call_service import ToolRegistryPlanCallService
 from app.services.tool_registry_readonly_call_service import ToolRegistryReadOnlyCallService
@@ -48,6 +49,21 @@ class ToolRegistryPlanCallRequest(BaseModel):
 def list_mcp_tools(settings: Settings = Depends(get_app_settings)) -> dict[str, Any]:
     result = MCPToolExecutor(settings).discover_tools()
     return {"success": bool(result.get("ok")), **result}
+
+
+@router.get("/tool-providers")
+def tool_providers(
+    include_live_discovery: bool = False,
+    settings: Settings = Depends(get_app_settings),
+) -> dict[str, Any]:
+    return {
+        "success": True,
+        "provider_view": build_tool_provider_view(
+            settings,
+            include_live_discovery=include_live_discovery,
+        ),
+        "errors": [],
+    }
 
 
 @router.get("/tool-registry/manifest")

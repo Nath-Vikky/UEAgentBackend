@@ -64,6 +64,25 @@ def test_mcp_tools_discovery_and_call_api(client: TestClient) -> None:
     assert call_body["result"]["content"][0]["text"] == "Shanghai: sunny, 24C"
 
 
+def test_mcp_tool_provider_view_merges_live_discovery_with_static_registry(client: TestClient) -> None:
+    response = client.get("/api/v1/mcp/tool-providers?include_live_discovery=true")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    provider_view = body["provider_view"]
+    assert provider_view["schema_version"] == "tool_provider_view_v1"
+    assert provider_view["live_discovery"]["attempted"] is True
+    assert provider_view["live_discovery"]["ok"] is True
+    assert provider_view["summary"]["live_discovered_tool_count"] == 1
+    assert provider_view["summary"]["external_unmapped_tool_count"] == 1
+    assert provider_view["external_unmapped_tools"][0]["name"] == "get_weather"
+    assert provider_view["external_unmapped_tools"][0]["trust_state"] == "external_unmapped"
+    assert provider_view["external_unmapped_tools"][0]["allowed_for_agent_free_chat"] is False
+    assert provider_view["safety_policy"]["frontend_mcp_preferred_for_read_only_when_discovered"] is True
+    assert provider_view["safety_policy"]["raw_mcp_write_tools_are_not_trusted"] is True
+
+
 def test_mcp_tools_api_blocks_unlisted_tool(client: TestClient) -> None:
     response = client.post(
         "/api/v1/mcp/tools/delete_weather_cache/call",

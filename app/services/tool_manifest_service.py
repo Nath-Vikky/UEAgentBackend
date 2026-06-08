@@ -647,6 +647,7 @@ def build_tool_manifest(
             ],
         },
         "routes": {
+            "tool_provider_view": "GET /api/v1/mcp/tool-providers",
             "external_mcp_discovery": "GET /api/v1/mcp/tools",
             "external_mcp_readonly_call": "POST /api/v1/mcp/tools/{tool_name}/call",
             "local_manifest": "GET /api/v1/mcp/tool-registry/manifest",

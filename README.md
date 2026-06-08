@@ -143,6 +143,7 @@ Agent 判断意图
 - `POST /api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal`
 - `POST /api/v1/chat/runs` with explicit multi-step workflow intent
 - `GET /api/v1/mcp/tool-registry/manifest`
+- `GET /api/v1/mcp/tool-providers`
 - `POST /api/v1/mcp/tool-registry/proposals/prepare`
 - `POST /api/v1/mcp/tool-registry/proposals`
 
