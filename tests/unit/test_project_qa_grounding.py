@@ -62,7 +62,7 @@ def test_inventory_fallback_refuses_current_project_claims_without_snapshot() ->
     )
 
     assert "No Project Inventory snapshot is available yet" in answer
-    assert "Submit a Project Inventory snapshot" in answer
+    assert "Sync Inventory Now" in answer
 
 
 def test_inventory_fallback_lists_grounded_blueprint_fields() -> None:
