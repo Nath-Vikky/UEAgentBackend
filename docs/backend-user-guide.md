@@ -7190,7 +7190,7 @@ MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
 MCP_TCP_HOST=127.0.0.1
 MCP_TCP_PORT=8765
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
 MCP_TCP_TIMEOUT_MS=3000
 ```
 
@@ -7213,6 +7213,7 @@ The smoke emulates the UEAgentTool TCP server and validates:
 - backend adapter status for `mcp_tcp`;
 - `tools/list` discovery filtered by allow-list;
 - `tools/call` for `get_blueprint_graph`;
+- `tools/call` for `get_blueprint_node_details`;
 - `tools/call` for `get_widget_tree`;
 - `tools/call` for `get_widget_details`;
 - backend allow-list blocking for a write tool;
@@ -7228,7 +7229,7 @@ Optional live check when UEAgentTool is open and its TCP tool server is enabled:
 To also call read-only graph tools, pass real project paths:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --blueprint-path /Game/Blueprints/BP_PlayerCharacter --widget-blueprint-path /Game/UI/WBP_MainHUD --output -
+.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --blueprint-path /Game/Blueprints/BP_PlayerCharacter --blueprint-graph-name EventGraph --blueprint-node-query "Print String" --widget-blueprint-path /Game/UI/WBP_MainHUD --output -
 ```
 
 The live smoke is intentionally not part of CI because it requires Unreal
@@ -7237,14 +7238,16 @@ transport troubleshooting.
 
 Agent Chat live sensing behavior:
 
-- When routing selects `mcp_get_blueprint_graph` or `mcp_get_widget_tree`, and
+- When routing selects `mcp_get_blueprint_graph`, `mcp_get_blueprint_node_details`,
+  or `mcp_get_widget_tree`, and
   the MCP adapter is configured as ready, the backend now tries the live TCP
   read-only tool first.
 - Explicit read-style prompts such as `Show the current Blueprint graph` or
   `Inspect the Widget Tree for /Game/UI/WBP_MainHUD` can select those read-only
   MCP tools. Broader current-project fact questions still prefer Project
   Inventory.
-- The Tool Registry marks these two tools as `allowed_in_free_chat=true`
+- The Tool Registry marks these read-only sensing tools as
+  `allowed_in_free_chat=true`
   because they are read-only and still gated by `MCP_ALLOWED_TOOLS`.
 - If the TCP call fails, the tool is not allow-listed, or the UE tool server
   returns an error, the backend next tries the local Tool Registry read-only
@@ -7664,7 +7667,7 @@ Safety boundary:
 Suggested TCP allow-list:
 
 ```env
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
 ```
 
 ## 2026-06-08 Update: Live MCP Selected Assets Tool
@@ -7817,7 +7820,7 @@ Recommended UEAgentTool TCP allow-list:
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
 ```
 
 ### Live Selected Static Mesh Details
@@ -7925,3 +7928,34 @@ frontend MCP/TCP get_widget_details
 
 This tool is read-only. It does not change text, layout, visibility, parent,
 style, brush, save state, or compilation state.
+
+### Live Focused Blueprint Node Details
+
+`get_blueprint_node_details` is the focused version of Blueprint graph sensing.
+It accepts:
+
+```json
+{
+  "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+  "graph_name": "EventGraph",
+  "node_query": "Print String"
+}
+```
+
+The live UEAgentTool response includes the matched node summary plus `pins[]`
+and link counts when the graph node can be found. The backend can route prompts
+such as `Inspect Print String node pins in /Game/Blueprints/BP_PlayerCharacter`
+to this tool. If live MCP/TCP is unavailable, the backend maps
+`mcp_get_blueprint_node_details` to the existing Project Inventory-backed
+`editor_inspect_blueprint_node_detail` fallback.
+
+Provider order:
+
+```text
+frontend MCP/TCP get_blueprint_node_details
+  -> local Project Inventory editor_inspect_blueprint_node_detail fallback
+```
+
+This tool is read-only. It does not add, delete, connect, compile, save, or
+rewrite Blueprint nodes. Blueprint graph writes still go through confirmed
+Editor Operation Proposal tools.

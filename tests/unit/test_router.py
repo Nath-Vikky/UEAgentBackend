@@ -181,6 +181,23 @@ def test_agent_chat_with_explicit_read_blueprint_graph_routes_to_mcp_readonly_to
     assert routing["route"]["decision_source"] == "heuristic_task_signal"
 
 
+def test_agent_chat_with_named_blueprint_node_detail_routes_to_mcp_readonly_tool() -> None:
+    request = _request(
+        content="Inspect Print String node pins in /Game/Blueprints/BP_PlayerCharacter",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "editor_state": {"current_blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"},
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_blueprint_node_details"
+    assert routing["route"]["decision_source"] == "heuristic_task_signal"
+
+
 def test_agent_chat_with_explicit_read_widget_tree_routes_to_mcp_readonly_tool() -> None:
     request = _request(
         content="Inspect the Widget Tree for /Game/UI/WBP_MainHUD",

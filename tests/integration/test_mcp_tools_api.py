@@ -417,6 +417,35 @@ def test_tool_registry_local_readonly_call_reads_blueprint_node_detail(client: T
     assert result["linked_pins"][0]["target_node_id"] == "EventBeginPlay"
 
 
+def test_tool_registry_local_readonly_call_maps_mcp_blueprint_node_detail_to_inventory(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/tools/mcp_get_blueprint_node_details/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "node_query": "Print String",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    call = body["call"]
+    assert call["tool_id"] == "mcp_get_blueprint_node_details"
+    assert call["transport"] == "local_tool_registry"
+    result = call["result"]["structuredContent"]
+    assert result["schema_version"] == "inventory_blueprint_node_detail_v1"
+    assert result["graph_name"] == "EventGraph"
+    assert result["node_id"] == "PrintString_1"
+    assert result["node_title"] == "Print String"
+    assert result["pins"][0]["pin_name"] == "execute"
+
+
 def test_tool_registry_plan_call_sets_blueprint_cursor_node_context(client: TestClient) -> None:
     _save_demo_inventory_snapshot(client)
 

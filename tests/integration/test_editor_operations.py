@@ -184,6 +184,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_duplicate_asset" in tool_ids
     assert "editor_fixup_redirectors" in tool_ids
     assert "mcp_get_blueprint_graph" in tool_ids
+    assert "mcp_get_blueprint_node_details" in tool_ids
     assert "mcp_get_widget_tree" in tool_ids
     assert "mcp_get_umg_widget_details" in tool_ids
     assert "mcp_get_material_instance_parameters" in tool_ids

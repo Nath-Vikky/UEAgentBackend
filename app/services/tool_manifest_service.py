@@ -34,6 +34,10 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             {"tool_id": "mcp_get_selected_actors", "arguments": {}},
             {"tool_id": "mcp_get_level_actors", "arguments": {"class_contains": "Character", "limit": 20}},
             {"tool_id": "mcp_get_blueprint_graph", "arguments": {"blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"}},
+            {
+                "tool_id": "mcp_get_blueprint_node_details",
+                "arguments": {"blueprint_path": "/Game/Blueprints/BP_PlayerCharacter", "node_query": "Print String"},
+            },
             {"tool_id": "mcp_get_widget_tree", "arguments": {"widget_blueprint_path": "/Game/UI/WBP_MainHUD"}},
             {
                 "tool_id": "mcp_get_umg_widget_details",
@@ -54,6 +58,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "editor_inspect_material_instance_parameters",
             "editor_inspect_material_instance_detail",
             "mcp_get_blueprint_graph",
+            "mcp_get_blueprint_node_details",
             "editor_inspect_blueprint_node_detail",
             "mcp_get_widget_tree",
             "mcp_get_umg_widget_details",
@@ -90,6 +95,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "tool_ids": (
             "mcp_get_blueprint_graph",
+            "mcp_get_blueprint_node_details",
             "editor_inspect_blueprint_node_detail",
             "editor_blueprint_set_edit_function",
             "editor_blueprint_set_cursor_node",
@@ -242,6 +248,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
             "mcp_get_level_actors",
             "editor_inspect_assets",
             "mcp_get_blueprint_graph",
+            "mcp_get_blueprint_node_details",
             "editor_inspect_blueprint_node_detail",
             "mcp_get_widget_tree",
             "mcp_get_umg_widget_details",
@@ -263,7 +270,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
         "workflow_id": "blueprint_graph_edit_preview_v1",
         "title": "Observe Blueprint graph, select context, then propose graph edits",
         "summary": "Read the graph/node detail first, set graph/cursor context when useful, then create confirmed Blueprint Proposals.",
-        "observe_tools": ("mcp_get_blueprint_graph", "editor_inspect_blueprint_node_detail"),
+        "observe_tools": ("mcp_get_blueprint_graph", "mcp_get_blueprint_node_details", "editor_inspect_blueprint_node_detail"),
         "context_tools": ("editor_blueprint_set_edit_function", "editor_blueprint_set_cursor_node"),
         "proposal_tools": (
             "editor_blueprint_add_step",
@@ -469,6 +476,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "operation_family": "blueprint",
             "frontend_executor_id": _mcp_tool_name(spec),
             "operation_type": "inspect_blueprint_graph",
+            "bridge_kind": "mcp_readonly_or_inventory_fallback",
+        }
+    if spec.tool_id == "mcp_get_blueprint_node_details":
+        return {
+            "operation_family": "blueprint",
+            "frontend_executor_id": _mcp_tool_name(spec),
+            "operation_type": "inspect_blueprint_node_detail",
             "bridge_kind": "mcp_readonly_or_inventory_fallback",
         }
     if spec.tool_id == "editor_inspect_blueprint_node_detail":

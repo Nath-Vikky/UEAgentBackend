@@ -163,6 +163,7 @@ READONLY_MCP_TOOL_IDS = {
     "mcp_get_selected_actors",
     "mcp_get_level_actors",
     "mcp_get_blueprint_graph",
+    "mcp_get_blueprint_node_details",
     "mcp_get_widget_tree",
     "mcp_get_umg_widget_details",
     "mcp_get_material_instance_parameters",
@@ -613,6 +614,38 @@ def _looks_like_readonly_mcp_blueprint_graph_request(latest_text: str, text_lowe
     return has_read_intent and has_graph_target
 
 
+def _looks_like_readonly_mcp_blueprint_node_details_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = (
+        _has_readonly_sensing_intent(latest_text, text_lower)
+        or bool(re.search(r"\b(?:what|which|show|inspect|read)\b", text_lower))
+        or any(token in latest_text for token in ("\u4ec0\u4e48", "\u54ea\u4e9b", "\u67e5\u770b", "\u8bfb\u53d6"))
+    )
+    has_blueprint_target = (
+        "blueprint" in text_lower
+        or "eventgraph" in text_lower
+        or "event graph" in text_lower
+        or "bp_" in text_lower
+        or "\u84dd\u56fe" in latest_text
+    )
+    has_node_detail_target = (
+        "node detail" in text_lower
+        or "node details" in text_lower
+        or "node pins" in text_lower
+        or "pin" in text_lower
+        or "pins" in text_lower
+        or "connection" in text_lower
+        or "connections" in text_lower
+        or "linked" in text_lower
+        or "print string" in text_lower
+        or "beginplay" in text_lower
+        or "begin play" in text_lower
+        or any(token in latest_text for token in ("\u8282\u70b9", "\u5f15\u811a", "\u8fde\u63a5", "\u94fe\u63a5"))
+    )
+    return has_read_intent and has_blueprint_target and has_node_detail_target
+
+
 def _looks_like_readonly_mcp_widget_tree_request(latest_text: str, text_lower: str) -> bool:
     if _looks_like_editor_write_request(latest_text, text_lower):
         return False
@@ -857,6 +890,8 @@ def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
         return "mcp_get_widget_tree"
     if _looks_like_readonly_mcp_material_parameters_request(latest_text, text_lower):
         return "mcp_get_material_instance_parameters"
+    if _looks_like_readonly_mcp_blueprint_node_details_request(latest_text, text_lower):
+        return "mcp_get_blueprint_node_details"
     if _looks_like_readonly_mcp_blueprint_graph_request(latest_text, text_lower):
         return "mcp_get_blueprint_graph"
     return detect_tool_for_text(latest_text) or detect_tool_for_text(text_lower)

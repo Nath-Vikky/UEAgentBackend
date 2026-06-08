@@ -89,6 +89,7 @@ class ToolRegistryReadOnlyCallService:
 
         handlers = {
             "mcp_get_blueprint_graph": self._call_blueprint_graph,
+            "mcp_get_blueprint_node_details": self._call_inspect_blueprint_node_detail,
             "editor_inspect_blueprint_node_detail": self._call_inspect_blueprint_node_detail,
             "mcp_get_widget_tree": self._call_widget_tree,
             "mcp_get_umg_widget_details": self._call_inspect_umg_widget_detail,

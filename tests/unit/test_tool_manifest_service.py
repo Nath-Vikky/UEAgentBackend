@@ -53,6 +53,7 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     selected_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_selected_actors")
     level_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_level_actors")
     blueprint_graph = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_graph")
+    blueprint_node_details = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_node_details")
     material_parameters = _tool_by_annotation_tool_id(manifest, "mcp_get_material_instance_parameters")
 
     assert editor_context["name"] == "get_editor_context"
@@ -85,6 +86,12 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert blueprint_graph["annotations"]["allowed_in_free_chat"] is True
     assert blueprint_graph["annotations"]["execution_boundary"]["mode"] == "readonly_tool"
     assert blueprint_graph["annotations"]["execution_boundary"]["local_tool_registry_call_allowed"] is True
+    assert blueprint_node_details["name"] == "get_blueprint_node_details"
+    assert blueprint_node_details["annotations"]["operation_family"] == "blueprint"
+    assert blueprint_node_details["annotations"]["frontend_executor_id"] == "get_blueprint_node_details"
+    assert blueprint_node_details["annotations"]["operation_type"] == "inspect_blueprint_node_detail"
+    assert blueprint_node_details["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
+    assert blueprint_node_details["annotations"]["allowed_in_free_chat"] is True
 
     widget_tree = _tool_by_annotation_tool_id(manifest, "mcp_get_widget_tree")
     assert widget_tree["name"] == "get_widget_tree"
@@ -161,7 +168,11 @@ def test_tool_manifest_profiles_can_combine_with_side_effect_filter() -> None:
 
     assert manifest["filters"]["profile"] == "blueprint_demo"
     assert manifest["filters"]["side_effect_level"] == "read_only"
-    assert tool_ids == {"mcp_get_blueprint_graph", "editor_inspect_blueprint_node_detail"}
+    assert tool_ids == {
+        "mcp_get_blueprint_graph",
+        "mcp_get_blueprint_node_details",
+        "editor_inspect_blueprint_node_detail",
+    }
 
 
 def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
@@ -174,6 +185,7 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_static_mesh_details" in tool_ids
     assert "mcp_get_selected_actors" in tool_ids
     assert "mcp_get_level_actors" in tool_ids
+    assert "mcp_get_blueprint_node_details" in tool_ids
     assert "mcp_get_umg_widget_details" in tool_ids
     assert "mcp_get_material_instance_parameters" in tool_ids
     assert "mcp_get_editor_context" in preview["observe_tools"]
@@ -181,6 +193,7 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_static_mesh_details" in preview["observe_tools"]
     assert "mcp_get_selected_actors" in preview["observe_tools"]
     assert "mcp_get_level_actors" in preview["observe_tools"]
+    assert "mcp_get_blueprint_node_details" in preview["observe_tools"]
     assert "mcp_get_umg_widget_details" in preview["observe_tools"]
     assert "mcp_get_material_instance_parameters" in preview["observe_tools"]
 
@@ -239,6 +252,7 @@ def test_tool_manifest_blueprint_profile_exposes_add_step_alias() -> None:
 
     assert "editor_blueprint_add_step" in tool_ids
     assert "editor_add_blueprint_node_template" in tool_ids
+    assert "mcp_get_blueprint_node_details" in tool_ids
     assert "editor_inspect_blueprint_node_detail" in tool_ids
     assert "editor_blueprint_set_edit_function" in tool_ids
     assert "editor_blueprint_set_cursor_node" in tool_ids

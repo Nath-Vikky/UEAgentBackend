@@ -17,12 +17,14 @@ LIVE_MCP_TOOL_NAMES = {
     "mcp_get_selected_actors": "get_selected_actors",
     "mcp_get_level_actors": "get_level_actors",
     "mcp_get_blueprint_graph": "get_blueprint_graph",
+    "mcp_get_blueprint_node_details": "get_blueprint_node_details",
     "mcp_get_widget_tree": "get_widget_tree",
     "mcp_get_umg_widget_details": "get_widget_details",
     "mcp_get_material_instance_parameters": "get_material_instance_parameters",
 }
 LOCAL_INVENTORY_READONLY_TOOL_IDS = {
     "mcp_get_blueprint_graph",
+    "mcp_get_blueprint_node_details",
     "mcp_get_widget_tree",
     "mcp_get_umg_widget_details",
     "mcp_get_material_instance_parameters",
@@ -633,11 +635,13 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
     if selected_tool_id == "mcp_get_blueprint_graph":
         blueprint = inventory_context.get("current_blueprint") if isinstance(inventory_context, dict) else {}
         graph = inventory_context.get("current_blueprint_graph") if isinstance(inventory_context, dict) else {}
+        latest_text = str(request.session.messages[-1].content or "") if request.session.messages else ""
         blueprint_path = _first_non_empty(
             payload.get("blueprint_path"),
             editor_state.get("current_blueprint_path"),
             editor_state.get("blueprint_path"),
             blueprint.get("asset_path") if isinstance(blueprint, dict) else "",
+            _blueprint_path_from_text(latest_text),
         )
         if not blueprint_path:
             return None
@@ -647,6 +651,47 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
             graph.get("graph_name") if isinstance(graph, dict) else "",
         )
         arguments = {"blueprint_path": blueprint_path}
+        if graph_name:
+            arguments["graph_name"] = graph_name
+        return arguments
+    if selected_tool_id == "mcp_get_blueprint_node_details":
+        blueprint = inventory_context.get("current_blueprint") if isinstance(inventory_context, dict) else {}
+        graph = inventory_context.get("current_blueprint_graph") if isinstance(inventory_context, dict) else {}
+        blueprint_context = dict((context.context_bundle or {}).get("blueprint_edit_context") or {})
+        selected_assets = list(getattr(request.context, "selected_assets", []) or [])
+        latest_text = str(request.session.messages[-1].content or "") if request.session.messages else ""
+        blueprint_path = _first_non_empty(
+            payload.get("blueprint_path"),
+            payload.get("asset_path"),
+            editor_state.get("current_blueprint_path"),
+            editor_state.get("blueprint_path"),
+            blueprint_context.get("blueprint_path"),
+            blueprint.get("asset_path") if isinstance(blueprint, dict) else "",
+            _blueprint_path_from_text(latest_text),
+            _first_blueprint_path_from_strings(selected_assets),
+        )
+        graph_name = _first_non_empty(
+            payload.get("graph_name"),
+            editor_state.get("current_graph_name"),
+            blueprint_context.get("graph_name"),
+            graph.get("graph_name") if isinstance(graph, dict) else "",
+        )
+        node_query = _first_non_empty(
+            payload.get("node_query"),
+            payload.get("node_id"),
+            payload.get("node_name"),
+            payload.get("node_title"),
+            payload.get("target_node"),
+            payload.get("query"),
+            editor_state.get("current_node_query"),
+            editor_state.get("current_node_name"),
+            blueprint_context.get("node_query"),
+            blueprint_context.get("target_node"),
+            _blueprint_node_query_from_text(latest_text),
+        )
+        if not blueprint_path or not node_query:
+            return None
+        arguments = {"blueprint_path": blueprint_path, "node_query": node_query}
         if graph_name:
             arguments["graph_name"] = graph_name
         return arguments
@@ -878,6 +923,23 @@ def _live_mcp_answer(
         if node_preview:
             parts.append(node_preview)
         return "\n\n".join(parts)
+    if selected_tool_id == "mcp_get_blueprint_node_details":
+        node = structured.get("node") if isinstance(structured.get("node"), dict) else structured
+        pins = [item for item in list(structured.get("pins") or node.get("pins") or []) if isinstance(item, dict)]
+        parts = [
+            _localized(
+                output_language,
+                f"已通过 {source_label_zh}读取 Blueprint 节点详情：{arguments.get('node_query')}",
+                f"Read Blueprint node details through {source_label_en}: {arguments.get('node_query')}",
+            ),
+            _blueprint_node_detail_line(node, structured=structured),
+        ]
+        if structured.get("blueprint_path"):
+            parts.append(f"Blueprint: {structured.get('blueprint_path')}")
+        if pins:
+            pin_lines = [_blueprint_pin_preview_line(pin) for pin in pins[:12]]
+            parts.append(_localized(output_language, "Pin 预览：", "Pin preview:") + "\n" + "\n".join(pin_lines))
+        return "\n\n".join(parts)
     if selected_tool_id == "mcp_get_material_instance_parameters":
         material_item = _material_instance_item_from_structured(structured)
         parameters = _material_parameters_from_item(material_item)
@@ -961,6 +1023,7 @@ def _structured_content_for_answer(*, selected_tool_id: str, tool_result: dict[s
         "mcp_get_level_actors",
         "mcp_get_static_mesh_details",
         "mcp_get_umg_widget_details",
+        "mcp_get_blueprint_node_details",
     } and not structured:
         return tool_result
     if selected_tool_id not in {"mcp_get_widget_tree", "mcp_get_umg_widget_details"}:
@@ -981,6 +1044,14 @@ def _local_readonly_result_is_empty(*, selected_tool_id: str, tool_result: dict[
     structured = tool_result.get("structuredContent") if isinstance(tool_result.get("structuredContent"), dict) else {}
     if selected_tool_id == "mcp_get_blueprint_graph":
         return not list(structured.get("graphs") or [])
+    if selected_tool_id == "mcp_get_blueprint_node_details":
+        if structured.get("empty_reason"):
+            return True
+        normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
+        inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
+        if inspection.get("empty_reason"):
+            return True
+        return not bool(normalized.get("node") or normalized.get("node_title") or normalized.get("node_id"))
     if selected_tool_id == "mcp_get_widget_tree":
         if structured.get("empty_reason"):
             return True
@@ -1159,6 +1230,15 @@ def _first_widget_path_from_strings(values: list[str]) -> str:
     return ""
 
 
+def _first_blueprint_path_from_strings(values: list[str]) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        lowered = text.lower()
+        if text and ("blueprint" in lowered or "/bp_" in lowered or ".bp_" in lowered or "bp_" in lowered):
+            return text
+    return ""
+
+
 def _first_material_instance_path_from_inventory(items: list[dict[str, Any]]) -> str:
     for item in items:
         asset_type = str(item.get("asset_type") or "").lower()
@@ -1232,6 +1312,71 @@ def _widget_path_from_text(text: str) -> str:
         if "/ui/" in lowered or "wbp_" in lowered or "widget" in lowered:
             return match.rstrip(".,;:")
     return ""
+
+
+def _blueprint_path_from_text(text: str) -> str:
+    import re
+
+    for match in re.findall(r"/Game/[A-Za-z0-9_./-]+", str(text or "")):
+        lowered = match.lower().rstrip(".,;:")
+        if "blueprint" in lowered or "/bp_" in lowered or ".bp_" in lowered or "bp_" in lowered:
+            return match.rstrip(".,;:")
+    return ""
+
+
+def _blueprint_node_query_from_text(text: str) -> str:
+    import re
+
+    lowered = str(text or "").lower()
+    known_phrases = (
+        "print string",
+        "event beginplay",
+        "begin play",
+        "delay",
+        "branch",
+        "cast to",
+        "enhanced input action",
+        "input action",
+    )
+    for phrase in known_phrases:
+        if phrase in lowered:
+            return phrase.title()
+    match = re.search(r"\b[A-Z][A-Za-z0-9_]*(?:Node|Event|Function|Action|String|Branch|Delay)\b", str(text or ""))
+    return match.group(0) if match else ""
+
+
+def _blueprint_node_detail_line(node: dict[str, Any], *, structured: dict[str, Any]) -> str:
+    title = _first_non_empty(structured.get("node_title"), node.get("title"), node.get("node_title"), node.get("node_name")) or "Unknown"
+    node_class = _first_non_empty(structured.get("node_class"), node.get("node_class"))
+    graph_name = _first_non_empty(structured.get("graph_name"))
+    parts = [f"- {title}"]
+    if node_class:
+        parts.append(f"class={_short_class_name(node_class)}")
+    if graph_name:
+        parts.append(f"graph={graph_name}")
+    if node.get("pin_count") is not None or structured.get("pin_count") is not None:
+        parts.append(f"pins={node.get('pin_count', structured.get('pin_count'))}")
+    if node.get("link_count") is not None or structured.get("link_count") is not None:
+        parts.append(f"links={node.get('link_count', structured.get('link_count'))}")
+    if node.get("x") is not None and node.get("y") is not None:
+        parts.append(f"pos=({node.get('x')},{node.get('y')})")
+    return " | ".join(parts)
+
+
+def _blueprint_pin_preview_line(pin: dict[str, Any]) -> str:
+    name = _first_non_empty(pin.get("pin_name"), pin.get("name")) or "Unknown"
+    direction = _first_non_empty(pin.get("direction"), pin.get("pin_direction"))
+    pin_type = _first_non_empty(pin.get("pin_type"), pin.get("type"))
+    linked_count = pin.get("linked_to_count")
+    if linked_count is None:
+        linked_count = len(list(pin.get("linked_to") or []))
+    parts = [f"- {name}"]
+    if direction:
+        parts.append(f"dir={direction}")
+    if pin_type:
+        parts.append(f"type={pin_type}")
+    parts.append(f"links={linked_count}")
+    return " | ".join(parts)
 
 
 def _static_mesh_item_from_structured(structured: dict[str, Any]) -> dict[str, Any]:

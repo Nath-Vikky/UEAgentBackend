@@ -43,6 +43,82 @@ class _FakeMCPToolExecutor:
                 },
                 "errors": [],
             }
+        if tool_name == "get_blueprint_node_details":
+            return {
+                "ok": True,
+                "status": "completed",
+                "reason": "mcp_tool_call_completed",
+                "tool_name": tool_name,
+                "transport": "mcp_tcp",
+                "result": {
+                    "structuredContent": {
+                        "blueprint_node_detail_schema_version": "ue_agent_blueprint_node_details_v1",
+                        "blueprint_path": arguments["blueprint_path"],
+                        "blueprint_name": "BP_PlayerCharacter",
+                        "requested_node_query": arguments["node_query"],
+                        "graph_name": arguments.get("graph_name", "EventGraph"),
+                        "graph_type": "Ubergraph",
+                        "graph_node_count": 2,
+                        "node_id": "PrintString_1",
+                        "node_title": "Print String",
+                        "node_class": "K2Node_CallFunction",
+                        "pin_count": 3,
+                        "link_count": 1,
+                        "node": {
+                            "node_id": "PrintString_1",
+                            "title": "Print String",
+                            "node_class": "K2Node_CallFunction",
+                            "pin_count": 3,
+                            "link_count": 1,
+                            "pins": [
+                                {
+                                    "pin_name": "execute",
+                                    "direction": "input",
+                                    "pin_type": "exec",
+                                    "linked_to_count": 1,
+                                },
+                                {
+                                    "pin_name": "then",
+                                    "direction": "output",
+                                    "pin_type": "exec",
+                                    "linked_to_count": 0,
+                                },
+                                {
+                                    "pin_name": "In String",
+                                    "direction": "input",
+                                    "pin_type": "string",
+                                    "default_value": "Hello",
+                                    "linked_to_count": 0,
+                                },
+                            ],
+                        },
+                        "pins": [
+                            {
+                                "pin_name": "execute",
+                                "direction": "input",
+                                "pin_type": "exec",
+                                "linked_to_count": 1,
+                            },
+                            {
+                                "pin_name": "then",
+                                "direction": "output",
+                                "pin_type": "exec",
+                                "linked_to_count": 0,
+                            },
+                            {
+                                "pin_name": "In String",
+                                "direction": "input",
+                                "pin_type": "string",
+                                "default_value": "Hello",
+                                "linked_to_count": 0,
+                            },
+                        ],
+                    },
+                    "content": [{"type": "text", "text": "blueprint node details"}],
+                    "isError": False,
+                },
+                "errors": [],
+            }
         if tool_name == "get_widget_tree":
             return {
                 "ok": True,
@@ -509,6 +585,35 @@ def test_live_mcp_readonly_result_uses_tcp_blueprint_graph(monkeypatch) -> None:
     assert "EventGraph" in result["assistant_message"]
     assert "Print String" in result["assistant_message"]
     assert base_debug["mcp_live_attempt"]["tool_name"] == "get_blueprint_graph"
+
+
+def test_live_mcp_readonly_result_reads_blueprint_node_details(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "inspect Print String pins"}]},
+        context={"editor_state": {"current_blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"}},
+        payload={"node_query": "Print String", "graph_name": "EventGraph"},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.live_mcp_readonly_result(
+        context=_context(selected_tool_id="mcp_get_blueprint_node_details", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_blueprint_node_details",
+    )
+
+    assert result is not None
+    assert result["data"]["mcp_tool"]["tool_name"] == "get_blueprint_node_details"
+    assert result["data"]["mcp_tool"]["arguments"] == {
+        "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+        "node_query": "Print String",
+        "graph_name": "EventGraph",
+    }
+    assert "Print String" in result["assistant_message"]
+    assert "pins=3" in result["assistant_message"]
+    assert "links=1" in result["assistant_message"]
+    assert "In String" in result["assistant_message"]
 
 
 def test_live_mcp_readonly_result_uses_selected_widget_path(monkeypatch) -> None:

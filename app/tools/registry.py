@@ -2068,6 +2068,58 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
     ),
+    "mcp_get_blueprint_node_details": ToolSpec(
+        tool_id="mcp_get_blueprint_node_details",
+        task_type="editor_operation",
+        title="Get Blueprint Node Details",
+        description=(
+            "Read one Blueprint graph node's live title, class, pins, linked pins, "
+            "and graph metadata from the optional UEAgentTool TCP tool server."
+        ),
+        side_effect_level="read_only",
+        route_preference="single_tool",
+        category="sensing",
+        transport="mcp_tcp",
+        mcp_tool_name="get_blueprint_node_details",
+        requires_confirmation=False,
+        active_context_keys=("project", "asset", "blueprint", "graph"),
+        owned_by_skill="BlueprintGraphAutomationSkill",
+        allowed_in_free_chat=True,
+        permission_gate="mcp_allowed_tools",
+        context_cost="low",
+        trigger_keywords=(
+            "get blueprint node details",
+            "blueprint node details",
+            "blueprint node pins",
+            "node connections",
+            "pin connections",
+        ),
+        required_payload_fields=("blueprint_path", "node_query"),
+        optional_payload_fields=("asset_path", "graph_name", "node_id", "node_name", "node_title", "target_node", "query", "project_id"),
+        input_schema={
+            "type": "object",
+            "required": ["blueprint_path", "node_query"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "blueprint_path": {"type": "string"},
+                "asset_path": {"type": "string"},
+                "graph_name": {"type": "string"},
+                "node_id": {"type": "string"},
+                "node_name": {"type": "string"},
+                "node_title": {"type": "string"},
+                "target_node": {"type": "string"},
+                "node_query": {"type": "string"},
+                "query": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "content": {"type": "array"},
+                "structuredContent": {"type": "object"},
+            },
+        },
+    ),
     "editor_inspect_blueprint_node_detail": ToolSpec(
         tool_id="editor_inspect_blueprint_node_detail",
         task_type="editor_operation",

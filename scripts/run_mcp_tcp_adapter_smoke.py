@@ -74,6 +74,22 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         },
     },
     {
+        "name": "get_blueprint_node_details",
+        "description": "Read one Blueprint graph node detail.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "blueprint_path": {"type": "string"},
+                "graph_name": {"type": "string"},
+                "node_query": {"type": "string"},
+                "node_id": {"type": "string"},
+                "node_name": {"type": "string"},
+                "node_title": {"type": "string"},
+            },
+            "required": ["blueprint_path", "node_query"],
+        },
+    },
+    {
         "name": "get_widget_tree",
         "description": "Read Widget Blueprint tree metadata.",
         "inputSchema": {
@@ -338,9 +354,59 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                         "graph_type": "Ubergraph",
                         "nodes": [
                             {"node_id": "EventBeginPlay", "title": "Event BeginPlay"},
-                            {"node_id": "PrintString_1", "title": "Print String"},
+                            {
+                                "node_id": "PrintString_1",
+                                "node_name": "K2Node_CallFunction_1",
+                                "node_class": "K2Node_CallFunction",
+                                "title": "Print String",
+                                "pin_count": 3,
+                                "link_count": 1,
+                                "pins": [
+                                    {"pin_name": "execute", "direction": "input", "pin_type": "exec", "linked_to_count": 1},
+                                    {"pin_name": "then", "direction": "output", "pin_type": "exec", "linked_to_count": 0},
+                                    {"pin_name": "InString", "direction": "input", "pin_type": "string", "linked_to_count": 0},
+                                ],
+                            },
                         ],
                     }
+                ],
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
+            }
+        if tool_name == "get_blueprint_node_details":
+            structured = {
+                "blueprint_node_detail_schema_version": "ue_agent_blueprint_node_details_v1",
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "blueprint_name": "BP_PlayerCharacter",
+                "requested_node_query": "Print String",
+                "graph_name": "EventGraph",
+                "graph_type": "event",
+                "graph_node_count": 2,
+                "node_id": "PrintString_1",
+                "node_title": "Print String",
+                "node_class": "K2Node_CallFunction",
+                "pin_count": 3,
+                "link_count": 1,
+                "node": {
+                    "node_id": "PrintString_1",
+                    "node_name": "K2Node_CallFunction_1",
+                    "node_class": "K2Node_CallFunction",
+                    "title": "Print String",
+                    "pin_count": 3,
+                    "link_count": 1,
+                    "pins": [
+                        {"pin_name": "execute", "direction": "input", "pin_type": "exec", "linked_to_count": 1},
+                        {"pin_name": "then", "direction": "output", "pin_type": "exec", "linked_to_count": 0},
+                        {"pin_name": "InString", "direction": "input", "pin_type": "string", "linked_to_count": 0},
+                    ],
+                },
+                "pins": [
+                    {"pin_name": "execute", "direction": "input", "pin_type": "exec", "linked_to_count": 1},
+                    {"pin_name": "then", "direction": "output", "pin_type": "exec", "linked_to_count": 0},
+                    {"pin_name": "InString", "direction": "input", "pin_type": "string", "linked_to_count": 0},
                 ],
             }
             return {
@@ -556,6 +622,7 @@ def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
             "get_selected_assets",
             "get_static_mesh_details",
             "get_blueprint_graph",
+            "get_blueprint_node_details",
             "get_widget_tree",
             "get_widget_details",
             "get_material_instance_parameters",
@@ -579,6 +646,19 @@ def _blueprint_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     graphs = list(structured.get("graphs") or [])
     ok = payload.get("ok") is True and bool(graphs) and graphs[0].get("graph_name") == "EventGraph"
     return ok, "TCP call returns Blueprint graph structuredContent"
+
+
+def _blueprint_node_details_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    pins = list(structured.get("pins") or [])
+    ok = (
+        payload.get("ok") is True
+        and structured.get("blueprint_node_detail_schema_version") == "ue_agent_blueprint_node_details_v1"
+        and structured.get("node_title") == "Print String"
+        and len(pins) == 3
+        and pins[0].get("pin_name") == "execute"
+    )
+    return ok, "TCP call returns focused Blueprint node detail structuredContent"
 
 
 def _selected_actors_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
@@ -718,6 +798,7 @@ def _run_smoke() -> list[dict[str, Any]]:
             "get_selected_assets",
             "get_static_mesh_details",
             "get_blueprint_graph",
+            "get_blueprint_node_details",
             "get_widget_tree",
             "get_widget_details",
             "get_material_instance_parameters",
@@ -768,6 +849,20 @@ def _run_smoke() -> list[dict[str, Any]]:
                     {"blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"},
                 ),
                 _blueprint_call_ok,
+            )
+        )
+        cases.append(
+            _run_case(
+                "call_get_blueprint_node_details",
+                adapter.call_readonly_tool(
+                    "get_blueprint_node_details",
+                    {
+                        "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                        "graph_name": "EventGraph",
+                        "node_query": "Print String",
+                    },
+                ),
+                _blueprint_node_details_call_ok,
             )
         )
         cases.append(

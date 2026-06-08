@@ -12,7 +12,8 @@ from app.services.mcp_tool_adapter import MCPToolAdapter
 
 DEFAULT_ALLOWED_TOOLS = (
     "ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,"
-    "get_level_actors,get_static_mesh_details,get_blueprint_graph,get_widget_tree,get_widget_details,get_material_instance_parameters"
+    "get_level_actors,get_static_mesh_details,get_blueprint_graph,get_blueprint_node_details,"
+    "get_widget_tree,get_widget_details,get_material_instance_parameters"
 )
 
 
@@ -35,6 +36,16 @@ def _parse_args() -> argparse.Namespace:
         "--blueprint-path",
         default="",
         help="Optional Blueprint path to call get_blueprint_graph, e.g. /Game/Blueprints/BP_Player.",
+    )
+    parser.add_argument(
+        "--blueprint-graph-name",
+        default="",
+        help="Optional Blueprint graph name for focused graph/node calls, e.g. EventGraph.",
+    )
+    parser.add_argument(
+        "--blueprint-node-query",
+        default="",
+        help="Optional node title/id/name to call get_blueprint_node_details, e.g. Print String.",
     )
     parser.add_argument(
         "--widget-blueprint-path",
@@ -145,6 +156,19 @@ def _run_smoke(args: argparse.Namespace) -> list[dict[str, Any]]:
                 adapter.call_readonly_tool("get_blueprint_graph", {"blueprint_path": args.blueprint_path}),
             )
         )
+        if args.blueprint_node_query and "get_blueprint_node_details" in allowed_tools:
+            node_args = {
+                "blueprint_path": args.blueprint_path,
+                "node_query": args.blueprint_node_query,
+            }
+            if args.blueprint_graph_name:
+                node_args["graph_name"] = args.blueprint_graph_name
+            cases.append(
+                _case(
+                    "call_get_blueprint_node_details",
+                    adapter.call_readonly_tool("get_blueprint_node_details", node_args),
+                )
+            )
     if args.widget_blueprint_path:
         cases.append(
             _case(
@@ -196,6 +220,8 @@ def main() -> int:
             "timeout_ms": args.timeout_ms,
             "allowed_tools": _parse_csv(args.allowed_tools),
             "blueprint_path": args.blueprint_path,
+            "blueprint_graph_name": args.blueprint_graph_name,
+            "blueprint_node_query": args.blueprint_node_query,
             "widget_blueprint_path": args.widget_blueprint_path,
             "material_instance_path": args.material_instance_path,
         },
