@@ -651,6 +651,24 @@ def _cases() -> list[dict[str, Any]]:
             },
         },
         {
+            "case_id": "chat_set_actor_visibility",
+            "request": _chat_request(
+                case_id="chat_set_actor_visibility",
+                query="Hide actors tagged Enemy in game",
+                payload={
+                    "selection": {"tag": "Enemy", "max_count": 6},
+                    "hidden_in_game": True,
+                },
+            ),
+            "expected_operation_type": "set_actor_visibility",
+            "expected_payload": {
+                "selection.tag": "Enemy",
+                "selection.max_count": 6,
+                "hidden_in_game": True,
+                "save_policy": "mark_dirty_only",
+            },
+        },
+        {
             "case_id": "chat_arrange_actors_pattern",
             "request": _chat_request(
                 case_id="chat_arrange_actors_pattern",

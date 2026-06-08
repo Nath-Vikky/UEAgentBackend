@@ -202,6 +202,21 @@ def build_affected_targets(operation_type: str, payload: dict[str, Any]) -> list
                 "tag_mode": payload["tag_mode"],
             }
         ]
+    if operation_type == "set_actor_visibility":
+        selection = payload["selection"]
+        return [
+            {
+                "kind": "level_actor",
+                "action": "set_actor_visibility",
+                "actor_references": selection.get("actor_references", []),
+                "query": selection.get("query"),
+                "class_contains": selection.get("class_contains"),
+                "tag": selection.get("tag"),
+                "folder_path": selection.get("folder_path"),
+                "max_count": selection.get("max_count"),
+                "hidden_in_game": payload["hidden_in_game"],
+            }
+        ]
     if operation_type == "set_actor_metadata":
         return [
             {

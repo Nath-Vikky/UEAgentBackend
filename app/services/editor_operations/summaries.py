@@ -231,6 +231,20 @@ def build_operation_summaries(operation_type: str, payload: dict[str, Any]) -> t
             f"Actor tags before change: Actors matching {selector_text}.",
             f"{payload['tag_mode'].title()} tags `{', '.join(payload['tags'])}` on matched Actors. The level is marked dirty, not auto-saved.",
         )
+    if operation_type == "set_actor_visibility":
+        selection = payload["selection"]
+        selector_parts = []
+        if selection.get("actor_references"):
+            selector_parts.append(f"{len(selection['actor_references'])} explicit references")
+        for key in ("query", "class_contains", "tag", "folder_path"):
+            if selection.get(key):
+                selector_parts.append(f"{key}={selection[key]}")
+        selector_text = ", ".join(selector_parts) or "current selection criteria"
+        action = "Hide in game" if payload["hidden_in_game"] else "Show in game"
+        return (
+            f"Actor visibility before change: Actors matching {selector_text}.",
+            f"{action} for matched Actors. The level is marked dirty, not auto-saved.",
+        )
     if operation_type == "set_actor_transform":
         transform_key = "transform_delta" if payload["transform_mode"] == "delta" else "transform"
         fields = ", ".join(sorted(payload[transform_key].keys()))

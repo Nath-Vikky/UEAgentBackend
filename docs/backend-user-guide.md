@@ -5959,6 +5959,51 @@ Expected UE result callback fields:
 - `dirty_packages`
 - `save_policy=mark_dirty_only`
 
+## 2026-06-09 Level Actor Visibility Proposal
+
+`Editor Operation Bridge` now includes `set_actor_visibility`, a confirmed
+Proposal for setting `Hidden In Game` on a bounded set of current-level Actors.
+
+Use it when Agent Chat needs to hide or show gameplay Actor groups without
+moving, deleting, or renaming them:
+
+- `Hide actors tagged Enemy in game`
+- `Show actors tagged Debug in game`
+- `Hide selected actors in game`
+
+Explicit proposal API:
+
+```json
+{
+  "operation_type": "set_actor_visibility",
+  "payload": {
+    "selection": {
+      "tag": "Enemy",
+      "max_count": 8
+    },
+    "hidden_in_game": true
+  }
+}
+```
+
+Safety boundary:
+
+- Requires user confirmation before execution.
+- Reuses the same bounded selector as `select_level_actors`.
+- Only calls `AActor.SetActorHiddenInGame`.
+- Does not change editor temporary visibility, transforms, folders, tags,
+  names, assets, or auto-save levels.
+- The level is marked dirty so the user can review and save manually.
+
+Expected UE result callback fields:
+
+- `updated_actor_count`
+- `updated_actors`
+- `hidden_in_game`
+- `level_dirty`
+- `dirty_packages`
+- `save_policy=mark_dirty_only`
+
 ## 2026-05-24 Tool Registry Manifest for MCP-compatible Transport
 
 The backend now exposes a descriptive Tool Registry manifest:

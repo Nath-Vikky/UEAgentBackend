@@ -368,6 +368,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["selection", "tags"],
         "frontend_status": "implemented_v1",
     },
+    "set_actor_visibility": {
+        "tool_id": "editor_set_actor_visibility",
+        "title": "Set Actor Visibility",
+        "risk_flags": "MEDIUM",
+        "summary": "Set Hidden In Game on a bounded Actor set after user confirmation.",
+        "required_fields": ["selection", "hidden_in_game"],
+        "frontend_status": "implemented_v1",
+    },
     "set_actor_transform": {
         "tool_id": "editor_set_actor_transform",
         "title": "Set Actor Transform",
@@ -468,6 +476,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
             "select_level_actors",
             "set_actor_folder",
             "set_actor_tags",
+            "set_actor_visibility",
             "set_actor_transform",
             "set_actor_metadata",
             "arrange_actors_pattern",

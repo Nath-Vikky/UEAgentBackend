@@ -1922,6 +1922,20 @@ class EditorOperationService:
         return [], tag_mode
 
     @staticmethod
+    def _detect_actor_hidden_in_game_from_request(request: UnifiedTaskRequest, query_text: str) -> bool | None:
+        value = request.payload.get("hidden_in_game")
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int | float) and value in {0, 1}:
+            return bool(value)
+        query_lower = query_text.lower()
+        if re.search(r"\b(?:unhide|show|make visible|set visible|reveal)\b", query_lower):
+            return False
+        if re.search(r"\b(?:hide|hidden|make invisible|set invisible)\b", query_lower):
+            return True
+        return None
+
+    @staticmethod
     def _detect_material_parameter_name(query_text: str) -> str | None:
         for known_name in (
             "Roughness",
@@ -2211,6 +2225,49 @@ class EditorOperationService:
             return EditorOperationProposalRequest(
                 operation_type="set_actor_tags",
                 payload={"selection": selection, "tags": target_tags, "tag_mode": tag_mode},
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
+        explicit_actor_visibility_selection = request.payload.get("selection") if isinstance(request.payload.get("selection"), dict) else {}
+        has_actor_visibility_selector_payload = bool(explicit_actor_visibility_selection) or any(
+            key in request.payload
+            for key in ("actor_references", "selected_actor_references", "class_contains", "tag", "max_count")
+        )
+        actor_visibility_target_signal = (
+            re.search(r"\b(?:actor|actors|level actors|selected actors)\b", query_lower) is not None
+            or has_actor_visibility_selector_payload
+            or any(token in query_text for token in ("关卡Actor", "场景Actor"))
+        )
+        hidden_in_game = EditorOperationService._detect_actor_hidden_in_game_from_request(request, query_text)
+        wants_set_actor_visibility = actor_visibility_target_signal and hidden_in_game is not None
+        if wants_set_actor_visibility:
+            selection: dict[str, Any] = dict(explicit_actor_visibility_selection)
+            for key in ("query", "class_contains", "tag", "folder_path", "max_count"):
+                if key in request.payload and key not in selection:
+                    selection[key] = request.payload.get(key)
+            references = EditorOperationService._detect_actor_references_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            if references and "actor_references" not in selection:
+                selection["actor_references"] = references
+            if "tag" not in selection:
+                tag_match = re.search(r"\b(?:tagged|with tag)\s+([A-Za-z][A-Za-z0-9_]{1,63})\b", query_text, flags=re.IGNORECASE)
+                if tag_match:
+                    selection["tag"] = tag_match.group(1)
+            if "class_contains" not in selection:
+                class_match = re.search(r"\b(?:class|type)\s+([A-Za-z][A-Za-z0-9_]{1,63})\b", query_text, flags=re.IGNORECASE)
+                if class_match:
+                    selection["class_contains"] = class_match.group(1)
+            if "query" not in selection and not any(selection.get(key) for key in ("actor_references", "class_contains", "tag", "folder_path")):
+                label = EditorOperationService._extract_actor_label_from_text(query_text)
+                selection["query"] = label or query_text[:120]
+            return EditorOperationProposalRequest(
+                operation_type="set_actor_visibility",
+                payload={"selection": selection, "hidden_in_game": hidden_in_game},
                 reason=query_text,
                 requested_by="agent_chat",
                 context=request.context.model_dump(mode="json"),
@@ -4977,6 +5034,18 @@ class EditorOperationService:
                 "selection": self._normalize_actor_selection(selection_input),
                 "tags": tags,
                 "tag_mode": tag_mode,
+                "save_policy": "mark_dirty_only",
+            }
+
+        if operation_type == "set_actor_visibility":
+            selection_input = payload.get("selection") if isinstance(payload.get("selection"), dict) else {
+                key: payload.get(key)
+                for key in ("actor_references", "query", "class_contains", "tag", "folder_path", "max_count")
+                if key in payload
+            }
+            return {
+                "selection": self._normalize_actor_selection(selection_input),
+                "hidden_in_game": self._normalize_bool(payload.get("hidden_in_game"), "hidden_in_game"),
                 "save_policy": "mark_dirty_only",
             }
 

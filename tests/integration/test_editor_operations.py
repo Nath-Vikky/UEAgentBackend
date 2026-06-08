@@ -94,6 +94,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         "select_level_actors",
         "set_actor_folder",
         "set_actor_tags",
+        "set_actor_visibility",
         "set_actor_transform",
         "set_actor_metadata",
         "arrange_actors_pattern",
@@ -105,13 +106,13 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
         item["operation_type"]: item
         for item in body["capabilities"]["items"]
     }
-    assert body["capabilities"]["summary"]["operation_count"] >= 20
-    assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 20
+    assert body["capabilities"]["summary"]["operation_count"] >= 21
+    assert body["capabilities"]["summary"]["implemented_frontend_count"] >= 21
     assert body["capabilities"]["summary"]["read_only_operation_count"] >= 6
     assert body["capabilities"]["summary"]["roadmap_operation_count"] >= 0
     assert body["capabilities"]["summary"]["risk_flag_counts"]["MEDIUM"] >= 1
     assert body["capabilities"]["summary"]["group_counts"]["blueprint"] >= 7
-    assert body["capabilities"]["summary"]["group_counts"]["level"] >= 7
+    assert body["capabilities"]["summary"]["group_counts"]["level"] >= 8
     group_ids = {item["group_id"] for item in body["capabilities"]["groups"]}
     assert {"asset", "blueprint", "umg", "level", "material"}.issubset(group_ids)
     roadmap_items = {
@@ -129,6 +130,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "select_level_actors" not in roadmap_items
     assert "set_actor_folder" not in roadmap_items
     assert "set_actor_tags" not in roadmap_items
+    assert "set_actor_visibility" not in roadmap_items
     assert read_only_items["inspect_level_actors"]["side_effect_level"] == "read_only"
     assert read_only_items["inspect_level_actors"]["requires_confirmation"] is False
     assert read_only_items["inspect_level_actors"]["proposal_enabled"] is False
@@ -170,6 +172,8 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert operation_items["set_actor_folder"]["risk_flags"] == "MEDIUM"
     assert operation_items["set_actor_tags"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_tags"]["risk_flags"] == "MEDIUM"
+    assert operation_items["set_actor_visibility"]["frontend_status"] == "implemented_v1"
+    assert operation_items["set_actor_visibility"]["risk_flags"] == "MEDIUM"
     assert operation_items["set_actor_transform"]["frontend_status"] == "implemented_v1"
     assert operation_items["set_actor_metadata"]["frontend_status"] == "implemented_v1"
     assert operation_items["arrange_actors_pattern"]["frontend_status"] == "implemented_v1"
@@ -217,6 +221,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_select_level_actors" in tool_ids
     assert "editor_set_actor_folder" in tool_ids
     assert "editor_set_actor_tags" in tool_ids
+    assert "editor_set_actor_visibility" in tool_ids
     assert "editor_set_actor_transform" in tool_ids
     assert "editor_set_actor_metadata" in tool_ids
     assert "editor_arrange_actors_pattern" in tool_ids
@@ -2404,6 +2409,51 @@ def test_set_actor_tags_rejects_empty_tags(client: TestClient) -> None:
     assert body["errors"][0]["code"] == "tags_required"
 
 
+def test_set_actor_visibility_proposal_contract(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_actor_visibility",
+            "payload": {
+                "selection": {
+                    "tag": "Enemy",
+                    "max_count": 8,
+                },
+                "hidden_in_game": True,
+            },
+            "reason": "Hide enemy spawners during this test scenario.",
+            "requested_by": "integration_test",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"]["operation_type"] == "set_actor_visibility"
+    assert body["operation"]["tool_id"] == "editor_set_actor_visibility"
+    payload = body["operation"]["operation_payload"]
+    assert payload["selection"]["tag"] == "Enemy"
+    assert payload["selection"]["max_count"] == 8
+    assert payload["hidden_in_game"] is True
+    assert payload["save_policy"] == "mark_dirty_only"
+    assert body["item"]["confirmation"]["state"] == "pending"
+
+
+def test_set_actor_visibility_rejects_missing_hidden_flag(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/editor-operations/proposals",
+        json={
+            "operation_type": "set_actor_visibility",
+            "payload": {
+                "selection": {"actor_references": ["BP_EnemySpawner_1"]},
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["errors"][0]["code"] == "hidden_in_game_must_be_boolean"
+
+
 def test_set_actor_metadata_proposal_contract(client: TestClient) -> None:
     response = client.post(
         "/api/v1/editor-operations/proposals",
@@ -4081,6 +4131,54 @@ def test_agent_chat_can_prepare_set_actor_tags_from_payload(client: TestClient) 
     assert payload["selection"]["max_count"] == 6
     assert payload["tags"] == ["Combat"]
     assert payload["tag_mode"] == "append"
+    assert payload["save_policy"] == "mark_dirty_only"
+
+
+def test_agent_chat_can_prepare_set_actor_visibility_from_payload(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "chat_set_actor_visibility_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Hide actors tagged Enemy in game",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "project_root": "D:/DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": [],
+            },
+            "payload": {
+                "user_query": "Hide actors tagged Enemy in game",
+                "selection": {"tag": "Enemy", "max_count": 6},
+                "hidden_in_game": True,
+            },
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "en-US",
+                "return_debug_projection": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["status"] == "waiting_confirmation"
+    proposal = body["action_proposals"][0]
+    assert proposal["dry_run_preview"]["operation_type"] == "set_actor_visibility"
+    payload = proposal["dry_run_preview"]["operation_payload"]
+    assert payload["selection"]["tag"] == "Enemy"
+    assert payload["selection"]["max_count"] == 6
+    assert payload["hidden_in_game"] is True
     assert payload["save_policy"] == "mark_dirty_only"
 
 
