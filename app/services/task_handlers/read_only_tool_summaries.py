@@ -668,6 +668,7 @@ def _live_mcp_answer(
             actor_lines.append(
                 f"- {actor.get('actor_label') or actor.get('actor_name') or 'Unknown'}"
                 + (f" | class={actor.get('actor_class')}" if actor.get("actor_class") else "")
+                + (f" | components={actor.get('component_count')}" if actor.get("component_count") is not None else "")
                 + (f" | path={actor.get('actor_path')}" if actor.get("actor_path") else "")
             )
         parts = [

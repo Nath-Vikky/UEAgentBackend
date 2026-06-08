@@ -7632,6 +7632,15 @@ Returned `structuredContent` is expected to include:
 - `actors[].transform.location`
 - `actors[].transform.rotation`
 - `actors[].transform.scale`
+- `actors[].component_count`
+- `actors[].components[].component_name`
+- `actors[].components[].component_class`
+- `actors[].components[].is_registered`
+- `actors[].components[].is_scene_component`
+- `actors[].components[].relative_location`
+- `actors[].components[].relative_rotation`
+- `actors[].components[].relative_scale`
+- `actors[].components[].attach_parent`
 
 Agent Chat routing:
 

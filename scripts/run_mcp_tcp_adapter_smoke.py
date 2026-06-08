@@ -150,12 +150,19 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                         "actor_name": "BP_EnemySpawner_C_1",
                         "actor_class": "/Game/Blueprints/BP_EnemySpawner.BP_EnemySpawner_C",
                         "actor_path": "PersistentLevel.BP_EnemySpawner_C_1",
+                        "component_count": 2,
+                        "components": [
+                            {"component_name": "DefaultSceneRoot", "component_class": "SceneComponent"},
+                            {"component_name": "SpawnPoint", "component_class": "ArrowComponent"},
+                        ],
                     },
                     {
                         "actor_label": "BP_PatrolPoint_1",
                         "actor_name": "BP_PatrolPoint_C_1",
                         "actor_class": "/Game/Blueprints/BP_PatrolPoint.BP_PatrolPoint_C",
                         "actor_path": "PersistentLevel.BP_PatrolPoint_C_1",
+                        "component_count": 1,
+                        "components": [{"component_name": "DefaultSceneRoot", "component_class": "SceneComponent"}],
                     },
                 ],
             }
@@ -341,6 +348,7 @@ def _selected_actors_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
         payload.get("ok") is True
         and structured.get("selection_schema_version") == "ue_agent_tool_selected_actors_fixture_v1"
         and structured.get("selected_actor_count") == 2
+        and structured.get("actors", [{}])[0].get("component_count") == 2
     )
     return ok, "TCP call returns selected actor structuredContent"
 
