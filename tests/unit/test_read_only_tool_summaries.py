@@ -61,6 +61,45 @@ class _FakeMCPToolExecutor:
                 },
                 "errors": [],
             }
+        if tool_name == "get_material_instance_parameters":
+            material_path = (arguments or {}).get("material_instance_path") or "/Game/Materials/MI_Player.MI_Player"
+            return {
+                "ok": True,
+                "status": "completed",
+                "reason": "mcp_tool_call_completed",
+                "tool_name": tool_name,
+                "transport": "mcp_tcp",
+                "result": {
+                    "structuredContent": {
+                        "material_instance_schema_version": "ue_agent_tool_tcp_fixture_v1",
+                        "material_instance_path": material_path,
+                        "material_instance_name": "MI_Player",
+                        "parent_material": "/Game/Materials/M_Player.M_Player",
+                        "parameters": [
+                            {
+                                "name": "Roughness",
+                                "parameter_name": "Roughness",
+                                "parameter_type": "scalar",
+                                "value": 0.35,
+                            }
+                        ],
+                        "scalar_parameters": [
+                            {
+                                "name": "Roughness",
+                                "parameter_name": "Roughness",
+                                "parameter_type": "scalar",
+                                "value": 0.35,
+                            }
+                        ],
+                        "vector_parameters": [],
+                        "texture_parameters": [],
+                        "static_switch_parameters": [],
+                    },
+                    "content": [{"type": "text", "text": "material"}],
+                    "isError": False,
+                },
+                "errors": [],
+            }
         return {
             "ok": False,
             "status": "blocked",
@@ -116,6 +155,50 @@ class _FakeLocalReadOnlyCallService:
         }
 
 
+class _FakeLocalMaterialReadOnlyCallService:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+
+    def call(self, tool: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        material_path = (arguments or {}).get("material_instance_path") or "/Game/Materials/MI_Player.MI_Player"
+        return {
+            "ok": True,
+            "status": "completed",
+            "reason": "local_readonly_tool_completed",
+            "tool_id": tool,
+            "tool_name": "get_material_instance_parameters",
+            "transport": "local_tool_registry",
+            "source": "project_inventory",
+            "result": {
+                "inspection": {"empty_reason": "", "match_count": 1},
+                "items": [
+                    {
+                        "material_instance_path": material_path,
+                        "material_instance_name": "MI_Player",
+                        "parent_material": "/Game/Materials/M_Player.M_Player",
+                        "parameters": [
+                            {
+                                "name": "Roughness",
+                                "parameter_name": "Roughness",
+                                "parameter_type": "scalar",
+                                "value": 0.35,
+                            }
+                        ],
+                        "scalar_parameters": [
+                            {
+                                "name": "Roughness",
+                                "parameter_name": "Roughness",
+                                "parameter_type": "scalar",
+                                "value": 0.35,
+                            }
+                        ],
+                    }
+                ],
+            },
+            "errors": [],
+        }
+
+
 def _context(*, selected_tool_id: str, request: UnifiedTaskRequest) -> TaskExecutionContext:
     return TaskExecutionContext(
         request=request,
@@ -148,6 +231,17 @@ def _context(*, selected_tool_id: str, request: UnifiedTaskRequest) -> TaskExecu
                         "asset_name": "WBP_MainHUD",
                         "asset_type": "WidgetBlueprint",
                         "asset_path": "/Game/UI/WBP_MainHUD",
+                    },
+                    {
+                        "asset_name": "MI_Player",
+                        "asset_type": "MaterialInstanceConstant",
+                        "asset_path": "/Game/Materials/MI_Player.MI_Player",
+                    }
+                ],
+                "material_instances": [
+                    {
+                        "material_instance_name": "MI_Player",
+                        "material_instance_path": "/Game/Materials/MI_Player.MI_Player",
                     }
                 ],
             }
@@ -202,6 +296,29 @@ def test_live_mcp_readonly_result_uses_selected_widget_path(monkeypatch) -> None
     assert "TitleText" in result["assistant_message"]
 
 
+def test_live_mcp_readonly_result_reads_material_instance_parameters(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "show selected material parameters"}]},
+        context={"selected_assets": ["/Game/Materials/MI_Player.MI_Player"]},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.live_mcp_readonly_result(
+        context=_context(selected_tool_id="mcp_get_material_instance_parameters", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_material_instance_parameters",
+    )
+
+    assert result is not None
+    assert result["data"]["mcp_tool"]["arguments"]["material_instance_path"] == "/Game/Materials/MI_Player.MI_Player"
+    assert "MI_Player" in result["assistant_message"]
+    assert "Roughness" in result["assistant_message"]
+    assert base_debug["mcp_live_attempt"]["tool_name"] == "get_material_instance_parameters"
+
+
 def test_live_mcp_readonly_result_returns_none_when_tcp_fails(monkeypatch) -> None:
     monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FailingMCPToolExecutor)
     request = UnifiedTaskRequest(
@@ -243,6 +360,33 @@ def test_local_tool_registry_readonly_result_reads_widget_tree(monkeypatch) -> N
     assert result["data"]["local_tool"]["transport"] == "local_tool_registry"
     assert "RootCanvas" in result["assistant_message"]
     assert "TitleText" in result["assistant_message"]
+
+
+def test_local_tool_registry_readonly_result_reads_material_parameters(monkeypatch) -> None:
+    monkeypatch.setattr(
+        read_only_tool_summaries,
+        "ToolRegistryReadOnlyCallService",
+        _FakeLocalMaterialReadOnlyCallService,
+    )
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "inspect material parameters"}]},
+        context={"selected_assets": ["/Game/Materials/MI_Player.MI_Player"]},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.local_tool_registry_readonly_result(
+        context=_context(selected_tool_id="mcp_get_material_instance_parameters", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_material_instance_parameters",
+    )
+
+    assert result is not None
+    assert result["retrieval_trace"]["mode"] == "local_tool_registry_readonly"
+    assert result["data"]["local_tool"]["transport"] == "local_tool_registry"
+    assert "MI_Player" in result["assistant_message"]
+    assert "Roughness" in result["assistant_message"]
 
 
 def test_local_tool_registry_readonly_result_reads_selected_assets_context() -> None:

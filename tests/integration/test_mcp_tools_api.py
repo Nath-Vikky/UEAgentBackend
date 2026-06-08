@@ -566,6 +566,10 @@ def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inven
         "/api/v1/mcp/tool-registry/tools/editor_inspect_material_instance_detail/call",
         json={"arguments": {"project_id": "MCPDemoProject", "material_instance_path": "MI_Rock"}},
     )
+    mcp_material_response = client.post(
+        "/api/v1/mcp/tool-registry/tools/get_material_instance_parameters/call",
+        json={"arguments": {"project_id": "MCPDemoProject", "material_instance_path": "MI_Rock"}},
+    )
 
     assert widget_response.status_code == 200
     widget_body = widget_response.json()
@@ -577,6 +581,11 @@ def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inven
     material_body = material_response.json()
     assert material_body["success"] is True
     assert material_body["call"]["result"]["item"]["scalar_parameters"][0]["name"] == "Roughness"
+    assert mcp_material_response.status_code == 200
+    mcp_material_body = mcp_material_response.json()
+    assert mcp_material_body["success"] is True
+    assert mcp_material_body["call"]["tool_id"] == "mcp_get_material_instance_parameters"
+    assert mcp_material_body["call"]["result"]["items"][0]["scalar_parameters"][0]["name"] == "Roughness"
 
 
 def test_tool_registry_local_readonly_call_reads_umg_widget_detail(client: TestClient) -> None:

@@ -51,6 +51,7 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     selected_assets = _tool_by_annotation_tool_id(manifest, "mcp_get_selected_assets")
     selected_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_selected_actors")
     blueprint_graph = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_graph")
+    material_parameters = _tool_by_annotation_tool_id(manifest, "mcp_get_material_instance_parameters")
 
     assert editor_context["name"] == "get_editor_context"
     assert editor_context["annotations"]["transport"] == "mcp_tcp"
@@ -79,6 +80,11 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert widget_tree["name"] == "get_widget_tree"
     assert widget_tree["annotations"]["allowed_in_free_chat"] is True
     assert widget_tree["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
+    assert material_parameters["name"] == "get_material_instance_parameters"
+    assert material_parameters["annotations"]["operation_family"] == "material"
+    assert material_parameters["annotations"]["frontend_executor_id"] == "get_material_instance_parameters"
+    assert material_parameters["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
+    assert material_parameters["annotations"]["allowed_in_free_chat"] is True
 
 
 def test_tool_manifest_adds_frontend_executor_metadata_for_editor_tools() -> None:
@@ -150,9 +156,11 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_editor_context" in tool_ids
     assert "mcp_get_selected_assets" in tool_ids
     assert "mcp_get_selected_actors" in tool_ids
+    assert "mcp_get_material_instance_parameters" in tool_ids
     assert "mcp_get_editor_context" in preview["observe_tools"]
     assert "mcp_get_selected_assets" in preview["observe_tools"]
     assert "mcp_get_selected_actors" in preview["observe_tools"]
+    assert "mcp_get_material_instance_parameters" in preview["observe_tools"]
 
 
 def test_tool_manifest_marks_plan_only_context_tools_as_local_plan_calls() -> None:

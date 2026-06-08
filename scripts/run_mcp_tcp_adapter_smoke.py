@@ -57,6 +57,14 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         },
     },
     {
+        "name": "get_material_instance_parameters",
+        "description": "Read Material Instance parameters.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"material_instance_path": {"type": "string"}},
+        },
+    },
+    {
         "name": "rename_asset",
         "description": "Confirmed-write fixture tool; UEAgentTool rejects raw TCP execution.",
         "inputSchema": {
@@ -232,6 +240,69 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                 "structuredContent": structured,
                 "isError": False,
             }
+        if tool_name == "get_material_instance_parameters":
+            structured = {
+                "material_instance_schema_version": "ue_agent_tool_tcp_fixture_v1",
+                "material_instance_path": "/Game/Materials/MI_Player.MI_Player",
+                "material_instance_name": "MI_Player",
+                "parent_material": "/Game/Materials/M_Player.M_Player",
+                "parameters": [
+                    {"name": "Roughness", "parameter_name": "Roughness", "parameter_type": "scalar", "value": 0.35},
+                    {
+                        "name": "BaseColor",
+                        "parameter_name": "BaseColor",
+                        "parameter_type": "vector",
+                        "value": {"r": 0.9, "g": 0.7, "b": 0.45, "a": 1.0},
+                    },
+                    {
+                        "name": "BaseTexture",
+                        "parameter_name": "BaseTexture",
+                        "parameter_type": "texture",
+                        "texture_path": "/Game/Textures/T_Player_D.T_Player_D",
+                        "value": "/Game/Textures/T_Player_D.T_Player_D",
+                    },
+                    {
+                        "name": "UseDetailNormal",
+                        "parameter_name": "UseDetailNormal",
+                        "parameter_type": "static_switch",
+                        "value": True,
+                    },
+                ],
+                "scalar_parameters": [
+                    {"name": "Roughness", "parameter_name": "Roughness", "parameter_type": "scalar", "value": 0.35}
+                ],
+                "vector_parameters": [
+                    {
+                        "name": "BaseColor",
+                        "parameter_name": "BaseColor",
+                        "parameter_type": "vector",
+                        "value": {"r": 0.9, "g": 0.7, "b": 0.45, "a": 1.0},
+                    }
+                ],
+                "texture_parameters": [
+                    {
+                        "name": "BaseTexture",
+                        "parameter_name": "BaseTexture",
+                        "parameter_type": "texture",
+                        "texture_path": "/Game/Textures/T_Player_D.T_Player_D",
+                        "value": "/Game/Textures/T_Player_D.T_Player_D",
+                    }
+                ],
+                "static_switch_parameters": [
+                    {
+                        "name": "UseDetailNormal",
+                        "parameter_name": "UseDetailNormal",
+                        "parameter_type": "static_switch",
+                        "value": True,
+                    }
+                ],
+                "parameter_count": 4,
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
+            }
         return {
             "isError": True,
             "content": [
@@ -320,6 +391,7 @@ def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
             "get_selected_assets",
             "get_blueprint_graph",
             "get_widget_tree",
+            "get_material_instance_parameters",
         ],
         "discovery filters to read-only allow-list",
     )
@@ -369,6 +441,18 @@ def _widget_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     return ok, "TCP call returns Widget tree structuredContent"
 
 
+def _material_parameters_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    parameters = list(structured.get("parameters") or [])
+    ok = (
+        payload.get("ok") is True
+        and structured.get("material_instance_schema_version") == "ue_agent_tool_tcp_fixture_v1"
+        and structured.get("material_instance_name") == "MI_Player"
+        and len(parameters) == 4
+    )
+    return ok, "TCP call returns Material Instance parameter structuredContent"
+
+
 def _write_blocked_by_allowlist(payload: dict[str, Any]) -> tuple[bool, str]:
     ok = payload.get("ok") is False and payload.get("reason") == "tool_not_in_mcp_allowed_tools"
     return ok, "confirmed-write tool is blocked before raw TCP call"
@@ -399,7 +483,14 @@ def _run_case(case_id: str, payload: dict[str, Any], validator: Validator) -> di
 def _run_smoke() -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
     with _fixture_adapter(
-        ["get_editor_context", "get_selected_actors", "get_selected_assets", "get_blueprint_graph", "get_widget_tree"]
+        [
+            "get_editor_context",
+            "get_selected_actors",
+            "get_selected_assets",
+            "get_blueprint_graph",
+            "get_widget_tree",
+            "get_material_instance_parameters",
+        ]
     ) as adapter:
         cases.append(_run_case("adapter_status_ready", adapter.status(), _status_ready))
         cases.append(_run_case("discover_readonly_tools", adapter.discover_tools(), _discover_readonly_ok))
@@ -442,6 +533,16 @@ def _run_smoke() -> list[dict[str, Any]]:
                     {"widget_blueprint_path": "/Game/UI/WBP_MainHUD"},
                 ),
                 _widget_call_ok,
+            )
+        )
+        cases.append(
+            _run_case(
+                "call_get_material_instance_parameters",
+                adapter.call_readonly_tool(
+                    "get_material_instance_parameters",
+                    {"material_instance_path": "/Game/Materials/MI_Player"},
+                ),
+                _material_parameters_call_ok,
             )
         )
         cases.append(

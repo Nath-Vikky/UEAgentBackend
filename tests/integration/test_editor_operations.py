@@ -185,6 +185,7 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "editor_fixup_redirectors" in tool_ids
     assert "mcp_get_blueprint_graph" in tool_ids
     assert "mcp_get_widget_tree" in tool_ids
+    assert "mcp_get_material_instance_parameters" in tool_ids
     assert "editor_add_umg_widget" in tool_ids
     assert "editor_set_umg_widget_text" in tool_ids
     assert "editor_set_umg_widget_layout" in tool_ids
@@ -218,6 +219,11 @@ def test_editor_operation_capabilities_and_registry(client: TestClient) -> None:
     assert "graph_schema_version" in blueprint_graph_schema
     assert "graph_metrics" in blueprint_graph_schema
     assert "graphs" in blueprint_graph_schema
+    material_parameters_schema = tools_by_id["mcp_get_material_instance_parameters"]["output_schema"]["properties"][
+        "structuredContent"
+    ]["properties"]
+    assert "material_instance_schema_version" in material_parameters_schema
+    assert "parameters" in material_parameters_schema
 
 
 def test_editor_operation_read_only_inspections_use_project_inventory(client: TestClient) -> None:

@@ -199,6 +199,23 @@ def test_agent_chat_with_explicit_read_widget_tree_routes_to_mcp_readonly_tool()
     assert routing["route"]["decision_source"] == "heuristic_task_signal"
 
 
+def test_agent_chat_with_explicit_material_parameters_routes_to_mcp_readonly_tool() -> None:
+    request = _request(
+        content="Show selected material instance parameters",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "selected_assets": ["/Game/Materials/MI_Player.MI_Player"],
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_material_instance_parameters"
+    assert routing["route"]["decision_source"] == "heuristic_task_signal"
+
+
 def test_agent_chat_with_explicit_editor_context_routes_to_mcp_readonly_tool() -> None:
     request = _request(
         content="Show the current editor status",

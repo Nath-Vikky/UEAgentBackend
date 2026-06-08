@@ -162,6 +162,7 @@ READONLY_MCP_TOOL_IDS = {
     "mcp_get_selected_actors",
     "mcp_get_blueprint_graph",
     "mcp_get_widget_tree",
+    "mcp_get_material_instance_parameters",
 }
 PROJECT_INVENTORY_SCOPE_HINTS = {
     "current project",
@@ -623,6 +624,29 @@ def _looks_like_readonly_mcp_widget_tree_request(latest_text: str, text_lower: s
     return has_read_intent and has_widget_tree_target
 
 
+def _looks_like_readonly_mcp_material_parameters_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = (
+        _has_readonly_sensing_intent(latest_text, text_lower)
+        or bool(re.search(r"\b(?:what|which)\b", text_lower))
+        or any(token in latest_text for token in ("\u4ec0\u4e48", "\u54ea\u4e9b", "\u6709\u54ea\u4e9b"))
+    )
+    has_material_target = (
+        "material instance parameter" in text_lower
+        or "material instance parameters" in text_lower
+        or "material parameter" in text_lower
+        or "material parameters" in text_lower
+        or "selected material" in text_lower
+        or "current material" in text_lower
+        or "\u6750\u8d28\u5b9e\u4f8b\u53c2\u6570" in latest_text
+        or "\u6750\u8d28\u53c2\u6570" in latest_text
+        or ("\u9009\u4e2d\u6750\u8d28" in latest_text and "\u53c2\u6570" in latest_text)
+        or ("\u5f53\u524d\u6750\u8d28" in latest_text and "\u53c2\u6570" in latest_text)
+    )
+    return has_read_intent and has_material_target
+
+
 def _looks_like_readonly_mcp_editor_context_request(latest_text: str, text_lower: str) -> bool:
     if _looks_like_editor_write_request(latest_text, text_lower):
         return False
@@ -731,6 +755,8 @@ def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
         return "mcp_get_selected_actors"
     if _looks_like_readonly_mcp_widget_tree_request(latest_text, text_lower):
         return "mcp_get_widget_tree"
+    if _looks_like_readonly_mcp_material_parameters_request(latest_text, text_lower):
+        return "mcp_get_material_instance_parameters"
     if _looks_like_readonly_mcp_blueprint_graph_request(latest_text, text_lower):
         return "mcp_get_blueprint_graph"
     return detect_tool_for_text(latest_text) or detect_tool_for_text(text_lower)

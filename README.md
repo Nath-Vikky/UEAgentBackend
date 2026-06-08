@@ -147,6 +147,10 @@ Agent 判断意图
 - `POST /api/v1/mcp/tool-registry/proposals/prepare`
 - `POST /api/v1/mcp/tool-registry/proposals`
 
+Optional live MCP/TCP sensing currently covers editor context, selected assets,
+selected actors, Blueprint graph, Widget Tree, and Material Instance parameters.
+Write operations still use HTTP Proposal confirmation.
+
 Agent Chat workflow responses also include `user_view.quick_actions` and a
 `workflow_ready_actions` block for ready steps. UI clients can render these as
 "Create Proposal" buttons; each button creates one pending Proposal only and

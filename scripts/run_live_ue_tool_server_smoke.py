@@ -11,7 +11,8 @@ from app.services.mcp_tool_adapter import MCPToolAdapter
 
 
 DEFAULT_ALLOWED_TOOLS = (
-    "ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree"
+    "ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,"
+    "get_blueprint_graph,get_widget_tree,get_material_instance_parameters"
 )
 
 
@@ -39,6 +40,11 @@ def _parse_args() -> argparse.Namespace:
         "--widget-blueprint-path",
         default="",
         help="Optional Widget Blueprint path to call get_widget_tree, e.g. /Game/UI/WBP_MainHUD.",
+    )
+    parser.add_argument(
+        "--material-instance-path",
+        default="",
+        help="Optional Material Instance path to call get_material_instance_parameters, e.g. /Game/Materials/MI_Player.",
     )
     parser.add_argument(
         "--timeout-ms",
@@ -134,6 +140,16 @@ def _run_smoke(args: argparse.Namespace) -> list[dict[str, Any]]:
                 ),
             )
         )
+    if "get_material_instance_parameters" in allowed_tools:
+        material_args = {}
+        if args.material_instance_path:
+            material_args["material_instance_path"] = args.material_instance_path
+        cases.append(
+            _case(
+                "call_get_material_instance_parameters",
+                adapter.call_readonly_tool("get_material_instance_parameters", material_args),
+            )
+        )
     return cases
 
 
@@ -156,6 +172,7 @@ def main() -> int:
             "allowed_tools": _parse_csv(args.allowed_tools),
             "blueprint_path": args.blueprint_path,
             "widget_blueprint_path": args.widget_blueprint_path,
+            "material_instance_path": args.material_instance_path,
         },
         "cases": cases,
         "notes": [

@@ -7190,7 +7190,7 @@ MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
 MCP_TCP_HOST=127.0.0.1
 MCP_TCP_PORT=8765
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
 MCP_TCP_TIMEOUT_MS=3000
 ```
 
@@ -7663,7 +7663,7 @@ Safety boundary:
 Suggested TCP allow-list:
 
 ```env
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
 ```
 
 ## 2026-06-08 Update: Live MCP Selected Assets Tool
@@ -7712,6 +7712,62 @@ Safety boundary:
 - It does not rename, move, duplicate, delete, save, or fix up assets.
 - Asset write operations still require HTTP Editor Operation Proposal
   confirmation in UEAgentTool.
+
+## 2026-06-08 Update: Live MCP Material Instance Parameters Tool
+
+When the optional UEAgentTool TCP editor tool server supports it, the backend can
+use:
+
+```text
+mcp_get_material_instance_parameters -> get_material_instance_parameters
+```
+
+Purpose:
+
+- Read scalar, vector, texture, and static-switch parameters from a live
+  Material Instance.
+- Ground Agent Chat questions such as `Show selected material instance
+  parameters` before creating a later Material parameter Proposal.
+- Prefer the live frontend MCP/TCP tool when available, then fall back to local
+  Project Inventory through the same read-only Tool Registry path.
+
+Arguments:
+
+- `material_instance_path` is optional for live TCP. If omitted, UEAgentTool
+  tries the currently selected Content Browser Material Instance.
+- Local Inventory fallback can use `material_instance_path`, `asset_path`, or
+  `query` to find a captured Material Instance.
+
+Returned `structuredContent` is expected to include:
+
+- `material_instance_schema_version`
+- `server_status`
+- `transport`
+- `resolved_from`
+- `material_instance_path`
+- `material_instance_name`
+- `parent_material`
+- `parameter_count`
+- `parameters[]`
+- `scalar_parameters[]`
+- `vector_parameters[]`
+- `texture_parameters[]`
+- `static_switch_parameters[]`
+
+Safety boundary:
+
+- This tool is read-only.
+- It does not edit Material Graphs, compile shaders, save assets, or change
+  parameter values.
+- Material writes still require normal HTTP Editor Operation Proposal
+  confirmation in UEAgentTool.
+
+Optional live smoke:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py `
+  --material-instance-path "/Game/Materials/MI_Player"
+```
 
 ## 2026-06-08 Update: Frontend MCP Tool Provider View
 
