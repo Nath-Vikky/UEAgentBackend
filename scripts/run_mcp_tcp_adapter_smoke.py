@@ -48,6 +48,21 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         },
     },
     {
+        "name": "get_level_actor_details",
+        "description": "Read one current level Actor detail.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "actor_reference": {"type": "string"},
+                "actor_label": {"type": "string"},
+                "actor_name": {"type": "string"},
+                "actor_path": {"type": "string"},
+                "query": {"type": "string"},
+            },
+            "required": ["actor_reference"],
+        },
+    },
+    {
         "name": "get_selected_assets",
         "description": "Read currently selected Content Browser assets.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -266,6 +281,56 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                         "component_count": 2,
                     },
                 ],
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
+            }
+        if tool_name == "get_level_actor_details":
+            structured = {
+                "level_actor_detail_schema_version": "ue_agent_level_actor_details_v1",
+                "transport": "tcp_jsonrpc_line",
+                "server_status": "running",
+                "requested_actor_reference": "BP_PlayerCharacter_1",
+                "world_name": "DemoWorld",
+                "map_name": "DemoMap",
+                "total_actor_count": 3,
+                "matched_actor_count": 1,
+                "actor_label": "BP_PlayerCharacter_1",
+                "actor_name": "BP_PlayerCharacter_C_1",
+                "actor_class": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter_C",
+                "actor_path": "PersistentLevel.BP_PlayerCharacter_C_1",
+                "folder_path": "Gameplay/Player",
+                "actor": {
+                    "actor_label": "BP_PlayerCharacter_1",
+                    "actor_name": "BP_PlayerCharacter_C_1",
+                    "actor_class": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter_C",
+                    "actor_path": "PersistentLevel.BP_PlayerCharacter_C_1",
+                    "folder_path": "Gameplay/Player",
+                    "tags": ["Player"],
+                    "transform": {
+                        "location": {"x": 100.0, "y": 20.0, "z": 88.0},
+                        "rotation": {"pitch": 0.0, "yaw": 90.0, "roll": 0.0},
+                        "scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+                    },
+                    "component_count": 2,
+                    "components": [
+                        {
+                            "component_name": "CapsuleComponent",
+                            "component_class": "/Script/Engine.CapsuleComponent",
+                            "is_scene_component": True,
+                            "relative_location": {"x": 0.0, "y": 0.0, "z": 0.0},
+                        },
+                        {
+                            "component_name": "Mesh",
+                            "component_class": "/Script/Engine.SkeletalMeshComponent",
+                            "is_scene_component": True,
+                            "attach_parent": "CapsuleComponent",
+                            "relative_location": {"x": 0.0, "y": 0.0, "z": -90.0},
+                        },
+                    ],
+                },
             }
             return {
                 "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
@@ -619,6 +684,7 @@ def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
             "get_editor_context",
             "get_selected_actors",
             "get_level_actors",
+            "get_level_actor_details",
             "get_selected_assets",
             "get_static_mesh_details",
             "get_blueprint_graph",
@@ -683,6 +749,21 @@ def _level_actors_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
         and actors[0].get("actor_label") == "BP_PlayerCharacter_1"
     )
     return ok, "TCP call returns current level Actor query structuredContent"
+
+
+def _level_actor_details_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    actor = structured.get("actor") if isinstance(structured.get("actor"), dict) else {}
+    components = [item for item in list(actor.get("components") or []) if isinstance(item, dict)]
+    ok = (
+        payload.get("ok") is True
+        and structured.get("level_actor_detail_schema_version") == "ue_agent_level_actor_details_v1"
+        and structured.get("actor_label") == "BP_PlayerCharacter_1"
+        and actor.get("component_count") == 2
+        and components
+        and components[0].get("component_name") == "CapsuleComponent"
+    )
+    return ok, "TCP call returns focused Level Actor detail structuredContent"
 
 
 def _selected_assets_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
@@ -795,6 +876,7 @@ def _run_smoke() -> list[dict[str, Any]]:
             "get_editor_context",
             "get_selected_actors",
             "get_level_actors",
+            "get_level_actor_details",
             "get_selected_assets",
             "get_static_mesh_details",
             "get_blueprint_graph",
@@ -825,6 +907,13 @@ def _run_smoke() -> list[dict[str, Any]]:
                 "call_get_level_actors",
                 adapter.call_readonly_tool("get_level_actors", {"class_contains": "Character", "tag": "Player", "limit": 20}),
                 _level_actors_call_ok,
+            )
+        )
+        cases.append(
+            _run_case(
+                "call_get_level_actor_details",
+                adapter.call_readonly_tool("get_level_actor_details", {"actor_reference": "BP_PlayerCharacter_1"}),
+                _level_actor_details_call_ok,
             )
         )
         cases.append(

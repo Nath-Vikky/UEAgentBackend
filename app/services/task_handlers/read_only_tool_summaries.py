@@ -16,6 +16,7 @@ LIVE_MCP_TOOL_NAMES = {
     "mcp_get_static_mesh_details": "get_static_mesh_details",
     "mcp_get_selected_actors": "get_selected_actors",
     "mcp_get_level_actors": "get_level_actors",
+    "mcp_get_level_actor_details": "get_level_actor_details",
     "mcp_get_blueprint_graph": "get_blueprint_graph",
     "mcp_get_blueprint_node_details": "get_blueprint_node_details",
     "mcp_get_widget_tree": "get_widget_tree",
@@ -29,6 +30,7 @@ LOCAL_INVENTORY_READONLY_TOOL_IDS = {
     "mcp_get_umg_widget_details",
     "mcp_get_material_instance_parameters",
     "mcp_get_level_actors",
+    "mcp_get_level_actor_details",
     "mcp_get_static_mesh_details",
 }
 
@@ -632,6 +634,28 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
         if limit is not None:
             arguments["limit"] = limit
         return arguments
+    if selected_tool_id == "mcp_get_level_actor_details":
+        latest_text = str(request.session.messages[-1].content or "") if request.session.messages else ""
+        selected_inventory_actors = [
+            item
+            for item in list(inventory_context.get("selected_level_actors") or inventory_context.get("selected_actors") or [])
+            if isinstance(item, dict)
+        ]
+        actor_reference = _first_non_empty(
+            payload.get("actor_reference"),
+            payload.get("actor_label"),
+            payload.get("actor_name"),
+            payload.get("actor_path"),
+            payload.get("query"),
+            editor_state.get("current_actor_reference"),
+            editor_state.get("current_actor_label"),
+            editor_state.get("actor_reference"),
+            _first_actor_reference_from_inventory(selected_inventory_actors),
+            _actor_reference_from_text(latest_text),
+        )
+        if not actor_reference:
+            return None
+        return {"actor_reference": actor_reference}
     if selected_tool_id == "mcp_get_blueprint_graph":
         blueprint = inventory_context.get("current_blueprint") if isinstance(inventory_context, dict) else {}
         graph = inventory_context.get("current_blueprint_graph") if isinstance(inventory_context, dict) else {}
@@ -862,6 +886,23 @@ def _live_mcp_answer(
         else:
             parts.append(_localized(output_language, "没有匹配到关卡 Actor。", "No matching level Actors were found."))
         return "\n\n".join(parts)
+    if selected_tool_id == "mcp_get_level_actor_details":
+        actor = structured.get("actor") if isinstance(structured.get("actor"), dict) else {}
+        if not actor:
+            actor = structured.get("item") if isinstance(structured.get("item"), dict) else structured
+        components = [item for item in list(actor.get("components") or structured.get("components") or []) if isinstance(item, dict)]
+        parts = [
+            _localized(
+                output_language,
+                f"已通过 {source_label_zh}读取 Level Actor 详情：{arguments.get('actor_reference')}",
+                f"Read Level Actor details through {source_label_en}: {arguments.get('actor_reference')}",
+            ),
+            _level_actor_detail_line(actor, structured=structured),
+        ]
+        if components:
+            component_lines = [_actor_component_preview_line(component) for component in components[:12]]
+            parts.append(_localized(output_language, "组件预览:", "Component preview:") + "\n" + "\n".join(component_lines))
+        return "\n\n".join(parts)
     if selected_tool_id == "mcp_get_selected_assets":
         assets = [item for item in list(structured.get("assets") or []) if isinstance(item, dict)]
         asset_lines = []
@@ -1024,6 +1065,7 @@ def _structured_content_for_answer(*, selected_tool_id: str, tool_result: dict[s
         "mcp_get_static_mesh_details",
         "mcp_get_umg_widget_details",
         "mcp_get_blueprint_node_details",
+        "mcp_get_level_actor_details",
     } and not structured:
         return tool_result
     if selected_tool_id not in {"mcp_get_widget_tree", "mcp_get_umg_widget_details"}:
@@ -1078,6 +1120,12 @@ def _local_readonly_result_is_empty(*, selected_tool_id: str, tool_result: dict[
         if inspection.get("empty_reason"):
             return True
         return not bool(list(normalized.get("actors") or normalized.get("items") or []))
+    if selected_tool_id == "mcp_get_level_actor_details":
+        normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
+        inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
+        if inspection.get("empty_reason"):
+            return True
+        return not bool(normalized.get("actor") or normalized.get("item") or normalized.get("actor_label"))
     if selected_tool_id == "mcp_get_static_mesh_details":
         normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
         inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
@@ -1109,6 +1157,101 @@ def _asset_name_from_path(asset_path: str) -> str:
     if "." in tail:
         tail = tail.rsplit(".", 1)[-1]
     return tail or "Unknown"
+
+
+def _first_actor_reference_from_inventory(actors: list[dict[str, Any]]) -> str:
+    for actor in actors:
+        if not isinstance(actor, dict):
+            continue
+        value = _first_non_empty(actor.get("actor_label"), actor.get("actor_name"), actor.get("actor_path"))
+        if value:
+            return value
+    return ""
+
+
+def _actor_reference_from_text(text: str) -> str:
+    import re
+
+    raw = str(text or "")
+    for match in re.findall(r"\bBP_[A-Za-z0-9_]+(?:_\d+)?\b", raw):
+        return match
+    for match in re.findall(r"\b[A-Z][A-Za-z0-9]+_[A-Za-z0-9_]+\b", raw):
+        lowered = match.lower()
+        if lowered.startswith(("sm_", "mi_", "wbp_")):
+            continue
+        return match
+    return ""
+
+
+def _level_actor_detail_line(actor: dict[str, Any], *, structured: dict[str, Any]) -> str:
+    label = _first_non_empty(structured.get("actor_label"), actor.get("actor_label"), actor.get("actor_name")) or "Unknown"
+    actor_class = _short_class_name(_first_non_empty(structured.get("actor_class"), actor.get("actor_class")))
+    folder = _first_non_empty(structured.get("folder_path"), actor.get("folder_path"))
+    tags = list(actor.get("tags") or structured.get("tags") or [])
+    transform_text = _transform_preview_text(actor.get("transform") or structured.get("transform"))
+    parts = [f"- {label}"]
+    if actor_class:
+        parts.append(f"class={actor_class}")
+    if folder:
+        parts.append(f"folder={folder}")
+    if tags:
+        parts.append("tags=" + ", ".join(str(tag) for tag in tags[:6]))
+    if actor.get("component_count") is not None:
+        parts.append(f"components={actor.get('component_count')}")
+    if transform_text:
+        parts.append(transform_text)
+    return " | ".join(parts)
+
+
+def _actor_component_preview_line(component: dict[str, Any]) -> str:
+    name = _first_non_empty(component.get("component_name"), component.get("name")) or "Unknown"
+    component_class = _short_class_name(_first_non_empty(component.get("component_class"), component.get("class")))
+    parts = [f"- {name}"]
+    if component_class:
+        parts.append(f"class={component_class}")
+    if component.get("is_scene_component") is not None:
+        parts.append(f"scene={component.get('is_scene_component')}")
+    if component.get("attach_parent"):
+        parts.append(f"attach_parent={component.get('attach_parent')}")
+    relative_location = _vector3_preview_text(component.get("relative_location"))
+    if relative_location:
+        parts.append(f"relative_location={relative_location}")
+    return " | ".join(parts)
+
+
+def _transform_preview_text(transform: Any) -> str:
+    if not isinstance(transform, dict):
+        return ""
+    location = _vector3_preview_text(transform.get("location"))
+    rotation = _rotator_preview_text(transform.get("rotation"))
+    scale = _vector3_preview_text(transform.get("scale") or transform.get("scale3d"))
+    details = []
+    if location:
+        details.append(f"loc={location}")
+    if rotation:
+        details.append(f"rot={rotation}")
+    if scale:
+        details.append(f"scale={scale}")
+    return " | ".join(details)
+
+
+def _vector3_preview_text(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    if value.get("x") is None or value.get("y") is None or value.get("z") is None:
+        return ""
+    return f"({value.get('x')},{value.get('y')},{value.get('z')})"
+
+
+def _rotator_preview_text(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    pitch = value.get("pitch")
+    yaw = value.get("yaw")
+    roll = value.get("roll")
+    if pitch is None and yaw is None and roll is None:
+        return ""
+    return f"(pitch={pitch or 0},yaw={yaw or 0},roll={roll or 0})"
 
 
 def _selected_asset_preview_line(asset: dict[str, Any]) -> str:

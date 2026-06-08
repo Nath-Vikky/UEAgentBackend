@@ -31,6 +31,7 @@ class PlaceholderTaskHandler:
             "mcp_get_static_mesh_details",
             "mcp_get_selected_actors",
             "mcp_get_level_actors",
+            "mcp_get_level_actor_details",
             "mcp_get_blueprint_graph",
             "mcp_get_blueprint_node_details",
             "mcp_get_widget_tree",

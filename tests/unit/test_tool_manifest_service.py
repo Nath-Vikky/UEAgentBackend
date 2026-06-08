@@ -52,6 +52,7 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     static_mesh_details = _tool_by_annotation_tool_id(manifest, "mcp_get_static_mesh_details")
     selected_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_selected_actors")
     level_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_level_actors")
+    level_actor_details = _tool_by_annotation_tool_id(manifest, "mcp_get_level_actor_details")
     blueprint_graph = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_graph")
     blueprint_node_details = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_node_details")
     material_parameters = _tool_by_annotation_tool_id(manifest, "mcp_get_material_instance_parameters")
@@ -77,6 +78,12 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert level_actors["annotations"]["operation_family"] == "level"
     assert level_actors["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
     assert level_actors["annotations"]["allowed_in_free_chat"] is True
+    assert level_actor_details["name"] == "get_level_actor_details"
+    assert level_actor_details["annotations"]["operation_family"] == "level"
+    assert level_actor_details["annotations"]["frontend_executor_id"] == "get_level_actor_details"
+    assert level_actor_details["annotations"]["operation_type"] == "inspect_level_actor_detail"
+    assert level_actor_details["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
+    assert level_actor_details["annotations"]["allowed_in_free_chat"] is True
 
     assert blueprint_graph["name"] == "get_blueprint_graph"
     assert blueprint_graph["annotations"]["transport"] == "mcp_tcp"
@@ -185,6 +192,7 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_static_mesh_details" in tool_ids
     assert "mcp_get_selected_actors" in tool_ids
     assert "mcp_get_level_actors" in tool_ids
+    assert "mcp_get_level_actor_details" in tool_ids
     assert "mcp_get_blueprint_node_details" in tool_ids
     assert "mcp_get_umg_widget_details" in tool_ids
     assert "mcp_get_material_instance_parameters" in tool_ids
@@ -193,6 +201,7 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_static_mesh_details" in preview["observe_tools"]
     assert "mcp_get_selected_actors" in preview["observe_tools"]
     assert "mcp_get_level_actors" in preview["observe_tools"]
+    assert "mcp_get_level_actor_details" in preview["observe_tools"]
     assert "mcp_get_blueprint_node_details" in preview["observe_tools"]
     assert "mcp_get_umg_widget_details" in preview["observe_tools"]
     assert "mcp_get_material_instance_parameters" in preview["observe_tools"]

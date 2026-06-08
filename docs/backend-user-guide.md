@@ -7190,7 +7190,7 @@ MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
 MCP_TCP_HOST=127.0.0.1
 MCP_TCP_PORT=8765
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
 MCP_TCP_TIMEOUT_MS=3000
 ```
 
@@ -7229,7 +7229,7 @@ Optional live check when UEAgentTool is open and its TCP tool server is enabled:
 To also call read-only graph tools, pass real project paths:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --blueprint-path /Game/Blueprints/BP_PlayerCharacter --blueprint-graph-name EventGraph --blueprint-node-query "Print String" --widget-blueprint-path /Game/UI/WBP_MainHUD --output -
+.\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --actor-reference BP_PlayerCharacter_1 --blueprint-path /Game/Blueprints/BP_PlayerCharacter --blueprint-graph-name EventGraph --blueprint-node-query "Print String" --widget-blueprint-path /Game/UI/WBP_MainHUD --output -
 ```
 
 The live smoke is intentionally not part of CI because it requires Unreal
@@ -7667,7 +7667,7 @@ Safety boundary:
 Suggested TCP allow-list:
 
 ```env
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
 ```
 
 ## 2026-06-08 Update: Live MCP Selected Assets Tool
@@ -7820,7 +7820,7 @@ Recommended UEAgentTool TCP allow-list:
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
 ```
 
 ### Live Selected Static Mesh Details
@@ -7872,6 +7872,35 @@ tool is unavailable, it can fall back to local Project Inventory level Actor
 inspection. The answer card summarizes world/map, total and matched Actor
 counts, filters, Actor labels/classes/folders/tags, and component counts. No
 Actor is selected, moved, renamed, tagged, or otherwise modified by this tool.
+
+### Live Focused Level Actor Details
+
+`get_level_actor_details` is the focused version of Level Actor sensing. It
+accepts:
+
+```json
+{
+  "actor_reference": "BP_PlayerCharacter_1"
+}
+```
+
+The live UEAgentTool response includes one `actor` object with label/name/path,
+class, folder, tags, transform, component count, and component summaries. The
+backend can route prompts such as `Inspect BP_PlayerCharacter_1 actor transform
+and components` to this tool. If live MCP/TCP is unavailable, the backend maps
+`mcp_get_level_actor_details` to the existing Project Inventory-backed
+`editor_inspect_level_actor_detail` fallback.
+
+Provider order:
+
+```text
+frontend MCP/TCP get_level_actor_details
+  -> local Project Inventory editor_inspect_level_actor_detail fallback
+```
+
+This tool is read-only. It does not select, move, rename, tag, place, delete, or
+save Actors. Level Actor writes still go through confirmed Editor Operation
+Proposal tools.
 
 ### Live Widget Tree Detail Enrichment
 

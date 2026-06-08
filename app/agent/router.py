@@ -162,6 +162,7 @@ READONLY_MCP_TOOL_IDS = {
     "mcp_get_static_mesh_details",
     "mcp_get_selected_actors",
     "mcp_get_level_actors",
+    "mcp_get_level_actor_details",
     "mcp_get_blueprint_graph",
     "mcp_get_blueprint_node_details",
     "mcp_get_widget_tree",
@@ -759,6 +760,41 @@ def _looks_like_readonly_mcp_selected_actors_request(latest_text: str, text_lowe
     return has_read_intent and has_selected_actor_target
 
 
+def _looks_like_readonly_mcp_level_actor_details_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = (
+        _has_readonly_sensing_intent(latest_text, text_lower)
+        or bool(re.search(r"\b(?:what|which|show|inspect|read|describe)\b", text_lower))
+        or any(token in latest_text for token in ("\u4ec0\u4e48", "\u67e5\u770b", "\u8bfb\u53d6", "\u63cf\u8ff0"))
+    )
+    has_actor_target = (
+        "actor detail" in text_lower
+        or "actor details" in text_lower
+        or "level actor detail" in text_lower
+        or "actor transform" in text_lower
+        or "actor component" in text_lower
+        or "actor components" in text_lower
+        or "actor tags" in text_lower
+        or "actor folder" in text_lower
+        or re.search(r"\bBP_[A-Za-z0-9_]+(?:_\d+)?\b", latest_text) is not None
+        or "\u6f14\u5458\u8be6\u60c5" in latest_text
+        or ("\u6f14\u5458" in latest_text and ("\u7ec4\u4ef6" in latest_text or "\u4f4d\u7f6e" in latest_text or "\u6807\u7b7e" in latest_text))
+    )
+    has_detail_target = (
+        "detail" in text_lower
+        or "details" in text_lower
+        or "transform" in text_lower
+        or "component" in text_lower
+        or "components" in text_lower
+        or "tag" in text_lower
+        or "tags" in text_lower
+        or "folder" in text_lower
+        or any(token in latest_text for token in ("\u8be6\u60c5", "\u7ec4\u4ef6", "\u4f4d\u7f6e", "\u65cb\u8f6c", "\u6807\u7b7e", "\u6587\u4ef6\u5939"))
+    )
+    return has_read_intent and has_actor_target and has_detail_target
+
+
 def _looks_like_readonly_mcp_level_actors_request(latest_text: str, text_lower: str) -> bool:
     if _looks_like_editor_write_request(latest_text, text_lower):
         return False
@@ -876,6 +912,8 @@ def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
         return "editor_add_blueprint_node_template"
     if _looks_like_readonly_mcp_editor_context_request(latest_text, text_lower):
         return "mcp_get_editor_context"
+    if _looks_like_readonly_mcp_level_actor_details_request(latest_text, text_lower):
+        return "mcp_get_level_actor_details"
     if _looks_like_readonly_mcp_selected_actors_request(latest_text, text_lower):
         return "mcp_get_selected_actors"
     if _looks_like_readonly_mcp_level_actors_request(latest_text, text_lower):

@@ -12,7 +12,7 @@ from app.services.mcp_tool_adapter import MCPToolAdapter
 
 DEFAULT_ALLOWED_TOOLS = (
     "ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,"
-    "get_level_actors,get_static_mesh_details,get_blueprint_graph,get_blueprint_node_details,"
+    "get_level_actors,get_level_actor_details,get_static_mesh_details,get_blueprint_graph,get_blueprint_node_details,"
     "get_widget_tree,get_widget_details,get_material_instance_parameters"
 )
 
@@ -36,6 +36,11 @@ def _parse_args() -> argparse.Namespace:
         "--blueprint-path",
         default="",
         help="Optional Blueprint path to call get_blueprint_graph, e.g. /Game/Blueprints/BP_Player.",
+    )
+    parser.add_argument(
+        "--actor-reference",
+        default="",
+        help="Optional Actor label/name/path to call get_level_actor_details, e.g. BP_PlayerCharacter_1.",
     )
     parser.add_argument(
         "--blueprint-graph-name",
@@ -149,6 +154,16 @@ def _run_smoke(args: argparse.Namespace) -> list[dict[str, Any]]:
         cases.append(_case("call_get_selected_actors", adapter.call_readonly_tool("get_selected_actors", {})))
     if "get_level_actors" in allowed_tools:
         cases.append(_case("call_get_level_actors", adapter.call_readonly_tool("get_level_actors", {"limit": 40})))
+    if args.actor_reference and "get_level_actor_details" in allowed_tools:
+        cases.append(
+            _case(
+                "call_get_level_actor_details",
+                adapter.call_readonly_tool(
+                    "get_level_actor_details",
+                    {"actor_reference": args.actor_reference},
+                ),
+            )
+        )
     if args.blueprint_path:
         cases.append(
             _case(
@@ -219,6 +234,7 @@ def main() -> int:
             "port": args.port,
             "timeout_ms": args.timeout_ms,
             "allowed_tools": _parse_csv(args.allowed_tools),
+            "actor_reference": args.actor_reference,
             "blueprint_path": args.blueprint_path,
             "blueprint_graph_name": args.blueprint_graph_name,
             "blueprint_node_query": args.blueprint_node_query,

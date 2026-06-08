@@ -617,6 +617,26 @@ def test_tool_registry_local_readonly_call_reads_widget_actor_and_material_inven
     assert mcp_material_body["call"]["result"]["items"][0]["scalar_parameters"][0]["name"] == "Roughness"
 
 
+def test_tool_registry_local_readonly_call_maps_mcp_level_actor_detail_to_inventory(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/tools/mcp_get_level_actor_details/call",
+        json={"arguments": {"project_id": "MCPDemoProject", "actor_reference": "BP_EnemySpawner_1"}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    call = body["call"]
+    assert call["tool_id"] == "mcp_get_level_actor_details"
+    assert call["transport"] == "local_tool_registry"
+    result = call["result"]
+    assert result["item"]["actor_label"] == "BP_EnemySpawner_1"
+    assert result["inspection"]["operation_type"] == "inspect_level_actor_detail"
+    assert result["inspection"]["empty_reason"] == ""
+
+
 def test_tool_registry_local_readonly_call_reads_umg_widget_detail(client: TestClient) -> None:
     _save_demo_inventory_snapshot(client)
 

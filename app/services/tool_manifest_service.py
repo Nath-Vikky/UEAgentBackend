@@ -33,6 +33,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             {"tool_id": "mcp_get_static_mesh_details", "arguments": {"query": "SM_Rock"}},
             {"tool_id": "mcp_get_selected_actors", "arguments": {}},
             {"tool_id": "mcp_get_level_actors", "arguments": {"class_contains": "Character", "limit": 20}},
+            {"tool_id": "mcp_get_level_actor_details", "arguments": {"actor_reference": "BP_PlayerCharacter_1"}},
             {"tool_id": "mcp_get_blueprint_graph", "arguments": {"blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"}},
             {
                 "tool_id": "mcp_get_blueprint_node_details",
@@ -51,6 +52,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "mcp_get_static_mesh_details",
             "mcp_get_selected_actors",
             "mcp_get_level_actors",
+            "mcp_get_level_actor_details",
             "editor_inspect_assets",
             "editor_inspect_asset_detail",
             "editor_inspect_level_actors",
@@ -246,6 +248,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
             "mcp_get_static_mesh_details",
             "mcp_get_selected_actors",
             "mcp_get_level_actors",
+            "mcp_get_level_actor_details",
             "editor_inspect_assets",
             "mcp_get_blueprint_graph",
             "mcp_get_blueprint_node_details",
@@ -337,6 +340,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
         "observe_tools": (
             "mcp_get_selected_actors",
             "mcp_get_level_actors",
+            "mcp_get_level_actor_details",
             "editor_inspect_level_actors",
             "editor_inspect_level_actor_detail",
         ),
@@ -455,6 +459,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "operation_family": "level",
             "frontend_executor_id": _mcp_tool_name(spec),
             "operation_type": "inspect_level_actors",
+            "bridge_kind": "mcp_readonly_or_inventory_fallback",
+        }
+    if spec.tool_id == "mcp_get_level_actor_details":
+        return {
+            "operation_family": "level",
+            "frontend_executor_id": _mcp_tool_name(spec),
+            "operation_type": "inspect_level_actor_detail",
             "bridge_kind": "mcp_readonly_or_inventory_fallback",
         }
     if spec.tool_id == "mcp_get_selected_assets":

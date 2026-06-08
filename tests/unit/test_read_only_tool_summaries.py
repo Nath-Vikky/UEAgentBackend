@@ -334,6 +334,60 @@ class _FakeMCPToolExecutor:
                 },
                 "errors": [],
             }
+        if tool_name == "get_level_actor_details":
+            return {
+                "ok": True,
+                "status": "completed",
+                "reason": "mcp_tool_call_completed",
+                "tool_name": tool_name,
+                "transport": "mcp_tcp",
+                "result": {
+                    "structuredContent": {
+                        "level_actor_detail_schema_version": "ue_agent_level_actor_details_v1",
+                        "requested_actor_reference": arguments["actor_reference"],
+                        "world_name": "DemoWorld",
+                        "map_name": "DemoMap",
+                        "matched_actor_count": 1,
+                        "actor_label": "BP_PlayerCharacter_1",
+                        "actor_name": "BP_PlayerCharacter_C_1",
+                        "actor_class": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter_C",
+                        "actor_path": "PersistentLevel.BP_PlayerCharacter_C_1",
+                        "folder_path": "Gameplay/Player",
+                        "actor": {
+                            "actor_label": "BP_PlayerCharacter_1",
+                            "actor_name": "BP_PlayerCharacter_C_1",
+                            "actor_class": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter_C",
+                            "actor_path": "PersistentLevel.BP_PlayerCharacter_C_1",
+                            "folder_path": "Gameplay/Player",
+                            "tags": ["Player"],
+                            "transform": {
+                                "location": {"x": 100.0, "y": 20.0, "z": 88.0},
+                                "rotation": {"pitch": 0.0, "yaw": 90.0, "roll": 0.0},
+                                "scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+                            },
+                            "component_count": 2,
+                            "components": [
+                                {
+                                    "component_name": "CapsuleComponent",
+                                    "component_class": "/Script/Engine.CapsuleComponent",
+                                    "is_scene_component": True,
+                                    "relative_location": {"x": 0.0, "y": 0.0, "z": 0.0},
+                                },
+                                {
+                                    "component_name": "Mesh",
+                                    "component_class": "/Script/Engine.SkeletalMeshComponent",
+                                    "is_scene_component": True,
+                                    "attach_parent": "CapsuleComponent",
+                                    "relative_location": {"x": 0.0, "y": 0.0, "z": -90.0},
+                                },
+                            ],
+                        },
+                    },
+                    "content": [{"type": "text", "text": "level actor details"}],
+                    "isError": False,
+                },
+                "errors": [],
+            }
         return {
             "ok": False,
             "status": "blocked",
@@ -760,6 +814,31 @@ def test_live_mcp_readonly_result_reads_level_actors(monkeypatch) -> None:
     assert "BP_PlayerCharacter_1" in result["assistant_message"]
     assert "matched_actor_count=2" in result["assistant_message"]
     assert "tags=Player" in result["assistant_message"]
+
+
+def test_live_mcp_readonly_result_reads_level_actor_details(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "inspect BP_PlayerCharacter_1 actor transform and components"}]},
+        context={},
+        payload={"actor_reference": "BP_PlayerCharacter_1"},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.live_mcp_readonly_result(
+        context=_context(selected_tool_id="mcp_get_level_actor_details", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_level_actor_details",
+    )
+
+    assert result is not None
+    assert result["data"]["mcp_tool"]["tool_name"] == "get_level_actor_details"
+    assert result["data"]["mcp_tool"]["arguments"] == {"actor_reference": "BP_PlayerCharacter_1"}
+    assert "BP_PlayerCharacter_1" in result["assistant_message"]
+    assert "loc=(100.0,20.0,88.0)" in result["assistant_message"]
+    assert "CapsuleComponent" in result["assistant_message"]
+    assert "Mesh" in result["assistant_message"]
 
 
 def test_live_mcp_readonly_result_returns_none_when_tcp_fails(monkeypatch) -> None:

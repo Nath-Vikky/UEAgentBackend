@@ -148,6 +148,21 @@ def test_agent_chat_with_current_level_actor_by_class_routes_to_live_level_actor
     assert routing["route"]["selected_tool_id"] == "mcp_get_level_actors"
 
 
+def test_agent_chat_with_named_actor_detail_routes_to_mcp_readonly_tool() -> None:
+    request = _request(
+        content="Inspect BP_PlayerCharacter_1 actor transform and components",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_level_actor_details"
+
+
 def test_agent_chat_with_blueprint_graph_node_question_routes_to_inventory() -> None:
     request = _request(
         content="In the current project, what nodes are in BP_PlayerCharacter EventGraph?",
