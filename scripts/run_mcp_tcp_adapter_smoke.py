@@ -83,6 +83,20 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         },
     },
     {
+        "name": "get_widget_details",
+        "description": "Read one Widget Blueprint widget's live detail metadata.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "widget_blueprint_path": {"type": "string"},
+                "widget_name": {"type": "string"},
+                "target_widget": {"type": "string"},
+                "query": {"type": "string"},
+            },
+            "required": ["widget_blueprint_path", "widget_name"],
+        },
+    },
+    {
         "name": "get_material_instance_parameters",
         "description": "Read Material Instance parameters.",
         "inputSchema": {
@@ -361,6 +375,35 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                 "structuredContent": structured,
                 "isError": False,
             }
+        if tool_name == "get_widget_details":
+            structured = {
+                "widget_detail_schema_version": "ue_agent_widget_details_v1",
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_blueprint_name": "WBP_MainHUD",
+                "requested_widget_name": "TitleText",
+                "widget_name": "TitleText",
+                "root_widget": "RootCanvas",
+                "widget": {
+                    "widget_name": "TitleText",
+                    "widget_class": "/Script/UMG.TextBlock",
+                    "parent_widget": "RootCanvas",
+                    "visibility": "Visible",
+                    "text_block": {"text": "Mission Ready", "font_size": 24},
+                    "slot": {
+                        "slot_type": "CanvasPanelSlot",
+                        "position": {"x": 64, "y": 32},
+                        "size": {"x": 320, "y": 64},
+                        "z_order": 2,
+                    },
+                },
+                "child_count": 0,
+                "children": [],
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
+            }
         if tool_name == "get_material_instance_parameters":
             structured = {
                 "material_instance_schema_version": "ue_agent_tool_tcp_fixture_v1",
@@ -514,6 +557,7 @@ def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
             "get_static_mesh_details",
             "get_blueprint_graph",
             "get_widget_tree",
+            "get_widget_details",
             "get_material_instance_parameters",
         ],
         "discovery filters to read-only allow-list",
@@ -611,6 +655,20 @@ def _widget_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     return ok, "TCP call returns enriched Widget tree structuredContent"
 
 
+def _widget_details_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    widget = structured.get("widget") if isinstance(structured.get("widget"), dict) else {}
+    text_block = widget.get("text_block") if isinstance(widget.get("text_block"), dict) else {}
+    slot = widget.get("slot") if isinstance(widget.get("slot"), dict) else {}
+    ok = (
+        payload.get("ok") is True
+        and structured.get("widget_name") == "TitleText"
+        and text_block.get("text") == "Mission Ready"
+        and slot.get("slot_type") == "CanvasPanelSlot"
+    )
+    return ok, "TCP call returns focused Widget detail structuredContent"
+
+
 def _material_parameters_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     structured = payload.get("result", {}).get("structuredContent", {})
     parameters = list(structured.get("parameters") or [])
@@ -661,6 +719,7 @@ def _run_smoke() -> list[dict[str, Any]]:
             "get_static_mesh_details",
             "get_blueprint_graph",
             "get_widget_tree",
+            "get_widget_details",
             "get_material_instance_parameters",
         ]
     ) as adapter:
@@ -719,6 +778,16 @@ def _run_smoke() -> list[dict[str, Any]]:
                     {"widget_blueprint_path": "/Game/UI/WBP_MainHUD"},
                 ),
                 _widget_call_ok,
+            )
+        )
+        cases.append(
+            _run_case(
+                "call_get_widget_details",
+                adapter.call_readonly_tool(
+                    "get_widget_details",
+                    {"widget_blueprint_path": "/Game/UI/WBP_MainHUD", "widget_name": "TitleText"},
+                ),
+                _widget_details_call_ok,
             )
         )
         cases.append(

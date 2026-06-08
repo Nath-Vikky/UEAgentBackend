@@ -12,7 +12,7 @@ from app.services.mcp_tool_adapter import MCPToolAdapter
 
 DEFAULT_ALLOWED_TOOLS = (
     "ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,"
-    "get_level_actors,get_static_mesh_details,get_blueprint_graph,get_widget_tree,get_material_instance_parameters"
+    "get_level_actors,get_static_mesh_details,get_blueprint_graph,get_widget_tree,get_widget_details,get_material_instance_parameters"
 )
 
 
@@ -40,6 +40,11 @@ def _parse_args() -> argparse.Namespace:
         "--widget-blueprint-path",
         default="",
         help="Optional Widget Blueprint path to call get_widget_tree, e.g. /Game/UI/WBP_MainHUD.",
+    )
+    parser.add_argument(
+        "--widget-name",
+        default="",
+        help="Optional Widget name to call get_widget_details together with --widget-blueprint-path, e.g. TitleText.",
     )
     parser.add_argument(
         "--material-instance-path",
@@ -150,6 +155,16 @@ def _run_smoke(args: argparse.Namespace) -> list[dict[str, Any]]:
                 ),
             )
         )
+        if args.widget_name and "get_widget_details" in allowed_tools:
+            cases.append(
+                _case(
+                    "call_get_widget_details",
+                    adapter.call_readonly_tool(
+                        "get_widget_details",
+                        {"widget_blueprint_path": args.widget_blueprint_path, "widget_name": args.widget_name},
+                    ),
+                )
+            )
     if "get_material_instance_parameters" in allowed_tools:
         material_args = {}
         if args.material_instance_path:

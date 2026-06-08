@@ -35,6 +35,10 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             {"tool_id": "mcp_get_level_actors", "arguments": {"class_contains": "Character", "limit": 20}},
             {"tool_id": "mcp_get_blueprint_graph", "arguments": {"blueprint_path": "/Game/Blueprints/BP_PlayerCharacter"}},
             {"tool_id": "mcp_get_widget_tree", "arguments": {"widget_blueprint_path": "/Game/UI/WBP_MainHUD"}},
+            {
+                "tool_id": "mcp_get_umg_widget_details",
+                "arguments": {"widget_blueprint_path": "/Game/UI/WBP_MainHUD", "widget_name": "TitleText"},
+            },
             {"tool_id": "mcp_get_material_instance_parameters", "arguments": {"material_instance_path": "/Game/Materials/MI_Player"}},
         ),
         "tool_ids": (
@@ -52,6 +56,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "mcp_get_blueprint_graph",
             "editor_inspect_blueprint_node_detail",
             "mcp_get_widget_tree",
+            "mcp_get_umg_widget_details",
             "editor_inspect_umg_widget_detail",
             "mcp_get_material_instance_parameters",
         ),
@@ -120,6 +125,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "tool_ids": (
             "mcp_get_widget_tree",
+            "mcp_get_umg_widget_details",
             "editor_inspect_umg_widget_detail",
             "editor_umg_set_widget_blueprint_context",
             "editor_umg_set_cursor_widget",
@@ -238,6 +244,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
             "mcp_get_blueprint_graph",
             "editor_inspect_blueprint_node_detail",
             "mcp_get_widget_tree",
+            "mcp_get_umg_widget_details",
             "editor_inspect_umg_widget_detail",
             "editor_inspect_level_actors",
             "mcp_get_material_instance_parameters",
@@ -276,7 +283,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
         "workflow_id": "umg_widget_edit_preview_v1",
         "title": "Observe Widget Tree, select Widget context, then propose UMG edits",
         "summary": "Read Widget Tree/detail first, set Widget Blueprint/current Widget context, then create confirmed UMG Proposals.",
-        "observe_tools": ("mcp_get_widget_tree", "editor_inspect_umg_widget_detail"),
+        "observe_tools": ("mcp_get_widget_tree", "mcp_get_umg_widget_details", "editor_inspect_umg_widget_detail"),
         "context_tools": ("editor_umg_set_widget_blueprint_context", "editor_umg_set_cursor_widget"),
         "proposal_tools": (
             "editor_add_umg_widget",
@@ -476,6 +483,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "operation_family": "umg",
             "frontend_executor_id": _mcp_tool_name(spec),
             "operation_type": "inspect_widget_tree",
+            "bridge_kind": "mcp_readonly_or_inventory_fallback",
+        }
+    if spec.tool_id == "mcp_get_umg_widget_details":
+        return {
+            "operation_family": "umg",
+            "frontend_executor_id": _mcp_tool_name(spec),
+            "operation_type": "inspect_umg_widget_detail",
             "bridge_kind": "mcp_readonly_or_inventory_fallback",
         }
     if spec.tool_id == "mcp_get_material_instance_parameters":

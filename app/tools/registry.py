@@ -2259,6 +2259,54 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
     ),
+    "mcp_get_umg_widget_details": ToolSpec(
+        tool_id="mcp_get_umg_widget_details",
+        task_type="editor_operation",
+        title="Get UMG Widget Details",
+        description=(
+            "Read one UMG Widget's live properties, parent, children, slot, text, "
+            "and image metadata from the optional UEAgentTool TCP tool server."
+        ),
+        side_effect_level="read_only",
+        route_preference="single_tool",
+        category="sensing",
+        transport="mcp_tcp",
+        mcp_tool_name="get_widget_details",
+        requires_confirmation=False,
+        active_context_keys=("project", "asset", "umg"),
+        owned_by_skill="UMGAutomationSkill",
+        allowed_in_free_chat=True,
+        permission_gate="mcp_allowed_tools",
+        context_cost="low",
+        trigger_keywords=(
+            "get widget details",
+            "widget details",
+            "widget properties",
+            "umg widget details",
+            "umg widget properties",
+        ),
+        required_payload_fields=("widget_blueprint_path", "widget_name"),
+        optional_payload_fields=("blueprint_path", "target_widget", "query", "project_id"),
+        input_schema={
+            "type": "object",
+            "required": ["widget_blueprint_path", "widget_name"],
+            "properties": {
+                "project_id": {"type": "string"},
+                "widget_blueprint_path": {"type": "string"},
+                "blueprint_path": {"type": "string"},
+                "widget_name": {"type": "string"},
+                "target_widget": {"type": "string"},
+                "query": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "content": {"type": "array"},
+                "structuredContent": {"type": "object"},
+            },
+        },
+    ),
     "mcp_get_material_instance_parameters": ToolSpec(
         tool_id="mcp_get_material_instance_parameters",
         task_type="editor_operation",

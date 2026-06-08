@@ -18,11 +18,13 @@ LIVE_MCP_TOOL_NAMES = {
     "mcp_get_level_actors": "get_level_actors",
     "mcp_get_blueprint_graph": "get_blueprint_graph",
     "mcp_get_widget_tree": "get_widget_tree",
+    "mcp_get_umg_widget_details": "get_widget_details",
     "mcp_get_material_instance_parameters": "get_material_instance_parameters",
 }
 LOCAL_INVENTORY_READONLY_TOOL_IDS = {
     "mcp_get_blueprint_graph",
     "mcp_get_widget_tree",
+    "mcp_get_umg_widget_details",
     "mcp_get_material_instance_parameters",
     "mcp_get_level_actors",
     "mcp_get_static_mesh_details",
@@ -662,10 +664,43 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
             editor_state.get("widget_blueprint_path"),
             _first_widget_path_from_inventory(selected_inventory_assets),
             _first_widget_path_from_strings(selected_assets),
+            _widget_path_from_text(str(request.session.messages[-1].content or "") if request.session.messages else ""),
         )
         if not widget_blueprint_path:
             return None
         return {"widget_blueprint_path": widget_blueprint_path}
+    if selected_tool_id == "mcp_get_umg_widget_details":
+        selected_assets = list(getattr(request.context, "selected_assets", []) or [])
+        selected_inventory_assets = [
+            item
+            for item in list(inventory_context.get("selected_assets") or [])
+            if isinstance(item, dict)
+        ]
+        widget_context = dict((context.context_bundle or {}).get("umg_edit_context") or {})
+        latest_text = str(request.session.messages[-1].content or "") if request.session.messages else ""
+        widget_blueprint_path = _first_non_empty(
+            payload.get("widget_blueprint_path"),
+            payload.get("blueprint_path"),
+            editor_state.get("current_widget_blueprint_path"),
+            editor_state.get("widget_blueprint_path"),
+            widget_context.get("widget_blueprint_path"),
+            _first_widget_path_from_inventory(selected_inventory_assets),
+            _first_widget_path_from_strings(selected_assets),
+            _widget_path_from_text(latest_text),
+        )
+        widget_name = _first_non_empty(
+            payload.get("widget_name"),
+            payload.get("target_widget"),
+            payload.get("query"),
+            editor_state.get("current_widget_name"),
+            editor_state.get("widget_name"),
+            widget_context.get("widget_name"),
+            widget_context.get("target_widget"),
+            _widget_name_from_text(latest_text),
+        )
+        if not widget_blueprint_path or not widget_name:
+            return None
+        return {"widget_blueprint_path": widget_blueprint_path, "widget_name": widget_name}
     if selected_tool_id == "mcp_get_material_instance_parameters":
         selected_assets = list(getattr(request.context, "selected_assets", []) or [])
         selected_inventory_assets = [
@@ -899,14 +934,38 @@ def _live_mcp_answer(
         if widget_lines:
             parts.append(_localized(output_language, "控件预览：", "Widget preview:") + "\n" + "\n".join(widget_lines))
         return "\n\n".join(parts)
+    if selected_tool_id == "mcp_get_umg_widget_details":
+        widget = structured.get("widget") if isinstance(structured.get("widget"), dict) else structured
+        children = [item for item in list(structured.get("children") or []) if isinstance(item, dict)]
+        parts = [
+            _localized(
+                output_language,
+                f"已通过 {source_label_zh}读取 UMG 控件详情：{arguments.get('widget_name')}",
+                f"Read UMG Widget details through {source_label_en}: {arguments.get('widget_name')}",
+            ),
+            _widget_preview_line(widget),
+        ]
+        if structured.get("widget_blueprint_path"):
+            parts.append(f"Widget Blueprint: {structured.get('widget_blueprint_path')}")
+        if children:
+            child_lines = [_widget_preview_line(child) for child in children[:8]]
+            parts.append(_localized(output_language, "子控件预览：", "Child widget preview:") + "\n" + "\n".join(child_lines))
+        return "\n\n".join(parts)
     return _first_text_content(tool_result) or _localized(output_language, "只读工具调用已完成。", "Read-only tool call completed.")
 
 
 def _structured_content_for_answer(*, selected_tool_id: str, tool_result: dict[str, Any]) -> dict[str, Any]:
     structured = tool_result.get("structuredContent") if isinstance(tool_result.get("structuredContent"), dict) else {}
-    if selected_tool_id in {"mcp_get_material_instance_parameters", "mcp_get_level_actors", "mcp_get_static_mesh_details"} and not structured:
+    if selected_tool_id in {
+        "mcp_get_material_instance_parameters",
+        "mcp_get_level_actors",
+        "mcp_get_static_mesh_details",
+        "mcp_get_umg_widget_details",
+    } and not structured:
         return tool_result
-    if selected_tool_id != "mcp_get_widget_tree":
+    if selected_tool_id not in {"mcp_get_widget_tree", "mcp_get_umg_widget_details"}:
+        return structured
+    if selected_tool_id == "mcp_get_umg_widget_details":
         return structured
     widget_tree = structured.get("widget_tree") if isinstance(structured.get("widget_tree"), dict) else {}
     if not widget_tree:
@@ -927,6 +986,14 @@ def _local_readonly_result_is_empty(*, selected_tool_id: str, tool_result: dict[
             return True
         normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
         return not list(normalized.get("widgets") or normalized.get("children") or normalized.get("nodes") or [])
+    if selected_tool_id == "mcp_get_umg_widget_details":
+        if structured.get("empty_reason"):
+            return True
+        normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
+        inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
+        if inspection.get("empty_reason"):
+            return True
+        return not bool(normalized.get("widget") or normalized.get("widget_name"))
     if selected_tool_id == "mcp_get_material_instance_parameters":
         normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
         inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
@@ -1140,6 +1207,31 @@ def _static_mesh_name_from_text(text: str) -> str:
 
     match = re.search(r"\bSM_[A-Za-z0-9_]+\b", str(text or ""))
     return match.group(0) if match else ""
+
+
+def _widget_name_from_text(text: str) -> str:
+    import re
+
+    candidates = re.findall(
+        r"\b[A-Za-z][A-Za-z0-9_]*(?:Text|Button|Image|Icon|Box|Panel|Canvas|Overlay|Widget|Label)\b",
+        str(text or ""),
+    )
+    for candidate in candidates:
+        lowered = candidate.lower()
+        if lowered.startswith(("wbp_", "bp_", "sm_", "mi_")):
+            continue
+        return candidate
+    return ""
+
+
+def _widget_path_from_text(text: str) -> str:
+    import re
+
+    for match in re.findall(r"/Game/[A-Za-z0-9_./-]+", str(text or "")):
+        lowered = match.lower().rstrip(".,;:")
+        if "/ui/" in lowered or "wbp_" in lowered or "widget" in lowered:
+            return match.rstrip(".,;:")
+    return ""
 
 
 def _static_mesh_item_from_structured(structured: dict[str, Any]) -> dict[str, Any]:

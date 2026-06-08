@@ -75,6 +75,41 @@ class _FakeMCPToolExecutor:
                 },
                 "errors": [],
             }
+        if tool_name == "get_widget_details":
+            return {
+                "ok": True,
+                "status": "completed",
+                "reason": "mcp_tool_call_completed",
+                "tool_name": tool_name,
+                "transport": "mcp_tcp",
+                "result": {
+                    "structuredContent": {
+                        "widget_detail_schema_version": "ue_agent_widget_details_v1",
+                        "widget_blueprint_path": arguments["widget_blueprint_path"],
+                        "widget_blueprint_name": "WBP_MainHUD",
+                        "requested_widget_name": arguments["widget_name"],
+                        "widget_name": "TitleText",
+                        "root_widget": "RootCanvas",
+                        "widget": {
+                            "widget_name": "TitleText",
+                            "widget_class": "/Script/UMG.TextBlock",
+                            "parent_widget": "RootCanvas",
+                            "visibility": "Visible",
+                            "text_block": {"text": "Mission Ready", "font_size": 24},
+                            "slot": {
+                                "slot_type": "CanvasPanelSlot",
+                                "position": {"x": 64, "y": 32},
+                                "size": {"x": 320, "y": 64},
+                                "z_order": 2,
+                            },
+                        },
+                        "children": [],
+                    },
+                    "content": [{"type": "text", "text": "widget details"}],
+                    "isError": False,
+                },
+                "errors": [],
+            }
         if tool_name == "get_material_instance_parameters":
             material_path = (arguments or {}).get("material_instance_path") or "/Game/Materials/MI_Player.MI_Player"
             return {
@@ -495,6 +530,33 @@ def test_live_mcp_readonly_result_uses_selected_widget_path(monkeypatch) -> None
     assert result is not None
     assert result["data"]["mcp_tool"]["arguments"]["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
     assert "RootCanvas" in result["assistant_message"]
+    assert "TitleText" in result["assistant_message"]
+    assert "Mission Ready" in result["assistant_message"]
+    assert "slot=CanvasPanelSlot" in result["assistant_message"]
+
+
+def test_live_mcp_readonly_result_reads_named_widget_detail(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "inspect TitleText widget layout"}]},
+        context={"selected_assets": ["/Game/UI/WBP_MainHUD"]},
+        payload={"widget_name": "TitleText"},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.live_mcp_readonly_result(
+        context=_context(selected_tool_id="mcp_get_umg_widget_details", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_umg_widget_details",
+    )
+
+    assert result is not None
+    assert result["data"]["mcp_tool"]["tool_name"] == "get_widget_details"
+    assert result["data"]["mcp_tool"]["arguments"] == {
+        "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+        "widget_name": "TitleText",
+    }
     assert "TitleText" in result["assistant_message"]
     assert "Mission Ready" in result["assistant_message"]
     assert "slot=CanvasPanelSlot" in result["assistant_message"]

@@ -90,6 +90,10 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert widget_tree["name"] == "get_widget_tree"
     assert widget_tree["annotations"]["allowed_in_free_chat"] is True
     assert widget_tree["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
+    widget_details = _tool_by_annotation_tool_id(manifest, "mcp_get_umg_widget_details")
+    assert widget_details["name"] == "get_widget_details"
+    assert widget_details["annotations"]["allowed_in_free_chat"] is True
+    assert widget_details["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
     assert material_parameters["name"] == "get_material_instance_parameters"
     assert material_parameters["annotations"]["operation_family"] == "material"
     assert material_parameters["annotations"]["frontend_executor_id"] == "get_material_instance_parameters"
@@ -127,6 +131,7 @@ def test_tool_manifest_profiles_expose_compact_demo_tool_sets() -> None:
     assert manifest["filters"]["profile"] == "umg_demo"
     assert manifest["profiles"]["selected"]["profile_id"] == "umg_demo"
     assert "mcp_get_widget_tree" in tool_ids
+    assert "mcp_get_umg_widget_details" in tool_ids
     assert "editor_inspect_umg_widget_detail" in tool_ids
     assert "editor_umg_set_widget_blueprint_context" in tool_ids
     assert "editor_umg_set_cursor_widget" in tool_ids
@@ -140,6 +145,7 @@ def test_tool_manifest_profiles_expose_compact_demo_tool_sets() -> None:
     preview = manifest["profiles"]["selected"]["workflow_preview"]
     assert preview["workflow_id"] == "umg_widget_edit_preview_v1"
     assert "mcp_get_widget_tree" in preview["observe_tools"]
+    assert "mcp_get_umg_widget_details" in preview["observe_tools"]
     assert "editor_umg_set_cursor_widget" in preview["context_tools"]
     assert "editor_set_umg_widget_text" in preview["proposal_tools"]
     assert preview["confirmation_required"] is True
@@ -168,12 +174,14 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_static_mesh_details" in tool_ids
     assert "mcp_get_selected_actors" in tool_ids
     assert "mcp_get_level_actors" in tool_ids
+    assert "mcp_get_umg_widget_details" in tool_ids
     assert "mcp_get_material_instance_parameters" in tool_ids
     assert "mcp_get_editor_context" in preview["observe_tools"]
     assert "mcp_get_selected_assets" in preview["observe_tools"]
     assert "mcp_get_static_mesh_details" in preview["observe_tools"]
     assert "mcp_get_selected_actors" in preview["observe_tools"]
     assert "mcp_get_level_actors" in preview["observe_tools"]
+    assert "mcp_get_umg_widget_details" in preview["observe_tools"]
     assert "mcp_get_material_instance_parameters" in preview["observe_tools"]
 
 

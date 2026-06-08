@@ -198,6 +198,23 @@ def test_agent_chat_with_explicit_read_widget_tree_routes_to_mcp_readonly_tool()
     assert routing["route"]["decision_source"] == "heuristic_task_signal"
 
 
+def test_agent_chat_with_named_umg_widget_detail_routes_to_mcp_readonly_tool() -> None:
+    request = _request(
+        content="Inspect TitleText widget properties and layout in /Game/UI/WBP_MainHUD",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "selected_assets": ["/Game/UI/WBP_MainHUD"],
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_umg_widget_details"
+    assert routing["route"]["decision_source"] == "heuristic_task_signal"
+
+
 def test_agent_chat_with_explicit_material_parameters_routes_to_mcp_readonly_tool() -> None:
     request = _request(
         content="Show selected material instance parameters",

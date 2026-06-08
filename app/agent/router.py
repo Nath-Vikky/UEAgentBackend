@@ -164,6 +164,7 @@ READONLY_MCP_TOOL_IDS = {
     "mcp_get_level_actors",
     "mcp_get_blueprint_graph",
     "mcp_get_widget_tree",
+    "mcp_get_umg_widget_details",
     "mcp_get_material_instance_parameters",
 }
 PROJECT_INVENTORY_SCOPE_HINTS = {
@@ -626,6 +627,45 @@ def _looks_like_readonly_mcp_widget_tree_request(latest_text: str, text_lower: s
     return has_read_intent and has_widget_tree_target
 
 
+def _looks_like_readonly_mcp_umg_widget_details_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = (
+        _has_readonly_sensing_intent(latest_text, text_lower)
+        or bool(re.search(r"\b(?:what|which|show|inspect|read)\b", text_lower))
+        or any(token in latest_text for token in ("\u4ec0\u4e48", "\u54ea\u4e9b", "\u67e5\u770b", "\u8bfb\u53d6"))
+    )
+    has_umg_target = (
+        "umg" in text_lower
+        or "widget" in text_lower
+        or "wbp_" in text_lower
+        or "\u63a7\u4ef6" in latest_text
+        or "\u754c\u9762" in latest_text
+    )
+    has_detail_target = (
+        "widget detail" in text_lower
+        or "widget details" in text_lower
+        or "widget properties" in text_lower
+        or "property" in text_lower
+        or "properties" in text_lower
+        or "text" in text_lower
+        or "font" in text_lower
+        or "layout" in text_lower
+        or "slot" in text_lower
+        or "visibility" in text_lower
+        or "position" in text_lower
+        or "image" in text_lower
+        or any(token in latest_text for token in ("\u5c5e\u6027", "\u6587\u672c", "\u5b57\u53f7", "\u5e03\u5c40", "\u69fd", "\u53ef\u89c1", "\u4f4d\u7f6e", "\u56fe\u7247"))
+    )
+    has_named_widget = bool(
+        re.search(
+            r"\b(?!WBP_)(?!BP_)(?!SM_)(?!MI_)[A-Za-z][A-Za-z0-9_]*(?:Text|Button|Image|Icon|Box|Panel|Canvas|Overlay|Widget|Label)\b",
+            latest_text,
+        )
+    )
+    return has_read_intent and has_umg_target and has_detail_target and has_named_widget
+
+
 def _looks_like_readonly_mcp_material_parameters_request(latest_text: str, text_lower: str) -> bool:
     if _looks_like_editor_write_request(latest_text, text_lower):
         return False
@@ -811,6 +851,8 @@ def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
         return "mcp_get_static_mesh_details"
     if _looks_like_readonly_mcp_selected_assets_request(latest_text, text_lower):
         return "mcp_get_selected_assets"
+    if _looks_like_readonly_mcp_umg_widget_details_request(latest_text, text_lower):
+        return "mcp_get_umg_widget_details"
     if _looks_like_readonly_mcp_widget_tree_request(latest_text, text_lower):
         return "mcp_get_widget_tree"
     if _looks_like_readonly_mcp_material_parameters_request(latest_text, text_lower):

@@ -615,6 +615,30 @@ def test_tool_registry_local_readonly_call_reads_umg_widget_detail(client: TestC
     assert result["style"]["opacity"] == 0.85
 
 
+def test_tool_registry_local_readonly_call_maps_mcp_widget_detail_to_inventory(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/tools/mcp_get_umg_widget_details/call",
+        json={
+            "arguments": {
+                "project_id": "MCPDemoProject",
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    result = body["call"]["result"]["structuredContent"]
+    assert body["call"]["tool_id"] == "mcp_get_umg_widget_details"
+    assert result["schema_version"] == "inventory_umg_widget_detail_v1"
+    assert result["widget_name"] == "TitleText"
+    assert result["properties"]["text"] == "Mission Ready"
+
+
 def test_tool_registry_local_readonly_call_blocks_write_tool(client: TestClient) -> None:
     response = client.post(
         "/api/v1/mcp/tool-registry/tools/editor_set_actor_transform/call",

@@ -7190,7 +7190,7 @@ MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
 MCP_TCP_HOST=127.0.0.1
 MCP_TCP_PORT=8765
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_widget_details,get_material_instance_parameters
 MCP_TCP_TIMEOUT_MS=3000
 ```
 
@@ -7214,6 +7214,7 @@ The smoke emulates the UEAgentTool TCP server and validates:
 - `tools/list` discovery filtered by allow-list;
 - `tools/call` for `get_blueprint_graph`;
 - `tools/call` for `get_widget_tree`;
+- `tools/call` for `get_widget_details`;
 - backend allow-list blocking for a write tool;
 - UEAgentTool-style server-side rejection if a raw write tool is explicitly
   allow-listed by mistake.
@@ -7663,7 +7664,7 @@ Safety boundary:
 Suggested TCP allow-list:
 
 ```env
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_widget_details,get_material_instance_parameters
 ```
 
 ## 2026-06-08 Update: Live MCP Selected Assets Tool
@@ -7816,7 +7817,7 @@ Recommended UEAgentTool TCP allow-list:
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_widget_details,get_material_instance_parameters
 ```
 
 ### Live Selected Static Mesh Details
@@ -7896,3 +7897,31 @@ useful for prompts such as:
 Boundary: this tool does not create, delete, reparent, move, style, save, or
 compile UMG assets. Any UMG write still goes through confirmed Editor Operation
 Proposal tools.
+
+### Live Focused UMG Widget Details
+
+`get_widget_details` is the focused version of Widget Tree sensing. It accepts:
+
+```json
+{
+  "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+  "widget_name": "TitleText"
+}
+```
+
+The live UEAgentTool response includes one `widget` object plus direct
+`children[]` when the target widget is a panel. The backend can route prompts
+such as `Inspect TitleText widget properties and layout in /Game/UI/WBP_MainHUD`
+to this tool. If live MCP/TCP is unavailable, the backend maps
+`mcp_get_umg_widget_details` to the existing Project Inventory-backed
+`editor_inspect_umg_widget_detail` fallback.
+
+Provider order:
+
+```text
+frontend MCP/TCP get_widget_details
+  -> local Project Inventory editor_inspect_umg_widget_detail fallback
+```
+
+This tool is read-only. It does not change text, layout, visibility, parent,
+style, brush, save state, or compilation state.
