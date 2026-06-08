@@ -93,6 +93,7 @@ class ToolRegistryReadOnlyCallService:
             "mcp_get_widget_tree": self._call_widget_tree,
             "mcp_get_material_instance_parameters": self._call_inspect_material_instance_parameters,
             "mcp_get_level_actors": self._call_inspect_level_actors,
+            "mcp_get_static_mesh_details": self._call_static_mesh_details,
             "editor_inspect_umg_widget_detail": self._call_inspect_umg_widget_detail,
             "editor_inspect_assets": self._call_inspect_assets,
             "editor_inspect_asset_detail": self._call_inspect_asset_detail,
@@ -289,6 +290,24 @@ class ToolRegistryReadOnlyCallService:
             item=item,
             empty_reason="no_matching_asset",
             extra={"asset_id": _first_text(args.get("asset_id")), "asset_path": _first_text(args.get("asset_path"))},
+        )
+
+    def _call_static_mesh_details(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
+        del spec
+        project_id = _first_text(args.get("project_id")) or None
+        lookup = _first_text(args.get("static_mesh_path"), args.get("asset_path"), args.get("query"))
+        item = self.inventory.get_asset(lookup, project_id) if lookup else None
+        if item and str(item.get("asset_type") or "").lower() != "staticmesh":
+            item = None
+        if not item and lookup:
+            matches = self.inventory.list_assets(project_id=project_id, query=lookup, asset_type="StaticMesh", limit=1)
+            item = matches[0] if matches else None
+        return self._detail_result(
+            operation_type="inspect_static_mesh_details",
+            summary=self._summary(project_id),
+            item=item,
+            empty_reason="no_matching_static_mesh",
+            extra={"static_mesh_path": _first_text(args.get("static_mesh_path")), "query": lookup},
         )
 
     def _call_inspect_level_actors(self, spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:

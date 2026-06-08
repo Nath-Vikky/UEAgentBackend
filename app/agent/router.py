@@ -159,6 +159,7 @@ PROJECT_QA_PANELS = {"projectqa"}
 READONLY_MCP_TOOL_IDS = {
     "mcp_get_editor_context",
     "mcp_get_selected_assets",
+    "mcp_get_static_mesh_details",
     "mcp_get_selected_actors",
     "mcp_get_level_actors",
     "mcp_get_blueprint_graph",
@@ -705,6 +706,32 @@ def _looks_like_readonly_mcp_level_actors_request(latest_text: str, text_lower: 
     return has_read_intent and has_level_actor_target
 
 
+def _looks_like_readonly_mcp_static_mesh_details_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = _has_readonly_sensing_intent(latest_text, text_lower)
+    has_static_mesh_target = (
+        "static mesh" in text_lower
+        or "staticmesh" in text_lower
+        or re.search(r"\bSM_[A-Za-z0-9_]+\b", latest_text) is not None
+        or "\u9759\u6001\u7f51\u683c\u4f53" in latest_text
+        or "\u9759\u6001\u7f51\u683c" in latest_text
+    )
+    has_detail_target = (
+        "nanite" in text_lower
+        or "lod" in text_lower
+        or "collision" in text_lower
+        or "material slot" in text_lower
+        or "material slots" in text_lower
+        or "lightmap" in text_lower
+        or "\u6750\u8d28\u69fd" in latest_text
+        or "\u78b0\u649e" in latest_text
+        or "\u5149\u7167\u8d34\u56fe" in latest_text
+    )
+    has_question_intent = "what" in text_lower or "?" in latest_text or "\u4ec0\u4e48" in latest_text
+    return (has_read_intent or has_question_intent) and has_static_mesh_target and has_detail_target
+
+
 def _looks_like_readonly_mcp_selected_assets_request(latest_text: str, text_lower: str) -> bool:
     if _looks_like_editor_write_request(latest_text, text_lower):
         return False
@@ -780,6 +807,8 @@ def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
         return "mcp_get_selected_actors"
     if _looks_like_readonly_mcp_level_actors_request(latest_text, text_lower):
         return "mcp_get_level_actors"
+    if _looks_like_readonly_mcp_static_mesh_details_request(latest_text, text_lower):
+        return "mcp_get_static_mesh_details"
     if _looks_like_readonly_mcp_selected_assets_request(latest_text, text_lower):
         return "mcp_get_selected_assets"
     if _looks_like_readonly_mcp_widget_tree_request(latest_text, text_lower):

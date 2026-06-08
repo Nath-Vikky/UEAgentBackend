@@ -28,6 +28,7 @@ class PlaceholderTaskHandler:
         if selected_tool_id in {
             "mcp_get_editor_context",
             "mcp_get_selected_assets",
+            "mcp_get_static_mesh_details",
             "mcp_get_selected_actors",
             "mcp_get_level_actors",
             "mcp_get_blueprint_graph",

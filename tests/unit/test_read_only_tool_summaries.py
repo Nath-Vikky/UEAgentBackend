@@ -148,6 +148,36 @@ class _FakeMCPToolExecutor:
                 },
                 "errors": [],
             }
+        if tool_name == "get_static_mesh_details":
+            return {
+                "ok": True,
+                "status": "completed",
+                "reason": "mcp_tool_call_completed",
+                "tool_name": tool_name,
+                "transport": "mcp_tcp",
+                "result": {
+                    "structuredContent": {
+                        "static_mesh_schema_version": "ue_agent_static_mesh_details_v1",
+                        "static_mesh_name": "SM_Rock",
+                        "static_mesh_path": "/Game/Environment/SM_Rock.SM_Rock",
+                        "resolved_from": "query_or_path",
+                        "static_mesh": {
+                            "nanite_enabled": True,
+                            "lod_count": 3,
+                            "lightmap_resolution": 128,
+                            "collision_complexity": "simple_and_complex",
+                            "material_slot_count": 2,
+                            "material_slots": [
+                                {"slot_name": "Rock_Base", "material_path": "/Game/Materials/M_Rock.M_Rock"},
+                                {"slot_name": "Rock_Detail", "material_path": "/Game/Materials/M_Rock_Detail.M_Rock_Detail"},
+                            ],
+                        },
+                    },
+                    "content": [{"type": "text", "text": "static mesh"}],
+                    "isError": False,
+                },
+                "errors": [],
+            }
         if tool_name == "get_level_actors":
             return {
                 "ok": True,
@@ -302,6 +332,39 @@ class _FakeLocalLevelActorsReadOnlyCallService:
                         "component_count": 3,
                     }
                 ],
+                "summary": {"has_snapshot": True},
+                "inspection": {"empty_reason": "", "match_count": 1},
+            },
+            "errors": [],
+        }
+
+
+class _FakeLocalStaticMeshReadOnlyCallService:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+
+    def call(self, tool: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "status": "completed",
+            "reason": "local_readonly_tool_completed",
+            "tool_id": tool,
+            "tool_name": "get_static_mesh_details",
+            "transport": "local_tool_registry",
+            "source": "project_inventory",
+            "result": {
+                "item": {
+                    "asset_name": "SM_Rock",
+                    "asset_path": "/Game/Environment/SM_Rock.SM_Rock",
+                    "asset_type": "StaticMesh",
+                    "settings": {
+                        "nanite_enabled": True,
+                        "lod_count": 3,
+                        "lightmap_resolution": 128,
+                        "collision_complexity": "UseComplexAsSimple",
+                    },
+                    "properties": {"material_slots": ["M_Rock", "M_Rock_Detail"]},
+                },
                 "summary": {"has_snapshot": True},
                 "inspection": {"empty_reason": "", "match_count": 1},
             },
@@ -469,6 +532,30 @@ def test_live_mcp_readonly_result_summarizes_static_mesh_selected_asset(monkeypa
     assert "Rock_Base" in result["assistant_message"]
 
 
+def test_live_mcp_readonly_result_reads_static_mesh_details(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "SM_Rock Nanite LOD collision"}]},
+        context={},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.live_mcp_readonly_result(
+        context=_context(selected_tool_id="mcp_get_static_mesh_details", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_static_mesh_details",
+    )
+
+    assert result is not None
+    assert result["data"]["mcp_tool"]["arguments"]["query"] == "SM_Rock"
+    assert "SM_Rock" in result["assistant_message"]
+    assert "lods=3" in result["assistant_message"]
+    assert "nanite=True" in result["assistant_message"]
+    assert "Rock_Base" in result["assistant_message"]
+
+
 def test_live_mcp_readonly_result_reads_level_actors(monkeypatch) -> None:
     monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
     request = UnifiedTaskRequest(
@@ -586,6 +673,33 @@ def test_local_tool_registry_readonly_result_reads_level_actors(monkeypatch) -> 
     assert result["retrieval_trace"]["mode"] == "local_tool_registry_readonly"
     assert "BP_PlayerCharacter_1" in result["assistant_message"]
     assert "Gameplay/Player" in result["assistant_message"]
+
+
+def test_local_tool_registry_readonly_result_reads_static_mesh_details(monkeypatch) -> None:
+    monkeypatch.setattr(
+        read_only_tool_summaries,
+        "ToolRegistryReadOnlyCallService",
+        _FakeLocalStaticMeshReadOnlyCallService,
+    )
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "SM_Rock Nanite LOD collision"}]},
+        context={},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.local_tool_registry_readonly_result(
+        context=_context(selected_tool_id="mcp_get_static_mesh_details", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_static_mesh_details",
+    )
+
+    assert result is not None
+    assert result["retrieval_trace"]["mode"] == "local_tool_registry_readonly"
+    assert "SM_Rock" in result["assistant_message"]
+    assert "UseComplexAsSimple" in result["assistant_message"]
+    assert "M_Rock" in result["assistant_message"]
 
 
 def test_local_tool_registry_readonly_result_reads_selected_assets_context() -> None:

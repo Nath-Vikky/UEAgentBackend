@@ -53,6 +53,18 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_static_mesh_details",
+        "description": "Read Static Mesh details by path, query, or current selection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "static_mesh_path": {"type": "string"},
+                "asset_path": {"type": "string"},
+                "query": {"type": "string"},
+            },
+        },
+    },
+    {
         "name": "get_blueprint_graph",
         "description": "Read Blueprint graph metadata.",
         "inputSchema": {
@@ -277,6 +289,31 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                 "structuredContent": structured,
                 "isError": False,
             }
+        if tool_name == "get_static_mesh_details":
+            structured = {
+                "static_mesh_schema_version": "ue_agent_static_mesh_details_v1",
+                "transport": "tcp_jsonrpc_line",
+                "server_status": "running",
+                "static_mesh_name": "SM_Rock",
+                "static_mesh_path": "/Game/Environment/SM_Rock.SM_Rock",
+                "resolved_from": "query_or_path",
+                "static_mesh": {
+                    "nanite_enabled": True,
+                    "lod_count": 3,
+                    "lightmap_resolution": 128,
+                    "collision_complexity": "simple_and_complex",
+                    "material_slot_count": 2,
+                    "material_slots": [
+                        {"slot_name": "Rock_Base", "material_path": "/Game/Materials/M_Rock.M_Rock"},
+                        {"slot_name": "Rock_Detail", "material_path": "/Game/Materials/M_Rock_Detail.M_Rock_Detail"},
+                    ],
+                },
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
+            }
         if tool_name == "get_blueprint_graph":
             structured = {
                 "graph_schema_version": "ue_agent_tool_tcp_fixture_v1",
@@ -462,6 +499,7 @@ def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
             "get_selected_actors",
             "get_level_actors",
             "get_selected_assets",
+            "get_static_mesh_details",
             "get_blueprint_graph",
             "get_widget_tree",
             "get_material_instance_parameters",
@@ -525,6 +563,20 @@ def _selected_assets_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     return ok, "TCP call returns selected asset and Static Mesh detail structuredContent"
 
 
+def _static_mesh_details_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    static_mesh = structured.get("static_mesh") if isinstance(structured.get("static_mesh"), dict) else {}
+    ok = (
+        payload.get("ok") is True
+        and structured.get("static_mesh_schema_version") == "ue_agent_static_mesh_details_v1"
+        and structured.get("static_mesh_name") == "SM_Rock"
+        and static_mesh.get("nanite_enabled") is True
+        and static_mesh.get("lod_count") == 3
+        and static_mesh.get("material_slot_count") == 2
+    )
+    return ok, "TCP call returns Static Mesh detail structuredContent"
+
+
 def _widget_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     structured = payload.get("result", {}).get("structuredContent", {})
     ok = payload.get("ok") is True and structured.get("root") == "RootCanvas"
@@ -578,6 +630,7 @@ def _run_smoke() -> list[dict[str, Any]]:
             "get_selected_actors",
             "get_level_actors",
             "get_selected_assets",
+            "get_static_mesh_details",
             "get_blueprint_graph",
             "get_widget_tree",
             "get_material_instance_parameters",
@@ -611,6 +664,13 @@ def _run_smoke() -> list[dict[str, Any]]:
                 "call_get_selected_assets",
                 adapter.call_readonly_tool("get_selected_assets", {}),
                 _selected_assets_call_ok,
+            )
+        )
+        cases.append(
+            _run_case(
+                "call_get_static_mesh_details",
+                adapter.call_readonly_tool("get_static_mesh_details", {"query": "SM_Rock"}),
+                _static_mesh_details_call_ok,
             )
         )
         cases.append(

@@ -7190,7 +7190,7 @@ MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
 MCP_TCP_HOST=127.0.0.1
 MCP_TCP_PORT=8765
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
 MCP_TCP_TIMEOUT_MS=3000
 ```
 
@@ -7663,7 +7663,7 @@ Safety boundary:
 Suggested TCP allow-list:
 
 ```env
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
 ```
 
 ## 2026-06-08 Update: Live MCP Selected Assets Tool
@@ -7816,7 +7816,7 @@ Recommended UEAgentTool TCP allow-list:
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
 ```
 
 ### Live Selected Static Mesh Details
@@ -7835,6 +7835,21 @@ Agent Chat can route explicit prompts such as `Show selected static mesh
 Nanite, LOD and collision settings` to this live MCP/TCP tool. The backend
 summarizes these fields in the normal answer card; raw JSON stays in Debug View.
 No asset edit is performed by this tool.
+
+`get_static_mesh_details` is the focused version for a single Static Mesh. It
+accepts `static_mesh_path`, `asset_path`, or `query`; if omitted, the UE plugin
+uses the currently selected Content Browser Static Mesh. It returns the same
+Nanite / LOD / lightmap / collision / material slot fields and is useful for
+prompts such as `SM_Rock 的 Nanite、LOD、Collision 和材质槽是什么`.
+
+Provider order:
+
+```text
+frontend MCP/TCP get_static_mesh_details
+  -> local Project Inventory StaticMesh detail fallback
+```
+
+This tool is read-only. It does not change Static Mesh settings or save assets.
 
 ### Live Level Actor Query
 

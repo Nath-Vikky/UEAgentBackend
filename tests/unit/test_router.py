@@ -263,7 +263,7 @@ def test_agent_chat_with_explicit_selected_assets_routes_to_mcp_readonly_tool() 
     assert routing["route"]["decision_source"] == "heuristic_task_signal"
 
 
-def test_agent_chat_with_selected_static_mesh_detail_routes_to_mcp_selected_assets() -> None:
+def test_agent_chat_with_selected_static_mesh_detail_routes_to_mcp_static_mesh_details() -> None:
     request = _request(
         content="Show selected static mesh Nanite, LOD and collision settings",
         context={
@@ -275,7 +275,22 @@ def test_agent_chat_with_selected_static_mesh_detail_routes_to_mcp_selected_asse
     routing = classify_request(request)
 
     assert routing["intent"]["route_type"] == "single_tool"
-    assert routing["route"]["selected_tool_id"] == "mcp_get_selected_assets"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_static_mesh_details"
+
+
+def test_agent_chat_with_named_static_mesh_detail_routes_to_mcp_static_mesh_details() -> None:
+    request = _request(
+        content="What are SM_Rock Nanite, LOD, collision, and material slots?",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_static_mesh_details"
 
 
 def test_agent_chat_with_chinese_level_actor_list_routes_to_live_level_actors() -> None:
