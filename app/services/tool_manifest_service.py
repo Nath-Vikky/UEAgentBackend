@@ -25,11 +25,13 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "Inspect the Widget Tree for /Game/UI/WBP_MainHUD.",
             "Show selected Material Instance parameters.",
             "List current level Actors by class or tag.",
+            "Show the type and path for /Game/Blueprints/BP_PlayerCharacter.",
             "Show Static Mesh Nanite, LOD, collision, and material slots.",
         ),
         "sample_tool_calls": (
             {"tool_id": "mcp_get_editor_context", "arguments": {}},
             {"tool_id": "mcp_get_selected_assets", "arguments": {}},
+            {"tool_id": "mcp_get_asset_details", "arguments": {"query": "BP_PlayerCharacter"}},
             {"tool_id": "mcp_get_static_mesh_details", "arguments": {"query": "SM_Rock"}},
             {"tool_id": "mcp_get_selected_actors", "arguments": {}},
             {"tool_id": "mcp_get_level_actors", "arguments": {"class_contains": "Character", "limit": 20}},
@@ -49,6 +51,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
         "tool_ids": (
             "mcp_get_editor_context",
             "mcp_get_selected_assets",
+            "mcp_get_asset_details",
             "mcp_get_static_mesh_details",
             "mcp_get_selected_actors",
             "mcp_get_level_actors",
@@ -225,6 +228,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             },
         ),
         "tool_ids": (
+            "mcp_get_asset_details",
             "editor_inspect_assets",
             "editor_inspect_asset_detail",
             "editor_rename_asset",
@@ -245,6 +249,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
         "observe_tools": (
             "mcp_get_editor_context",
             "mcp_get_selected_assets",
+            "mcp_get_asset_details",
             "mcp_get_static_mesh_details",
             "mcp_get_selected_actors",
             "mcp_get_level_actors",
@@ -364,6 +369,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
         "summary": "Read asset detail before proposing rename, move, duplicate, redirector fix, or Static Mesh setting edits.",
         "observe_tools": (
             "mcp_get_selected_assets",
+            "mcp_get_asset_details",
             "mcp_get_static_mesh_details",
             "editor_inspect_assets",
             "editor_inspect_asset_detail",
@@ -474,6 +480,13 @@ def _derived_manifest_metadata(spec: ToolSpec) -> dict[str, Any]:
             "frontend_executor_id": _mcp_tool_name(spec),
             "operation_type": "inspect_selected_assets",
             "bridge_kind": "mcp_readonly_live_editor",
+        }
+    if spec.tool_id == "mcp_get_asset_details":
+        return {
+            "operation_family": "asset",
+            "frontend_executor_id": _mcp_tool_name(spec),
+            "operation_type": "inspect_asset_detail",
+            "bridge_kind": "mcp_readonly_or_inventory_fallback",
         }
     if spec.tool_id == "mcp_get_static_mesh_details":
         return {

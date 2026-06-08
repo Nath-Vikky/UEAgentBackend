@@ -273,6 +273,36 @@ class _FakeMCPToolExecutor:
                 },
                 "errors": [],
             }
+        if tool_name == "get_asset_details":
+            return {
+                "ok": True,
+                "status": "completed",
+                "reason": "mcp_tool_call_completed",
+                "tool_name": tool_name,
+                "transport": "mcp_tcp",
+                "result": {
+                    "structuredContent": {
+                        "asset_detail_schema_version": "ue_agent_asset_details_v1",
+                        "asset_name": "BP_PlayerCharacter",
+                        "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                        "asset_type": "Blueprint",
+                        "package_name": "/Game/Blueprints/BP_PlayerCharacter",
+                        "package_path": "/Game/Blueprints",
+                        "resolved_from": "query_or_path",
+                        "asset": {
+                            "asset_name": "BP_PlayerCharacter",
+                            "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                            "asset_type": "Blueprint",
+                            "asset_class": "/Script/Engine.Blueprint",
+                            "loaded_class": "/Script/Engine.Blueprint",
+                            "blueprint_parent_class": "/Script/Engine.Character",
+                        },
+                    },
+                    "content": [{"type": "text", "text": "asset detail"}],
+                    "isError": False,
+                },
+                "errors": [],
+            }
         if tool_name == "get_static_mesh_details":
             return {
                 "ok": True,
@@ -791,6 +821,30 @@ def test_live_mcp_readonly_result_reads_static_mesh_details(monkeypatch) -> None
     assert "lods=3" in result["assistant_message"]
     assert "nanite=True" in result["assistant_message"]
     assert "Rock_Base" in result["assistant_message"]
+
+
+def test_live_mcp_readonly_result_reads_asset_details(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "what is BP_PlayerCharacter asset type"}]},
+        context={},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.live_mcp_readonly_result(
+        context=_context(selected_tool_id="mcp_get_asset_details", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_asset_details",
+    )
+
+    assert result is not None
+    assert result["data"]["mcp_tool"]["tool_name"] == "get_asset_details"
+    assert result["data"]["mcp_tool"]["arguments"] == {"query": "BP_PlayerCharacter"}
+    assert "BP_PlayerCharacter" in result["assistant_message"]
+    assert "type=Blueprint" in result["assistant_message"]
+    assert "blueprint_parent_class=Character" in result["assistant_message"]
 
 
 def test_live_mcp_readonly_result_reads_level_actors(monkeypatch) -> None:

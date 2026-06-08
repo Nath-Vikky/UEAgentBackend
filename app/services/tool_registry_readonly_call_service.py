@@ -96,6 +96,7 @@ class ToolRegistryReadOnlyCallService:
             "mcp_get_material_instance_parameters": self._call_inspect_material_instance_parameters,
             "mcp_get_level_actors": self._call_inspect_level_actors,
             "mcp_get_level_actor_details": self._call_inspect_level_actor_detail,
+            "mcp_get_asset_details": self._call_inspect_asset_detail,
             "mcp_get_static_mesh_details": self._call_static_mesh_details,
             "editor_inspect_umg_widget_detail": self._call_inspect_umg_widget_detail,
             "editor_inspect_assets": self._call_inspect_assets,

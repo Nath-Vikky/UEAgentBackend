@@ -49,6 +49,7 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     manifest = build_tool_manifest(transport="mcp_tcp")
     editor_context = _tool_by_annotation_tool_id(manifest, "mcp_get_editor_context")
     selected_assets = _tool_by_annotation_tool_id(manifest, "mcp_get_selected_assets")
+    asset_details = _tool_by_annotation_tool_id(manifest, "mcp_get_asset_details")
     static_mesh_details = _tool_by_annotation_tool_id(manifest, "mcp_get_static_mesh_details")
     selected_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_selected_actors")
     level_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_level_actors")
@@ -66,6 +67,11 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert selected_assets["annotations"]["operation_family"] == "asset"
     assert selected_assets["annotations"]["bridge_kind"] == "mcp_readonly_live_editor"
     assert selected_assets["annotations"]["allowed_in_free_chat"] is True
+    assert asset_details["name"] == "get_asset_details"
+    assert asset_details["annotations"]["operation_family"] == "asset"
+    assert asset_details["annotations"]["operation_type"] == "inspect_asset_detail"
+    assert asset_details["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
+    assert asset_details["annotations"]["allowed_in_free_chat"] is True
     assert static_mesh_details["name"] == "get_static_mesh_details"
     assert static_mesh_details["annotations"]["operation_family"] == "asset"
     assert static_mesh_details["annotations"]["bridge_kind"] == "mcp_readonly_or_inventory_fallback"
@@ -189,6 +195,7 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
 
     assert "mcp_get_editor_context" in tool_ids
     assert "mcp_get_selected_assets" in tool_ids
+    assert "mcp_get_asset_details" in tool_ids
     assert "mcp_get_static_mesh_details" in tool_ids
     assert "mcp_get_selected_actors" in tool_ids
     assert "mcp_get_level_actors" in tool_ids
@@ -198,6 +205,7 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     assert "mcp_get_material_instance_parameters" in tool_ids
     assert "mcp_get_editor_context" in preview["observe_tools"]
     assert "mcp_get_selected_assets" in preview["observe_tools"]
+    assert "mcp_get_asset_details" in preview["observe_tools"]
     assert "mcp_get_static_mesh_details" in preview["observe_tools"]
     assert "mcp_get_selected_actors" in preview["observe_tools"]
     assert "mcp_get_level_actors" in preview["observe_tools"]

@@ -159,6 +159,7 @@ PROJECT_QA_PANELS = {"projectqa"}
 READONLY_MCP_TOOL_IDS = {
     "mcp_get_editor_context",
     "mcp_get_selected_assets",
+    "mcp_get_asset_details",
     "mcp_get_static_mesh_details",
     "mcp_get_selected_actors",
     "mcp_get_level_actors",
@@ -841,6 +842,57 @@ def _looks_like_readonly_mcp_static_mesh_details_request(latest_text: str, text_
     return (has_read_intent or has_question_intent) and has_static_mesh_target and has_detail_target
 
 
+def _looks_like_readonly_mcp_asset_details_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = _has_readonly_sensing_intent(latest_text, text_lower)
+    has_question_intent = (
+        "what is" in text_lower
+        or "what's" in text_lower
+        or "describe" in text_lower
+        or "?" in latest_text
+        or "\u4ec0\u4e48" in latest_text
+        or "\u662f\u4ec0\u4e48" in latest_text
+    )
+    has_asset_reference = (
+        re.search(r"/Game/[A-Za-z0-9_./-]+", latest_text) is not None
+        or re.search(r"\b(?:BP|WBP|ABP|SM|SK|MI|M|T|DA|DT|IA|IMC)_[A-Za-z0-9_]+\b", latest_text) is not None
+    )
+    has_asset_target = (
+        has_asset_reference
+        or "asset detail" in text_lower
+        or "asset details" in text_lower
+        or "asset type" in text_lower
+        or "asset properties" in text_lower
+        or "selected asset detail" in text_lower
+        or "current asset detail" in text_lower
+        or "\u8d44\u4ea7\u8be6\u60c5" in latest_text
+        or "\u8d44\u4ea7\u7c7b\u578b" in latest_text
+        or "\u5f53\u524d\u8d44\u4ea7" in latest_text
+        or "\u9009\u4e2d\u7684\u8d44\u4ea7" in latest_text
+    )
+    asks_detail = (
+        "detail" in text_lower
+        or "details" in text_lower
+        or "type" in text_lower
+        or "path" in text_lower
+        or "class" in text_lower
+        or "package" in text_lower
+        or "property" in text_lower
+        or "properties" in text_lower
+        or "\u8be6\u60c5" in latest_text
+        or "\u7c7b\u578b" in latest_text
+        or "\u8def\u5f84" in latest_text
+        or "\u5c5e\u6027" in latest_text
+        or "\u5305\u8def\u5f84" in latest_text
+        or "\u662f\u4ec0\u4e48" in latest_text
+    )
+    asks_for_list = any(token in text_lower for token in ("list", "which assets", "what assets", "all assets"))
+    if asks_for_list and not asks_detail:
+        return False
+    return (has_read_intent or has_question_intent) and has_asset_target and asks_detail
+
+
 def _looks_like_readonly_mcp_selected_assets_request(latest_text: str, text_lower: str) -> bool:
     if _looks_like_editor_write_request(latest_text, text_lower):
         return False
@@ -932,6 +984,8 @@ def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
         return "mcp_get_blueprint_node_details"
     if _looks_like_readonly_mcp_blueprint_graph_request(latest_text, text_lower):
         return "mcp_get_blueprint_graph"
+    if _looks_like_readonly_mcp_asset_details_request(latest_text, text_lower):
+        return "mcp_get_asset_details"
     return detect_tool_for_text(latest_text) or detect_tool_for_text(text_lower)
 
 

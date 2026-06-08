@@ -68,6 +68,18 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_asset_details",
+        "description": "Read one asset detail by path, query, or current selection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "asset_path": {"type": "string"},
+                "asset_id": {"type": "string"},
+                "query": {"type": "string"},
+            },
+        },
+    },
+    {
         "name": "get_static_mesh_details",
         "description": "Read Static Mesh details by path, query, or current selection.",
         "inputSchema": {
@@ -384,6 +396,34 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                 "structuredContent": structured,
                 "isError": False,
             }
+        if tool_name == "get_asset_details":
+            structured = {
+                "asset_detail_schema_version": "ue_agent_asset_details_v1",
+                "transport": "tcp_jsonrpc_line",
+                "server_status": "running",
+                "requested_asset": "BP_PlayerCharacter",
+                "resolved_from": "query_or_path",
+                "asset_name": "BP_PlayerCharacter",
+                "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                "asset_type": "Blueprint",
+                "package_name": "/Game/Blueprints/BP_PlayerCharacter",
+                "package_path": "/Game/Blueprints",
+                "asset": {
+                    "asset_name": "BP_PlayerCharacter",
+                    "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                    "asset_type": "Blueprint",
+                    "asset_class": "/Script/Engine.Blueprint",
+                    "package_name": "/Game/Blueprints/BP_PlayerCharacter",
+                    "package_path": "/Game/Blueprints",
+                    "loaded_class": "/Script/Engine.Blueprint",
+                    "blueprint_parent_class": "/Script/Engine.Character",
+                },
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
+            }
         if tool_name == "get_static_mesh_details":
             structured = {
                 "static_mesh_schema_version": "ue_agent_static_mesh_details_v1",
@@ -686,6 +726,7 @@ def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
             "get_level_actors",
             "get_level_actor_details",
             "get_selected_assets",
+            "get_asset_details",
             "get_static_mesh_details",
             "get_blueprint_graph",
             "get_blueprint_node_details",
@@ -778,6 +819,19 @@ def _selected_assets_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
         and static_mesh.get("material_slot_count") == 2
     )
     return ok, "TCP call returns selected asset and Static Mesh detail structuredContent"
+
+
+def _asset_details_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    asset = structured.get("asset") if isinstance(structured.get("asset"), dict) else {}
+    ok = (
+        payload.get("ok") is True
+        and structured.get("asset_detail_schema_version") == "ue_agent_asset_details_v1"
+        and structured.get("asset_name") == "BP_PlayerCharacter"
+        and asset.get("asset_type") == "Blueprint"
+        and asset.get("blueprint_parent_class") == "/Script/Engine.Character"
+    )
+    return ok, "TCP call returns focused asset detail structuredContent"
 
 
 def _static_mesh_details_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
@@ -878,6 +932,7 @@ def _run_smoke() -> list[dict[str, Any]]:
             "get_level_actors",
             "get_level_actor_details",
             "get_selected_assets",
+            "get_asset_details",
             "get_static_mesh_details",
             "get_blueprint_graph",
             "get_blueprint_node_details",
@@ -921,6 +976,13 @@ def _run_smoke() -> list[dict[str, Any]]:
                 "call_get_selected_assets",
                 adapter.call_readonly_tool("get_selected_assets", {}),
                 _selected_assets_call_ok,
+            )
+        )
+        cases.append(
+            _run_case(
+                "call_get_asset_details",
+                adapter.call_readonly_tool("get_asset_details", {"query": "BP_PlayerCharacter"}),
+                _asset_details_call_ok,
             )
         )
         cases.append(

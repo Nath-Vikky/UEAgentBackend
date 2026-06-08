@@ -13,6 +13,7 @@ from app.services.tool_registry_readonly_call_service import ToolRegistryReadOnl
 LIVE_MCP_TOOL_NAMES = {
     "mcp_get_editor_context": "get_editor_context",
     "mcp_get_selected_assets": "get_selected_assets",
+    "mcp_get_asset_details": "get_asset_details",
     "mcp_get_static_mesh_details": "get_static_mesh_details",
     "mcp_get_selected_actors": "get_selected_actors",
     "mcp_get_level_actors": "get_level_actors",
@@ -31,6 +32,7 @@ LOCAL_INVENTORY_READONLY_TOOL_IDS = {
     "mcp_get_material_instance_parameters",
     "mcp_get_level_actors",
     "mcp_get_level_actor_details",
+    "mcp_get_asset_details",
     "mcp_get_static_mesh_details",
 }
 
@@ -125,7 +127,9 @@ def live_mcp_readonly_result(
             {
                 "source_type": "mcp_tcp",
                 "title": tool_name,
-                "path": arguments.get("blueprint_path")
+                "path": arguments.get("asset_path")
+                or arguments.get("query")
+                or arguments.get("blueprint_path")
                 or arguments.get("widget_blueprint_path")
                 or arguments.get("material_instance_path"),
             }
@@ -603,6 +607,25 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
         return {}
     if selected_tool_id == "mcp_get_selected_assets":
         return {}
+    if selected_tool_id == "mcp_get_asset_details":
+        selected_assets = list(getattr(request.context, "selected_assets", []) or [])
+        selected_inventory_assets = [
+            item
+            for item in list(inventory_context.get("selected_assets") or [])
+            if isinstance(item, dict)
+        ]
+        latest_text = str(request.session.messages[-1].content or "") if request.session.messages else ""
+        asset_query = _first_non_empty(
+            payload.get("asset_path"),
+            payload.get("asset_id"),
+            payload.get("query"),
+            editor_state.get("current_asset_path"),
+            editor_state.get("asset_path"),
+            _asset_path_or_name_from_text(latest_text),
+            _first_asset_path_from_inventory(selected_inventory_assets),
+            _first_asset_path_from_strings(selected_assets),
+        )
+        return {"query": asset_query} if asset_query else {}
     if selected_tool_id == "mcp_get_static_mesh_details":
         selected_assets = list(getattr(request.context, "selected_assets", []) or [])
         selected_inventory_assets = [
@@ -921,6 +944,36 @@ def _live_mcp_answer(
         else:
             parts.append(_localized(output_language, "当前没有选中的资产。", "No assets are currently selected."))
         return "\n\n".join(parts)
+    if selected_tool_id == "mcp_get_asset_details":
+        asset_item = structured.get("asset") if isinstance(structured.get("asset"), dict) else {}
+        if not asset_item:
+            asset_item = structured.get("item") if isinstance(structured.get("item"), dict) else structured
+        asset_name = _first_non_empty(asset_item.get("asset_name"), structured.get("asset_name")) or "Unknown"
+        asset_path = _first_non_empty(asset_item.get("asset_path"), structured.get("asset_path"), arguments.get("query"))
+        asset_type = _first_non_empty(asset_item.get("asset_type"), structured.get("asset_type"))
+        package_path = _first_non_empty(asset_item.get("package_path"), structured.get("package_path"))
+        class_name = _short_class_name(_first_non_empty(asset_item.get("loaded_class"), asset_item.get("asset_class")))
+        static_mesh = asset_item.get("static_mesh") if isinstance(asset_item.get("static_mesh"), dict) else {}
+        parts = [
+            _localized(
+                output_language,
+                f"已通过 {source_label_zh}读取资产详情：{asset_name}",
+                f"Read asset details through {source_label_en}: {asset_name}",
+            ),
+            (
+                f"- type={asset_type or 'n/a'}"
+                f"\n- path={asset_path or 'n/a'}"
+                f"\n- package={package_path or 'n/a'}"
+                f"\n- class={class_name or 'n/a'}"
+                f"\n- resolved_from={structured.get('resolved_from') or 'n/a'}"
+            ),
+        ]
+        if asset_item.get("blueprint_parent_class"):
+            parts.append(f"- blueprint_parent_class={_short_class_name(str(asset_item.get('blueprint_parent_class') or ''))}")
+        static_mesh_text = _static_mesh_preview_text(static_mesh).removeprefix(" | ")
+        if static_mesh_text:
+            parts.append(f"- static_mesh={static_mesh_text}")
+        return "\n\n".join(parts)
     if selected_tool_id == "mcp_get_static_mesh_details":
         static_mesh_item = _static_mesh_item_from_structured(structured)
         static_mesh = static_mesh_item.get("static_mesh") if isinstance(static_mesh_item.get("static_mesh"), dict) else {}
@@ -1062,6 +1115,7 @@ def _structured_content_for_answer(*, selected_tool_id: str, tool_result: dict[s
     if selected_tool_id in {
         "mcp_get_material_instance_parameters",
         "mcp_get_level_actors",
+        "mcp_get_asset_details",
         "mcp_get_static_mesh_details",
         "mcp_get_umg_widget_details",
         "mcp_get_blueprint_node_details",
@@ -1126,6 +1180,12 @@ def _local_readonly_result_is_empty(*, selected_tool_id: str, tool_result: dict[
         if inspection.get("empty_reason"):
             return True
         return not bool(normalized.get("actor") or normalized.get("item") or normalized.get("actor_label"))
+    if selected_tool_id == "mcp_get_asset_details":
+        normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
+        inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
+        if inspection.get("empty_reason"):
+            return True
+        return not bool(normalized.get("asset") or normalized.get("item") or normalized.get("asset_name"))
     if selected_tool_id == "mcp_get_static_mesh_details":
         normalized = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
         inspection = normalized.get("inspection") if isinstance(normalized.get("inspection"), dict) else {}
@@ -1413,6 +1473,33 @@ def _first_static_mesh_path_from_inventory(items: list[dict[str, Any]]) -> str:
         asset_name = str(item.get("asset_name") or "").strip().lower()
         if asset_path and ("staticmesh" in asset_type or "static mesh" in asset_type or asset_name.startswith("sm_")):
             return asset_path
+    return ""
+
+
+def _first_asset_path_from_inventory(items: list[dict[str, Any]]) -> str:
+    for item in items:
+        asset_path = str(item.get("asset_path") or item.get("path") or "").strip()
+        if asset_path:
+            return asset_path
+    return ""
+
+
+def _first_asset_path_from_strings(values: list[str]) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _asset_path_or_name_from_text(text: str) -> str:
+    import re
+
+    raw = str(text or "")
+    for match in re.findall(r"/Game/[A-Za-z0-9_./-]+", raw):
+        return match.rstrip(".,;:")
+    for match in re.findall(r"\b(?:BP|WBP|ABP|SM|SK|MI|M|T|DA|DT|IA|IMC)_[A-Za-z0-9_]+\b", raw):
+        return match
     return ""
 
 

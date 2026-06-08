@@ -7190,7 +7190,7 @@ MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
 MCP_TCP_HOST=127.0.0.1
 MCP_TCP_PORT=8765
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
 MCP_TCP_TIMEOUT_MS=3000
 ```
 
@@ -7667,7 +7667,7 @@ Safety boundary:
 Suggested TCP allow-list:
 
 ```env
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
 ```
 
 ## 2026-06-08 Update: Live MCP Selected Assets Tool
@@ -7820,8 +7820,52 @@ Recommended UEAgentTool TCP allow-list:
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_asset_details,get_static_mesh_details,get_selected_actors,get_level_actors,get_level_actor_details,get_blueprint_graph,get_blueprint_node_details,get_widget_tree,get_widget_details,get_material_instance_parameters
 ```
+
+### Live Focused Asset Details
+
+`get_asset_details` is the focused read-only tool for one Content Browser asset.
+It accepts:
+
+```json
+{
+  "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter"
+}
+```
+
+or:
+
+```json
+{
+  "query": "BP_PlayerCharacter"
+}
+```
+
+When no query/path is provided, UEAgentTool tries the current Content Browser
+selection. The live response includes:
+
+- `asset_name`, `asset_path`, `asset_type`
+- `package_name`, `package_path`
+- `loaded_class` and `asset_class` when the asset can be loaded
+- `blueprint_parent_class` for Blueprint assets
+- embedded `static_mesh` details when the asset is a Static Mesh
+
+Agent Chat can route prompts such as `What type and path is BP_PlayerCharacter?`
+or `Inspect selected asset details` to this tool. If live MCP/TCP is unavailable,
+the backend maps `mcp_get_asset_details` to the existing Project
+Inventory-backed `editor_inspect_asset_detail` fallback.
+
+Provider order:
+
+```text
+frontend MCP/TCP get_asset_details
+  -> local Project Inventory editor_inspect_asset_detail fallback
+```
+
+This tool is read-only. It does not rename, move, duplicate, save, delete, or
+modify assets. Asset edits still go through confirmed Editor Operation Proposal
+tools.
 
 ### Live Selected Static Mesh Details
 

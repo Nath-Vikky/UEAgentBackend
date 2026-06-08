@@ -637,6 +637,26 @@ def test_tool_registry_local_readonly_call_maps_mcp_level_actor_detail_to_invent
     assert result["inspection"]["empty_reason"] == ""
 
 
+def test_tool_registry_local_readonly_call_maps_mcp_asset_detail_to_inventory(client: TestClient) -> None:
+    _save_demo_inventory_snapshot(client)
+
+    response = client.post(
+        "/api/v1/mcp/tool-registry/tools/mcp_get_asset_details/call",
+        json={"arguments": {"project_id": "MCPDemoProject", "query": "BP_PlayerCharacter"}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    call = body["call"]
+    assert call["tool_id"] == "mcp_get_asset_details"
+    assert call["transport"] == "local_tool_registry"
+    result = call["result"]
+    assert result["item"]["asset_name"] == "BP_PlayerCharacter"
+    assert result["inspection"]["operation_type"] == "inspect_asset_detail"
+    assert result["inspection"]["empty_reason"] == ""
+
+
 def test_tool_registry_local_readonly_call_reads_umg_widget_detail(client: TestClient) -> None:
     _save_demo_inventory_snapshot(client)
 
