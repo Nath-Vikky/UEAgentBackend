@@ -7190,7 +7190,7 @@ MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
 MCP_TCP_HOST=127.0.0.1
 MCP_TCP_PORT=8765
-MCP_ALLOWED_TOOLS=get_blueprint_graph,get_widget_tree,ue_agent_tools_list
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree
 MCP_TCP_TIMEOUT_MS=3000
 ```
 
@@ -7654,5 +7654,52 @@ Safety boundary:
 Suggested TCP allow-list:
 
 ```env
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_actors,get_blueprint_graph,get_widget_tree
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree
 ```
+
+## 2026-06-08 Update: Live MCP Selected Assets Tool
+
+When the optional UEAgentTool TCP editor tool server supports it, the backend can
+also use:
+
+```text
+mcp_get_selected_assets -> get_selected_assets
+```
+
+Purpose:
+
+- Read the currently selected Content Browser assets from the live Unreal Editor
+  session.
+- Give Agent Chat a grounded answer for explicit questions such as
+  "List selected assets".
+- Prepare an observe-before-propose workflow for asset rename, move, duplicate,
+  redirector fix, or asset inspection proposals.
+
+Returned `structuredContent` is expected to include:
+
+- `asset_selection_schema_version`
+- `server_status`
+- `transport`
+- `content_browser_available`
+- `selected_asset_count`
+- `max_assets_returned`
+- `assets[].asset_name`
+- `assets[].asset_path`
+- `assets[].asset_type`
+- `assets[].package_name`
+- `assets[].package_path`
+
+Fallback behavior:
+
+- If MCP/TCP is enabled and `MCP_ALLOWED_TOOLS` contains `get_selected_assets`,
+  the backend uses the live TCP result first.
+- If MCP/TCP is unavailable but the normal UE HTTP request context already
+  contains `selected_assets`, the backend can answer from that request context
+  instead of returning a generic placeholder.
+
+Safety boundary:
+
+- This tool is read-only.
+- It does not rename, move, duplicate, delete, save, or fix up assets.
+- Asset write operations still require HTTP Editor Operation Proposal
+  confirmation in UEAgentTool.

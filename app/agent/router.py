@@ -158,6 +158,7 @@ DETERMINISTIC_PANELS = {
 PROJECT_QA_PANELS = {"projectqa"}
 READONLY_MCP_TOOL_IDS = {
     "mcp_get_editor_context",
+    "mcp_get_selected_assets",
     "mcp_get_selected_actors",
     "mcp_get_blueprint_graph",
     "mcp_get_widget_tree",
@@ -659,6 +660,25 @@ def _looks_like_readonly_mcp_selected_actors_request(latest_text: str, text_lowe
     return has_read_intent and has_selected_actor_target
 
 
+def _looks_like_readonly_mcp_selected_assets_request(latest_text: str, text_lower: str) -> bool:
+    if _looks_like_editor_write_request(latest_text, text_lower):
+        return False
+    has_read_intent = _has_readonly_sensing_intent(latest_text, text_lower)
+    has_selected_asset_target = (
+        "selected asset" in text_lower
+        or "selected assets" in text_lower
+        or "current selected asset" in text_lower
+        or "current selected assets" in text_lower
+        or "content browser selection" in text_lower
+        or "content browser selected" in text_lower
+        or "当前选中的资产" in latest_text
+        or "选中的资产" in latest_text
+        or "内容浏览器选中的资产" in latest_text
+        or "内容浏览器当前选中" in latest_text
+    )
+    return has_read_intent and has_selected_asset_target
+
+
 def _has_readonly_sensing_intent(latest_text: str, text_lower: str) -> bool:
     return bool(re.search(r"\b(?:get|read|show|inspect|list|view|describe)\b", text_lower)) or any(
         token in latest_text
@@ -705,6 +725,8 @@ def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
         return "editor_add_blueprint_node_template"
     if _looks_like_readonly_mcp_editor_context_request(latest_text, text_lower):
         return "mcp_get_editor_context"
+    if _looks_like_readonly_mcp_selected_assets_request(latest_text, text_lower):
+        return "mcp_get_selected_assets"
     if _looks_like_readonly_mcp_selected_actors_request(latest_text, text_lower):
         return "mcp_get_selected_actors"
     if _looks_like_readonly_mcp_widget_tree_request(latest_text, text_lower):

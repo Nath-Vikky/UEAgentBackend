@@ -34,6 +34,11 @@ UE_AGENT_TOOL_FIXTURE_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_selected_assets",
+        "description": "Read currently selected Content Browser assets.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "get_blueprint_graph",
         "description": "Read Blueprint graph metadata.",
         "inputSchema": {
@@ -159,6 +164,32 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                 "structuredContent": structured,
                 "isError": False,
             }
+        if tool_name == "get_selected_assets":
+            structured = {
+                "asset_selection_schema_version": "ue_agent_tool_selected_assets_fixture_v1",
+                "selected_asset_count": 2,
+                "assets": [
+                    {
+                        "asset_name": "BP_PlayerCharacter",
+                        "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                        "asset_type": "Blueprint",
+                        "package_name": "/Game/Blueprints/BP_PlayerCharacter",
+                        "package_path": "/Game/Blueprints",
+                    },
+                    {
+                        "asset_name": "MI_Player",
+                        "asset_path": "/Game/Materials/MI_Player.MI_Player",
+                        "asset_type": "MaterialInstanceConstant",
+                        "package_name": "/Game/Materials/MI_Player",
+                        "package_path": "/Game/Materials",
+                    },
+                ],
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(structured, ensure_ascii=False)}],
+                "structuredContent": structured,
+                "isError": False,
+            }
         if tool_name == "get_blueprint_graph":
             structured = {
                 "graph_schema_version": "ue_agent_tool_tcp_fixture_v1",
@@ -276,7 +307,13 @@ def _status_ready(payload: dict[str, Any]) -> tuple[bool, str]:
 def _discover_readonly_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     names = [item.get("name") for item in list(payload.get("tools") or [])]
     return (
-        names == ["get_editor_context", "get_selected_actors", "get_blueprint_graph", "get_widget_tree"],
+        names == [
+            "get_editor_context",
+            "get_selected_actors",
+            "get_selected_assets",
+            "get_blueprint_graph",
+            "get_widget_tree",
+        ],
         "discovery filters to read-only allow-list",
     )
 
@@ -306,6 +343,16 @@ def _selected_actors_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
         and structured.get("selected_actor_count") == 2
     )
     return ok, "TCP call returns selected actor structuredContent"
+
+
+def _selected_assets_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
+    structured = payload.get("result", {}).get("structuredContent", {})
+    ok = (
+        payload.get("ok") is True
+        and structured.get("asset_selection_schema_version") == "ue_agent_tool_selected_assets_fixture_v1"
+        and structured.get("selected_asset_count") == 2
+    )
+    return ok, "TCP call returns selected asset structuredContent"
 
 
 def _widget_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
@@ -343,7 +390,9 @@ def _run_case(case_id: str, payload: dict[str, Any], validator: Validator) -> di
 
 def _run_smoke() -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
-    with _fixture_adapter(["get_editor_context", "get_selected_actors", "get_blueprint_graph", "get_widget_tree"]) as adapter:
+    with _fixture_adapter(
+        ["get_editor_context", "get_selected_actors", "get_selected_assets", "get_blueprint_graph", "get_widget_tree"]
+    ) as adapter:
         cases.append(_run_case("adapter_status_ready", adapter.status(), _status_ready))
         cases.append(_run_case("discover_readonly_tools", adapter.discover_tools(), _discover_readonly_ok))
         cases.append(
@@ -358,6 +407,13 @@ def _run_smoke() -> list[dict[str, Any]]:
                 "call_get_selected_actors",
                 adapter.call_readonly_tool("get_selected_actors", {}),
                 _selected_actors_call_ok,
+            )
+        )
+        cases.append(
+            _run_case(
+                "call_get_selected_assets",
+                adapter.call_readonly_tool("get_selected_assets", {}),
+                _selected_assets_call_ok,
             )
         )
         cases.append(

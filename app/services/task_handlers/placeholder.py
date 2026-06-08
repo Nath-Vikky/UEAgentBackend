@@ -27,6 +27,7 @@ class PlaceholderTaskHandler:
         selected_tool_id = str((routing.get("route") or {}).get("selected_tool_id") or "")
         if selected_tool_id in {
             "mcp_get_editor_context",
+            "mcp_get_selected_assets",
             "mcp_get_selected_actors",
             "mcp_get_blueprint_graph",
             "mcp_get_widget_tree",

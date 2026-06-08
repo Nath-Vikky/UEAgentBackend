@@ -12,6 +12,7 @@ from app.services.tool_registry_readonly_call_service import ToolRegistryReadOnl
 
 LIVE_MCP_TOOL_NAMES = {
     "mcp_get_editor_context": "get_editor_context",
+    "mcp_get_selected_assets": "get_selected_assets",
     "mcp_get_selected_actors": "get_selected_actors",
     "mcp_get_blueprint_graph": "get_blueprint_graph",
     "mcp_get_widget_tree": "get_widget_tree",
@@ -160,6 +161,12 @@ def local_tool_registry_readonly_result(
     output_language: str,
     selected_tool_id: str,
 ) -> dict[str, Any] | None:
+    if selected_tool_id == "mcp_get_selected_assets":
+        return selected_assets_context_result(
+            context=context,
+            base_debug=base_debug,
+            output_language=output_language,
+        )
     dependencies = context.dependencies
     if dependencies is None or selected_tool_id not in LOCAL_INVENTORY_READONLY_TOOL_IDS:
         return None
@@ -276,6 +283,142 @@ def local_tool_registry_readonly_result(
             "mode": "local_tool_registry_readonly",
             "degraded_mode": True,
             "reason": "live_mcp_unavailable_local_inventory_tool_completed",
+            "filters_applied": {},
+            "retrieved_docs": [],
+        },
+        "planner_diagnostics": context.routing["route"],
+        "step_results": step_results,
+        "action_proposals": [],
+        "errors": [],
+        "assistant_message": answer,
+        "artifacts": [],
+    }
+
+
+def selected_assets_context_result(
+    *,
+    context: TaskExecutionContext,
+    base_debug: dict[str, Any],
+    output_language: str,
+) -> dict[str, Any] | None:
+    request_assets = list(getattr(context.request.context, "selected_assets", []) or [])
+    inventory_context = dict((context.context_bundle or {}).get("project_inventory_context") or {})
+    inventory_assets = [
+        item for item in list(inventory_context.get("selected_assets") or []) if isinstance(item, dict)
+    ]
+    assets: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for item in inventory_assets:
+        asset_path = str(item.get("asset_path") or "").strip()
+        if not asset_path or asset_path in seen:
+            continue
+        seen.add(asset_path)
+        assets.append(
+            {
+                "asset_name": item.get("asset_name") or _asset_name_from_path(asset_path),
+                "asset_path": asset_path,
+                "asset_type": item.get("asset_type") or "",
+                "package_path": item.get("package_path") or "",
+            }
+        )
+
+    for asset_path in request_assets:
+        asset_path = str(asset_path or "").strip()
+        if not asset_path or asset_path in seen:
+            continue
+        seen.add(asset_path)
+        assets.append(
+            {
+                "asset_name": _asset_name_from_path(asset_path),
+                "asset_path": asset_path,
+                "asset_type": "",
+                "package_path": "",
+            }
+        )
+
+    if not assets:
+        return None
+
+    asset_lines = [
+        f"- {item.get('asset_name') or 'Unknown'}"
+        + (f" | type={item.get('asset_type')}" if item.get("asset_type") else "")
+        + (f" | path={item.get('asset_path')}" if item.get("asset_path") else "")
+        for item in assets[:10]
+    ]
+    answer = "\n\n".join(
+        [
+            _localized(
+                output_language,
+                "当前请求上下文中已有选中资产；MCP/TCP 未启用或不可用时，后端使用该上下文作为兜底。",
+                "Selected assets are already available in request context; the backend used that context as fallback because MCP/TCP is disabled or unavailable.",
+            ),
+            f"selected_asset_count={len(assets)}",
+            _localized(output_language, "选中资产预览:", "Selected asset preview:") + "\n" + "\n".join(asset_lines),
+        ]
+    )
+    step_results = [
+        {
+            "step_id": "classify_intent",
+            "title": "Intent Classification",
+            "status": "completed",
+            "summary": context.routing["intent"]["reason"],
+            "details": context.routing["intent"],
+        },
+        {
+            "step_id": "read_selected_assets_context",
+            "title": "Read Selected Assets Context",
+            "status": "completed",
+            "summary": "Answered from request/Inventory selected asset context.",
+            "details": {"selected_asset_count": len(assets)},
+        },
+    ]
+    user_view = {
+        "title": _localized(output_language, "选中资产结果", "Selected Assets Result"),
+        "text": answer,
+        "blocks": [
+            UserViewBlock(
+                block_type="summary",
+                title=_localized(output_language, "选中资产摘要", "Selected Assets Summary"),
+                text=answer,
+                data={"selected_asset_count": len(assets), "assets": assets},
+            ).model_dump(mode="json")
+        ],
+        "citations_preview": [],
+        "quick_actions": [
+            QuickAction(
+                action_id="open_debug_view",
+                label=_localized(output_language, "查看调试信息", "Open debug view"),
+            ).model_dump(mode="json")
+        ],
+        "status_hint": "selected_assets_context_completed",
+    }
+    data = {
+        "answer": answer,
+        "sources": [{"source_type": "request_context", "title": "selected_assets"}],
+        "citations": [],
+        "confidence": 0.66,
+        "context_summary": build_context_summary(context.request),
+        "warnings": [],
+        "selected_assets": assets,
+    }
+    base_debug["step_results"] = step_results
+    base_debug["raw_result"] = data
+    base_debug["tools"] = [
+        {
+            "tool_id": "mcp_get_selected_assets",
+            "status": "completed",
+            "summary": "Answered from request/Inventory selected asset context fallback.",
+        }
+    ]
+    return {
+        "user_view": user_view,
+        "debug_view": base_debug,
+        "data": data,
+        "retrieval_trace": {
+            "mode": "request_context_selected_assets",
+            "degraded_mode": True,
+            "reason": "mcp_tcp_unavailable_selected_assets_context_fallback",
             "filters_applied": {},
             "retrieved_docs": [],
         },
@@ -443,6 +586,8 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
     inventory_context = dict((context.context_bundle or {}).get("project_inventory_context") or {})
     if selected_tool_id == "mcp_get_editor_context":
         return {}
+    if selected_tool_id == "mcp_get_selected_assets":
+        return {}
     if selected_tool_id == "mcp_get_selected_actors":
         return {}
     if selected_tool_id == "mcp_get_blueprint_graph":
@@ -538,6 +683,28 @@ def _live_mcp_answer(
         else:
             parts.append(_localized(output_language, "当前没有选中的 Actor。", "No actors are currently selected."))
         return "\n\n".join(parts)
+    if selected_tool_id == "mcp_get_selected_assets":
+        assets = [item for item in list(structured.get("assets") or []) if isinstance(item, dict)]
+        asset_lines = []
+        for asset in assets[:10]:
+            asset_lines.append(
+                f"- {asset.get('asset_name') or 'Unknown'}"
+                + (f" | type={asset.get('asset_type')}" if asset.get("asset_type") else "")
+                + (f" | path={asset.get('asset_path')}" if asset.get("asset_path") else "")
+            )
+        parts = [
+            _localized(
+                output_language,
+                f"已通过 {source_label_zh}读取当前 Content Browser 选中资产。",
+                f"Read selected Content Browser assets through {source_label_en}.",
+            ),
+            f"selected_asset_count={structured.get('selected_asset_count', len(assets))}",
+        ]
+        if asset_lines:
+            parts.append(_localized(output_language, "选中资产预览:", "Selected asset preview:") + "\n" + "\n".join(asset_lines))
+        else:
+            parts.append(_localized(output_language, "当前没有选中的资产。", "No assets are currently selected."))
+        return "\n\n".join(parts)
     if selected_tool_id == "mcp_get_blueprint_graph":
         graphs = list(structured.get("graphs") or [])
         graph_lines = []
@@ -629,6 +796,13 @@ def _first_non_empty(*values: Any) -> str:
         if text:
             return text
     return ""
+
+
+def _asset_name_from_path(asset_path: str) -> str:
+    tail = str(asset_path or "").strip().rstrip("/").rsplit("/", 1)[-1]
+    if "." in tail:
+        tail = tail.rsplit(".", 1)[-1]
+    return tail or "Unknown"
 
 
 def _first_widget_path_from_inventory(items: list[dict[str, Any]]) -> str:

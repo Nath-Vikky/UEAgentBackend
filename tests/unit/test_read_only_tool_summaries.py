@@ -243,3 +243,25 @@ def test_local_tool_registry_readonly_result_reads_widget_tree(monkeypatch) -> N
     assert result["data"]["local_tool"]["transport"] == "local_tool_registry"
     assert "RootCanvas" in result["assistant_message"]
     assert "TitleText" in result["assistant_message"]
+
+
+def test_local_tool_registry_readonly_result_reads_selected_assets_context() -> None:
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "list selected assets"}]},
+        context={"selected_assets": ["/Game/Blueprints/BP_Player.BP_Player"]},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.local_tool_registry_readonly_result(
+        context=_context(selected_tool_id="mcp_get_selected_assets", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_selected_assets",
+    )
+
+    assert result is not None
+    assert result["retrieval_trace"]["mode"] == "request_context_selected_assets"
+    assert result["data"]["selected_assets"][0]["asset_name"] == "WBP_MainHUD"
+    assert "WBP_MainHUD" in result["assistant_message"]
+    assert "BP_Player" in result["assistant_message"]
