@@ -8291,7 +8291,7 @@ $env:RUFF_CACHE_DIR='.tmp_ruff_cache'; .\.venv\Scripts\python.exe -m ruff check 
 Latest result:
 
 - Aggregate editor demo smoke suite: 7/7 suites, 102/102 cases passed.
-- Unit and contract tests: 386 passed.
+- Unit and contract tests: 389 passed.
 - Ruff: all checks passed.
 
 Covered deterministic smoke suites:
@@ -8303,3 +8303,57 @@ Covered deterministic smoke suites:
 - Local Tool Registry read-only calls.
 - Tool Registry confirmed-write Proposal bridge.
 - MCP TCP adapter fixture for read-only live editor sensing.
+
+## 2026-06-09 Update: MCP Confirmed-write Provider Bridge
+
+The backend can now recognize MCP-style write tool names and map them back to
+local `ToolSpec` entries before creating a Proposal. This is meant for future
+UEAgentTool MCP providers or user-provided MCP frontends.
+
+Supported behavior:
+
+- Live MCP `tools/list` discovery can match local tools by exact tool name,
+  `annotations.tool_id`, `annotations.local_tool_id`,
+  `annotations.ue_agent_tool_id`, or built-in aliases such as `add_step`,
+  `create_widget`, `set_material_parameter`, and `place_actor`.
+- Matched read-only tools can still prefer the live MCP provider.
+- Matched write tools are marked as `mapped_confirmed_write_proposal_only`.
+  They are not directly executed through raw MCP.
+- Unknown external write tools are shown as
+  `trust_state=external_unmapped_write_blocked` and are not available to Agent
+  Chat or automatic workflows.
+
+Proposal bridge usage:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/mcp/tool-registry/proposals/prepare" `
+  -ContentType "application/json" `
+  -Body '{
+    "tool_id": "add_step",
+    "arguments": {
+      "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+      "graph_name": "EventGraph",
+      "step_name": "Print String",
+      "text": "Hello from MCP alias"
+    },
+    "requested_by": "external_mcp_provider"
+  }'
+```
+
+The response resolves `add_step` to `editor_blueprint_add_step`, then prepares a
+pending `add_blueprint_node_template` Proposal. To persist the pending Proposal,
+use:
+
+```text
+POST /api/v1/mcp/tool-registry/proposals
+```
+
+Safety boundary:
+
+- No raw MCP writes.
+- No direct LLM editor mutation.
+- No trust for unknown external MCP write tools.
+- Existing UEAgentTool HTTP Proposal confirmation remains the default execution
+  path until a future MCP write executor is tested in the editor.

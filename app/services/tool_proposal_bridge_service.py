@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.editor_operations.catalog import OPERATION_SPECS
+from app.services.mcp_tool_mapping import resolve_local_tool_id_from_name
 from app.tools.registry import ToolSpec, get_tool_spec
 
 TOOL_REGISTRY_PROPOSAL_BRIDGE_VERSION = "tool_registry_proposal_bridge_v1"
@@ -74,11 +75,13 @@ class ToolProposalBridgeService:
         source_task_id: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        clean_tool_id = str(tool_id or "").strip()
+        requested_tool_name = str(tool_id or "").strip()
+        clean_tool_id = resolve_local_tool_id_from_name(requested_tool_name) or requested_tool_name
         spec = get_tool_spec(clean_tool_id)
         if not spec:
             return cls._blocked(
                 tool_id=clean_tool_id,
+                requested_tool_name=requested_tool_name,
                 reason="tool_not_registered",
                 message="Tool id is not registered in the local Tool Registry.",
             )
@@ -86,6 +89,7 @@ class ToolProposalBridgeService:
             return cls._blocked(
                 tool_id=spec.tool_id,
                 spec=spec,
+                requested_tool_name=requested_tool_name,
                 reason="tool_disabled",
                 message="Tool is disabled by registry configuration.",
             )
@@ -93,6 +97,7 @@ class ToolProposalBridgeService:
             return cls._blocked(
                 tool_id=spec.tool_id,
                 spec=spec,
+                requested_tool_name=requested_tool_name,
                 reason="tool_is_not_confirmed_write",
                 message="Only confirmed-write editor tools can be converted to Proposal requests.",
             )
@@ -102,6 +107,7 @@ class ToolProposalBridgeService:
             return cls._blocked(
                 tool_id=spec.tool_id,
                 spec=spec,
+                requested_tool_name=requested_tool_name,
                 reason="tool_not_mapped_to_editor_operation",
                 message="Tool has no matching editor operation proposal type.",
             )
@@ -129,6 +135,8 @@ class ToolProposalBridgeService:
             "schema_version": TOOL_REGISTRY_PROPOSAL_BRIDGE_VERSION,
             "status": "prepared",
             "tool_id": spec.tool_id,
+            "requested_tool_name": requested_tool_name,
+            "tool_name_resolved_via_alias": requested_tool_name != spec.tool_id,
             "tool_title": spec.title,
             "operation_type": operation_type,
             "side_effect_level": spec.side_effect_level,
@@ -280,11 +288,14 @@ class ToolProposalBridgeService:
         reason: str,
         message: str,
         spec: ToolSpec | None = None,
+        requested_tool_name: str | None = None,
     ) -> dict[str, Any]:
         return {
             "schema_version": TOOL_REGISTRY_PROPOSAL_BRIDGE_VERSION,
             "status": "blocked",
             "tool_id": tool_id,
+            "requested_tool_name": requested_tool_name or tool_id,
+            "tool_name_resolved_via_alias": bool(requested_tool_name and requested_tool_name != tool_id),
             "tool_title": spec.title if spec else "",
             "operation_type": "",
             "side_effect_level": spec.side_effect_level if spec else "",

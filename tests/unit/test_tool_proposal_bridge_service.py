@@ -63,6 +63,30 @@ def test_prepare_blueprint_add_step_alias_normalizes_to_node_template() -> None:
     assert "text" not in payload
 
 
+def test_prepare_mcp_tool_name_alias_resolves_to_confirmed_write_tool() -> None:
+    bridge = ToolProposalBridgeService.prepare_proposal(
+        tool_id="add_step",
+        arguments={
+            "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+            "step_name": "Print String",
+            "graph_name": "EventGraph",
+            "text": "Hello from external MCP alias",
+            "entry_event": "BeginPlay",
+        },
+        requested_by="unit_test",
+    )
+
+    assert bridge["status"] == "prepared"
+    assert bridge["requested_tool_name"] == "add_step"
+    assert bridge["tool_id"] == "editor_blueprint_add_step"
+    assert bridge["tool_name_resolved_via_alias"] is True
+    assert bridge["operation_type"] == "add_blueprint_node_template"
+    assert bridge["auto_execute"] is False
+    payload = bridge["proposal_request"]["payload"]
+    assert payload["template_id"] == "print_string"
+    assert payload["message"] == "Hello from external MCP alias"
+
+
 def test_prepare_blueprint_add_step_alias_uses_blueprint_context_defaults() -> None:
     bridge = ToolProposalBridgeService.prepare_proposal(
         tool_id="editor_blueprint_add_step",
