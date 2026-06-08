@@ -157,6 +157,20 @@ def build_affected_targets(operation_type: str, payload: dict[str, Any]) -> list
                 "transform_mode": payload["transform_mode"],
             }
         ]
+    if operation_type == "select_level_actors":
+        selection = payload["selection"]
+        return [
+            {
+                "kind": "level_actor",
+                "action": "select_actors",
+                "actor_references": selection.get("actor_references", []),
+                "query": selection.get("query"),
+                "class_contains": selection.get("class_contains"),
+                "tag": selection.get("tag"),
+                "folder_path": selection.get("folder_path"),
+                "max_count": selection.get("max_count"),
+            }
+        ]
     if operation_type == "set_actor_metadata":
         return [
             {

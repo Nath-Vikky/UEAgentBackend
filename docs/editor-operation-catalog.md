@@ -4,9 +4,9 @@ This catalog is generated from the backend editor operation registry.
 
 ## Summary
 
-- Operation count: `30`
-- Implemented frontend count: `30`
-- Read-only inspection count: `4`
+- Operation count: `31`
+- Implemented frontend count: `31`
+- Read-only inspection count: `6`
 - Transport: `http`
 - Proposal type: `editor_operation`
 - Requires confirmation: `True`
@@ -75,6 +75,7 @@ Place actors and adjust transforms in the current editor level.
 | Operation | Risk | Required Fields | Result Fields |
 | --- | --- | --- | --- |
 | `place_actor_in_level` | `MEDIUM` | `actor_class` | `actor_label`, `actor_path`, `level_dirty`, `dirty_packages` |
+| `select_level_actors` | `LOW` | `selection` | `selected_actor_count`, `selected_actors`, `selection_changed` |
 | `set_actor_transform` | `MEDIUM` | `actor_reference`, `transform_mode` | `actor_reference`, `transform_mode`, `level_dirty`, `dirty_packages` |
 | `set_actor_metadata` | `MEDIUM` | `actor_reference`, `metadata` | `actor_reference`, `actor_label`, `folder_path`, `tags`, `level_dirty`, `dirty_packages` |
 | `arrange_actors_pattern` | `MEDIUM` | `actor_references`, `pattern` | `arranged_actors`, `pattern_type`, `item_count`, `level_dirty`, `dirty_packages` |
@@ -84,6 +85,7 @@ Read-only inspections:
 | Inspection | Endpoint | Required Fields | Boundary |
 | --- | --- | --- | --- |
 | `inspect_level_actors` | `/api/v1/editor-operations/inspect/level-actors` | - | Read-only inventory; no level streaming, World Partition editing, or Actor mutation. |
+| `inspect_level_actor_detail` | `/api/v1/editor-operations/inspect/level-actor-detail` | `actor_reference` | Read-only inventory detail lookup; no Actor mutation, level save, or component edit. |
 
 ### Material Operations
 
@@ -100,6 +102,7 @@ Read-only inspections:
 | Inspection | Endpoint | Required Fields | Boundary |
 | --- | --- | --- | --- |
 | `inspect_material_instance_parameters` | `/api/v1/editor-operations/inspect/material-instance-parameters` | `material_instance_path` | Read-only inspection; parent Material graph editing remains out of scope. |
+| `inspect_material_instance_detail` | `/api/v1/editor-operations/inspect/material-instance-detail` | `material_instance_path` | Read-only inspection; no parameter mutation, parent Material graph edit, or package save. |
 
 ## Safety Boundary
 

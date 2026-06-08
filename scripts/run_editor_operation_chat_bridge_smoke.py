@@ -159,8 +159,12 @@ def _chat_request(
     query: str,
     selected_assets: list[str] | None = None,
     editor_state: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
     language: str = "en-US",
 ) -> dict[str, Any]:
+    request_payload = {"user_query": query}
+    if payload:
+        request_payload.update(payload)
     return {
         "task_type": "agent_chat",
         "session": {
@@ -174,7 +178,7 @@ def _chat_request(
             "selected_assets": selected_assets or [],
             "editor_state": editor_state or {},
         },
-        "payload": {"user_query": query},
+        "payload": request_payload,
         "runtime_options": {
             "profile_id": "default",
             "stream": False,
@@ -592,6 +596,20 @@ def _cases() -> list[dict[str, Any]]:
                 "transform_delta.location.x": 0.0,
                 "transform_delta.location.y": 200.0,
                 "transform_delta.location.z": 0.0,
+            },
+        },
+        {
+            "case_id": "chat_select_level_actors",
+            "request": _chat_request(
+                case_id="chat_select_level_actors",
+                query="Select actors tagged Enemy",
+                payload={"tag": "Enemy", "max_count": 8},
+            ),
+            "expected_operation_type": "select_level_actors",
+            "expected_payload": {
+                "selection.tag": "Enemy",
+                "selection.max_count": 8,
+                "save_policy": "selection_only_no_save",
             },
         },
         {

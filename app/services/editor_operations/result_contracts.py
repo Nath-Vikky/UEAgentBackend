@@ -126,6 +126,11 @@ OPERATION_RESULT_FIELDS: dict[str, list[str]] = {
         "dirty_packages",
     ],
     "place_actor_in_level": ["actor_label", "actor_path", "level_dirty", "dirty_packages"],
+    "select_level_actors": [
+        "selected_actor_count",
+        "selected_actors",
+        "selection_changed",
+    ],
     "set_actor_transform": ["actor_reference", "transform_mode", "level_dirty", "dirty_packages"],
     "set_actor_metadata": ["actor_reference", "actor_label", "folder_path", "tags", "level_dirty", "dirty_packages"],
     "arrange_actors_pattern": [
@@ -170,4 +175,3 @@ def expected_result_contract(operation_type: str) -> dict[str, Any]:
         "operation_result_fields": OPERATION_RESULT_FIELDS.get(operation_type, []),
         "frontend_must_report_result": True,
     }
-

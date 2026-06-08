@@ -210,6 +210,7 @@ TOOL_MANIFEST_PROFILES: dict[str, dict[str, Any]] = {
             "editor_inspect_level_actors",
             "editor_inspect_level_actor_detail",
             "editor_place_actor_in_level",
+            "editor_select_level_actors",
             "editor_set_actor_transform",
             "editor_set_actor_metadata",
             "editor_arrange_actors_pattern",
@@ -360,6 +361,7 @@ TOOL_MANIFEST_WORKFLOW_PREVIEWS: dict[str, dict[str, Any]] = {
         "context_tools": (),
         "proposal_tools": (
             "editor_place_actor_in_level",
+            "editor_select_level_actors",
             "editor_set_actor_transform",
             "editor_set_actor_metadata",
             "editor_arrange_actors_pattern",

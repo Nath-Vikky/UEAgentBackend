@@ -2069,6 +2069,45 @@ class EditorOperationService:
                 context=request.context.model_dump(mode="json"),
             )
 
+        wants_select_level_actors = any(
+            token in query_lower or token in query_text
+            for token in ("select", "focus", "highlight", "choose", "选择", "选中", "高亮", "聚焦")
+        ) and any(
+            token in query_lower or token in query_text
+            for token in ("actor", "actors", "level", "bp_", "关卡", "场景", "对象")
+        )
+        if wants_select_level_actors:
+            explicit_selection = request.payload.get("selection") if isinstance(request.payload.get("selection"), dict) else {}
+            selection: dict[str, Any] = dict(explicit_selection)
+            for key in ("query", "class_contains", "tag", "folder_path", "max_count"):
+                if key in request.payload and key not in selection:
+                    selection[key] = request.payload.get(key)
+            references = EditorOperationService._detect_actor_references_from_request(
+                request,
+                query_text,
+                context_bundle,
+            )
+            if references and "actor_references" not in selection:
+                selection["actor_references"] = references
+            if "tag" not in selection:
+                tag_match = re.search(r"\b(?:tagged|tag|with tag)\s+([A-Za-z][A-Za-z0-9_]{1,63})\b", query_text, flags=re.IGNORECASE)
+                if tag_match:
+                    selection["tag"] = tag_match.group(1)
+            if "class_contains" not in selection:
+                class_match = re.search(r"\b(?:class|type)\s+([A-Za-z][A-Za-z0-9_]{1,63})\b", query_text, flags=re.IGNORECASE)
+                if class_match:
+                    selection["class_contains"] = class_match.group(1)
+            if "query" not in selection and not any(selection.get(key) for key in ("actor_references", "class_contains", "tag", "folder_path")):
+                label = EditorOperationService._extract_actor_label_from_text(query_text)
+                selection["query"] = label or query_text[:120]
+            return EditorOperationProposalRequest(
+                operation_type="select_level_actors",
+                payload={"selection": selection},
+                reason=query_text,
+                requested_by="agent_chat",
+                context=request.context.model_dump(mode="json"),
+            )
+
         wants_actor_transform = any(
             token in query_lower or token in query_text
             for token in (
@@ -4124,6 +4163,33 @@ class EditorOperationService:
             raise EditorOperationValidationError("actor_references_limit_exceeded", {"max_items": 12})
         return references
 
+    def _normalize_actor_selection(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise EditorOperationValidationError("selection_must_be_object")
+        selection: dict[str, Any] = {}
+        raw_references = value.get("actor_references") or value.get("references") or []
+        if isinstance(raw_references, str):
+            raw_references = [item.strip() for item in re.split(r"[,，;；\n]+", raw_references) if item.strip()]
+        if raw_references:
+            if not isinstance(raw_references, list | tuple):
+                raise EditorOperationValidationError("actor_references_must_be_list")
+            references = self._dedupe_strings([str(item) for item in raw_references])
+            if len(references) > 50:
+                raise EditorOperationValidationError("actor_references_limit_exceeded", {"max_items": 50})
+            selection["actor_references"] = references
+        for field_name in ("query", "class_contains", "tag", "folder_path"):
+            text = self._normalize_optional_string(value.get(field_name) or "", max_length=120)
+            if text:
+                selection[field_name] = text.replace("\\", "/") if field_name == "folder_path" else text
+        max_count = int(self._normalize_finite_float(value.get("max_count", 20), "selection_max_count", min_value=1.0, max_value=50.0))
+        selection["max_count"] = max_count
+        if not any(selection.get(key) for key in ("actor_references", "query", "class_contains", "tag", "folder_path")):
+            raise EditorOperationValidationError(
+                "selection_requires_actor_references_or_filter",
+                {"allowed_fields": ["actor_references", "query", "class_contains", "tag", "folder_path"]},
+            )
+        return selection
+
     def _normalize_arrange_pattern(self, value: Any, *, actor_count: int) -> dict[str, Any]:
         if not isinstance(value, dict):
             raise EditorOperationValidationError("pattern_must_be_object")
@@ -4693,6 +4759,17 @@ class EditorOperationService:
                 "transform_mode": transform_mode,
                 transform_key: transform_update,
                 "save_policy": "mark_dirty_only",
+            }
+
+        if operation_type == "select_level_actors":
+            selection_input = payload.get("selection") if isinstance(payload.get("selection"), dict) else {
+                key: payload.get(key)
+                for key in ("actor_references", "query", "class_contains", "tag", "folder_path", "max_count")
+                if key in payload
+            }
+            return {
+                "selection": self._normalize_actor_selection(selection_input),
+                "save_policy": "selection_only_no_save",
             }
 
         if operation_type == "set_actor_metadata":

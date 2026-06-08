@@ -344,6 +344,14 @@ OPERATION_SPECS: dict[str, dict[str, Any]] = {
         "required_fields": ["actor_class"],
         "frontend_status": "implemented_v1",
     },
+    "select_level_actors": {
+        "tool_id": "editor_select_level_actors",
+        "title": "Select Level Actors",
+        "risk_flags": "LOW",
+        "summary": "Select a bounded Actor set in the current editor level after user confirmation.",
+        "required_fields": ["selection"],
+        "frontend_status": "implemented_v1",
+    },
     "set_actor_transform": {
         "tool_id": "editor_set_actor_transform",
         "title": "Set Actor Transform",
@@ -441,6 +449,7 @@ OPERATION_GROUPS: dict[str, dict[str, Any]] = {
         "summary": "Place actors and adjust transforms in the current editor level.",
         "operation_types": [
             "place_actor_in_level",
+            "select_level_actors",
             "set_actor_transform",
             "set_actor_metadata",
             "arrange_actors_pattern",

@@ -3679,6 +3679,11 @@ requests such as `Move this actor right 200` and `Arrange selected actors in a
 line` can produce pending `set_actor_transform` / `arrange_actors_pattern`
 Proposals without repeating the Actor labels in the text.
 
+2026-06-08 update: Agent Chat can also prepare `select_level_actors` for
+requests such as `Select actors tagged Enemy` or `Highlight BP_EnemySpawner_1`.
+This changes the editor selection only after user confirmation; it does not
+move, rename, dirty, or save the level.
+
 For read-only inspection, `GET
 /api/v1/editor-operations/inspect/level-actor-detail?actor_reference=...`
 returns one Actor record from Project Inventory, including captured transform,
@@ -5798,6 +5803,55 @@ Expected UE result callback fields:
 Frontend impact: add `arrange_actors_pattern` to any local operation whitelist or
 title map if one exists. The existing Proposal confirmation and result callback
 flow is reused.
+
+## 2026-06-08 Level Actor Selection Proposal
+
+`Editor Operation Bridge` now includes `select_level_actors`, a confirmed
+Proposal for selecting a bounded set of Actors in the current editor level.
+
+Use it when Agent Chat needs to prepare a target set before later Actor edits:
+
+- `Select actors tagged Enemy`
+- `Highlight BP_EnemySpawner_1`
+- `Focus all actors whose class contains PointLight`
+
+Explicit proposal API:
+
+```json
+{
+  "operation_type": "select_level_actors",
+  "payload": {
+    "selection": {
+      "actor_references": ["BP_EnemySpawner_1"],
+      "tag": "Enemy",
+      "max_count": 10
+    }
+  }
+}
+```
+
+Supported selector fields:
+
+- `actor_references`: exact actor label/name/path list.
+- `query`: fuzzy match against actor label/name/path.
+- `class_contains`: substring match against actor class name/path.
+- `tag`: exact Actor tag match.
+- `folder_path`: editor outliner folder substring.
+- `max_count`: 1-50, default 20.
+
+Safety boundary:
+
+- Requires user confirmation because it changes editor selection state.
+- Does not move, rename, tag, place, delete, save, or dirty Actors.
+- UEAgentTool executes the selection through `GEditor.SelectActor`.
+- Follow-up Actor edits still require their own confirmed Proposals.
+
+Expected UE result callback fields:
+
+- `selected_actor_count`
+- `selected_actors`
+- `selection_changed`
+- `save_policy=selection_only_no_save`
 
 ## 2026-05-24 Tool Registry Manifest for MCP-compatible Transport
 
