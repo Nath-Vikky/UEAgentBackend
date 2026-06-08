@@ -215,6 +215,22 @@ def test_agent_chat_with_explicit_editor_context_routes_to_mcp_readonly_tool() -
     assert routing["route"]["decision_source"] == "heuristic_task_signal"
 
 
+def test_agent_chat_with_explicit_selected_actors_routes_to_mcp_readonly_tool() -> None:
+    request = _request(
+        content="List selected actors",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_selected_actors"
+    assert routing["route"]["decision_source"] == "heuristic_task_signal"
+
+
 def test_agent_chat_with_chinese_level_actor_list_routes_to_inventory() -> None:
     content = "\u5f53\u524d\u5173\u5361\u6709\u54ea\u4e9bActor"
     request = _request(

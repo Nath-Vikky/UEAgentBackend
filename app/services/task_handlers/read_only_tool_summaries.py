@@ -12,6 +12,7 @@ from app.services.tool_registry_readonly_call_service import ToolRegistryReadOnl
 
 LIVE_MCP_TOOL_NAMES = {
     "mcp_get_editor_context": "get_editor_context",
+    "mcp_get_selected_actors": "get_selected_actors",
     "mcp_get_blueprint_graph": "get_blueprint_graph",
     "mcp_get_widget_tree": "get_widget_tree",
 }
@@ -442,6 +443,8 @@ def _live_mcp_arguments(context: TaskExecutionContext, *, selected_tool_id: str)
     inventory_context = dict((context.context_bundle or {}).get("project_inventory_context") or {})
     if selected_tool_id == "mcp_get_editor_context":
         return {}
+    if selected_tool_id == "mcp_get_selected_actors":
+        return {}
     if selected_tool_id == "mcp_get_blueprint_graph":
         blueprint = inventory_context.get("current_blueprint") if isinstance(inventory_context, dict) else {}
         graph = inventory_context.get("current_blueprint_graph") if isinstance(inventory_context, dict) else {}
@@ -512,6 +515,28 @@ def _live_mcp_answer(
                 f" | confirmed_write={tool_summary.get('confirmed_write_tool_count', 0)}"
             ),
         ]
+        return "\n\n".join(parts)
+    if selected_tool_id == "mcp_get_selected_actors":
+        actors = [item for item in list(structured.get("actors") or []) if isinstance(item, dict)]
+        actor_lines = []
+        for actor in actors[:10]:
+            actor_lines.append(
+                f"- {actor.get('actor_label') or actor.get('actor_name') or 'Unknown'}"
+                + (f" | class={actor.get('actor_class')}" if actor.get("actor_class") else "")
+                + (f" | path={actor.get('actor_path')}" if actor.get("actor_path") else "")
+            )
+        parts = [
+            _localized(
+                output_language,
+                f"已通过 {source_label_zh}读取当前选中的 Level Actor。",
+                f"Read selected Level Actors through {source_label_en}.",
+            ),
+            f"selected_actor_count={structured.get('selected_actor_count', len(actors))}",
+        ]
+        if actor_lines:
+            parts.append(_localized(output_language, "选中 Actor 预览:", "Selected Actor preview:") + "\n" + "\n".join(actor_lines))
+        else:
+            parts.append(_localized(output_language, "当前没有选中的 Actor。", "No actors are currently selected."))
         return "\n\n".join(parts)
     if selected_tool_id == "mcp_get_blueprint_graph":
         graphs = list(structured.get("graphs") or [])

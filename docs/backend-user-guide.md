@@ -7598,3 +7598,61 @@ Optional live smoke:
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_live_ue_tool_server_smoke.py --host 127.0.0.1 --port 8765 --output -
 ```
+
+## 2026-06-08 Update: Live MCP Selected Actors Tool
+
+When the optional UEAgentTool TCP editor tool server supports it, the backend can
+use another read-only MCP-style tool:
+
+```text
+mcp_get_selected_actors -> get_selected_actors
+```
+
+Purpose:
+
+- Read the currently selected Level Actors from the live Unreal Editor session.
+- Give Agent Chat a grounded answer for explicit questions such as
+  "List selected actors".
+- Prepare an observe-before-propose workflow for later actor movement,
+  arrangement, and metadata update proposals.
+
+Returned `structuredContent` is expected to include:
+
+- `selection_schema_version`
+- `server_status`
+- `transport`
+- `world_name`
+- `map_name`
+- `selected_actor_count`
+- `max_actors_returned`
+- `actors[].actor_label`
+- `actors[].actor_name`
+- `actors[].actor_class`
+- `actors[].actor_path`
+- `actors[].transform.location`
+- `actors[].transform.rotation`
+- `actors[].transform.scale`
+
+Agent Chat routing:
+
+- Explicit read-style prompts such as `List selected actors` can route to
+  `mcp_get_selected_actors`.
+- The backend first tries the live TCP tool when `MCP_TOOL_ADAPTER_ENABLED=true`,
+  `MCP_TRANSPORT=tcp`, and `MCP_ALLOWED_TOOLS` contains
+  `get_selected_actors`.
+- If live TCP is unavailable, the stable fallback chain remains active and broad
+  project-fact questions still prefer Project Inventory.
+
+Safety boundary:
+
+- This tool is read-only.
+- It does not move, place, arrange, rename, tag, save, or otherwise mutate
+  Actors.
+- Actor write operations still require HTTP Editor Operation Proposal
+  confirmation in UEAgentTool.
+
+Suggested TCP allow-list:
+
+```env
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_actors,get_blueprint_graph,get_widget_tree
+```

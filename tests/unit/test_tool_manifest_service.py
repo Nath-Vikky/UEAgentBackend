@@ -47,6 +47,7 @@ def test_tool_manifest_marks_confirmed_write_as_proposal_only() -> None:
 def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     manifest = build_tool_manifest(transport="mcp_tcp")
     editor_context = _tool_by_annotation_tool_id(manifest, "mcp_get_editor_context")
+    selected_actors = _tool_by_annotation_tool_id(manifest, "mcp_get_selected_actors")
     blueprint_graph = _tool_by_annotation_tool_id(manifest, "mcp_get_blueprint_graph")
 
     assert editor_context["name"] == "get_editor_context"
@@ -54,6 +55,10 @@ def test_tool_manifest_uses_mcp_tool_name_for_mcp_transports() -> None:
     assert editor_context["annotations"]["operation_family"] == "editor"
     assert editor_context["annotations"]["bridge_kind"] == "mcp_readonly_live_editor"
     assert editor_context["annotations"]["allowed_in_free_chat"] is True
+    assert selected_actors["name"] == "get_selected_actors"
+    assert selected_actors["annotations"]["operation_family"] == "level"
+    assert selected_actors["annotations"]["bridge_kind"] == "mcp_readonly_live_editor"
+    assert selected_actors["annotations"]["allowed_in_free_chat"] is True
 
     assert blueprint_graph["name"] == "get_blueprint_graph"
     assert blueprint_graph["annotations"]["transport"] == "mcp_tcp"
@@ -137,7 +142,9 @@ def test_tool_manifest_readonly_profile_exposes_live_editor_context() -> None:
     preview = manifest["profiles"]["selected"]["workflow_preview"]
 
     assert "mcp_get_editor_context" in tool_ids
+    assert "mcp_get_selected_actors" in tool_ids
     assert "mcp_get_editor_context" in preview["observe_tools"]
+    assert "mcp_get_selected_actors" in preview["observe_tools"]
 
 
 def test_tool_manifest_marks_plan_only_context_tools_as_local_plan_calls() -> None:
