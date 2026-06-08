@@ -7868,3 +7868,31 @@ tool is unavailable, it can fall back to local Project Inventory level Actor
 inspection. The answer card summarizes world/map, total and matched Actor
 counts, filters, Actor labels/classes/folders/tags, and component counts. No
 Actor is selected, moved, renamed, tagged, or otherwise modified by this tool.
+
+### Live Widget Tree Detail Enrichment
+
+`get_widget_tree` remains a read-only MCP/TCP sensing tool, but newer
+UEAgentTool builds return more than the raw Widget hierarchy. For each returned
+Widget, the live payload can now include:
+
+- `widget_name` / `widget_class`
+- `parent_widget` / `parent_widget_class`
+- `visibility`
+- `render_transform` and `render_transform_pivot`
+- `slot`, including `CanvasPanelSlot` position, size, alignment, anchors,
+  auto-size, and z-order when applicable
+- `text_block.text` and `text_block.font_size` for `UTextBlock`
+- `image.resource_path`, `image.resource_name`, and `image.image_size` for
+  `UImage`
+
+The backend normal answer card summarizes these fields as compact Widget preview
+lines, while the full structured payload stays available in Debug View. This is
+useful for prompts such as:
+
+- `Inspect the Widget Tree for /Game/UI/WBP_MainHUD`
+- `WBP_MainHUD 里 TitleText 的文本和布局是什么`
+- `Which widgets in this UMG blueprint are visible and where are they placed`
+
+Boundary: this tool does not create, delete, reparent, move, style, save, or
+compile UMG assets. Any UMG write still goes through confirmed Editor Operation
+Proposal tools.

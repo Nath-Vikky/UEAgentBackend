@@ -54,7 +54,21 @@ class _FakeMCPToolExecutor:
                     "structuredContent": {
                         "widget_blueprint_path": arguments["widget_blueprint_path"],
                         "root": "RootCanvas",
-                        "widgets": [{"name": "TitleText", "class": "TextBlock", "parent": "RootCanvas"}],
+                        "widgets": [
+                            {
+                                "widget_name": "TitleText",
+                                "widget_class": "/Script/UMG.TextBlock",
+                                "parent_widget": "RootCanvas",
+                                "visibility": "Visible",
+                                "text_block": {"text": "Mission Ready", "font_size": 24},
+                                "slot": {
+                                    "slot_type": "CanvasPanelSlot",
+                                    "position": {"x": 64, "y": 32},
+                                    "size": {"x": 320, "y": 64},
+                                    "z_order": 2,
+                                },
+                            }
+                        ],
                     },
                     "content": [{"type": "text", "text": "widget"}],
                     "isError": False,
@@ -482,6 +496,8 @@ def test_live_mcp_readonly_result_uses_selected_widget_path(monkeypatch) -> None
     assert result["data"]["mcp_tool"]["arguments"]["widget_blueprint_path"] == "/Game/UI/WBP_MainHUD"
     assert "RootCanvas" in result["assistant_message"]
     assert "TitleText" in result["assistant_message"]
+    assert "Mission Ready" in result["assistant_message"]
+    assert "slot=CanvasPanelSlot" in result["assistant_message"]
 
 
 def test_live_mcp_readonly_result_reads_material_instance_parameters(monkeypatch) -> None:

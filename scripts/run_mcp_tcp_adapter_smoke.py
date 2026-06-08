@@ -341,7 +341,19 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                 "root": "RootCanvas",
                 "widgets": [
                     {"name": "RootCanvas", "class": "CanvasPanel"},
-                    {"name": "TitleText", "class": "TextBlock", "parent": "RootCanvas"},
+                    {
+                        "widget_name": "TitleText",
+                        "widget_class": "/Script/UMG.TextBlock",
+                        "parent_widget": "RootCanvas",
+                        "visibility": "Visible",
+                        "text_block": {"text": "Mission Ready", "font_size": 24},
+                        "slot": {
+                            "slot_type": "CanvasPanelSlot",
+                            "position": {"x": 64, "y": 32},
+                            "size": {"x": 320, "y": 64},
+                            "z_order": 2,
+                        },
+                    },
                 ],
             }
             return {
@@ -579,8 +591,24 @@ def _static_mesh_details_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
 
 def _widget_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     structured = payload.get("result", {}).get("structuredContent", {})
-    ok = payload.get("ok") is True and structured.get("root") == "RootCanvas"
-    return ok, "TCP call returns Widget tree structuredContent"
+    widgets = [item for item in list(structured.get("widgets") or []) if isinstance(item, dict)]
+    title = next(
+        (
+            item
+            for item in widgets
+            if (item.get("widget_name") or item.get("name")) == "TitleText"
+        ),
+        {},
+    )
+    text_block = title.get("text_block") if isinstance(title.get("text_block"), dict) else {}
+    slot = title.get("slot") if isinstance(title.get("slot"), dict) else {}
+    ok = (
+        payload.get("ok") is True
+        and structured.get("root") == "RootCanvas"
+        and text_block.get("text") == "Mission Ready"
+        and slot.get("slot_type") == "CanvasPanelSlot"
+    )
+    return ok, "TCP call returns enriched Widget tree structuredContent"
 
 
 def _material_parameters_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:

@@ -886,11 +886,7 @@ def _live_mcp_answer(
         for widget in widgets[:10]:
             if not isinstance(widget, dict):
                 continue
-            widget_lines.append(
-                f"- {widget.get('name') or 'Unknown'}"
-                + (f" | class={widget.get('class')}" if widget.get("class") else "")
-                + (f" | parent={widget.get('parent')}" if widget.get("parent") else "")
-            )
+            widget_lines.append(_widget_preview_line(widget))
         parts = [
             _localized(
                 output_language,
@@ -1007,6 +1003,75 @@ def _static_mesh_preview_text(static_mesh: Any) -> str:
     if slot_names:
         parts.append("slot_names=" + ", ".join(slot_names))
     return " | " + " | ".join(parts) if parts else ""
+
+
+def _widget_preview_line(widget: dict[str, Any]) -> str:
+    name = _first_non_empty(widget.get("name"), widget.get("widget_name")) or "Unknown"
+    widget_class = _short_class_name(_first_non_empty(widget.get("class"), widget.get("widget_class")))
+    parent = _first_non_empty(widget.get("parent"), widget.get("parent_widget"))
+    visibility = _first_non_empty(widget.get("visibility"))
+    text_block = widget.get("text_block") if isinstance(widget.get("text_block"), dict) else {}
+    text = _first_non_empty(widget.get("text"), text_block.get("text"))
+    image = widget.get("image") if isinstance(widget.get("image"), dict) else {}
+    image_name = _first_non_empty(image.get("resource_name"), image.get("resource_path"))
+    parts = [f"- {name}"]
+    if widget_class:
+        parts.append(f"class={widget_class}")
+    if parent:
+        parts.append(f"parent={parent}")
+    if visibility:
+        parts.append(f"visibility={visibility}")
+    if text:
+        parts.append(f'text="{_shorten_text(text, 48)}"')
+    slot_text = _widget_slot_preview_text(widget.get("slot"))
+    if slot_text:
+        parts.append(slot_text)
+    if image_name:
+        parts.append(f"image={_shorten_text(image_name, 48)}")
+    return " | ".join(parts)
+
+
+def _widget_slot_preview_text(slot: Any) -> str:
+    if not isinstance(slot, dict):
+        return ""
+    slot_type = _short_class_name(_first_non_empty(slot.get("slot_type"), slot.get("slot_class")))
+    details: list[str] = []
+    position = _vector2_preview_text(slot.get("position"))
+    size = _vector2_preview_text(slot.get("size"))
+    if position:
+        details.append(f"pos={position}")
+    if size:
+        details.append(f"size={size}")
+    if slot.get("z_order") is not None:
+        details.append(f"z={slot.get('z_order')}")
+    if not slot_type and not details:
+        return ""
+    suffix = ", ".join(details)
+    return f"slot={slot_type}" + (f"({suffix})" if suffix else "")
+
+
+def _vector2_preview_text(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    if value.get("x") is None or value.get("y") is None:
+        return ""
+    return f"({value.get('x')},{value.get('y')})"
+
+
+def _short_class_name(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = text.rsplit(".", 1)[-1]
+    text = text.rsplit("/", 1)[-1]
+    return text
+
+
+def _shorten_text(value: str, max_length: int) -> str:
+    text = str(value or "").replace("\n", " ").strip()
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 1] + "..."
 
 
 def _first_widget_path_from_inventory(items: list[dict[str, Any]]) -> str:
