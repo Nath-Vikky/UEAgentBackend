@@ -7816,5 +7816,22 @@ Recommended UEAgentTool TCP allow-list:
 ```env
 MCP_TOOL_ADAPTER_ENABLED=true
 MCP_TRANSPORT=tcp
-MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree
+MCP_ALLOWED_TOOLS=ue_agent_tools_list,get_editor_context,get_selected_assets,get_selected_actors,get_blueprint_graph,get_widget_tree,get_material_instance_parameters
 ```
+
+### Live Selected Static Mesh Details
+
+`get_selected_assets` is still a read-only Content Browser sensing tool. When a
+selected asset is a Static Mesh, newer UEAgentTool builds also return:
+
+- `assets[].static_mesh.nanite_enabled`
+- `assets[].static_mesh.lod_count`
+- `assets[].static_mesh.lightmap_resolution`
+- `assets[].static_mesh.collision_complexity`
+- `assets[].static_mesh.material_slot_count`
+- `assets[].static_mesh.material_slots[]`
+
+Agent Chat can route explicit prompts such as `Show selected static mesh
+Nanite, LOD and collision settings` to this live MCP/TCP tool. The backend
+summarizes these fields in the normal answer card; raw JSON stays in Debug View.
+No asset edit is performed by this tool.

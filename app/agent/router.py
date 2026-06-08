@@ -695,6 +695,12 @@ def _looks_like_readonly_mcp_selected_assets_request(latest_text: str, text_lowe
         or "current selected assets" in text_lower
         or "content browser selection" in text_lower
         or "content browser selected" in text_lower
+        or "selected static mesh" in text_lower
+        or "current selected static mesh" in text_lower
+        or (("nanite" in text_lower or "lod" in text_lower or "collision" in text_lower) and "selected" in text_lower)
+        or "选中的静态网格体" in latest_text
+        or "当前选中的静态网格体" in latest_text
+        or (("静态网格体" in latest_text or "Nanite" in latest_text) and "选中" in latest_text)
         or "当前选中的资产" in latest_text
         or "选中的资产" in latest_text
         or "内容浏览器选中的资产" in latest_text

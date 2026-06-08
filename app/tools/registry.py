@@ -1876,6 +1876,9 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "current selected assets",
             "content browser selection",
             "inspect selected assets",
+            "selected static mesh",
+            "current selected static mesh",
+            "selected static mesh settings",
             "当前选中的资产",
             "选中的资产",
             "内容浏览器选中的资产",
@@ -1893,7 +1896,28 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                     "properties": {
                         "asset_selection_schema_version": {"type": "string"},
                         "selected_asset_count": {"type": "integer"},
-                        "assets": {"type": "array"},
+                        "assets": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "asset_name": {"type": "string"},
+                                    "asset_path": {"type": "string"},
+                                    "asset_type": {"type": "string"},
+                                    "static_mesh": {
+                                        "type": "object",
+                                        "properties": {
+                                            "nanite_enabled": {"type": "boolean"},
+                                            "lod_count": {"type": "integer"},
+                                            "lightmap_resolution": {"type": "integer"},
+                                            "collision_complexity": {"type": "string"},
+                                            "material_slot_count": {"type": "integer"},
+                                            "material_slots": {"type": "array"},
+                                        },
+                                    },
+                                },
+                            },
+                        },
                     },
                 },
             },

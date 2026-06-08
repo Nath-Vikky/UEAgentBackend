@@ -264,6 +264,21 @@ def test_agent_chat_with_explicit_selected_assets_routes_to_mcp_readonly_tool() 
     assert routing["route"]["decision_source"] == "heuristic_task_signal"
 
 
+def test_agent_chat_with_selected_static_mesh_detail_routes_to_mcp_selected_assets() -> None:
+    request = _request(
+        content="Show selected static mesh Nanite, LOD and collision settings",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "single_tool"
+    assert routing["route"]["selected_tool_id"] == "mcp_get_selected_assets"
+
+
 def test_agent_chat_with_chinese_level_actor_list_routes_to_inventory() -> None:
     content = "\u5f53\u524d\u5173\u5361\u6709\u54ea\u4e9bActor"
     request = _request(

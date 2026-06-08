@@ -100,6 +100,54 @@ class _FakeMCPToolExecutor:
                 },
                 "errors": [],
             }
+        if tool_name == "get_selected_assets":
+            return {
+                "ok": True,
+                "status": "completed",
+                "reason": "mcp_tool_call_completed",
+                "tool_name": tool_name,
+                "transport": "mcp_tcp",
+                "result": {
+                    "structuredContent": {
+                        "asset_selection_schema_version": "ue_agent_tool_selected_assets_fixture_v1",
+                        "selected_asset_count": 3,
+                        "assets": [
+                            {
+                                "asset_name": "BP_PlayerCharacter",
+                                "asset_path": "/Game/Blueprints/BP_PlayerCharacter.BP_PlayerCharacter",
+                                "asset_type": "Blueprint",
+                                "package_path": "/Game/Blueprints",
+                            },
+                            {
+                                "asset_name": "SM_Rock",
+                                "asset_path": "/Game/Environment/SM_Rock.SM_Rock",
+                                "asset_type": "StaticMesh",
+                                "package_path": "/Game/Environment",
+                                "static_mesh": {
+                                    "nanite_enabled": True,
+                                    "lod_count": 3,
+                                    "lightmap_resolution": 128,
+                                    "collision_complexity": "simple_and_complex",
+                                    "material_slot_count": 2,
+                                    "material_slots": [
+                                        {
+                                            "slot_name": "Rock_Base",
+                                            "material_path": "/Game/Materials/M_Rock.M_Rock",
+                                        },
+                                        {
+                                            "slot_name": "Rock_Detail",
+                                            "material_path": "/Game/Materials/M_Rock_Detail.M_Rock_Detail",
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                    },
+                    "content": [{"type": "text", "text": "selected assets"}],
+                    "isError": False,
+                },
+                "errors": [],
+            }
         return {
             "ok": False,
             "status": "blocked",
@@ -236,6 +284,21 @@ def _context(*, selected_tool_id: str, request: UnifiedTaskRequest) -> TaskExecu
                         "asset_name": "MI_Player",
                         "asset_type": "MaterialInstanceConstant",
                         "asset_path": "/Game/Materials/MI_Player.MI_Player",
+                    },
+                    {
+                        "asset_name": "SM_Rock",
+                        "asset_type": "StaticMesh",
+                        "asset_path": "/Game/Environment/SM_Rock.SM_Rock",
+                        "static_mesh": {
+                            "nanite_enabled": True,
+                            "lod_count": 3,
+                            "collision_complexity": "simple_and_complex",
+                            "material_slot_count": 2,
+                            "material_slots": [
+                                {"slot_name": "Rock_Base", "material_path": "/Game/Materials/M_Rock.M_Rock"},
+                                {"slot_name": "Rock_Detail", "material_path": "/Game/Materials/M_Rock_Detail.M_Rock_Detail"},
+                            ],
+                        },
                     }
                 ],
                 "material_instances": [
@@ -317,6 +380,31 @@ def test_live_mcp_readonly_result_reads_material_instance_parameters(monkeypatch
     assert "MI_Player" in result["assistant_message"]
     assert "Roughness" in result["assistant_message"]
     assert base_debug["mcp_live_attempt"]["tool_name"] == "get_material_instance_parameters"
+
+
+def test_live_mcp_readonly_result_summarizes_static_mesh_selected_asset(monkeypatch) -> None:
+    monkeypatch.setattr(read_only_tool_summaries, "MCPToolExecutor", _FakeMCPToolExecutor)
+    request = UnifiedTaskRequest(
+        session={"session_id": "s1", "messages": [{"role": "user", "content": "list selected assets"}]},
+        context={},
+        payload={},
+    )
+    base_debug: dict[str, Any] = {}
+
+    result = read_only_tool_summaries.live_mcp_readonly_result(
+        context=_context(selected_tool_id="mcp_get_selected_assets", request=request),
+        base_debug=base_debug,
+        output_language="en",
+        selected_tool_id="mcp_get_selected_assets",
+    )
+
+    assert result is not None
+    assert result["retrieval_trace"]["mode"] == "mcp_tcp_readonly"
+    assert "SM_Rock" in result["assistant_message"]
+    assert "lods=3" in result["assistant_message"]
+    assert "nanite=True" in result["assistant_message"]
+    assert "collision=simple_and_complex" in result["assistant_message"]
+    assert "Rock_Base" in result["assistant_message"]
 
 
 def test_live_mcp_readonly_result_returns_none_when_tcp_fails(monkeypatch) -> None:

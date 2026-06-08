@@ -182,7 +182,7 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
         if tool_name == "get_selected_assets":
             structured = {
                 "asset_selection_schema_version": "ue_agent_tool_selected_assets_fixture_v1",
-                "selected_asset_count": 2,
+                "selected_asset_count": 3,
                 "assets": [
                     {
                         "asset_name": "BP_PlayerCharacter",
@@ -197,6 +197,27 @@ class _UEAgentToolTcpHandler(socketserver.StreamRequestHandler):
                         "asset_type": "MaterialInstanceConstant",
                         "package_name": "/Game/Materials/MI_Player",
                         "package_path": "/Game/Materials",
+                    },
+                    {
+                        "asset_name": "SM_Rock",
+                        "asset_path": "/Game/Environment/SM_Rock.SM_Rock",
+                        "asset_type": "StaticMesh",
+                        "package_name": "/Game/Environment/SM_Rock",
+                        "package_path": "/Game/Environment",
+                        "static_mesh": {
+                            "nanite_enabled": True,
+                            "lod_count": 3,
+                            "lightmap_resolution": 128,
+                            "collision_complexity": "simple_and_complex",
+                            "material_slot_count": 2,
+                            "material_slots": [
+                                {"slot_name": "Rock_Base", "material_path": "/Game/Materials/M_Rock.M_Rock"},
+                                {
+                                    "slot_name": "Rock_Detail",
+                                    "material_path": "/Game/Materials/M_Rock_Detail.M_Rock_Detail",
+                                },
+                            ],
+                        },
                     },
                 ],
             }
@@ -427,12 +448,16 @@ def _selected_actors_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
 
 def _selected_assets_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:
     structured = payload.get("result", {}).get("structuredContent", {})
+    assets = [item for item in list(structured.get("assets") or []) if isinstance(item, dict)]
+    static_mesh = assets[2].get("static_mesh", {}) if len(assets) > 2 and isinstance(assets[2], dict) else {}
     ok = (
         payload.get("ok") is True
         and structured.get("asset_selection_schema_version") == "ue_agent_tool_selected_assets_fixture_v1"
-        and structured.get("selected_asset_count") == 2
+        and structured.get("selected_asset_count") == 3
+        and static_mesh.get("lod_count") == 3
+        and static_mesh.get("material_slot_count") == 2
     )
-    return ok, "TCP call returns selected asset structuredContent"
+    return ok, "TCP call returns selected asset and Static Mesh detail structuredContent"
 
 
 def _widget_call_ok(payload: dict[str, Any]) -> tuple[bool, str]:

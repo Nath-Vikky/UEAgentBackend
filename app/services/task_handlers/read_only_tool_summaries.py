@@ -329,6 +329,7 @@ def selected_assets_context_result(
                 "asset_path": asset_path,
                 "asset_type": item.get("asset_type") or "",
                 "package_path": item.get("package_path") or "",
+                "static_mesh": item.get("static_mesh") if isinstance(item.get("static_mesh"), dict) else {},
             }
         )
 
@@ -349,12 +350,7 @@ def selected_assets_context_result(
     if not assets:
         return None
 
-    asset_lines = [
-        f"- {item.get('asset_name') or 'Unknown'}"
-        + (f" | type={item.get('asset_type')}" if item.get("asset_type") else "")
-        + (f" | path={item.get('asset_path')}" if item.get("asset_path") else "")
-        for item in assets[:10]
-    ]
+    asset_lines = [_selected_asset_preview_line(item) for item in assets[:10]]
     answer = "\n\n".join(
         [
             _localized(
@@ -722,11 +718,7 @@ def _live_mcp_answer(
         assets = [item for item in list(structured.get("assets") or []) if isinstance(item, dict)]
         asset_lines = []
         for asset in assets[:10]:
-            asset_lines.append(
-                f"- {asset.get('asset_name') or 'Unknown'}"
-                + (f" | type={asset.get('asset_type')}" if asset.get("asset_type") else "")
-                + (f" | path={asset.get('asset_path')}" if asset.get("asset_path") else "")
-            )
+            asset_lines.append(_selected_asset_preview_line(asset))
         parts = [
             _localized(
                 output_language,
@@ -884,6 +876,38 @@ def _asset_name_from_path(asset_path: str) -> str:
     if "." in tail:
         tail = tail.rsplit(".", 1)[-1]
     return tail or "Unknown"
+
+
+def _selected_asset_preview_line(asset: dict[str, Any]) -> str:
+    line = (
+        f"- {asset.get('asset_name') or 'Unknown'}"
+        + (f" | type={asset.get('asset_type')}" if asset.get("asset_type") else "")
+        + _static_mesh_preview_text(asset.get("static_mesh"))
+        + (f" | path={asset.get('asset_path')}" if asset.get("asset_path") else "")
+    )
+    return line
+
+
+def _static_mesh_preview_text(static_mesh: Any) -> str:
+    if not isinstance(static_mesh, dict) or not static_mesh:
+        return ""
+    parts: list[str] = []
+    if static_mesh.get("lod_count") is not None:
+        parts.append(f"lods={static_mesh.get('lod_count')}")
+    if static_mesh.get("nanite_enabled") is not None:
+        parts.append(f"nanite={static_mesh.get('nanite_enabled')}")
+    if static_mesh.get("collision_complexity"):
+        parts.append(f"collision={static_mesh.get('collision_complexity')}")
+    if static_mesh.get("material_slot_count") is not None:
+        parts.append(f"slots={static_mesh.get('material_slot_count')}")
+    slot_names = [
+        str(slot.get("slot_name") or "").strip()
+        for slot in list(static_mesh.get("material_slots") or [])[:4]
+        if isinstance(slot, dict) and str(slot.get("slot_name") or "").strip()
+    ]
+    if slot_names:
+        parts.append("slot_names=" + ", ".join(slot_names))
+    return " | " + " | ".join(parts) if parts else ""
 
 
 def _first_widget_path_from_inventory(items: list[dict[str, Any]]) -> str:
