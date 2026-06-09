@@ -30,6 +30,7 @@ def resolve_context(
     active_context = dict(context_bundle.get("active_context") or {})
 
     resolver = {
+        "selected_context": _resolve_selected_context,
         "selected_asset": _resolve_asset,
         "asset": _resolve_asset,
         "current_blueprint": _resolve_blueprint,
@@ -54,6 +55,34 @@ def resolve_context(
     if resolved["status"] == "resolved":
         resolved["target_kind"] = target_kind
     return resolved
+
+
+def _resolve_selected_context(
+    *,
+    request: UnifiedTaskRequest,
+    active_targets: dict[str, Any],
+    active_context: dict[str, Any],
+    inventory: dict[str, Any],
+) -> dict[str, Any]:
+    for resolver in (
+        _resolve_asset,
+        _resolve_blueprint,
+        _resolve_widget,
+        _resolve_actor,
+        _resolve_material,
+        _resolve_code,
+        _resolve_log,
+    ):
+        resolved = resolver(
+            request=request,
+            active_targets=active_targets,
+            active_context=active_context,
+            inventory=inventory,
+        )
+        if resolved["status"] == "resolved":
+            resolved["target_kind"] = "selected_context"
+            return resolved
+    return _missing("selected_context", "selected_context_not_available")
 
 
 def _resolve_asset(

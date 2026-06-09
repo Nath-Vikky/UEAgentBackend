@@ -9009,3 +9009,58 @@ The report contains:
 
 Safety boundary: v1 is diagnostic-only and does not change execution behavior.
 It is mainly for Debug View, offline evals, and future Agent-chain hardening.
+
+## 2026-06-09 Update: Agent Decision Chain Router v3
+
+Agent Chat now has a stronger Router v3 decision layer for the Improv6 Agent
+chain.
+
+What changed:
+
+- Added `route_keyword_verifier_v1`, an advisory evidence report for hard write
+  signals, active-context references, UE domain hints, knowledge/explanation
+  hints, and pure smalltalk.
+- `IntentDraft` now carries `route_keyword_verifier`, so Debug View can explain
+  why a prompt was considered selected-context, write-like, knowledge-like, or
+  smalltalk-like.
+- LLM Intent Drafter prompts now treat the LLM as the primary planner, while
+  deterministic rules act as verification, safety evidence, and fallback.
+- `selected_context` can now be resolved generically. If the LLM decides that a
+  vague prompt such as `Can you take a look?` refers to the active editor
+  selection, the backend can resolve it to selected asset, current Blueprint,
+  Widget, level Actor, material instance, code file, or log context.
+- Pure smalltalk blocks accidental tool selection.
+- Confirmed-write tool overrides require a write signal from deterministic
+  routing or `route_keyword_verifier_v1`; otherwise the LLM override is blocked.
+- Direct-answer downgrades are blocked when the prompt references selected or
+  current UE context.
+
+Runtime modes:
+
+```env
+AGENT_INTENT_DRAFTER_MODE=disabled
+AGENT_INTENT_DRAFTER_MIN_CONFIDENCE=0.78
+```
+
+- `disabled` remains the safest default: deterministic routing only.
+- `shadow` calls the configured LLM and records `llm_intent_draft`, but does not
+  change the final route.
+- `active` lets the LLM route/tool draft override deterministic routing only if
+  confidence, context availability, known tool id, smalltalk guard, and
+  Proposal/write-safety checks all pass.
+
+Frontend impact: no mandatory change. Existing Agent Chat, Proposal, User View,
+and Debug View contracts remain compatible. Frontend can optionally display
+`debug_view.llm_intent_draft.safety_checks[]` and
+`debug_view.intent_draft.route_keyword_verifier`.
+
+Offline validation:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_agent_decision_eval.py --output storage\artifacts\evals\agent-decision-eval-latest.json
+```
+
+Current Router v3 eval coverage adds no-keyword LLM-led read-only inspection,
+pure-smalltalk tool blocking, write-without-signal blocking, and write-with-signal
+Proposal routing. The latest local run covers 41 cases; `llm_router_v3` cases
+are all passing, and the full decision eval remains above the configured gates.

@@ -11,6 +11,7 @@ from app.agent.context_route_refiner import refine_route_from_resolved_context
 from app.agent.context_resolver import resolve_context
 from app.agent.intent_drafter import build_intent_draft
 from app.agent.intent_verifier import verify_intent
+from app.agent.llm_intent_drafter import apply_llm_intent_draft
 from app.agent.router import classify_request
 from app.agent.tool_decision import build_tool_plan
 from app.agent.tool_plan_self_check import check_tool_plan_consistency
@@ -65,6 +66,16 @@ def evaluate_agent_decision_case(case: dict[str, Any]) -> dict[str, Any]:
         routing=routing,
         context_bundle=context_bundle,
     )
+    routing, intent_draft, context_resolution, verified_intent, tool_plan, llm_report = _apply_case_llm_intent(
+        case=case,
+        request=request,
+        routing=routing,
+        context_bundle=context_bundle,
+        intent_draft=intent_draft,
+        context_resolution=context_resolution,
+        verified_intent=verified_intent,
+        tool_plan=tool_plan,
+    )
     context_bundle["context_resolution"] = context_resolution
     refined_routing, refinement_report = refine_route_from_resolved_context(
         routing=routing,
@@ -79,6 +90,16 @@ def evaluate_agent_decision_case(case: dict[str, Any]) -> dict[str, Any]:
             request=request,
             routing=routing,
             context_bundle=context_bundle,
+        )
+        routing, intent_draft, context_resolution, verified_intent, tool_plan, llm_report = _apply_case_llm_intent(
+            case=case,
+            request=request,
+            routing=routing,
+            context_bundle=context_bundle,
+            intent_draft=intent_draft,
+            context_resolution=context_resolution,
+            verified_intent=verified_intent,
+            tool_plan=tool_plan,
         )
     else:
         context_bundle["context_route_refinement"] = refinement_report
@@ -140,6 +161,7 @@ def evaluate_agent_decision_case(case: dict[str, Any]) -> dict[str, Any]:
         },
         "debug": {
             "intent_draft": intent_draft,
+            "llm_intent_draft": llm_report,
             "context_resolution": context_resolution,
             "context_route_refinement": refinement_report,
             "verified_intent": verified_intent,
@@ -154,13 +176,18 @@ def _run_decision_chain(
     request: UnifiedTaskRequest,
     routing: dict[str, Any],
     context_bundle: dict[str, Any],
+    intent_draft_override: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     context_bundle["agent_turn_context"] = build_agent_turn_context(
         request=request,
         routing=routing,
         context_bundle=context_bundle,
     )
-    intent_draft = build_intent_draft(request=request, routing=routing, context_bundle=context_bundle)
+    intent_draft = intent_draft_override or build_intent_draft(
+        request=request,
+        routing=routing,
+        context_bundle=context_bundle,
+    )
     context_resolution = resolve_context(
         request=request,
         routing=routing,
@@ -180,6 +207,63 @@ def _run_decision_chain(
         routing=routing,
     )
     return (intent_draft, context_resolution, verified_intent, tool_plan)
+
+
+def _apply_case_llm_intent(
+    *,
+    case: dict[str, Any],
+    request: UnifiedTaskRequest,
+    routing: dict[str, Any],
+    context_bundle: dict[str, Any],
+    intent_draft: dict[str, Any],
+    context_resolution: dict[str, Any],
+    verified_intent: dict[str, Any],
+    tool_plan: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    payload = case.get("llm_intent_payload") or case.get("llm_intent")
+    if not isinstance(payload, dict):
+        return routing, intent_draft, context_resolution, verified_intent, tool_plan, {}
+    llm_result = {
+        "ok": True,
+        "payload": payload,
+        "provider": "offline_eval",
+        "model": "fake_planner",
+        "profile_id": "agent_decision_eval",
+    }
+    outcome = apply_llm_intent_draft(
+        deterministic_draft=intent_draft,
+        routing=routing,
+        llm_result=llm_result,
+        mode=str(case.get("llm_intent_mode") or "active"),
+        min_confidence=float(case.get("llm_intent_min_confidence") or 0.78),
+        context_resolution=context_resolution,
+    )
+    report = dict(outcome.get("report") or {})
+    context_bundle["llm_intent_draft"] = report
+    if not report.get("applied"):
+        verified_intent = verify_intent(
+            draft=intent_draft,
+            routing=routing,
+            context_bundle=context_bundle,
+            free_chat=request.task_type in {"agent_chat", "project_qa"},
+        )
+        tool_plan = build_tool_plan(
+            intent_draft=intent_draft,
+            verified_intent=verified_intent,
+            context_resolution=context_resolution,
+            routing=routing,
+        )
+        return routing, intent_draft, context_resolution, verified_intent, tool_plan, report
+
+    updated_routing = dict(outcome.get("routing") or routing)
+    updated_draft = dict(outcome.get("intent_draft") or intent_draft)
+    updated_draft, updated_context, verified_intent, tool_plan = _run_decision_chain(
+        request=request,
+        routing=updated_routing,
+        context_bundle=context_bundle,
+        intent_draft_override=updated_draft,
+    )
+    return updated_routing, updated_draft, updated_context, verified_intent, tool_plan, report
 
 
 def summarize_agent_decision_cases(results: list[dict[str, Any]]) -> dict[str, Any]:

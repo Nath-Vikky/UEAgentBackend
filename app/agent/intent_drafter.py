@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.intent_models import IntentDraft
+from app.agent.route_keyword_verifier import analyze_route_keywords, target_kind_from_keyword_report
 from app.schemas.requests import UnifiedTaskRequest
 from app.tools.registry import get_tool_spec
 
@@ -143,6 +144,7 @@ def build_intent_draft(
     user_goal = _latest_user_message(request)
     intent = dict(routing.get("intent") or {})
     route = _route(context_bundle, routing)
+    keyword_report = analyze_route_keywords(user_goal)
     selected_tool_id = route.get("selected_tool_id")
     candidate_tools = [
         str(item)
@@ -151,13 +153,16 @@ def build_intent_draft(
     ]
     turn_context = dict(context_bundle.get("agent_turn_context") or {})
     active_targets = dict(turn_context.get("active_targets") or {})
-    selected_context_query = bool(route.get("selected_context_query"))
+    selected_context_query = bool(route.get("selected_context_query") or keyword_report.get("active_context_reference"))
 
     target_kind, target_reference = ("none", "")
     if selected_context_query:
         target_kind, target_reference = _target_from_active_targets(active_targets)
         if target_kind == "none":
-            target_kind, target_reference = _text_suggests_selected_target(user_goal) or ("selected_context", "")
+            target_kind, target_reference = _text_suggests_selected_target(user_goal) or (
+                target_kind_from_keyword_report(keyword_report),
+                "",
+            )
     else:
         text_target = _text_suggests_selected_target(user_goal)
         if text_target:
@@ -167,17 +172,19 @@ def build_intent_draft(
             if tool_target:
                 target_kind, target_reference = tool_target
 
-    requested_write = _is_write_tool(str(selected_tool_id or ""))
+    requested_write = _is_write_tool(str(selected_tool_id or "")) or bool(keyword_report.get("hard_write_signal"))
     needs_project_context = bool(
         intent.get("route_type") == "project_qa"
         or route.get("project_inventory_query")
         or selected_context_query
+        or bool(keyword_report.get("active_context_reference"))
         or target_kind.startswith("selected_")
         or target_kind.startswith("current_")
     )
     needs_live_editor_context = bool(
         str(selected_tool_id or "").startswith("mcp_")
         or selected_context_query
+        or bool(keyword_report.get("active_context_reference"))
         or target_kind in {"selected_asset", "selected_actor", "current_blueprint", "selected_material_instance"}
     )
     needs_knowledge = bool(intent.get("requires_rag") or selected_tool_id == "retrieve_project_knowledge")
@@ -194,7 +201,9 @@ def build_intent_draft(
         confidence=float(route.get("planner_confidence") or 0.0),
         rationale=str(route.get("route_reason") or intent.get("reason") or ""),
     )
-    return draft.model_dump()
+    dumped = draft.model_dump()
+    dumped["route_keyword_verifier"] = keyword_report
+    return dumped
 
 
 __all__ = ["build_intent_draft"]

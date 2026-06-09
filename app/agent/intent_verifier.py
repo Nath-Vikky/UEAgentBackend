@@ -15,6 +15,8 @@ def _target_available(target_kind: str, context_bundle: dict[str, Any]) -> bool:
     active = _active_targets(context_bundle)
     if target_kind in {"none", "knowledge_base", "project_inventory", "project_file"}:
         return True
+    if target_kind == "selected_context":
+        return any(bool(value.get("available")) for value in active.values() if isinstance(value, dict))
     mapping = {
         "selected_asset": "asset",
         "asset": "asset",
@@ -60,7 +62,10 @@ def verify_intent(
     context_bundle: dict[str, Any],
     free_chat: bool = False,
 ) -> dict[str, Any]:
+    keyword_report = dict(draft.get("route_keyword_verifier") or {})
     selected_tool_id = _verified_tool_id(draft, routing)
+    if keyword_report.get("pure_smalltalk_signal") and selected_tool_id:
+        selected_tool_id = None
     permission = decide_tool_permission(selected_tool_id, free_chat=free_chat) if selected_tool_id else {}
     route_type = str((routing.get("intent") or {}).get("route_type") or "direct_answer")
     corrections: list[dict[str, Any]] = []
@@ -100,6 +105,19 @@ def verify_intent(
                     "reason": permission["reason"],
                 }
             )
+
+    if keyword_report.get("pure_smalltalk_signal") and _verified_tool_id(draft, routing):
+        corrections.append(
+            {
+                "correction_id": "smalltalk_blocks_tool_selection",
+                "from": _verified_tool_id(draft, routing),
+                "to": "direct_answer",
+                "reason": "Pure smalltalk should not call editor tools unless another task signal is present.",
+            }
+        )
+
+    if keyword_report.get("hard_write_signal") and not selected_tool_id:
+        safety_flags.append("write_signal_without_tool")
 
     if draft.get("requested_write") and not safety_flags:
         safety_flags.append("write_intent_detected")

@@ -36,6 +36,7 @@ def _draft() -> dict:
         "candidate_tools": [],
         "confidence": 0.55,
         "rationale": "test",
+        "route_keyword_verifier": {},
         "source": "deterministic_router_projection",
         "version": "intent_draft_v1",
     }
@@ -200,4 +201,67 @@ def test_active_mode_blocks_new_confirmed_write_without_rule_write_signal() -> N
 
     assert outcome["report"]["status"] == "blocked"
     assert outcome["report"]["reason"] == "confirmed_write_override_requires_deterministic_write_signal"
+    assert outcome["routing"]["route"]["selected_tool_id"] is None
+
+
+def test_active_mode_allows_confirmed_write_when_keyword_verifier_detected_write() -> None:
+    draft = _draft()
+    draft["route_keyword_verifier"] = {"hard_write_signal": True}
+    outcome = apply_llm_intent_draft(
+        deterministic_draft=draft,
+        routing=_routing(),
+        llm_result={
+            "ok": True,
+            "payload": {
+                "route_type": "single_tool",
+                "target_kind": "selected_asset",
+                "selected_tool_id": "editor_rename_asset",
+                "requested_write": True,
+                "confidence": 0.96,
+            },
+            "provider": "test",
+            "model": "fake",
+            "profile_id": "default",
+        },
+        mode="active",
+        min_confidence=0.78,
+    )
+
+    assert outcome["report"]["status"] == "active_applied"
+    assert outcome["routing"]["route"]["selected_tool_id"] == "editor_rename_asset"
+    assert all(check["passed"] for check in outcome["report"]["safety_checks"])
+
+
+def test_active_mode_blocks_tool_override_for_pure_smalltalk() -> None:
+    draft = _draft()
+    draft.update(
+        {
+            "user_goal": "Thanks!",
+            "target_kind": "none",
+            "needs_project_context": False,
+            "needs_live_editor_context": False,
+            "route_keyword_verifier": {"pure_smalltalk_signal": True},
+        }
+    )
+    outcome = apply_llm_intent_draft(
+        deterministic_draft=draft,
+        routing=_routing(),
+        llm_result={
+            "ok": True,
+            "payload": {
+                "route_type": "single_tool",
+                "target_kind": "selected_asset",
+                "selected_tool_id": "mcp_get_asset_details",
+                "confidence": 0.96,
+            },
+            "provider": "test",
+            "model": "fake",
+            "profile_id": "default",
+        },
+        mode="active",
+        min_confidence=0.78,
+    )
+
+    assert outcome["report"]["status"] == "blocked"
+    assert outcome["report"]["reason"] == "pure_smalltalk_cannot_select_tool"
     assert outcome["routing"]["route"]["selected_tool_id"] is None

@@ -38,6 +38,7 @@ def build_llm_intent_draft_messages(
     output_language: str,
 ) -> list[dict[str, str]]:
     deterministic_draft = dict(context_bundle.get("intent_draft") or {})
+    keyword_report = dict(deterministic_draft.get("route_keyword_verifier") or {})
     route = dict(routing.get("route") or {})
     intent = dict(routing.get("intent") or {})
     context_pack = dict(context_bundle.get("context_pack") or {})
@@ -46,8 +47,11 @@ def build_llm_intent_draft_messages(
     system_prompt = (
         "You are an intent drafter for a local Unreal Engine editor Agent. "
         "Draft the user's intent as JSON only. "
-        "You may suggest a route/tool, but confirmed editor writes must remain Proposal-only. "
+        "You are the primary planner for route/tool choice; deterministic route and keyword evidence are hints, not final answers. "
+        "Confirmed editor writes must remain Proposal-only. "
         "Do not invent current-project facts. Prefer selected/current editor context only when the prompt refers to it. "
+        "If the prompt has no obvious keyword but active context/tool cards make the target clear, you may still choose the appropriate read-only tool. "
+        "If the prompt is pure smalltalk, choose direct_answer and no tool. "
         "Allowed route_type values: direct_answer, project_qa, single_tool, workflow. "
         "Allowed target_kind values: "
         + ", ".join(sorted(TARGET_KINDS))
@@ -63,6 +67,7 @@ def build_llm_intent_draft_messages(
             f"Latest user query:\n{_latest_user_message(request) or '(empty)'}",
             f"Deterministic route:\n{_compact_json({'intent': intent, 'route': route})}",
             f"Deterministic intent draft:\n{_compact_json(deterministic_draft)}",
+            f"Route keyword verifier:\n{_compact_json(keyword_report)}",
             f"Active targets:\n{_compact_json(active_targets)}",
             f"Compact context:\n{context_pack_prompt_excerpt(context_pack) if context_pack else '(none)'}",
         ]
@@ -342,10 +347,22 @@ def _override_safety_checks(
     existing_tool_id = str((routing.get("route") or {}).get("selected_tool_id") or "")
     existing_spec = get_tool_spec(existing_tool_id)
     deterministic_write = bool(deterministic_draft.get("requested_write"))
+    keyword_report = dict(deterministic_draft.get("route_keyword_verifier") or {})
+    hard_write_signal = bool(keyword_report.get("hard_write_signal"))
+    pure_smalltalk_signal = bool(keyword_report.get("pure_smalltalk_signal"))
+    active_context_reference = bool(keyword_report.get("active_context_reference"))
     existing_write = bool(existing_spec and existing_spec.side_effect_level not in {"read_only", "plan_only"})
+    smalltalk_tool_safe = not (pure_smalltalk_signal and selected_tool_id)
+    _add_check(
+        checks,
+        "smalltalk_no_tool_guard",
+        smalltalk_tool_safe,
+        "pure_smalltalk_cannot_select_tool" if not smalltalk_tool_safe else "not_pure_smalltalk_tool_override",
+    )
+
     requested_write_safe = True
     if spec and spec.side_effect_level not in {"read_only", "plan_only"}:
-        requested_write_safe = deterministic_write or existing_write
+        requested_write_safe = deterministic_write or existing_write or hard_write_signal
     _add_check(
         checks,
         "write_override_has_rule_signal",
@@ -353,7 +370,7 @@ def _override_safety_checks(
         (
             "confirmed_write_override_requires_deterministic_write_signal"
             if not requested_write_safe
-            else "write_override_has_deterministic_signal_or_not_write"
+            else "write_override_has_rule_signal_or_not_write"
         ),
     )
 
@@ -369,7 +386,10 @@ def _override_safety_checks(
     if route_type == "direct_answer" and (deterministic_write or existing_write):
         direct_answer_safe = False
         reason = "write_intent_cannot_downgrade_to_direct_answer"
-    elif route_type == "direct_answer" and selected_or_current_target and bool(deterministic_draft.get("needs_live_editor_context")):
+    elif route_type == "direct_answer" and (
+        active_context_reference
+        or (selected_or_current_target and bool(deterministic_draft.get("needs_live_editor_context")))
+    ):
         direct_answer_safe = False
         reason = "selected_context_cannot_downgrade_to_direct_answer"
     else:
