@@ -132,6 +132,7 @@ class DebugView(BaseModel):
     missing_context_gate: dict[str, Any] = Field(default_factory=dict)
     verified_intent: dict[str, Any] = Field(default_factory=dict)
     tool_plan_v1: dict[str, Any] = Field(default_factory=dict)
+    tool_plan_self_check: dict[str, Any] = Field(default_factory=dict)
     graph_framework: dict[str, Any] = Field(default_factory=dict)
     tool_registry_protocol: dict[str, Any] = Field(default_factory=dict)
     tool_execution_policy: dict[str, Any] = Field(default_factory=dict)

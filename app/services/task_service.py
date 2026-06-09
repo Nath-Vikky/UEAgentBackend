@@ -1160,6 +1160,7 @@ class TaskService:
         execution["debug_view"]["context_route_refinement"] = context_bundle.get("context_route_refinement", {})
         execution["debug_view"]["verified_intent"] = context_bundle.get("verified_intent", {})
         execution["debug_view"]["tool_plan_v1"] = context_bundle.get("tool_plan_v1", {})
+        execution["debug_view"]["tool_plan_self_check"] = context_bundle.get("tool_plan_self_check", {})
         execution["debug_view"]["tool_registry_protocol"] = tool_protocol_summary()
         execution["debug_view"]["tool_execution_policy"] = TOOL_EXECUTION_POLICY
         execution["debug_view"]["tools"] = enrich_tool_debug_entries(
@@ -1183,6 +1184,7 @@ class TaskService:
         execution["data"]["context_route_refinement"] = context_bundle.get("context_route_refinement", {})
         execution["data"]["verified_intent"] = context_bundle.get("verified_intent", {})
         execution["data"]["tool_plan_v1"] = context_bundle.get("tool_plan_v1", {})
+        execution["data"]["tool_plan_self_check"] = context_bundle.get("tool_plan_self_check", {})
         execution["planner_diagnostics"] = {
             **dict(execution.get("planner_diagnostics") or {}),
             "skill": skill_runtime,

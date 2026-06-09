@@ -741,6 +741,7 @@ def test_agent_chat_context_bundle_includes_inventory_selected_asset_details(cli
     assert body["debug_view"]["route"]["selected_tool_id"] == "mcp_get_asset_details"
     assert body["debug_view"]["route"]["previous_selected_tool_id"] == "query_project_inventory"
     assert body["debug_view"]["context_route_refinement"]["reason"] == "upgraded_broad_read_tool_to_detail_tool"
+    assert body["debug_view"]["tool_plan_self_check"]["status"] == "ok"
     assert body["data"]["local_tool"]["tool_id"] == "mcp_get_asset_details"
     assert body["data"]["local_tool"]["result"]["item"]["asset_name"] == "BP_PlayerCharacter"
     assert inventory_context["status"] == "available"

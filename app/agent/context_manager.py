@@ -14,6 +14,7 @@ from app.agent.intent_drafter import build_intent_draft
 from app.agent.intent_verifier import verify_intent
 from app.agent.memory_manager import read_active_target_memory, read_conversation_focus_memory
 from app.agent.tool_decision import build_tool_plan
+from app.agent.tool_plan_self_check import check_tool_plan_consistency
 from app.agent.turn_context import build_agent_turn_context
 from app.agent.memory_providers import (
     FileMemoryProvider,
@@ -723,6 +724,13 @@ def build_context_bundle(
         intent_draft=bundle["intent_draft"],
         verified_intent=bundle["verified_intent"],
         context_resolution=bundle["context_resolution"],
+        routing=routing,
+    )
+    bundle["tool_plan_self_check"] = check_tool_plan_consistency(
+        intent_draft=bundle["intent_draft"],
+        verified_intent=bundle["verified_intent"],
+        context_resolution=bundle["context_resolution"],
+        tool_plan=bundle["tool_plan_v1"],
         routing=routing,
     )
     bundle["context_pack"] = build_context_pack(bundle)

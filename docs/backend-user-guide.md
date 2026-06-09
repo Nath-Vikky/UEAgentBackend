@@ -8957,3 +8957,26 @@ Safety boundary:
 Frontend impact: no mandatory change. Existing User View can keep rendering the
 single-tool result; Debug View can optionally show
 `context_route_refinement.reason = upgraded_broad_read_tool_to_detail_tool`.
+
+## 2026-06-09 Update: Tool Plan Self-check v1
+
+Each Agent turn now includes a diagnostic-only `tool_plan_self_check` block in
+`data` and `debug_view`.
+
+It checks common routing/plan consistency issues:
+
+- Missing selected/current context should use `ask_for_context`.
+- Confirmed-write tools must require Proposal confirmation.
+- Read-only tools should not be marked as Proposal execution.
+- `verified_intent.selected_tool_id` should match `tool_plan_v1.tool_id`.
+- Direct-answer mode should not carry a tool id.
+
+The report contains:
+
+- `status`: `ok`, `warning`, or `error`
+- `failed_check_ids`
+- `checks[]`
+- `should_block_execution=false`
+
+Safety boundary: v1 is diagnostic-only and does not change execution behavior.
+It is mainly for Debug View, offline evals, and future Agent-chain hardening.
