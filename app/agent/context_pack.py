@@ -293,6 +293,9 @@ def build_context_pack(
     level_actor_focus = _compact_level_actor_context(active_context)
     material_focus = _compact_material_context(active_context)
     budget = dict(context_bundle.get("budget") or {})
+    budget_report = dict(context_bundle.get("context_budget_report") or {})
+    intent_draft = dict(context_bundle.get("intent_draft") or {})
+    verified_intent = dict(context_bundle.get("verified_intent") or {})
 
     return {
         "version": CONTEXT_PACK_VERSION,
@@ -302,6 +305,13 @@ def build_context_pack(
             "tool_policy": "Read-only context may be used directly. Write operations require user confirmation.",
             "output_language": (context_bundle.get("language_context") or {}).get("final_output_language"),
             "chain_of_thought_policy": "Expose concise thought_summary and plan_summary only, never raw chain-of-thought.",
+            "verified_intent": {
+                "route_type": verified_intent.get("route_type"),
+                "target_kind": verified_intent.get("target_kind"),
+                "target_resolution_status": verified_intent.get("target_resolution_status"),
+                "selected_tool_id": verified_intent.get("selected_tool_id"),
+                "safety_flags": verified_intent.get("safety_flags", []),
+            },
         },
         "project_layer": {
             "project": active_context.get("project") or {},
@@ -345,6 +355,13 @@ def build_context_pack(
         },
         "budget_layer": {
             **budget,
+            "context_budget_report": {
+                "version": budget_report.get("version"),
+                "section_percentages": budget_report.get("section_percentages", {}),
+                "top_sources": budget_report.get("top_sources", []),
+                "within_budget": budget_report.get("within_budget", budget.get("within_budget")),
+                "warnings": budget_report.get("warnings", budget.get("warnings", [])),
+            },
             "selected_memory_count": len(selected_memory),
             "tool_observation_count": len(tool_summaries),
             "recent_editor_operation_count": len(editor_operations),
@@ -353,6 +370,20 @@ def build_context_pack(
             "route_type": input_summary.get("route_type"),
             "actual_task_type": input_summary.get("actual_task_type"),
             "selected_tool_id": input_summary.get("selected_tool_id"),
+            "intent_draft": {
+                "intent_type": intent_draft.get("intent_type"),
+                "target_kind": intent_draft.get("target_kind"),
+                "needs_project_context": intent_draft.get("needs_project_context"),
+                "needs_live_editor_context": intent_draft.get("needs_live_editor_context"),
+                "needs_knowledge": intent_draft.get("needs_knowledge"),
+                "requested_write": intent_draft.get("requested_write"),
+            },
+            "verified_intent": {
+                "route_type": verified_intent.get("route_type"),
+                "target_resolution_status": verified_intent.get("target_resolution_status"),
+                "correction_count": len(verified_intent.get("corrections") or []),
+                "safety_flags": verified_intent.get("safety_flags", []),
+            },
             "has_inventory_snapshot": inventory_focus.get("has_snapshot"),
             "has_level_actor_focus": bool(level_actor_focus.get("current_actor_inventory")),
             "has_material_focus": bool(material_focus.get("current_material_instance_inventory")),

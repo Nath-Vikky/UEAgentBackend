@@ -4,6 +4,7 @@ from typing import Any
 
 from app.agent.context_builder import build_context_summary
 from app.agent.self_reflection import build_self_reflection
+from app.agent.tool_permission import annotate_tool_plan_permissions
 from app.agent.tool_planner import (
     build_project_qa_deterministic_tool_plan,
     build_project_qa_result_contracts,
@@ -11,6 +12,7 @@ from app.agent.tool_planner import (
     build_react_lite_trace,
     tool_call_input,
 )
+from app.agent.tool_use_summary import summarize_tool_uses
 from app.i18n.language import localized as _localized
 from app.schemas.common import QuickAction, UserViewBlock
 from app.services.task_handlers.base import TaskExecutionContext
@@ -68,6 +70,10 @@ class ProjectQAHandler:
             llm_service=host.llm_service,
             output_language_label=_language_label(output_language),
             rag_top_k=host.settings.rag_top_k,
+        )
+        tool_plan = annotate_tool_plan_permissions(
+            tool_plan,
+            free_chat=request.task_type in {"agent_chat", "project_qa"},
         )
         if tool_plan["use_knowledge"]:
             host._emit_stream_event(
@@ -602,6 +608,9 @@ class ProjectQAHandler:
                     ),
                 }
             )
+        tool_use_summaries = summarize_tool_uses(base_debug["tools"])
+        data["tool_use_summaries"] = tool_use_summaries
+        base_debug["tool_use_summaries"] = tool_use_summaries
         base_debug["step_results"] = step_results
         base_debug["raw_result"] = data
         base_debug["tool_plan"] = tool_plan

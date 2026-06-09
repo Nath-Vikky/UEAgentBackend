@@ -49,6 +49,10 @@ def build_agent_decision_trace(
     route = dict(routing.get("route") or {})
     locale = dict(routing.get("locale") or {})
     context_budget = dict(context_bundle.get("budget") or {})
+    context_budget_report = dict(context_bundle.get("context_budget_report") or {})
+    agent_turn_context = dict(context_bundle.get("agent_turn_context") or {})
+    intent_draft = dict(context_bundle.get("intent_draft") or {})
+    verified_intent = dict(context_bundle.get("verified_intent") or {})
     context_pack = dict(context_bundle.get("context_pack") or {})
     context_pack_summary = dict(context_pack.get("debug_summary") or {})
     context_pack_budget = dict(context_pack.get("budget_layer") or {})
@@ -109,8 +113,10 @@ def build_agent_decision_trace(
                 "requires_tool": intent.get("requires_tool"),
                 "selected_tool_id": route.get("selected_tool_id"),
                 "project_signal_strength": route.get("project_signal_strength"),
+                "intent_draft": intent_draft,
+                "verified_intent": verified_intent,
             },
-            warnings=list(route.get("warnings") or []),
+            warnings=[*list(route.get("warnings") or []), *list(verified_intent.get("safety_flags") or [])],
         ),
         "context_decision": _decision(
             decision="use_compact_context_bundle",
@@ -134,9 +140,16 @@ def build_agent_decision_trace(
                 "estimated_chars": context_budget.get("estimated_chars"),
                 "char_budget": context_budget.get("char_budget"),
                 "within_budget": context_budget.get("within_budget"),
+                "context_budget_report": context_budget_report,
+                "agent_turn_context": {
+                    "version": agent_turn_context.get("version"),
+                    "active_targets": agent_turn_context.get("active_targets", {}),
+                    "context_sources": agent_turn_context.get("context_sources", {}),
+                    "route": agent_turn_context.get("route", {}),
+                },
                 "context_pack_budget": context_pack_budget,
             },
-            warnings=list(context_budget.get("warnings") or []),
+            warnings=list(context_budget_report.get("warnings") or context_budget.get("warnings") or []),
         ),
         "retrieval_decision": _decision(
             decision=retrieval_mode,

@@ -118,6 +118,96 @@ CONTEXT_REFERENCE_HINTS = {
     "当前资产",
     "这些资产",
 }
+SELECTED_CONTEXT_REFERENCE_HINTS = {
+    "this asset",
+    "this actor",
+    "this object",
+    "this blueprint",
+    "this widget",
+    "this material",
+    "that asset",
+    "that actor",
+    "selected asset",
+    "selected actor",
+    "selected object",
+    "selected blueprint",
+    "selected widget",
+    "selected material",
+    "current asset",
+    "current actor",
+    "current object",
+    "current blueprint",
+    "current widget",
+    "current material",
+    "it",
+    "分析一下这个资产",
+    "这个资产",
+    "这个actor",
+    "这个 Actor",
+    "这个对象",
+    "这个物体",
+    "这个蓝图",
+    "这个控件",
+    "这个widget",
+    "这个 Widget",
+    "这个材质",
+    "该资产",
+    "该actor",
+    "该 Actor",
+    "该对象",
+    "该物体",
+    "该蓝图",
+    "该控件",
+    "该材质",
+    "当前资产",
+    "当前选中资产",
+    "当前选择资产",
+    "当前选中的资产",
+    "选中资产",
+    "选中的资产",
+    "当前actor",
+    "当前 Actor",
+    "当前选中Actor",
+    "当前选中的Actor",
+    "选中Actor",
+    "当前蓝图",
+    "当前控件",
+    "当前Widget",
+    "当前材质",
+    "它",
+    "它的",
+}
+SELECTED_CONTEXT_READ_INTENT_HINTS = {
+    "analyze",
+    "analyse",
+    "inspect",
+    "describe",
+    "check",
+    "show",
+    "list",
+    "what",
+    "which",
+    "details",
+    "properties",
+    "settings",
+    "summary",
+    "分析",
+    "检查",
+    "查看",
+    "看一下",
+    "看看",
+    "说明",
+    "介绍",
+    "描述",
+    "列出",
+    "有哪些",
+    "是什么",
+    "属性",
+    "设置",
+    "细节",
+    "总结",
+    "概括",
+}
 EXPLICIT_TASK_REASONS = {
     "code_review": {
         "zh": "前端已经显式发起代码审查任务，后端按多步审查工作流处理。",
@@ -1038,6 +1128,68 @@ def _looks_like_project_inventory_query(latest_text: str, text_lower: str) -> bo
     return has_scope and has_fact and has_question
 
 
+def _has_selected_editor_target(request: UnifiedTaskRequest) -> bool:
+    editor_state = dict(request.context.editor_state or {})
+    payload = dict(request.payload or {})
+    selected_asset_like = bool(
+        request.context.selected_assets
+        or payload.get("selected_assets")
+        or payload.get("assets")
+        or payload.get("asset_path")
+    )
+    selected_actor_like = bool(
+        payload.get("selected_actors")
+        or payload.get("selected_actor_references")
+        or payload.get("actor_reference")
+        or editor_state.get("selected_actors")
+        or editor_state.get("current_actor_reference")
+    )
+    selected_blueprint_like = bool(
+        payload.get("blueprint_path")
+        or payload.get("current_blueprint_path")
+        or editor_state.get("current_blueprint_path")
+        or editor_state.get("active_blueprint_path")
+        or editor_state.get("current_graph_name")
+    )
+    selected_widget_like = bool(
+        payload.get("widget_blueprint_path")
+        or payload.get("widget_name")
+        or editor_state.get("widget_blueprint_path")
+        or editor_state.get("current_widget_name")
+    )
+    selected_material_like = bool(
+        payload.get("material_instance_path")
+        or payload.get("selected_material_instances")
+        or editor_state.get("current_material_instance_path")
+        or editor_state.get("selected_material_instances")
+    )
+    return any(
+        (
+            selected_asset_like,
+            selected_actor_like,
+            selected_blueprint_like,
+            selected_widget_like,
+            selected_material_like,
+        )
+    )
+
+
+def _looks_like_selected_context_read_query(
+    request: UnifiedTaskRequest,
+    latest_text: str,
+    text_lower: str,
+) -> bool:
+    if not _has_selected_editor_target(request):
+        return False
+    has_reference = any(
+        _hint_present(latest_text, text_lower, hint) for hint in SELECTED_CONTEXT_REFERENCE_HINTS
+    )
+    has_read_intent = any(
+        _hint_present(latest_text, text_lower, hint) for hint in SELECTED_CONTEXT_READ_INTENT_HINTS
+    )
+    return has_reference and has_read_intent
+
+
 def _ue_knowledge_signal(latest_text: str, text_lower: str) -> dict[str, Any]:
     domain_hint_count = sum(
         1
@@ -1107,6 +1259,7 @@ def _agent_chat_signals(
     context_reference_present = any(
         _hint_present(latest_text, text_lower, hint) for hint in CONTEXT_REFERENCE_HINTS
     )
+    selected_context_query = _looks_like_selected_context_read_query(request, latest_text, text_lower)
     ue_knowledge = _ue_knowledge_signal(latest_text, text_lower)
     explicit_kb_scope = bool(request.context.kb_domains_hint or domain_filters)
     explicit_project_panel = active_panel in PROJECT_QA_PANELS
@@ -1114,6 +1267,7 @@ def _agent_chat_signals(
         explicit_project_panel
         or explicit_kb_scope
         or context_reference_present
+        or selected_context_query
         or project_hint_count >= 2
         or _looks_like_project_inventory_query(latest_text, text_lower)
     )
@@ -1124,12 +1278,14 @@ def _agent_chat_signals(
         "project_hint_count": project_hint_count,
         "task_hint_count": task_hint_count,
         "context_reference_present": context_reference_present,
+        "selected_context_query": selected_context_query,
         "explicit_kb_scope": explicit_kb_scope,
         "deterministic_panel": active_panel in DETERMINISTIC_PANELS,
         "explicit_project_panel": explicit_project_panel,
         "strong_project_signal": strong_project_signal,
         "weak_project_signal": weak_project_signal,
-        "project_inventory_query": _looks_like_project_inventory_query(latest_text, text_lower),
+        "project_inventory_query": _looks_like_project_inventory_query(latest_text, text_lower)
+        or selected_context_query,
         **ue_knowledge,
     }
 
@@ -1303,6 +1459,7 @@ def _project_qa_response(
             "context_present": signals["context_present"],
             "project_hint_count": signals["project_hint_count"],
             "context_reference_present": signals["context_reference_present"],
+            "selected_context_query": signals.get("selected_context_query", False),
             "explicit_kb_scope": signals["explicit_kb_scope"],
             "project_inventory_query": signals.get("project_inventory_query", False),
             "ue_knowledge_query": signals.get("ue_knowledge_query", False),
@@ -1343,6 +1500,7 @@ def _direct_answer_response(
             "context_present": signals["context_present"],
             "project_hint_count": signals["project_hint_count"],
             "context_reference_present": signals["context_reference_present"],
+            "selected_context_query": signals.get("selected_context_query", False),
             "explicit_kb_scope": signals["explicit_kb_scope"],
             "project_inventory_query": signals.get("project_inventory_query", False),
             "ue_knowledge_query": signals.get("ue_knowledge_query", False),

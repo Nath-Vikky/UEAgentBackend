@@ -565,3 +565,42 @@ def test_message_language_override_is_single_turn_source() -> None:
 
     assert routing["locale"]["final_output_language"] == "en-US"
     assert routing["locale"]["language_source"] == "message_override"
+
+
+def test_agent_chat_with_selected_asset_chinese_reference_routes_to_inventory() -> None:
+    content = "\u5206\u6790\u4e00\u4e0b\u8fd9\u4e2a\u8d44\u4ea7"
+    request = _request(
+        content=content,
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "selected_assets": ["/Game/Props/SM_Rock.SM_Rock"],
+        },
+        payload={"user_query": content},
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["project_inventory_query"] is True
+    assert routing["route"]["selected_context_query"] is True
+    assert routing["route"]["decision_source"] == "heuristic_project_inventory_signal"
+
+
+def test_agent_chat_with_selected_actor_english_reference_routes_to_inventory() -> None:
+    request = _request(
+        content="Analyze this actor and summarize its components.",
+        context={
+            "project_name": "DemoProject",
+            "active_panel": "AgentChat",
+            "editor_state": {"selected_actors": [{"actor_label": "BP_EnemySpawner_1"}]},
+        },
+    )
+
+    routing = classify_request(request)
+
+    assert routing["intent"]["route_type"] == "project_qa"
+    assert routing["route"]["selected_tool_id"] == "query_project_inventory"
+    assert routing["route"]["project_inventory_query"] is True
+    assert routing["route"]["selected_context_query"] is True

@@ -93,6 +93,61 @@
 - 默认最多读取约 40KB，最大 120KB。
 - 只读，不写入、不删除、不移动、不执行。
 
+### Agent Turn Context / Context Budget / Permission Gate
+
+Improv6 adds a small Agent decision foundation without changing the public
+request contract. Each task response can now expose these diagnostic blocks:
+
+- `debug_view.agent_turn_context`
+- `debug_view.context_budget_report`
+- `data.agent_turn_context`
+- `data.context_budget_report`
+
+`agent_turn_context` is the backend's per-turn view of the request. It combines
+the latest user message, selected UE objects, current Blueprint/graph, selected
+Level Actors, selected Material Instances, recent tool summaries, Project
+Inventory status, RAG status, MCP provider status, and available tool cards.
+This is used to make follow-up prompts such as "this asset", "this Blueprint",
+"this actor", or "the material I selected" easier to resolve before falling
+back to generic KB retrieval.
+
+`context_budget_report` explains where the prompt/context budget is spent. It
+breaks context into recent messages, active UE context, Project Inventory, RAG,
+memory, tool summaries, editor operations, and system policy. It is deterministic
+and intended for Debug View, eval, and regression checks.
+
+`ToolPermissionDecision` is the internal permission gate for tools:
+
+- `read_only` tools may run automatically when allowed for the route.
+- `plan_only` tools may produce plans but cannot touch the UE project.
+- `confirmed_write` / `reversible_write` / `destructive_write` tools must become
+  pending Proposals.
+- MCP-discovered write tools are still mapped back to Proposal flow and cannot
+  directly execute UE writes from the backend.
+
+`tool_use_summaries` are display-safe summaries of tool outputs. They keep item
+counts, status, warnings, and safe output keys, while hiding raw MCP payloads,
+raw JSON-RPC content, and large debug payloads from User View.
+
+`intent_draft` and `verified_intent` are the first step of the Improv6 Agent
+decision chain upgrade:
+
+- `intent_draft` projects the current route into a structured draft containing
+  user goal, intent type, target kind, target reference, project-context need,
+  live-editor-context need, knowledge need, write intent, candidate tools, and
+  rationale.
+- `verified_intent` applies deterministic safety checks over the draft. It
+  verifies whether the selected/current target is actually available, checks
+  tool registration, applies `ToolPermissionDecision`, and records corrections
+  such as `write_tool_requires_proposal` or
+  `selected_context_needs_active_target`.
+- The current implementation is deterministic and trace-first. A future LLM
+  intent drafter can emit the same schema, while the verifier keeps the final
+  safety boundary.
+
+No UEAgentTool change is required for these fields. They are backend-side
+diagnostics and future Agent orchestration inputs.
+
 ### Tool Contract
 
 后端有轻量工具契约校验：

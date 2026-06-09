@@ -7,7 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.agent.active_context import build_active_context
 from app.agent.context_builder import build_context_summary
+from app.agent.context_budget import build_context_budget_report
 from app.agent.context_pack import build_context_pack, context_pack_prompt_excerpt
+from app.agent.intent_drafter import build_intent_draft
+from app.agent.intent_verifier import verify_intent
+from app.agent.turn_context import build_agent_turn_context
 from app.agent.memory_providers import (
     FileMemoryProvider,
     MemoryProviderResult,
@@ -521,6 +525,23 @@ def build_context_bundle(
         bundle["budget"]["warnings"] = ["context_bundle_over_budget_compact_excerpts_used"]
     else:
         bundle["budget"]["warnings"] = []
+    bundle["context_budget_report"] = build_context_budget_report(bundle, char_budget=char_budget)
+    bundle["agent_turn_context"] = build_agent_turn_context(
+        request=request,
+        routing=routing,
+        context_bundle=bundle,
+    )
+    bundle["intent_draft"] = build_intent_draft(
+        request=request,
+        routing=routing,
+        context_bundle=bundle,
+    )
+    bundle["verified_intent"] = verify_intent(
+        draft=bundle["intent_draft"],
+        routing=routing,
+        context_bundle=bundle,
+        free_chat=request.task_type in {"agent_chat", "project_qa"},
+    )
     bundle["context_pack"] = build_context_pack(bundle)
     return bundle
 

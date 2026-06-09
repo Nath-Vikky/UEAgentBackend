@@ -1066,6 +1066,10 @@ class TaskService:
         )
         execution["debug_view"]["active_context"] = context_bundle.get("active_context", {})
         execution["debug_view"]["context_pack"] = context_bundle.get("context_pack", {})
+        execution["debug_view"]["agent_turn_context"] = context_bundle.get("agent_turn_context", {})
+        execution["debug_view"]["context_budget_report"] = context_bundle.get("context_budget_report", {})
+        execution["debug_view"]["intent_draft"] = context_bundle.get("intent_draft", {})
+        execution["debug_view"]["verified_intent"] = context_bundle.get("verified_intent", {})
         execution["debug_view"]["tool_registry_protocol"] = tool_protocol_summary()
         execution["debug_view"]["tool_execution_policy"] = TOOL_EXECUTION_POLICY
         execution["debug_view"]["tools"] = enrich_tool_debug_entries(
@@ -1081,6 +1085,10 @@ class TaskService:
         execution["debug_view"]["skill"] = skill_runtime
         execution["data"] = {**dict(execution.get("data") or {}), "skill": skill_runtime}
         execution["data"]["context_pack"] = context_bundle.get("context_pack", {})
+        execution["data"]["agent_turn_context"] = context_bundle.get("agent_turn_context", {})
+        execution["data"]["context_budget_report"] = context_bundle.get("context_budget_report", {})
+        execution["data"]["intent_draft"] = context_bundle.get("intent_draft", {})
+        execution["data"]["verified_intent"] = context_bundle.get("verified_intent", {})
         execution["planner_diagnostics"] = {
             **dict(execution.get("planner_diagnostics") or {}),
             "skill": skill_runtime,
@@ -1127,6 +1135,7 @@ class TaskService:
                     "web_memory": context_bundle.get("web_memory", {}),
                     "memory": context_bundle.get("memory", {}),
                     "context_budget": context_bundle.get("budget", {}),
+                    "context_budget_report": context_bundle.get("context_budget_report", {}),
                 },
                 "output_complete": output_complete,
                 "finish_reason": finish_reason,
@@ -1433,6 +1442,10 @@ class TaskService:
             "route": routing["route"],
             "context_bundle": resolved_context_bundle,
             "context_pack": resolved_context_bundle.get("context_pack", {}),
+            "agent_turn_context": resolved_context_bundle.get("agent_turn_context", {}),
+            "context_budget_report": resolved_context_bundle.get("context_budget_report", {}),
+            "intent_draft": resolved_context_bundle.get("intent_draft", {}),
+            "verified_intent": resolved_context_bundle.get("verified_intent", {}),
             "active_context": resolved_context_bundle.get("active_context", {}),
             "graph_framework": graph_framework_readiness_report(
                 review_fix_validate_graph_spec(),
@@ -1454,6 +1467,7 @@ class TaskService:
                 "long_term_memory": resolved_context_bundle.get("long_term_memory", {}),
                 "file_memory": resolved_context_bundle.get("file_memory", {}),
                 "context_budget": resolved_context_bundle.get("budget", {}),
+                "context_budget_report": resolved_context_bundle.get("context_budget_report", {}),
             },
             "output_complete": True,
             "finish_reason": "completed",
