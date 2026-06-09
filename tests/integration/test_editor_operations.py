@@ -5691,6 +5691,130 @@ def test_editor_workflow_state_blocks_compile_and_suggests_follow_up_when_step_n
     assert repaired_first_step["repair_records"][0]["proposal_id"] == repair_proposal_id
 
 
+def test_editor_workflow_state_suggests_compile_retry_and_completes_after_successful_retry(
+    client: TestClient,
+) -> None:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add Ready Print String and compile",
+            "workflow_type": "blueprint_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "message": "Ready",
+            },
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()["workflow_plan"]
+
+    first_step_proposal = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan["plan_id"],
+            "step": plan["steps"][0],
+            "requested_by": "integration_test",
+        },
+    )
+    assert first_step_proposal.status_code == 200
+    first_proposal_id = first_step_proposal.json()["proposal"]["item"]["proposal_id"]
+    assert client.post(f"/api/v1/editor-operations/proposals/{first_proposal_id}/confirm").status_code == 200
+    first_result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": first_proposal_id,
+            "operation_type": "add_blueprint_node_template",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "created_nodes": [{"node_id": "PrintStringNode", "node_title": "Print String"}],
+                "linked_pins": [{"source_pin": "then", "target_pin": "execute"}],
+                "compile_status": "not_requested",
+                "dirty": True,
+                "dirty_packages": ["/Game/Blueprints/BP_PlayerCharacter"],
+            },
+        },
+    )
+    assert first_result.status_code == 200
+
+    ready_state = client.post("/api/v1/editor-operations/workflows/state", json={"workflow_plan": plan})
+    assert ready_state.status_code == 200
+    compile_request = ready_state.json()["workflow_state"]["next_step_proposal_requests"][0]["request"]
+    compile_proposal = client.post("/api/v1/editor-operations/workflows/steps/proposal", json=compile_request)
+    assert compile_proposal.status_code == 200
+    compile_proposal_id = compile_proposal.json()["proposal"]["item"]["proposal_id"]
+    assert client.post(f"/api/v1/editor-operations/proposals/{compile_proposal_id}/confirm").status_code == 200
+
+    compile_result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": compile_proposal_id,
+            "operation_type": "compile_blueprint",
+            "execution_state": "failed",
+            "success": False,
+            "executed_by": "ue_plugin",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "compile_status": "failed",
+                "messages": ["Broken execution pin"],
+            },
+            "errors": [{"code": "compile_failed", "message": "Blueprint compile failed"}],
+        },
+    )
+    assert compile_result.status_code == 200
+
+    failed_state_response = client.post("/api/v1/editor-operations/workflows/state", json={"workflow_plan": plan})
+    assert failed_state_response.status_code == 200
+    failed_state = failed_state_response.json()["workflow_state"]
+    assert failed_state["status"] == "needs_attention"
+    assert failed_state["next_action"] == "create_follow_up_repair_proposal"
+    assert failed_state["ready_follow_up_candidate_count"] == 1
+    assert failed_state["step_states"][1]["status"] == "failed"
+    assert failed_state["step_states"][1]["workflow_blocking_flags"] == ["compile_failed"]
+    assert failed_state["quick_actions"][0]["label"] == "Create Repair Proposal: compile_blueprint"
+
+    retry_request = failed_state["quick_actions"][0]["payload"]
+    retry_proposal_response = client.post(retry_request["endpoint"], json=retry_request["request"])
+    assert retry_proposal_response.status_code == 200
+    retry_proposal_id = retry_proposal_response.json()["proposal"]["item"]["proposal_id"]
+    retry_context = retry_proposal_response.json()["proposal"]["operation"]["context"]
+    assert retry_context["follow_up_materialization"]["source_proposal_id"] == compile_proposal_id
+    assert retry_context["workflow_repair_context"]["workflow_step_id"] == "step_1_compile_blueprint"
+
+    assert client.post(f"/api/v1/editor-operations/proposals/{retry_proposal_id}/confirm").status_code == 200
+    retry_result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": retry_proposal_id,
+            "operation_type": "compile_blueprint",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "compile_status": "succeeded",
+                "dirty": True,
+                "dirty_packages": ["/Game/Blueprints/BP_PlayerCharacter"],
+            },
+        },
+    )
+    assert retry_result.status_code == 200
+
+    repaired_state_response = client.post("/api/v1/editor-operations/workflows/state", json={"workflow_plan": plan})
+    assert repaired_state_response.status_code == 200
+    repaired_state = repaired_state_response.json()["workflow_state"]
+    assert repaired_state["status"] == "completed"
+    assert repaired_state["next_action"] == "workflow_complete"
+    assert repaired_state["quick_actions"] == []
+    assert repaired_state["user_view"]["status_hint"] == "completed"
+    assert repaired_state["step_states"][1]["status"] == "completed_after_repair"
+    assert repaired_state["step_states"][1]["repair_resolved"] is True
+    assert repaired_state["step_states"][1]["repair_records"][0]["proposal_id"] == retry_proposal_id
+
+
 def test_editor_workflow_step_materialization_rejects_not_ready_step(client: TestClient) -> None:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",

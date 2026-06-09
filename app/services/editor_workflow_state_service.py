@@ -75,7 +75,9 @@ class EditorWorkflowStateService:
 
         completed_ids = set(_as_string_list(completed_step_ids))
         for step_id, record in records_by_step_id.items():
-            if (
+            if bool(record.get("repair_resolved")):
+                completed_ids.add(step_id)
+            elif (
                 record.get("execution_state") == "completed"
                 and record.get("success") is True
                 and not bool(record.get("blocks_workflow_dependency"))
@@ -267,7 +269,7 @@ class EditorWorkflowStateService:
             execution_state = _clean_text(record.get("execution_state"))
             success = record.get("success")
             confirmation_state = _clean_text(record.get("confirmation_state"))
-            if execution_state == "completed" and success is True and bool(record.get("repair_resolved")):
+            if bool(record.get("repair_resolved")):
                 status = "completed_after_repair"
             elif execution_state == "completed" and success is True and bool(record.get("blocks_workflow_dependency")):
                 status = "completed_needs_attention"

@@ -6314,6 +6314,12 @@ unlocks the next dependent workflow step. The frontend does not need to track a
 separate repair session; it can keep polling or posting the original workflow
 plan to `/workflows/state`.
 
+2026-06-09 compile-retry update: the same repair flow also covers failed
+`compile_blueprint` workflow steps. If UEAgentTool reports `compile_failed`, the
+state response can expose a `retry_compile_blueprint` follow-up action. After
+the retry Proposal succeeds, workflow state marks the failed compile step as
+`completed_after_repair` and the workflow can become `completed`.
+
 ## 2026-05-24 Tool Registry Proposal Bridge
 
 The backend now exposes a safe bridge from Tool Registry ids to pending editor

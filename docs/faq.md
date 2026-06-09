@@ -69,6 +69,10 @@ For UI clients, `workflow_state.user_view` and `workflow_state.quick_actions[]`
 are the easiest fields to render. The quick-action payload can be submitted
 only after the user chooses it; it still creates a pending Proposal.
 
+The same workflow-state repair loop also covers failed Blueprint compile steps:
+`compile_failed` can surface a retry compile quick action, and a successful
+retry result can complete the original workflow step.
+
 ## Are private notes or external course repositories included?
 
 No. Public knowledge lives in `knowledge/`. Private notes or third-party source
