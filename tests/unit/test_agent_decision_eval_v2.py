@@ -28,13 +28,17 @@ def test_agent_decision_eval_v2_tracks_no_tool_and_missing_context_gates() -> No
     assert by_id["smalltalk_en"]["checks"]["no_tool_selected_ok"] is True
     assert by_id["missing_selected_asset_zh"]["checks"]["missing_context_gate_ok"] is True
     assert by_id["missing_blueprint_context_en"]["checks"]["missing_context_gate_ok"] is True
+    assert all(item["checks"]["tool_plan_self_check_ok"] for item in results)
+    assert by_id["missing_selected_asset_zh"]["debug"]["tool_plan_self_check"]["status"] == "ok"
 
     summary = summarize_agent_decision_cases(results)
 
     assert summary["case_count"] == 4
     assert summary["no_tool_safety_accuracy"] == 1.0
+    assert summary["tool_plan_self_check_accuracy"] == 1.0
     assert summary["no_tool_safety_case_count"] == 2
     assert summary["missing_context_gate_accuracy"] == 1.0
     assert summary["missing_context_gate_case_count"] == 2
     assert summary["tag_breakdown"]["smalltalk"]["overall_accuracy"] == 1.0
+    assert summary["tag_breakdown"]["smalltalk"]["tool_plan_self_check_accuracy"] == 1.0
     assert summary["tag_breakdown"]["missing_context"]["overall_accuracy"] == 1.0

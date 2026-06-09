@@ -8865,6 +8865,7 @@ The report now includes:
 - `no_tool_safety_case_count`
 - `missing_context_gate_accuracy`
 - `missing_context_gate_case_count`
+- `tool_plan_self_check_accuracy`
 - `tag_breakdown`
 
 `response_critic_v2` also has regression coverage for normal UTF-8 Chinese

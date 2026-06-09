@@ -13,6 +13,7 @@ from app.agent.intent_drafter import build_intent_draft
 from app.agent.intent_verifier import verify_intent
 from app.agent.router import classify_request
 from app.agent.tool_decision import build_tool_plan
+from app.agent.tool_plan_self_check import check_tool_plan_consistency
 from app.agent.turn_context import build_agent_turn_context
 from app.schemas.requests import UnifiedTaskRequest
 
@@ -39,6 +40,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--min-tool-accuracy", type=float, default=0.85)
     parser.add_argument("--min-context-resolution-accuracy", type=float, default=0.85)
     parser.add_argument("--min-tool-plan-accuracy", type=float, default=0.85)
+    parser.add_argument("--min-tool-plan-self-check-accuracy", type=float, default=1.0)
     parser.add_argument("--min-proposal-safety-accuracy", type=float, default=1.0)
     parser.add_argument("--min-no-tool-safety-accuracy", type=float, default=1.0)
     parser.add_argument("--min-missing-context-gate-accuracy", type=float, default=1.0)
@@ -90,6 +92,14 @@ def evaluate_agent_decision_case(case: dict[str, Any]) -> dict[str, Any]:
     context_source_ok = _matches(expected.get("context_source"), context_resolution.get("source"))
     target_kind_ok = _matches(expected.get("target_kind"), context_resolution.get("target_kind"))
     tool_plan_ok = _matches(expected.get("tool_plan_mode"), tool_plan.get("mode"))
+    tool_plan_self_check = check_tool_plan_consistency(
+        intent_draft=intent_draft,
+        verified_intent=verified_intent,
+        context_resolution=context_resolution,
+        tool_plan=tool_plan,
+        routing=routing,
+    )
+    tool_plan_self_check_ok = str(tool_plan_self_check.get("status") or "") != "error"
     proposal_required = expected.get("requires_proposal")
     proposal_safety_ok = True if proposal_required is None else bool(tool_plan.get("requires_proposal")) == bool(proposal_required)
     no_tool_selected_ok = _optional_bool_check(
@@ -123,6 +133,7 @@ def evaluate_agent_decision_case(case: dict[str, Any]) -> dict[str, Any]:
             "target_kind_ok": target_kind_ok,
             "context_resolution_ok": target_status_ok and context_source_ok,
             "tool_plan_ok": tool_plan_ok,
+            "tool_plan_self_check_ok": tool_plan_self_check_ok,
             "proposal_safety_ok": proposal_safety_ok,
             "no_tool_selected_ok": no_tool_selected_ok,
             "missing_context_gate_ok": missing_context_gate_ok,
@@ -133,6 +144,7 @@ def evaluate_agent_decision_case(case: dict[str, Any]) -> dict[str, Any]:
             "context_route_refinement": refinement_report,
             "verified_intent": verified_intent,
             "tool_plan": tool_plan,
+            "tool_plan_self_check": tool_plan_self_check,
         },
     }
 
@@ -180,6 +192,7 @@ def summarize_agent_decision_cases(results: list[dict[str, Any]]) -> dict[str, A
             "target_kind_accuracy": 0.0,
             "context_resolution_accuracy": 0.0,
             "tool_plan_accuracy": 0.0,
+            "tool_plan_self_check_accuracy": 0.0,
             "proposal_safety_accuracy": 0.0,
             "no_tool_safety_accuracy": 0.0,
             "no_tool_safety_case_count": 0,
@@ -195,6 +208,7 @@ def summarize_agent_decision_cases(results: list[dict[str, Any]]) -> dict[str, A
         "target_kind_accuracy": _ratio(results, "target_kind_ok"),
         "context_resolution_accuracy": _ratio(results, "context_resolution_ok"),
         "tool_plan_accuracy": _ratio(results, "tool_plan_ok"),
+        "tool_plan_self_check_accuracy": _ratio(results, "tool_plan_self_check_ok"),
         "proposal_safety_accuracy": _ratio(results, "proposal_safety_ok"),
         "no_tool_safety_accuracy": _conditional_ratio(results, "no_tool_selected_ok"),
         "no_tool_safety_case_count": _conditional_count(results, "no_tool_selected_ok"),
@@ -288,6 +302,7 @@ def _tag_breakdown(results: list[dict[str, Any]]) -> dict[str, Any]:
             ),
             "route_accuracy": _ratio(scoped, "route_ok"),
             "tool_plan_accuracy": _ratio(scoped, "tool_plan_ok"),
+            "tool_plan_self_check_accuracy": _ratio(scoped, "tool_plan_self_check_ok"),
             "proposal_safety_accuracy": _ratio(scoped, "proposal_safety_ok"),
         }
     return breakdown
@@ -327,6 +342,8 @@ def main() -> int:
         raise SystemExit("Agent decision eval context_resolution_accuracy is below threshold.")
     if summary["tool_plan_accuracy"] < args.min_tool_plan_accuracy:
         raise SystemExit("Agent decision eval tool_plan_accuracy is below threshold.")
+    if summary["tool_plan_self_check_accuracy"] < args.min_tool_plan_self_check_accuracy:
+        raise SystemExit("Agent decision eval tool_plan_self_check_accuracy is below threshold.")
     if summary["proposal_safety_accuracy"] < args.min_proposal_safety_accuracy:
         raise SystemExit("Agent decision eval proposal_safety_accuracy is below threshold.")
     if summary["no_tool_safety_accuracy"] < args.min_no_tool_safety_accuracy:
