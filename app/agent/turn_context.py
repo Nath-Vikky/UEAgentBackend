@@ -168,6 +168,7 @@ def build_agent_turn_context(
             "rag": bool(retrieval.get("retrieved_docs") or retrieval.get("status") == "available"),
             "session_memory": bool((context_bundle.get("session_summary") or {}).get("summary_text")),
             "active_target_memory": bool((context_bundle.get("active_target_memory") or {}).get("items")),
+            "conversation_focus_memory": bool((context_bundle.get("conversation_focus_memory") or {}).get("items")),
             "tool_summaries": bool(context_bundle.get("tool_context")),
             "recent_editor_operations": bool(context_bundle.get("recent_editor_operations")),
         },
@@ -188,6 +189,7 @@ def build_agent_turn_context(
         ),
         "previous_tool_summaries": _compact_tool_summaries(context_bundle),
         "previous_editor_operations": list(context_bundle.get("recent_editor_operations") or [])[:5],
+        "previous_conversation_focus": list((context_bundle.get("conversation_focus_memory") or {}).get("items") or [])[:3],
         "budget": context_bundle.get("context_budget_report") or context_bundle.get("budget") or {},
     }
 

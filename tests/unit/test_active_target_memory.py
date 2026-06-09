@@ -9,7 +9,12 @@ from sqlalchemy.pool import StaticPool
 
 import app.db.models  # noqa: F401
 from app.agent.context_manager import build_context_bundle
-from app.agent.memory_manager import read_active_target_memory, update_active_target_memory
+from app.agent.memory_manager import (
+    read_active_target_memory,
+    read_conversation_focus_memory,
+    update_active_target_memory,
+    update_conversation_focus_memory,
+)
 from app.db.base import Base
 from app.db.models.session import SessionModel
 from app.schemas.requests import UnifiedTaskRequest
@@ -160,3 +165,92 @@ def test_active_target_memory_does_not_override_current_explicit_context() -> No
 
     assert bundle["active_context"]["asset"]["selected_assets"] == ["/Game/New/BP_New.BP_New"]
     assert "memory_source" not in bundle["active_context"]["asset"]
+
+
+def test_conversation_focus_memory_records_compact_turn_focus() -> None:
+    with _session() as db:
+        _add_session(db)
+
+        result = update_conversation_focus_memory(
+            db,
+            "active-target-session",
+            task_id="task-focus",
+            context_bundle={
+                "input_summary": {
+                    "route_type": "single_tool",
+                    "selected_tool_id": "mcp_get_asset_details",
+                    "latest_user_message": "分析一下这个资产",
+                },
+                "context_resolution": {
+                    "status": "resolved",
+                    "target_kind": "selected_asset",
+                    "target_id": "/Game/Characters/BP_Player.BP_Player",
+                    "source": "selected_assets",
+                },
+                "tool_plan_v1": {"mode": "read_only", "tool_id": "mcp_get_asset_details"},
+            },
+            execution={
+                "user_view": {"title": "资产分析", "text": "BP_Player 是一个蓝图资产。"},
+                "assistant_message": "BP_Player 是一个蓝图资产。",
+                "action_proposals": [],
+            },
+        )
+        memory = read_conversation_focus_memory(db, "active-target-session")
+
+    assert result["status"] == "updated"
+    assert memory["status"] == "available"
+    assert memory["items"][0]["target_id"] == "/Game/Characters/BP_Player.BP_Player"
+    assert memory["items"][0]["display_name"] == "BP_Player"
+    assert memory["items"][0]["selected_tool_id"] == "mcp_get_asset_details"
+    assert "BP_Player" in memory["items"][0]["assistant_summary"]
+
+
+def test_context_bundle_uses_conversation_focus_memory_for_followup_asset_reference() -> None:
+    with _session() as db:
+        _add_session(db)
+        update_conversation_focus_memory(
+            db,
+            "active-target-session",
+            task_id="previous-focus",
+            context_bundle={
+                "input_summary": {
+                    "route_type": "single_tool",
+                    "selected_tool_id": "mcp_get_asset_details",
+                    "latest_user_message": "Analyze BP_Player",
+                },
+                "context_resolution": {
+                    "status": "resolved",
+                    "target_kind": "selected_asset",
+                    "target_id": "/Game/Characters/BP_Player.BP_Player",
+                    "source": "selected_assets",
+                },
+                "tool_plan_v1": {"mode": "read_only", "tool_id": "mcp_get_asset_details"},
+            },
+            execution={"user_view": {"title": "Asset", "text": "BP_Player summary."}, "action_proposals": []},
+        )
+        request = UnifiedTaskRequest.model_validate(
+            {
+                "task_type": "agent_chat",
+                "session": {
+                    "session_id": "active-target-session",
+                    "messages": [{"role": "user", "content": "它有哪些依赖？"}],
+                },
+                "context": {"project_name": "RushBa", "active_panel": "AgentChat"},
+                "payload": {"user_query": "它有哪些依赖？"},
+            }
+        )
+        bundle = build_context_bundle(
+            db=db,
+            request=request,
+            routing={
+                "intent": {"route_type": "direct_answer"},
+                "route": {"selected_tool_id": None},
+                "locale": {"final_output_language": "zh-CN"},
+            },
+            actual_task_type="agent_chat",
+        )
+
+    assert bundle["active_context"]["asset"]["selected_assets"] == ["/Game/Characters/BP_Player.BP_Player"]
+    assert bundle["active_context"]["asset"]["memory_source"] == "conversation_focus_memory"
+    assert bundle["agent_turn_context"]["context_sources"]["conversation_focus_memory"] is True
+    assert bundle["context_pack"]["conversation_layer"]["conversation_focus_memory"]["items"][0]["display_name"] == "BP_Player"

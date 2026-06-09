@@ -16,6 +16,8 @@ DEFAULT_KEEP_RECENT_MESSAGES = 6
 DEFAULT_MAX_SUMMARY_CHARS = 1800
 DEFAULT_LONG_TERM_MEMORY_LIMIT = 12
 ACTIVE_TARGET_MEMORY_VERSION = "active_target_memory_v1"
+CONVERSATION_FOCUS_MEMORY_VERSION = "conversation_focus_memory_v1"
+DEFAULT_CONVERSATION_FOCUS_LIMIT = 5
 
 
 def _clip(value: str, limit: int) -> str:
@@ -267,6 +269,66 @@ def read_active_target_memory(db: Session, session_id: str) -> dict[str, Any]:
     }
 
 
+def read_conversation_focus_memory(db: Session, session_id: str) -> dict[str, Any]:
+    session_model = db.get(SessionModel, session_id)
+    metadata = dict(session_model.metadata_json or {}) if session_model else {}
+    memory = metadata.get("conversation_focus_memory")
+    if not isinstance(memory, dict):
+        return {"status": "not_found", "version": CONVERSATION_FOCUS_MEMORY_VERSION, "items": []}
+    items = [item for item in list(memory.get("items") or []) if isinstance(item, dict)]
+    return {
+        **memory,
+        "version": memory.get("version") or CONVERSATION_FOCUS_MEMORY_VERSION,
+        "status": "available" if items else "not_found",
+        "items": items,
+    }
+
+
+def update_conversation_focus_memory(
+    db: Session,
+    session_id: str,
+    *,
+    context_bundle: dict[str, Any],
+    execution: dict[str, Any],
+    task_id: str | None = None,
+    limit: int = DEFAULT_CONVERSATION_FOCUS_LIMIT,
+) -> dict[str, Any]:
+    session_model = db.get(SessionModel, session_id)
+    if not session_model:
+        return {"status": "not_available", "reason": "session_not_found"}
+
+    item = _conversation_focus_item(context_bundle=context_bundle, execution=execution, task_id=task_id)
+    if not item:
+        return {"status": "not_triggered", "reason": "no_focus_candidate"}
+
+    metadata = dict(session_model.metadata_json or {})
+    existing = [
+        raw for raw in list((metadata.get("conversation_focus_memory") or {}).get("items") or []) if isinstance(raw, dict)
+    ]
+    items = _merge_conversation_focus_items(existing, item, limit=limit)
+    memory = {
+        "version": CONVERSATION_FOCUS_MEMORY_VERSION,
+        "status": "available",
+        "items": items,
+        "updated_at": now_utc().isoformat(),
+        "policy": (
+            "Stores compact session-local focus from the latest Agent turn for follow-up references; "
+            "no raw payloads, raw code, or cross-project profile data."
+        ),
+    }
+    metadata["conversation_focus_memory"] = memory
+    session_model.metadata_json = metadata
+    db.add(session_model)
+    db.commit()
+    db.refresh(session_model)
+    return {
+        "status": "updated",
+        "version": CONVERSATION_FOCUS_MEMORY_VERSION,
+        "item_count": len(items),
+        "latest_item": item,
+    }
+
+
 def update_active_target_memory(
     db: Session,
     session_id: str,
@@ -378,3 +440,95 @@ def _display_name(target_id: str) -> str:
     if "." in text:
         text = text.split(".", 1)[0]
     return text or target_id
+
+
+def _conversation_focus_item(
+    *,
+    context_bundle: dict[str, Any],
+    execution: dict[str, Any],
+    task_id: str | None,
+) -> dict[str, Any]:
+    input_summary = dict(context_bundle.get("input_summary") or {})
+    context_resolution = dict(context_bundle.get("context_resolution") or {})
+    tool_plan = dict(context_bundle.get("tool_plan_v1") or {})
+    user_view = dict(execution.get("user_view") or {})
+    target = _focus_target_from_context(context_bundle)
+    proposal_ids = [
+        str(item.get("proposal_id") or "")
+        for item in list(execution.get("action_proposals") or [])
+        if isinstance(item, dict) and item.get("proposal_id")
+    ][:5]
+    assistant_summary = _clip(
+        str(user_view.get("title") or "") + "\n" + str(user_view.get("text") or execution.get("assistant_message") or ""),
+        520,
+    )
+    if not target and not proposal_ids and not assistant_summary.strip():
+        return {}
+    now = now_utc().isoformat()
+    return {
+        "focus_id": f"focus_{uuid.uuid4().hex}",
+        "task_id": task_id,
+        "route_type": input_summary.get("route_type"),
+        "selected_tool_id": input_summary.get("selected_tool_id") or tool_plan.get("tool_id"),
+        "tool_plan_mode": tool_plan.get("mode"),
+        "target_kind": target.get("target_kind") or context_resolution.get("target_kind"),
+        "target_id": target.get("target_id") or context_resolution.get("target_id"),
+        "display_name": target.get("display_name") or _display_name(str(context_resolution.get("target_id") or "")),
+        "target_source": target.get("source") or context_resolution.get("source"),
+        "user_goal": _clip(str(input_summary.get("latest_user_message") or ""), 260),
+        "assistant_summary": assistant_summary,
+        "proposal_ids": proposal_ids,
+        "created_at": now,
+        "updated_at": now,
+        "source": "agent_turn_focus",
+    }
+
+
+def _focus_target_from_context(context_bundle: dict[str, Any]) -> dict[str, Any]:
+    context_resolution = dict(context_bundle.get("context_resolution") or {})
+    resolved_target_id = str(context_resolution.get("target_id") or "").strip()
+    if resolved_target_id:
+        return {
+            "target_kind": context_resolution.get("target_kind"),
+            "target_id": resolved_target_id,
+            "display_name": _display_name(resolved_target_id),
+            "source": context_resolution.get("source") or "context_resolution",
+        }
+    active_targets = dict((context_bundle.get("agent_turn_context") or {}).get("active_targets") or {})
+    preferred_kinds = ("asset", "blueprint", "widget", "level_actor", "material", "code", "log")
+    for kind in preferred_kinds:
+        target = active_targets.get(kind)
+        if not isinstance(target, dict) or not target.get("available"):
+            continue
+        target_id = _active_target_id(kind, target)
+        if target_id:
+            return {
+                "target_kind": kind,
+                "target_id": target_id,
+                "display_name": _display_name(target_id),
+                "source": "active_targets",
+            }
+    return {}
+
+
+def _merge_conversation_focus_items(
+    existing: list[dict[str, Any]],
+    incoming: dict[str, Any],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in [incoming, *existing]:
+        signature = (
+            str(item.get("target_kind") or ""),
+            str(item.get("target_id") or ""),
+            str(item.get("selected_tool_id") or ""),
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        deduped.append(item)
+        if len(deduped) >= limit:
+            break
+    return deduped

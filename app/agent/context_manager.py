@@ -12,7 +12,7 @@ from app.agent.context_pack import build_context_pack, context_pack_prompt_excer
 from app.agent.context_resolver import resolve_context
 from app.agent.intent_drafter import build_intent_draft
 from app.agent.intent_verifier import verify_intent
-from app.agent.memory_manager import read_active_target_memory
+from app.agent.memory_manager import read_active_target_memory, read_conversation_focus_memory
 from app.agent.tool_decision import build_tool_plan
 from app.agent.turn_context import build_agent_turn_context
 from app.agent.memory_providers import (
@@ -372,6 +372,7 @@ def _estimate_chars(bundle: dict[str, Any]) -> int:
             total += len(str(item.get("content") or item.get("summary") or ""))
     total += len(str(bundle.get("session_summary", {}).get("summary_text") or ""))
     total += len(str(bundle.get("active_target_memory") or ""))
+    total += len(str(bundle.get("conversation_focus_memory") or ""))
     for item in bundle.get("long_term_memory", {}).get("items", []):
         total += len(str(item.get("text") or ""))
     for item in bundle.get("memory", {}).get("items", []):
@@ -448,6 +449,97 @@ def apply_active_target_memory(
     return updated
 
 
+def apply_conversation_focus_memory(
+    active_context: dict[str, Any],
+    conversation_focus_memory: dict[str, Any],
+) -> dict[str, Any]:
+    if conversation_focus_memory.get("status") != "available":
+        return active_context
+    updated = dict(active_context)
+    for item in list(conversation_focus_memory.get("items") or []):
+        if not isinstance(item, dict):
+            continue
+        raw_kind = str(item.get("target_kind") or "")
+        target_id = str(item.get("target_id") or "").strip()
+        if not raw_kind or not target_id:
+            continue
+        kind = _focus_target_kind(raw_kind)
+        if kind == "asset":
+            context = dict(updated.get("asset") or {})
+            if not context.get("selected_assets"):
+                context["selected_assets"] = [target_id]
+                context["memory_source"] = "conversation_focus_memory"
+            updated["asset"] = context
+        elif kind == "blueprint":
+            context = dict(updated.get("blueprint") or {})
+            if not context.get("current_blueprint_path") and target_id.startswith("/Game/"):
+                context["current_blueprint_path"] = target_id
+                context["memory_source"] = "conversation_focus_memory"
+            elif not context.get("current_graph_name"):
+                context["current_graph_name"] = target_id
+                context["memory_source"] = "conversation_focus_memory"
+            updated["blueprint"] = context
+        elif kind == "widget":
+            context = dict(updated.get("widget") or {})
+            if not context.get("current_widget_blueprint_path") and target_id.startswith("/Game/"):
+                context["current_widget_blueprint_path"] = target_id
+                context["memory_source"] = "conversation_focus_memory"
+            elif not context.get("current_widget_name"):
+                context["current_widget_name"] = target_id
+                context["memory_source"] = "conversation_focus_memory"
+            updated["widget"] = context
+        elif kind == "level_actor":
+            context = dict(updated.get("level_actor") or {})
+            if not context.get("current_actor_reference") and not context.get("selected_actor_references"):
+                context["current_actor_reference"] = target_id
+                context["memory_source"] = "conversation_focus_memory"
+            updated["level_actor"] = context
+        elif kind == "material":
+            context = dict(updated.get("material") or {})
+            if not context.get("current_material_instance_path") and not context.get("selected_material_instance_paths"):
+                context["current_material_instance_path"] = target_id
+                context["memory_source"] = "conversation_focus_memory"
+            updated["material"] = context
+        elif kind == "code":
+            context = dict(updated.get("code") or {})
+            if not context.get("current_file") and not context.get("selected_files"):
+                context["current_file"] = target_id
+                context["memory_source"] = "conversation_focus_memory"
+            updated["code"] = context
+        elif kind == "log":
+            context = dict(updated.get("log") or {})
+            if not context.get("log_file_path") and not context.get("source"):
+                context["log_file_path"] = target_id
+                context["memory_source"] = "conversation_focus_memory"
+            updated["log"] = context
+    return updated
+
+
+def _focus_target_kind(raw_kind: str) -> str:
+    normalized = raw_kind.strip().lower()
+    aliases = {
+        "selected_asset": "asset",
+        "asset": "asset",
+        "current_blueprint": "blueprint",
+        "selected_blueprint": "blueprint",
+        "blueprint": "blueprint",
+        "current_widget": "widget",
+        "selected_widget": "widget",
+        "widget": "widget",
+        "selected_actor": "level_actor",
+        "level_actor": "level_actor",
+        "actor": "level_actor",
+        "selected_material_instance": "material",
+        "material_instance": "material",
+        "material": "material",
+        "current_code_file": "code",
+        "code": "code",
+        "current_log": "log",
+        "log": "log",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def build_context_bundle(
     *,
     db: Session,
@@ -510,6 +602,8 @@ def build_context_bundle(
     active_context = build_active_context(request=request, routing=routing)
     active_target_memory = read_active_target_memory(db, session_id)
     active_context = apply_active_target_memory(active_context, active_target_memory)
+    conversation_focus_memory = read_conversation_focus_memory(db, session_id)
+    active_context = apply_conversation_focus_memory(active_context, conversation_focus_memory)
     last_editor_operation = editor_operations_context["last_successful"]
     if isinstance(last_editor_operation, dict):
         last_target = dict(last_editor_operation.get("target") or {})
@@ -551,6 +645,7 @@ def build_context_bundle(
         "recent_messages": recent_messages,
         "session_summary": _session_summary(db, session_id),
         "active_target_memory": active_target_memory,
+        "conversation_focus_memory": conversation_focus_memory,
         "long_term_memory": long_term_memory_result.raw,
         "file_memory": file_memory_result.raw
         if file_memory_result

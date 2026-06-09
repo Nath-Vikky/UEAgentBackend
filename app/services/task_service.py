@@ -15,7 +15,7 @@ from app.agent.agent_dag import build_agent_dag_projection
 from app.agent.decision_trace import build_agent_decision_trace
 from app.agent.graph_adapter import graph_framework_readiness_report, review_fix_validate_graph_spec
 from app.agent.llm_intent_drafter import apply_llm_intent_draft, build_llm_intent_draft_messages
-from app.agent.memory_manager import update_active_target_memory, update_session_memory
+from app.agent.memory_manager import update_active_target_memory, update_conversation_focus_memory, update_session_memory
 from app.agent.multi_agent import build_multi_agent_lite_trace
 from app.agent.react_trace import build_react_v2_trace
 from app.agent.response_composer import compose_unified_response
@@ -1254,6 +1254,17 @@ class TaskService:
         execution["debug_view"]["memory_summary"] = {
             **dict(execution["debug_view"].get("memory_summary") or {}),
             "updated_active_target_memory": active_target_memory_update,
+        }
+        conversation_focus_memory_update = update_conversation_focus_memory(
+            self.db,
+            request.session.session_id,
+            context_bundle=context_bundle,
+            execution=execution,
+            task_id=task_id,
+        )
+        execution["debug_view"]["memory_summary"] = {
+            **dict(execution["debug_view"].get("memory_summary") or {}),
+            "updated_conversation_focus_memory": conversation_focus_memory_update,
         }
         if persist_session_history and execution["assistant_message"].strip():
             append_messages(

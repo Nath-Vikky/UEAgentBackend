@@ -8720,6 +8720,56 @@ Frontend impact: no mandatory change. Existing Project Inventory sync and
 active editor context submission already provide the data needed by this
 memory layer.
 
+## 2026-06-09 Update: Conversation Focus Memory v1
+
+The backend also keeps a compact session-local "conversation focus" memory.
+Active Target Memory stores the latest editor target from UE context;
+Conversation Focus Memory stores what the last Agent turn was about after the
+answer was synthesized and checked.
+
+It is designed for follow-up prompts such as:
+
+- "它有哪些依赖？"
+- "继续检查刚才那个资产"
+- "now rename it"
+- "把上一步生成的 Proposal 再解释一下"
+
+What it stores:
+
+- route type and selected tool id.
+- resolved target kind/id/display name when available.
+- compact user goal and assistant summary.
+- pending Proposal ids when the last turn created Proposals.
+- at most the latest few focus items in the same session.
+
+What it does not store:
+
+- raw C++ source code.
+- raw asset/MCP payloads.
+- full LLM prompts or private project files.
+- cross-project user profile data.
+
+Priority:
+
+- Fresh UE frontend active context still wins.
+- Active Target Memory is checked before Conversation Focus Memory.
+- Conversation Focus Memory is only used when the current request lacks a
+  concrete selected/current target.
+- Missing Context Gate still refuses to invent a target if no fresh context,
+  active target, or conversation focus is available.
+
+Debug fields:
+
+- `data.context_pack.conversation_layer.conversation_focus_memory`
+- `debug_view.context_pack.conversation_layer.conversation_focus_memory`
+- `debug_view.memory_summary.updated_conversation_focus_memory`
+- `debug_view.context_pack.debug_summary.conversation_focus_count`
+- `debug_view.agent_turn_context.previous_conversation_focus`
+
+Frontend impact: no mandatory change. The layer is written and consumed by the
+backend; the UE plugin can keep sending the same active context and Proposal
+payloads.
+
 ## 2026-06-09 Update: Missing Context Gate v1
 
 Agent Chat now stops selected/current-target questions before tool execution
