@@ -137,3 +137,47 @@ def test_agent_dag_quality_gate_blocks_internal_tool_leak() -> None:
     assert critic_node["blocking_flags"] == ["remaining_internal_tooling_detected"]
     assert dag["summary"]["run_status"] == "quality_blocked"
     assert dag["summary"]["blocking_flags"] == ["remaining_internal_tooling_detected"]
+
+
+def test_agent_dag_quality_gate_blocks_tool_plan_self_check_error() -> None:
+    request = UnifiedTaskRequest.model_validate(
+        {
+            "task_type": "agent_chat",
+            "session": {"session_id": "s1", "messages": [{"role": "user", "content": "Rename this asset"}]},
+            "payload": {"user_query": "Rename this asset"},
+        }
+    )
+
+    dag = build_agent_dag_projection(
+        request=request,
+        routing={
+            "intent": {"route_type": "single_tool", "intent_type": "editor_write_request"},
+            "route": {"selected_tool_id": "editor_rename_asset"},
+        },
+        context_bundle={
+            "tool_plan_v1": {
+                "tool_id": "editor_rename_asset",
+                "mode": "read_only",
+                "side_effect_level": "confirmed_write",
+                "requires_proposal": False,
+            },
+            "tool_plan_self_check": {
+                "status": "error",
+                "error_count": 1,
+                "warning_count": 0,
+                "failed_check_ids": ["write_tool_requires_proposal"],
+            },
+        },
+        skill_runtime={"skill_id": "ToolPlanner"},
+        retrieval_trace={"mode": "not_used", "retrieved_docs": []},
+        data={"response_synthesizer": {"user_view_ready": True}},
+        debug_view={"response_critic": {"answer_ok": True}},
+        action_proposals=[],
+        task_status="completed",
+        finish_reason="completed",
+    )
+
+    tool_plan_node = next(node for node in dag["nodes"] if node["node_id"] == "tool_plan")
+    assert tool_plan_node["quality_gate"]["status"] == "block"
+    assert tool_plan_node["blocking_flags"] == ["tool_plan_self_check:write_tool_requires_proposal"]
+    assert dag["summary"]["run_status"] == "quality_blocked"

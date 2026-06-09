@@ -8613,6 +8613,11 @@ Quality gates:
 - `block`: the node detected a hard safety or quality issue, such as missing
   active context or remaining internal tool names in User View.
 
+The `tool_plan` node also consumes `tool_plan_self_check`. If that diagnostic
+reports an error, the DAG marks the ToolPlanner quality gate as blocked and
+records the failed check id in `blocking_flags`. This is still a Debug/eval
+projection only; it does not execute or cancel UE editor writes by itself.
+
 Frontend impact: optional only. Existing UI can ignore `debug_view.agent_dag`.
 If a future debug panel wants to visualize the Agent chain, this field is the
 preferred source.

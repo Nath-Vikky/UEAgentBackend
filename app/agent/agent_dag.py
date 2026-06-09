@@ -30,6 +30,12 @@ def build_agent_dag_projection(
     verified_intent = dict(context_bundle.get("verified_intent") or {})
     context_resolution = dict(context_bundle.get("context_resolution") or {})
     tool_plan = dict(context_bundle.get("tool_plan_v1") or {})
+    tool_plan_self_check = dict(
+        context_bundle.get("tool_plan_self_check")
+        or data.get("tool_plan_self_check")
+        or debug_view.get("tool_plan_self_check")
+        or {}
+    )
     response_synthesizer = dict(data.get("response_synthesizer") or debug_view.get("response_synthesizer") or {})
     response_critic = dict(data.get("response_critic") or debug_view.get("response_critic") or {})
     retrieved_docs = list(retrieval_trace.get("retrieved_docs") or [])
@@ -97,6 +103,10 @@ def build_agent_dag_projection(
                 "side_effect_level": tool_plan.get("side_effect_level"),
                 "requires_proposal": tool_plan.get("requires_proposal"),
                 "skill_id": skill_runtime.get("skill_id"),
+                "self_check_status": tool_plan_self_check.get("status"),
+                "self_check_error_count": tool_plan_self_check.get("error_count"),
+                "self_check_warning_count": tool_plan_self_check.get("warning_count"),
+                "self_check_failed_check_ids": tool_plan_self_check.get("failed_check_ids", []),
             },
         ),
         _node(
@@ -232,6 +242,7 @@ def _quality_gate(node_id: str, status: str, evidence: dict[str, Any]) -> dict[s
     elif node_id == "tool_plan":
         route_type = str(evidence.get("route_type") or "")
         requires_tool = route_type == "single_tool"
+        self_check_status = str(evidence.get("self_check_status") or "")
         _add_check(
             checks,
             "tool_selected_when_required",
@@ -239,6 +250,14 @@ def _quality_gate(node_id: str, status: str, evidence: dict[str, Any]) -> dict[s
             "single_tool_route_requires_tool_id",
             severity="block",
         )
+        if self_check_status:
+            _add_check(
+                checks,
+                "tool_plan_self_check_passed",
+                self_check_status not in {"error", "warning"},
+                _tool_plan_self_check_reason(evidence),
+                severity="block" if self_check_status == "error" else "warning",
+            )
     elif node_id == "evidence_or_tool":
         proposal_count = int(evidence.get("proposal_count") or 0)
         _add_check(
@@ -315,6 +334,16 @@ def _add_check(
             "severity": "pass" if passed else severity,
         }
     )
+
+
+def _tool_plan_self_check_reason(evidence: dict[str, Any]) -> str:
+    failed = list(evidence.get("self_check_failed_check_ids") or [])
+    for item in failed:
+        text = str(item).strip()
+        if text:
+            return f"tool_plan_self_check:{text}"
+    status = str(evidence.get("self_check_status") or "unknown")
+    return f"tool_plan_self_check:{status}"
 
 
 def _blocking_flags(nodes: list[dict[str, Any]]) -> list[str]:
