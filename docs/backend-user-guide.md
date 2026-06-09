@@ -8928,3 +8928,32 @@ Safety boundary:
 Frontend impact: no mandatory change if the client already renders
 `follow_up` and `user_view.quick_actions[]`. Existing Proposal confirmation and
 result-reporting flows can be reused.
+
+## 2026-06-09 Update: Context Route Refinement v2
+
+`context_route_refinement` can now also refine an already selected broad
+read-only context tool when a concrete active target has been resolved.
+
+Examples:
+
+- `query_project_inventory` + resolved selected asset -> `mcp_get_asset_details`
+- `mcp_get_selected_assets` + resolved selected asset -> `mcp_get_asset_details`
+- `mcp_get_selected_actors` + resolved actor -> `mcp_get_level_actor_details`
+- `mcp_get_widget_tree` + resolved widget -> `mcp_get_umg_widget_details`
+
+This is intended for prompts such as `Analyze this asset` / `分析一下这个资产`.
+The first router may choose a broad inventory path, but the second-pass context
+refiner can upgrade it to a focused read-only detail tool. If live MCP/TCP is
+unavailable, the same tool can fall back to Project Inventory through the local
+Tool Registry read-only executor.
+
+Safety boundary:
+
+- Only broad read-only tools are upgraded.
+- Confirmed-write / Proposal tools are not overridden.
+- Missing active context still routes to the Missing Context Gate instead of
+  guessing a target.
+
+Frontend impact: no mandatory change. Existing User View can keep rendering the
+single-tool result; Debug View can optionally show
+`context_route_refinement.reason = upgraded_broad_read_tool_to_detail_tool`.

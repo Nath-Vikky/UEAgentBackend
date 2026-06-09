@@ -737,10 +737,12 @@ def test_agent_chat_context_bundle_includes_inventory_selected_asset_details(cli
 
     assert snapshot.status_code == 200
     assert response.status_code == 200
-    assert body["intent"]["route_type"] == "project_qa"
-    assert body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
-    assert body["data"]["inventory"]["summary"]["selected_asset_context_used"] is True
-    assert body["data"]["inventory"]["items"][0]["asset_name"] == "BP_PlayerCharacter"
+    assert body["intent"]["route_type"] == "single_tool"
+    assert body["debug_view"]["route"]["selected_tool_id"] == "mcp_get_asset_details"
+    assert body["debug_view"]["route"]["previous_selected_tool_id"] == "query_project_inventory"
+    assert body["debug_view"]["context_route_refinement"]["reason"] == "upgraded_broad_read_tool_to_detail_tool"
+    assert body["data"]["local_tool"]["tool_id"] == "mcp_get_asset_details"
+    assert body["data"]["local_tool"]["result"]["item"]["asset_name"] == "BP_PlayerCharacter"
     assert inventory_context["status"] == "available"
     assert inventory_context["selected_assets"][0]["asset_name"] == "BP_PlayerCharacter"
     assert "FollowCamera" in inventory_context["selected_assets"][0]["components"]

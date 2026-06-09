@@ -25,6 +25,13 @@ CONTEXT_TARGET_READ_TOOLS: dict[str, tuple[str, ...]] = {
     "current_code_file": ("read_project_file",),
 }
 
+COARSE_CONTEXT_READ_TOOLS = {
+    "query_project_inventory",
+    "mcp_get_selected_assets",
+    "mcp_get_selected_actors",
+    "mcp_get_widget_tree",
+}
+
 
 def refine_route_from_resolved_context(
     *,
@@ -39,14 +46,24 @@ def refine_route_from_resolved_context(
     """
 
     route = dict(routing.get("route") or {})
-    if route.get("selected_tool_id"):
-        return (routing, _report("skipped", "selected_tool_already_present"))
-
     resolution = dict(context_bundle.get("context_resolution") or {})
     if resolution.get("status") != "resolved":
         return (routing, _report("skipped", "context_not_resolved"))
 
     target_kind = str(resolution.get("target_kind") or "")
+    selected_tool_id = str(route.get("selected_tool_id") or "")
+    if selected_tool_id:
+        upgraded = _upgrade_existing_context_read_tool(
+            routing=routing,
+            route=route,
+            selected_tool_id=selected_tool_id,
+            target_kind=target_kind,
+            free_chat=free_chat,
+        )
+        if upgraded is not None:
+            return upgraded
+        return (routing, _report("skipped", "selected_tool_already_present", selected_tool_id=selected_tool_id))
+
     candidates = CONTEXT_TARGET_READ_TOOLS.get(target_kind, ())
     selected_tool_id = _first_allowed_read_tool(candidates, free_chat=free_chat)
     if not selected_tool_id:
@@ -84,6 +101,72 @@ def refine_route_from_resolved_context(
             "selected_read_only_tool_from_resolved_context",
             target_kind=target_kind,
             selected_tool_id=selected_tool_id,
+        ),
+    )
+
+
+def _upgrade_existing_context_read_tool(
+    *,
+    routing: dict[str, Any],
+    route: dict[str, Any],
+    selected_tool_id: str,
+    target_kind: str,
+    free_chat: bool,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Upgrade broad selected-context readers to detail readers when safe."""
+
+    if selected_tool_id not in COARSE_CONTEXT_READ_TOOLS:
+        return None
+
+    candidates = CONTEXT_TARGET_READ_TOOLS.get(target_kind, ())
+    upgraded_tool_id = _first_allowed_read_tool(candidates, free_chat=free_chat)
+    if not upgraded_tool_id or upgraded_tool_id == selected_tool_id:
+        return None
+
+    selected_spec = get_tool_spec(selected_tool_id)
+    upgraded_spec = get_tool_spec(upgraded_tool_id)
+    if not selected_spec or not upgraded_spec:
+        return None
+    if selected_spec.side_effect_level != "read_only" or upgraded_spec.side_effect_level != "read_only":
+        return None
+
+    route_type = (
+        upgraded_spec.route_preference
+        if upgraded_spec.route_preference in {"single_tool", "project_qa"}
+        else "single_tool"
+    )
+    reason = "Resolved active editor context upgraded a broad read-only tool to a focused detail tool."
+    refined = {
+        "locale": dict(routing.get("locale") or {}),
+        "intent": {
+            **dict(routing.get("intent") or {}),
+            "intent_type": "task_request" if route_type == "single_tool" else "project_qa",
+            "knowledge_relevance": "none",
+            "requires_rag": False,
+            "requires_tool": True,
+            "route_type": route_type,
+            "reason": reason,
+        },
+        "route": {
+            **route,
+            "route_type": route_type,
+            "selected_tool_id": upgraded_tool_id,
+            "previous_selected_tool_id": selected_tool_id,
+            "candidate_tool_ids": list(dict.fromkeys([upgraded_tool_id, *candidates, selected_tool_id])),
+            "selected_context_query": True,
+            "decision_source": "context_resolution_tool_upgrade",
+            "planner_confidence": max(float(route.get("planner_confidence") or 0.0), 0.78),
+            "route_reason": reason,
+        },
+    }
+    return (
+        refined,
+        _report(
+            "applied",
+            "upgraded_broad_read_tool_to_detail_tool",
+            target_kind=target_kind,
+            selected_tool_id=selected_tool_id,
+            upgraded_tool_id=upgraded_tool_id,
         ),
     )
 
