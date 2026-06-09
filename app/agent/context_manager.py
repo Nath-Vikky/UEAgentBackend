@@ -383,7 +383,7 @@ def _estimate_chars(bundle: dict[str, Any]) -> int:
     return total
 
 
-def _apply_active_target_memory(
+def apply_active_target_memory(
     active_context: dict[str, Any],
     active_target_memory: dict[str, Any],
 ) -> dict[str, Any]:
@@ -509,7 +509,7 @@ def build_context_bundle(
     )
     active_context = build_active_context(request=request, routing=routing)
     active_target_memory = read_active_target_memory(db, session_id)
-    active_context = _apply_active_target_memory(active_context, active_target_memory)
+    active_context = apply_active_target_memory(active_context, active_target_memory)
     last_editor_operation = editor_operations_context["last_successful"]
     if isinstance(last_editor_operation, dict):
         last_target = dict(last_editor_operation.get("target") or {})

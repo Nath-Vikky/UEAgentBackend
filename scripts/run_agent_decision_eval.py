@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.agent.context_manager import apply_active_target_memory
+from app.agent.context_route_refiner import refine_route_from_resolved_context
 from app.agent.context_resolver import resolve_context
 from app.agent.intent_drafter import build_intent_draft
 from app.agent.intent_verifier import verify_intent
@@ -48,30 +50,28 @@ def evaluate_agent_decision_case(case: dict[str, Any]) -> dict[str, Any]:
     request = UnifiedTaskRequest(**case["request"])
     routing = classify_request(request)
     context_bundle = _context_bundle_for_case(case)
-    context_bundle["agent_turn_context"] = build_agent_turn_context(
+    intent_draft, context_resolution, verified_intent, tool_plan = _run_decision_chain(
         request=request,
         routing=routing,
         context_bundle=context_bundle,
     )
-    intent_draft = build_intent_draft(request=request, routing=routing, context_bundle=context_bundle)
-    context_resolution = resolve_context(
-        request=request,
-        routing=routing,
-        context_bundle=context_bundle,
-        intent_draft=intent_draft,
-    )
-    verified_intent = verify_intent(
-        draft=intent_draft,
+    context_bundle["context_resolution"] = context_resolution
+    refined_routing, refinement_report = refine_route_from_resolved_context(
         routing=routing,
         context_bundle=context_bundle,
         free_chat=request.task_type in {"agent_chat", "project_qa"},
     )
-    tool_plan = build_tool_plan(
-        intent_draft=intent_draft,
-        verified_intent=verified_intent,
-        context_resolution=context_resolution,
-        routing=routing,
-    )
+    if refinement_report.get("status") == "applied":
+        routing = refined_routing
+        context_bundle = _context_bundle_for_case(case)
+        context_bundle["context_route_refinement"] = refinement_report
+        intent_draft, context_resolution, verified_intent, tool_plan = _run_decision_chain(
+            request=request,
+            routing=routing,
+            context_bundle=context_bundle,
+        )
+    else:
+        context_bundle["context_route_refinement"] = refinement_report
 
     route = dict(routing.get("route") or {})
     intent = dict(routing.get("intent") or {})
@@ -110,10 +110,44 @@ def evaluate_agent_decision_case(case: dict[str, Any]) -> dict[str, Any]:
         "debug": {
             "intent_draft": intent_draft,
             "context_resolution": context_resolution,
+            "context_route_refinement": refinement_report,
             "verified_intent": verified_intent,
             "tool_plan": tool_plan,
         },
     }
+
+
+def _run_decision_chain(
+    *,
+    request: UnifiedTaskRequest,
+    routing: dict[str, Any],
+    context_bundle: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    context_bundle["agent_turn_context"] = build_agent_turn_context(
+        request=request,
+        routing=routing,
+        context_bundle=context_bundle,
+    )
+    intent_draft = build_intent_draft(request=request, routing=routing, context_bundle=context_bundle)
+    context_resolution = resolve_context(
+        request=request,
+        routing=routing,
+        context_bundle=context_bundle,
+        intent_draft=intent_draft,
+    )
+    verified_intent = verify_intent(
+        draft=intent_draft,
+        routing=routing,
+        context_bundle=context_bundle,
+        free_chat=request.task_type in {"agent_chat", "project_qa"},
+    )
+    tool_plan = build_tool_plan(
+        intent_draft=intent_draft,
+        verified_intent=verified_intent,
+        context_resolution=context_resolution,
+        routing=routing,
+    )
+    return (intent_draft, context_resolution, verified_intent, tool_plan)
 
 
 def summarize_agent_decision_cases(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -147,6 +181,10 @@ def summarize_agent_decision_cases(results: list[dict[str, Any]]) -> dict[str, A
 def _context_bundle_for_case(case: dict[str, Any]) -> dict[str, Any]:
     context = dict(case.get("context_bundle") or {})
     context.setdefault("active_context", {})
+    context["active_context"] = apply_active_target_memory(
+        dict(context.get("active_context") or {}),
+        dict(context.get("active_target_memory") or {}),
+    )
     context.setdefault("project_inventory_context", {})
     context.setdefault("retrieval_context", {})
     context.setdefault("tool_context", [])

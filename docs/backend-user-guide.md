@@ -8653,6 +8653,15 @@ Debug fields:
 - `debug_view.context_bundle.active_target_memory`
 - `debug_view.memory_summary.updated_active_target_memory`
 - `debug_view.context_pack.debug_summary.active_target_memory_count`
+- `debug_view.context_route_refinement`
+- `data.context_route_refinement`
+
+`context_route_refinement` is a small safety refinement after context
+resolution. If the initial router did not select a tool, but the Agent already
+resolved a concrete active editor target, the backend may choose a safe
+read-only inspection tool such as `mcp_get_asset_details`. It never selects
+write tools. Write requests such as "rename this asset" still use the existing
+Proposal confirmation flow.
 
 Frontend impact: no mandatory change. Existing Project Inventory sync and
 active editor context submission already provide the data needed by this

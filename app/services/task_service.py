@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.agent.context_builder import build_context_summary
 from app.agent.context_manager import build_context_bundle, context_bundle_prompt_excerpt
 from app.agent.context_pack import build_context_pack
+from app.agent.context_route_refiner import refine_route_from_resolved_context
 from app.agent.agent_dag import build_agent_dag_projection
 from app.agent.decision_trace import build_agent_decision_trace
 from app.agent.graph_adapter import graph_framework_readiness_report, review_fix_validate_graph_spec
@@ -1033,6 +1034,31 @@ class TaskService:
         )
         return (refined_routing, refined_context_bundle, actual_task_type)
 
+    def _apply_context_route_refinement(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        routing: dict[str, Any],
+        context_bundle: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any], str]:
+        refined_routing, report = refine_route_from_resolved_context(
+            routing=routing,
+            context_bundle=context_bundle,
+            free_chat=request.task_type in {"agent_chat", "project_qa"},
+        )
+        if report.get("status") != "applied":
+            context_bundle["context_route_refinement"] = report
+            return (routing, context_bundle, self._actual_task_type(request.task_type, routing))
+
+        actual_task_type = self._actual_task_type(request.task_type, refined_routing)
+        refined_context_bundle = self._build_context_bundle(
+            request=request,
+            routing=refined_routing,
+            actual_task_type=actual_task_type,
+        )
+        refined_context_bundle["context_route_refinement"] = report
+        return (refined_routing, refined_context_bundle, actual_task_type)
+
     def create_task(
         self,
         request: UnifiedTaskRequest,
@@ -1077,6 +1103,11 @@ class TaskService:
             routing=routing,
             context_bundle=context_bundle,
             chat_config=chat_config,
+        )
+        routing, context_bundle, actual_task_type = self._apply_context_route_refinement(
+            request=request,
+            routing=routing,
+            context_bundle=context_bundle,
         )
         persist_session_history = self._should_persist_session_history(
             request.task_type,
@@ -1124,6 +1155,7 @@ class TaskService:
         execution["debug_view"]["intent_draft"] = context_bundle.get("intent_draft", {})
         execution["debug_view"]["llm_intent_draft"] = context_bundle.get("llm_intent_draft", {})
         execution["debug_view"]["context_resolution"] = context_bundle.get("context_resolution", {})
+        execution["debug_view"]["context_route_refinement"] = context_bundle.get("context_route_refinement", {})
         execution["debug_view"]["verified_intent"] = context_bundle.get("verified_intent", {})
         execution["debug_view"]["tool_plan_v1"] = context_bundle.get("tool_plan_v1", {})
         execution["debug_view"]["tool_registry_protocol"] = tool_protocol_summary()
@@ -1146,6 +1178,7 @@ class TaskService:
         execution["data"]["intent_draft"] = context_bundle.get("intent_draft", {})
         execution["data"]["llm_intent_draft"] = context_bundle.get("llm_intent_draft", {})
         execution["data"]["context_resolution"] = context_bundle.get("context_resolution", {})
+        execution["data"]["context_route_refinement"] = context_bundle.get("context_route_refinement", {})
         execution["data"]["verified_intent"] = context_bundle.get("verified_intent", {})
         execution["data"]["tool_plan_v1"] = context_bundle.get("tool_plan_v1", {})
         execution["planner_diagnostics"] = {
@@ -1539,6 +1572,7 @@ class TaskService:
             "context_budget_report": resolved_context_bundle.get("context_budget_report", {}),
             "intent_draft": resolved_context_bundle.get("intent_draft", {}),
             "context_resolution": resolved_context_bundle.get("context_resolution", {}),
+            "context_route_refinement": resolved_context_bundle.get("context_route_refinement", {}),
             "verified_intent": resolved_context_bundle.get("verified_intent", {}),
             "tool_plan_v1": resolved_context_bundle.get("tool_plan_v1", {}),
             "active_context": resolved_context_bundle.get("active_context", {}),
