@@ -388,6 +388,8 @@ def build_context_bundle(
     routing: dict[str, Any],
     settings: Settings | None = None,
     actual_task_type: str | None = None,
+    intent_draft_override: dict[str, Any] | None = None,
+    llm_intent_draft_report: dict[str, Any] | None = None,
     char_budget: int = DEFAULT_CHAR_BUDGET,
     recent_message_limit: int = DEFAULT_RECENT_MESSAGES,
     tool_task_limit: int = DEFAULT_TOOL_TASKS,
@@ -533,11 +535,13 @@ def build_context_bundle(
         routing=routing,
         context_bundle=bundle,
     )
-    bundle["intent_draft"] = build_intent_draft(
+    bundle["intent_draft"] = intent_draft_override or build_intent_draft(
         request=request,
         routing=routing,
         context_bundle=bundle,
     )
+    if llm_intent_draft_report:
+        bundle["llm_intent_draft"] = llm_intent_draft_report
     bundle["context_resolution"] = resolve_context(
         request=request,
         routing=routing,

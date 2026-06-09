@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     )
     router_signal_min_confidence: float = 0.72
     router_signal_min_margin: float = 8.0
+    agent_intent_drafter_mode: Literal["disabled", "shadow", "active"] = "disabled"
+    agent_intent_drafter_min_confidence: float = 0.78
     agent_graph_framework: Literal["framework_neutral", "langgraph_optional", "langgraph_active"] = (
         "framework_neutral"
     )

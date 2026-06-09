@@ -8564,3 +8564,43 @@ the DAG never means the backend executed a UE write.
 Frontend impact: optional only. Existing UI can ignore `debug_view.agent_dag`.
 If a future debug panel wants to visualize the Agent chain, this field is the
 preferred source.
+
+## 2026-06-09 Update: Optional LLM Intent Drafter v1
+
+The Agent chain now has an optional LLM intent-drafting adapter. It is disabled
+by default, so existing deterministic routing remains the normal behavior.
+
+Configuration:
+
+```env
+AGENT_INTENT_DRAFTER_MODE=disabled
+AGENT_INTENT_DRAFTER_MIN_CONFIDENCE=0.78
+```
+
+Modes:
+
+- `disabled`: default. Only deterministic router projection is used.
+- `shadow`: calls the configured LLM and records `llm_intent_draft`, but does
+  not change routing or execution.
+- `active`: may apply the LLM draft only after JSON parsing, confidence gating,
+  tool allow-list validation, and side-effect safety checks.
+
+Safety rules:
+
+- Unknown tool ids are rejected.
+- Low-confidence drafts are ignored.
+- A newly suggested confirmed-write tool is blocked unless deterministic rules
+  already detected a write intent. Even then, editor writes still create
+  Proposals and require user confirmation.
+- LLM draft failure, invalid JSON, missing API key, or network failure falls
+  back to deterministic routing.
+
+Debug fields:
+
+- `debug_view.llm_intent_draft`
+- `debug_view.intent_draft`
+- `debug_view.verified_intent`
+- `debug_view.agent_dag.nodes[].evidence.llm_drafter_status`
+
+Frontend impact: no mandatory change. This feature only affects backend
+decision diagnostics unless explicitly enabled in `.env`.

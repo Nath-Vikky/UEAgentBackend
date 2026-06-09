@@ -26,6 +26,7 @@ def build_agent_dag_projection(
     intent = dict(routing.get("intent") or {})
     route = dict(routing.get("route") or {})
     intent_draft = dict(context_bundle.get("intent_draft") or {})
+    llm_intent_draft = dict(context_bundle.get("llm_intent_draft") or {})
     verified_intent = dict(context_bundle.get("verified_intent") or {})
     context_resolution = dict(context_bundle.get("context_resolution") or {})
     tool_plan = dict(context_bundle.get("tool_plan_v1") or {})
@@ -56,6 +57,9 @@ def build_agent_dag_projection(
                 "intent_type": intent_draft.get("intent_type") or intent.get("intent_type"),
                 "target_kind": intent_draft.get("target_kind"),
                 "confidence": intent_draft.get("confidence"),
+                "draft_source": intent_draft.get("source"),
+                "llm_drafter_status": llm_intent_draft.get("status"),
+                "llm_drafter_applied": llm_intent_draft.get("applied"),
             },
         ),
         _node(

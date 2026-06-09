@@ -13,6 +13,7 @@ from app.agent.context_pack import build_context_pack
 from app.agent.agent_dag import build_agent_dag_projection
 from app.agent.decision_trace import build_agent_decision_trace
 from app.agent.graph_adapter import graph_framework_readiness_report, review_fix_validate_graph_spec
+from app.agent.llm_intent_drafter import apply_llm_intent_draft, build_llm_intent_draft_messages
 from app.agent.memory_manager import update_session_memory
 from app.agent.multi_agent import build_multi_agent_lite_trace
 from app.agent.react_trace import build_react_v2_trace
@@ -854,6 +855,8 @@ class TaskService:
         request: UnifiedTaskRequest,
         routing: dict[str, Any],
         actual_task_type: str | None = None,
+        intent_draft_override: dict[str, Any] | None = None,
+        llm_intent_draft_report: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         bundle = build_context_bundle(
             db=self.db,
@@ -861,6 +864,8 @@ class TaskService:
             routing=routing,
             settings=self.settings,
             actual_task_type=actual_task_type,
+            intent_draft_override=intent_draft_override,
+            llm_intent_draft_report=llm_intent_draft_report,
         )
         active_context = dict(bundle.get("active_context") or {})
         active_context["mcp"] = build_mcp_adapter_status(self.settings)
@@ -989,6 +994,45 @@ class TaskService:
         bundle["context_pack"] = build_context_pack(bundle)
         return bundle
 
+    def _apply_llm_intent_drafter(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        routing: dict[str, Any],
+        context_bundle: dict[str, Any],
+        chat_config: ChatRuntimeConfig,
+    ) -> tuple[dict[str, Any], dict[str, Any], str]:
+        mode = self.settings.agent_intent_drafter_mode
+        if mode == "disabled" or request.task_type not in {"agent_chat", "project_qa"}:
+            return (routing, context_bundle, self._actual_task_type(request.task_type, routing))
+
+        llm_result = self.llm_service.complete_json_object(
+            messages=build_llm_intent_draft_messages(
+                request=request,
+                routing=routing,
+                context_bundle=context_bundle,
+                output_language=routing["locale"]["final_output_language"],
+            ),
+            config=chat_config,
+        )
+        outcome = apply_llm_intent_draft(
+            deterministic_draft=dict(context_bundle.get("intent_draft") or {}),
+            routing=routing,
+            llm_result=llm_result,
+            mode=mode,
+            min_confidence=self.settings.agent_intent_drafter_min_confidence,
+        )
+        refined_routing = outcome["routing"]
+        actual_task_type = self._actual_task_type(request.task_type, refined_routing)
+        refined_context_bundle = self._build_context_bundle(
+            request=request,
+            routing=refined_routing,
+            actual_task_type=actual_task_type,
+            intent_draft_override=outcome["intent_draft"],
+            llm_intent_draft_report=outcome["report"],
+        )
+        return (refined_routing, refined_context_bundle, actual_task_type)
+
     def create_task(
         self,
         request: UnifiedTaskRequest,
@@ -1027,6 +1071,12 @@ class TaskService:
             request=request,
             routing=routing,
             actual_task_type=actual_task_type,
+        )
+        routing, context_bundle, actual_task_type = self._apply_llm_intent_drafter(
+            request=request,
+            routing=routing,
+            context_bundle=context_bundle,
+            chat_config=chat_config,
         )
         persist_session_history = self._should_persist_session_history(
             request.task_type,
@@ -1072,6 +1122,7 @@ class TaskService:
         execution["debug_view"]["agent_turn_context"] = context_bundle.get("agent_turn_context", {})
         execution["debug_view"]["context_budget_report"] = context_bundle.get("context_budget_report", {})
         execution["debug_view"]["intent_draft"] = context_bundle.get("intent_draft", {})
+        execution["debug_view"]["llm_intent_draft"] = context_bundle.get("llm_intent_draft", {})
         execution["debug_view"]["context_resolution"] = context_bundle.get("context_resolution", {})
         execution["debug_view"]["verified_intent"] = context_bundle.get("verified_intent", {})
         execution["debug_view"]["tool_plan_v1"] = context_bundle.get("tool_plan_v1", {})
@@ -1093,6 +1144,7 @@ class TaskService:
         execution["data"]["agent_turn_context"] = context_bundle.get("agent_turn_context", {})
         execution["data"]["context_budget_report"] = context_bundle.get("context_budget_report", {})
         execution["data"]["intent_draft"] = context_bundle.get("intent_draft", {})
+        execution["data"]["llm_intent_draft"] = context_bundle.get("llm_intent_draft", {})
         execution["data"]["context_resolution"] = context_bundle.get("context_resolution", {})
         execution["data"]["verified_intent"] = context_bundle.get("verified_intent", {})
         execution["data"]["tool_plan_v1"] = context_bundle.get("tool_plan_v1", {})

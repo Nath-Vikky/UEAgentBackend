@@ -52,6 +52,7 @@ def build_agent_decision_trace(
     context_budget_report = dict(context_bundle.get("context_budget_report") or {})
     agent_turn_context = dict(context_bundle.get("agent_turn_context") or {})
     intent_draft = dict(context_bundle.get("intent_draft") or {})
+    llm_intent_draft = dict(context_bundle.get("llm_intent_draft") or {})
     context_resolution = dict(context_bundle.get("context_resolution") or {})
     verified_intent = dict(context_bundle.get("verified_intent") or {})
     tool_plan_v1 = dict(context_bundle.get("tool_plan_v1") or {})
@@ -116,6 +117,7 @@ def build_agent_decision_trace(
                 "selected_tool_id": route.get("selected_tool_id"),
                 "project_signal_strength": route.get("project_signal_strength"),
                 "intent_draft": intent_draft,
+                "llm_intent_draft": llm_intent_draft,
                 "context_resolution": context_resolution,
                 "verified_intent": verified_intent,
                 "tool_plan_v1": tool_plan_v1,

@@ -64,6 +64,8 @@ def test_settings_default_to_lexical_first_rag() -> None:
     assert settings.web_search_enabled is False
     assert settings.web_search_provider == "disabled"
     assert settings.agent_graph_framework == "framework_neutral"
+    assert settings.agent_intent_drafter_mode == "disabled"
+    assert settings.agent_intent_drafter_min_confidence == 0.78
     assert settings.local_memory_enabled is False
     assert settings.local_memory_root == "./runtime/memory"
 
@@ -76,6 +78,22 @@ def test_settings_accept_agent_graph_framework_override(clean_list_env: None) ->
     settings = Settings(_env_file=env_file)
 
     assert settings.agent_graph_framework == "langgraph_optional"
+
+
+def test_settings_accept_agent_intent_drafter_override(clean_list_env: None) -> None:
+    env_file = _write_env_file(
+        "agent-intent-drafter.env",
+        "\n".join(
+            [
+                "AGENT_INTENT_DRAFTER_MODE=shadow",
+                "AGENT_INTENT_DRAFTER_MIN_CONFIDENCE=0.82",
+            ]
+        ),
+    )
+    settings = Settings(_env_file=env_file)
+
+    assert settings.agent_intent_drafter_mode == "shadow"
+    assert settings.agent_intent_drafter_min_confidence == 0.82
 
 
 def test_settings_accept_csv_for_web_search_list_fields(clean_list_env: None) -> None:
