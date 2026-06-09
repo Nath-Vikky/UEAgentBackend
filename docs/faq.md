@@ -57,6 +57,11 @@ GET /api/v1/editor-operations/proposals/{proposal_id}/follow-ups
 The follow-up endpoint can return a `connect_blueprint_nodes` candidate, but it
 does not create or execute the Proposal automatically.
 
+If this happened inside a multi-step workflow, call
+`POST /api/v1/editor-operations/workflows/state` with the original plan. The
+workflow state will keep the dependent compile step blocked and expose
+`follow_up_proposal_requests[]` for creating a pending repair Proposal.
+
 ## Are private notes or external course repositories included?
 
 No. Public knowledge lives in `knowledge/`. Private notes or third-party source
@@ -78,4 +83,3 @@ Editor operation smoke checks:
 .\.venv\Scripts\python.exe scripts\run_blueprint_graph_operation_smoke.py
 .\.venv\Scripts\python.exe scripts\run_editor_operation_chat_bridge_smoke.py
 ```
-

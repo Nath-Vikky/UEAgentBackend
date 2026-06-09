@@ -6272,6 +6272,7 @@ The endpoint reads Proposal records that contain
 - `blocked_step_ids`
 - `step_states[].status`
 - `next_step_proposal_requests[]`
+- `follow_up_proposal_requests[]`
 - `next_action`
 
 This endpoint is read-only. It does not create, confirm, execute, or batch
@@ -6285,6 +6286,15 @@ confirmation.
 
 Frontend impact: no mandatory change. A future Workflow UI can show the plan,
 let the user submit one step at a time, and stop/skip steps safely.
+
+2026-06-09 update: workflow state now treats blocking result diagnostics as a
+dependency gate. For example, if a Blueprint `Print String` node was created
+but UEAgentTool reported `expected_linked_pins_missing`, the first step becomes
+`completed_needs_attention` instead of `completed`; the dependent compile step
+stays blocked. The response also exposes `follow_up_proposal_requests[]` so a
+caller can create the suggested `connect_blueprint_nodes` repair Proposal
+explicitly. These requests still create pending Proposals only and never execute
+or confirm editor writes automatically.
 
 ## 2026-05-24 Tool Registry Proposal Bridge
 

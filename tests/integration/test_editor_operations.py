@@ -5519,6 +5519,108 @@ def test_editor_workflow_state_projects_next_ready_step_from_results(client: Tes
     assert compile_proposal.json()["workflow_step"]["operation_type"] == "compile_blueprint"
 
 
+def test_editor_workflow_state_blocks_compile_and_suggests_follow_up_when_step_needs_attention(
+    client: TestClient,
+) -> None:
+    plan_response = client.post(
+        "/api/v1/editor-operations/workflows/plan",
+        json={
+            "goal": "Add Ready Print String and compile",
+            "workflow_type": "blueprint_print_then_compile",
+            "payload": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "message": "Ready",
+            },
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()["workflow_plan"]
+
+    materialized = client.post(
+        "/api/v1/editor-operations/workflows/steps/proposal",
+        json={
+            "workflow_plan_id": plan["plan_id"],
+            "step": plan["steps"][0],
+            "requested_by": "integration_test",
+        },
+    )
+    assert materialized.status_code == 200
+    proposal_id = materialized.json()["proposal"]["item"]["proposal_id"]
+    assert client.post(f"/api/v1/editor-operations/proposals/{proposal_id}/confirm").status_code == 200
+
+    result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": proposal_id,
+            "operation_type": "add_blueprint_node_template",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "transaction_id": f"ue_transaction_{proposal_id}",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "created_node_id": "11111111-2222-3333-4444-555566667777",
+                "created_node_name": "K2Node_CallFunction_0",
+                "entry_node_id": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEFFFFFFFF",
+                "entry_node_name": "EventBeginPlay",
+                "created_nodes": [
+                    {
+                        "node_id": "11111111-2222-3333-4444-555566667777",
+                        "node_name": "K2Node_CallFunction_0",
+                        "node_class": "K2Node_CallFunction",
+                        "role": "print_string",
+                    }
+                ],
+                "linked_pins": [],
+                "compile_status": "not_requested",
+                "dirty": True,
+            },
+        },
+    )
+    assert result.status_code == 200
+    diagnostics = result.json()["item"]["result_summary"]["operation_diagnostics"]
+    assert "expected_linked_pins_missing" in diagnostics["diagnostic_flags"]
+
+    state_response = client.post(
+        "/api/v1/editor-operations/workflows/state",
+        json={
+            "workflow_plan": plan,
+            "completed_step_ids": ["step_0_add_blueprint_node_template"],
+        },
+    )
+
+    assert state_response.status_code == 200
+    state = state_response.json()["workflow_state"]
+    assert state["status"] == "needs_attention"
+    assert state["completed_step_ids"] == []
+    assert state["next_ready_step_ids"] == []
+    assert state["next_step_proposal_requests"] == []
+    assert state["blocked_step_ids"] == [
+        "step_0_add_blueprint_node_template",
+        "step_1_compile_blueprint",
+    ]
+    assert state["next_action"] == "create_follow_up_repair_proposal"
+    assert state["ready_follow_up_candidate_count"] == 1
+
+    first_step, second_step = state["step_states"]
+    assert first_step["status"] == "completed_needs_attention"
+    assert first_step["needs_attention"] is True
+    assert first_step["workflow_blocking_flags"] == ["expected_linked_pins_missing"]
+    assert second_step["status"] == "waiting_dependency"
+
+    follow_up_request = state["follow_up_proposal_requests"][0]
+    assert follow_up_request["action_type"] == "create_editor_operation_follow_up_proposal"
+    assert follow_up_request["workflow_step_id"] == "step_0_add_blueprint_node_template"
+    assert follow_up_request["source_proposal_id"] == proposal_id
+    assert follow_up_request["candidate_id"] == "connect_expected_exec_pins"
+    assert follow_up_request["operation_type"] == "connect_blueprint_nodes"
+    assert follow_up_request["endpoint"] == f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal"
+    assert follow_up_request["safety"]["auto_execute"] is False
+    assert follow_up_request["safety"]["creates_pending_proposal_only"] is True
+    assert follow_up_request["safety"]["requires_user_confirmation"] is True
+
+
 def test_editor_workflow_step_materialization_rejects_not_ready_step(client: TestClient) -> None:
     plan_response = client.post(
         "/api/v1/editor-operations/workflows/plan",

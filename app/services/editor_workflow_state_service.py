@@ -8,6 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.db.models.proposal import ProposalModel
 from app.services.editor_operations.catalog import EDITOR_OPERATION_PROPOSAL_TYPE
+from app.services.editor_operations.followups import operation_follow_up_payload
+
+WORKFLOW_BLOCKING_DIAGNOSTIC_FLAGS = {
+    "blueprint_target_unresolved",
+    "blueprint_graph_unresolved",
+    "entry_event_unresolved",
+    "pin_resolution_failed",
+    "expected_linked_pins_missing",
+    "compile_failed",
+}
 
 
 def _clean_text(value: Any) -> str:
@@ -65,8 +75,14 @@ class EditorWorkflowStateService:
 
         completed_ids = set(_as_string_list(completed_step_ids))
         for step_id, record in records_by_step_id.items():
-            if record.get("execution_state") == "completed" and record.get("success") is True:
+            if (
+                record.get("execution_state") == "completed"
+                and record.get("success") is True
+                and not bool(record.get("blocks_workflow_dependency"))
+            ):
                 completed_ids.add(step_id)
+            elif bool(record.get("blocks_workflow_dependency")):
+                completed_ids.discard(step_id)
 
         step_states = [
             self._step_state(
@@ -85,6 +101,7 @@ class EditorWorkflowStateService:
             next_ready_step_ids=next_ready_step_ids,
             completed_step_ids=completed_step_ids_sorted,
         )
+        follow_up_proposal_requests = self._follow_up_proposal_requests(step_states)
         return {
             "schema_version": "editor_workflow_state_v1",
             "workflow_plan_id": plan_id,
@@ -101,13 +118,20 @@ class EditorWorkflowStateService:
             "blocked_step_ids": [
                 item["step_id"]
                 for item in step_states
-                if item.get("status") in {"waiting_dependency", "needs_more_input", "failed", "blocked", "cancelled"}
+                if item.get("status")
+                in {"waiting_dependency", "needs_more_input", "completed_needs_attention", "failed", "blocked", "cancelled"}
             ],
             "status_counts": dict(status_counts),
             "step_states": step_states,
             "materialized_step_records": list(records_by_step_id.values()),
             "next_step_proposal_requests": next_step_proposal_requests,
-            "next_action": self._next_action(step_states),
+            "follow_up_candidate_count": sum(
+                int(_as_dict(item.get("proposal_record")).get("follow_up", {}).get("candidate_count") or 0)
+                for item in step_states
+            ),
+            "ready_follow_up_candidate_count": len(follow_up_proposal_requests),
+            "follow_up_proposal_requests": follow_up_proposal_requests,
+            "next_action": self._next_action(step_states, follow_up_proposal_requests=follow_up_proposal_requests),
             "auto_execute": False,
             "requires_user_confirmation_per_step": True,
         }
@@ -131,6 +155,19 @@ class EditorWorkflowStateService:
             if not step_id or step_id in records:
                 continue
             operation_result = _as_dict(preview.get("operation_result"))
+            result_summary = _as_dict(operation_result.get("result_summary"))
+            operation_diagnostics = _as_dict(result_summary.get("operation_diagnostics"))
+            diagnostic_flags = _as_string_list(operation_diagnostics.get("diagnostic_flags"))
+            blocking_flags = [flag for flag in diagnostic_flags if flag in WORKFLOW_BLOCKING_DIAGNOSTIC_FLAGS]
+            follow_up = (
+                operation_follow_up_payload(
+                    proposal_id=proposal.proposal_id,
+                    preview=preview,
+                    is_editor_operation=True,
+                ).get("follow_up", {})
+                if operation_result
+                else {}
+            )
             records[step_id] = {
                 "step_id": step_id,
                 "proposal_id": proposal.proposal_id,
@@ -142,6 +179,10 @@ class EditorWorkflowStateService:
                 "success": operation_result.get("success"),
                 "updated_at": _isoformat(proposal.updated_at),
                 "operation_result_available": bool(operation_result),
+                "diagnostic_flags": diagnostic_flags,
+                "workflow_blocking_flags": blocking_flags,
+                "blocks_workflow_dependency": bool(blocking_flags),
+                "follow_up": follow_up,
                 "workflow_materialization": workflow_context,
             }
         return records
@@ -163,12 +204,16 @@ class EditorWorkflowStateService:
             execution_state = _clean_text(record.get("execution_state"))
             success = record.get("success")
             confirmation_state = _clean_text(record.get("confirmation_state"))
-            if execution_state == "completed" and success is True:
+            if execution_state == "completed" and success is True and bool(record.get("blocks_workflow_dependency")):
+                status = "completed_needs_attention"
+            elif execution_state == "completed" and success is True:
                 status = "completed"
             elif execution_state in {"failed", "blocked", "cancelled"}:
                 status = execution_state
             elif record.get("operation_result_available"):
-                status = "completed" if success is True else "failed"
+                status = "completed_needs_attention" if success is True and bool(record.get("blocks_workflow_dependency")) else (
+                    "completed" if success is True else "failed"
+                )
             elif confirmation_state == "confirmed":
                 status = "waiting_execution_result"
             elif confirmation_state == "pending":
@@ -192,6 +237,9 @@ class EditorWorkflowStateService:
             "status": status,
             "can_create_proposal": status == "ready_for_proposal",
             "completed": status == "completed",
+            "needs_attention": status in {"completed_needs_attention", "failed", "blocked", "cancelled"},
+            "diagnostic_flags": _as_string_list(record.get("diagnostic_flags") if record else []),
+            "workflow_blocking_flags": _as_string_list(record.get("workflow_blocking_flags") if record else []),
             "proposal_record": record or {},
         }
 
@@ -202,7 +250,7 @@ class EditorWorkflowStateService:
         statuses = {str(item.get("status") or "") for item in step_states}
         if statuses <= {"completed"}:
             return "completed"
-        if statuses & {"failed", "blocked", "cancelled"}:
+        if statuses & {"completed_needs_attention", "failed", "blocked", "cancelled"}:
             return "needs_attention"
         if "ready_for_proposal" in statuses:
             return "ready_for_next_step"
@@ -213,7 +261,13 @@ class EditorWorkflowStateService:
         return "needs_more_input"
 
     @staticmethod
-    def _next_action(step_states: list[dict[str, Any]]) -> str:
+    def _next_action(
+        step_states: list[dict[str, Any]],
+        *,
+        follow_up_proposal_requests: list[dict[str, Any]] | None = None,
+    ) -> str:
+        if follow_up_proposal_requests:
+            return "create_follow_up_repair_proposal"
         statuses = [str(item.get("status") or "") for item in step_states]
         if "ready_for_proposal" in statuses:
             return "create_next_ready_proposal"
@@ -221,7 +275,7 @@ class EditorWorkflowStateService:
             return "confirm_or_reject_pending_proposal"
         if "waiting_execution_result" in statuses:
             return "wait_for_ue_plugin_result"
-        if any(status in {"failed", "blocked", "cancelled"} for status in statuses):
+        if any(status in {"completed_needs_attention", "failed", "blocked", "cancelled"} for status in statuses):
             return "inspect_failure_or_follow_up"
         if "waiting_dependency" in statuses:
             return "complete_prerequisite_step"
@@ -264,6 +318,44 @@ class EditorWorkflowStateService:
                 }
             )
         return requests
+
+    @staticmethod
+    def _follow_up_proposal_requests(step_states: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        requests: list[dict[str, Any]] = []
+        for state in step_states:
+            if str(state.get("status") or "") not in {"completed_needs_attention", "failed", "blocked"}:
+                continue
+            record = _as_dict(state.get("proposal_record"))
+            proposal_id = _clean_text(record.get("proposal_id"))
+            if not proposal_id:
+                continue
+            follow_up = _as_dict(record.get("follow_up"))
+            for candidate in list(follow_up.get("candidates") or []):
+                if not isinstance(candidate, dict):
+                    continue
+                if not bool(candidate.get("proposal_ready")) or candidate.get("missing_inputs"):
+                    continue
+                requests.append(
+                    {
+                        "action_type": "create_editor_operation_follow_up_proposal",
+                        "workflow_step_id": state.get("step_id"),
+                        "source_proposal_id": proposal_id,
+                        "candidate_id": candidate.get("candidate_id"),
+                        "operation_type": candidate.get("operation_type"),
+                        "method": "POST",
+                        "endpoint": f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal",
+                        "request": {
+                            "candidate": candidate,
+                            "requested_by": "workflow_state_projection",
+                        },
+                        "safety": {
+                            "auto_execute": False,
+                            "creates_pending_proposal_only": True,
+                            "requires_user_confirmation": True,
+                        },
+                    }
+                )
+        return requests[:5]
 
 
 __all__ = ["EditorWorkflowStateService"]
