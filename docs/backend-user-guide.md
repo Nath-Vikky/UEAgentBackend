@@ -8565,6 +8565,37 @@ Frontend impact: optional only. Existing UI can ignore `debug_view.agent_dag`.
 If a future debug panel wants to visualize the Agent chain, this field is the
 preferred source.
 
+## 2026-06-09 Update: SubAgent Runtime Projection v1
+
+Debug View now also includes `subagent_runtime`, a readable runtime-state
+projection derived from `agent_dag`.
+
+It exposes:
+
+- `states[]`: one state per Agent chain node.
+- `node_id` and `role`: stable node identity and role name.
+- `status`: `completed`, `skipped`, `waiting_confirmation`, or `failed`.
+- `input_summary` / `output_summary`: compact human-readable node summaries.
+- `recent_activities`: the most useful state facts for quick debugging.
+- `summary.current_focus`: the node that currently matters most, such as
+  `evidence_or_tool` when a Proposal is waiting for user confirmation.
+
+Boundary:
+
+- It is projection-only.
+- It does not schedule parallel agents.
+- It does not call extra LLMs.
+- It does not execute tools or writes.
+- Proposal safety is unchanged.
+
+Fields:
+
+- `debug_view.subagent_runtime`
+- `data.subagent_runtime`
+
+Frontend impact: optional only. Existing UI can ignore it; a future Debug panel
+can use it to display the Agent chain in a friendlier way than raw JSON.
+
 ## 2026-06-09 Update: Optional LLM Intent Drafter v1
 
 The Agent chain now has an optional LLM intent-drafting adapter. It is disabled

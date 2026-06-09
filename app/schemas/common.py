@@ -136,6 +136,7 @@ class DebugView(BaseModel):
     response_synthesizer: dict[str, Any] = Field(default_factory=dict)
     response_critic: dict[str, Any] = Field(default_factory=dict)
     agent_dag: dict[str, Any] = Field(default_factory=dict)
+    subagent_runtime: dict[str, Any] = Field(default_factory=dict)
     agent_decision_trace: dict[str, Any] = Field(default_factory=dict)
     workflow_trace: dict[str, Any] = Field(default_factory=dict)
     react_loop: dict[str, Any] = Field(default_factory=dict)

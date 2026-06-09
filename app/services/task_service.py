@@ -22,6 +22,7 @@ from app.agent.response_composer import compose_unified_response
 from app.agent.response_critic import apply_response_critic
 from app.agent.response_synthesizer import synthesize_execution_response
 from app.agent.router import classify_request
+from app.agent.subagent_runtime import build_subagent_runtime
 from app.core.settings import Settings
 from app.db.models.audit import AuditLogModel
 from app.db.models.proposal import ProposalModel
@@ -1329,6 +1330,9 @@ class TaskService:
         )
         execution["debug_view"]["agent_dag"] = agent_dag
         execution["data"]["agent_dag"] = agent_dag
+        subagent_runtime = build_subagent_runtime(agent_dag)
+        execution["debug_view"]["subagent_runtime"] = subagent_runtime
+        execution["data"]["subagent_runtime"] = subagent_runtime
         trace_summary = build_trace_summary(
             trace_id,
             routing["intent"]["route_type"],

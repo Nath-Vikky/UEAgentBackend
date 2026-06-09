@@ -97,6 +97,8 @@ def test_chat_run_contract_contains_phase1_top_level_fields(client: TestClient) 
     assert body["presentation"]["user_title"] == body["user_view"]["title"]
     assert "route_type" in body["debug_view"]["route"]
     assert "raw_request" in body["debug_view"]
+    assert body["debug_view"]["subagent_runtime"]["version"] == "subagent_runtime_v1"
+    assert body["data"]["subagent_runtime"]["version"] == "subagent_runtime_v1"
     assert body["intent"]["route_type"] in {"project_qa", "direct_answer", "single_tool", "workflow"}
 
 
