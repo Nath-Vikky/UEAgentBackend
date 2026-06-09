@@ -8753,9 +8753,39 @@ The report now includes:
 - `missing_context_gate_case_count`
 - `tag_breakdown`
 
-`response_critic_v1` also has regression coverage for normal UTF-8 Chinese
+`response_critic_v2` also has regression coverage for normal UTF-8 Chinese
 answers. User View should hide MCP/tool/raw payload wording and keep readable
 Chinese summaries; raw diagnostics remain in Debug View.
 
 Frontend impact: no mandatory change. This is backend validation and User View
 sanitization behavior only.
+
+## 2026-06-09 Update: ResponseCritic Answer Quality v2
+
+`ResponseCritic` now checks user-facing answer quality in addition to hiding
+internal tooling details.
+
+It records:
+
+- `quality_ok`
+- `quality_flags`
+- `missing_context_prompt_required`
+- `missing_context_prompt_ok`
+- `proposal_confirmation_prompt_required`
+- `proposal_confirmation_prompt_ok`
+
+The deterministic checks are intentionally narrow:
+
+- Empty visible answers are flagged.
+- Remaining MCP / ToolSpec / raw payload wording is flagged.
+- Missing selected/current-target context must include a clear next action,
+  such as selecting the target or syncing Project Inventory.
+- Proposal responses must tell the user to review/confirm the Proposal before
+  execution.
+
+`ResponseSynthesizer` also now uses readable UTF-8 Chinese fallback titles and
+empty-answer text, for example `工具结果`, `项目问答`, `回答`, and
+`待确认提案`.
+
+Frontend impact: no mandatory change. Existing User View rendering continues to
+work; Debug View can optionally show the new quality fields.

@@ -15,7 +15,7 @@ def synthesize_execution_response(
 
     Handlers still own domain-specific wording. This layer only makes the
     contract explicit: User View must have a title/text/blocks shape, and
-    assistant_message must mirror the human-readable text rather than raw tool
+    assistant_message must mirror human-readable text rather than raw tool
     payloads.
     """
 
@@ -107,6 +107,8 @@ def _default_title(*, route_type: str, output_language: str) -> str:
             return "项目问答"
         if route_type == "direct_answer":
             return "回答"
+        if route_type == "proposal_wait":
+            return "待确认提案"
         return "任务结果"
     if route_type == "single_tool":
         return "Tool Result"
@@ -114,10 +116,12 @@ def _default_title(*, route_type: str, output_language: str) -> str:
         return "Project Answer"
     if route_type == "direct_answer":
         return "Answer"
+    if route_type == "proposal_wait":
+        return "Proposal Pending"
     return "Task Result"
 
 
 def _default_empty_answer(output_language: str) -> str:
     if output_language.startswith("zh"):
-        return "我没有拿到足够的可展示结果，请查看调试信息或补充上下文后再试。"
+        return "我还没有拿到足够的可展示结果。请查看调试信息，或补充上下文后再试。"
     return "I do not have enough displayable result content yet. Please check diagnostics or provide more context."

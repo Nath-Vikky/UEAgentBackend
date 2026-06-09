@@ -70,5 +70,16 @@ def test_response_synthesizer_fills_missing_blocks_and_chinese_default() -> None
 
     assert result["user_view"]["title"] == "工具结果"
     assert result["user_view"]["blocks"] == []
-    assert "没有拿到足够" in result["assistant_message"]
+    assert "还没有拿到足够的可展示结果" in result["assistant_message"]
     assert result["debug_view"]["response_synthesizer"]["text_source"] == "default_empty_answer"
+
+
+def test_response_synthesizer_uses_chinese_proposal_title() -> None:
+    result = synthesize_execution_response(
+        {"assistant_message": "已创建提案，请确认。", "user_view": {}, "data": {}, "debug_view": {}},
+        output_language="zh-CN",
+        route_type="proposal_wait",
+        selected_tool_id="editor_rename_asset",
+    )
+
+    assert result["user_view"]["title"] == "待确认提案"

@@ -58,10 +58,13 @@ def apply_response_critic(
         sanitized_user_view["text"] = sanitized_message
 
     sanitized_visible = _visible_text(sanitized_user_view, sanitized_message)
+    debug_view = dict(updated.get("debug_view") or {})
     report = build_response_critic_report(
         original_visible=original_visible,
         sanitized_visible=sanitized_visible,
         output_language=output_language,
+        debug_view=debug_view,
+        action_proposals=list(updated.get("action_proposals") or []),
     )
 
     updated["assistant_message"] = sanitized_message
@@ -71,7 +74,6 @@ def apply_response_critic(
     if "answer" in data:
         data["answer"] = sanitized_message
     updated["data"] = data
-    debug_view = dict(updated.get("debug_view") or {})
     debug_view["response_critic"] = report
     updated["debug_view"] = debug_view
     return updated
@@ -82,17 +84,50 @@ def build_response_critic_report(
     original_visible: str,
     sanitized_visible: str,
     output_language: str,
+    debug_view: dict[str, Any] | None = None,
+    action_proposals: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     leaked_markers = _leaked_markers(original_visible)
     remaining_markers = _leaked_markers(sanitized_visible)
-    answer_ok = bool(sanitized_visible.strip())
+    debug = dict(debug_view or {})
+    proposals = list(action_proposals or [])
+
+    missing_context_required = _requires_missing_context_prompt(debug)
+    missing_context_prompt_ok = (
+        _contains_missing_context_guidance(sanitized_visible, output_language)
+        if missing_context_required
+        else True
+    )
+    proposal_required = _requires_proposal_confirmation(debug, proposals)
+    proposal_prompt_ok = (
+        _contains_proposal_confirmation_guidance(sanitized_visible, output_language)
+        if proposal_required
+        else True
+    )
+
+    quality_flags = _quality_flags(
+        sanitized_visible=sanitized_visible,
+        remaining_markers=remaining_markers,
+        missing_context_required=missing_context_required,
+        missing_context_prompt_ok=missing_context_prompt_ok,
+        proposal_required=proposal_required,
+        proposal_prompt_ok=proposal_prompt_ok,
+    )
+    quality_ok = not quality_flags
+
     return {
-        "version": "response_critic_v1",
-        "answer_ok": answer_ok,
+        "version": "response_critic_v2",
+        "answer_ok": quality_ok,
+        "quality_ok": quality_ok,
+        "quality_flags": quality_flags,
         "leaked_internal_tooling": bool(leaked_markers),
         "remaining_internal_tooling": bool(remaining_markers),
         "leaked_markers": leaked_markers,
         "remaining_markers": remaining_markers,
+        "missing_context_prompt_required": missing_context_required,
+        "missing_context_prompt_ok": missing_context_prompt_ok,
+        "proposal_confirmation_prompt_required": proposal_required,
+        "proposal_confirmation_prompt_ok": proposal_prompt_ok,
         "repair_applied": bool(leaked_markers) or original_visible != sanitized_visible,
         "repair_instruction": (
             _localized(
@@ -181,9 +216,68 @@ def _drop_internal_lines(text: str) -> str:
     return "\n".join(kept)
 
 
+def _quality_flags(
+    *,
+    sanitized_visible: str,
+    remaining_markers: list[str],
+    missing_context_required: bool,
+    missing_context_prompt_ok: bool,
+    proposal_required: bool,
+    proposal_prompt_ok: bool,
+) -> list[str]:
+    flags: list[str] = []
+    if not sanitized_visible.strip():
+        flags.append("empty_answer")
+    if remaining_markers:
+        flags.append("internal_tooling_remaining")
+    if missing_context_required and not missing_context_prompt_ok:
+        flags.append("missing_context_prompt_incomplete")
+    if proposal_required and not proposal_prompt_ok:
+        flags.append("proposal_confirmation_prompt_missing")
+    return flags
+
+
+def _requires_missing_context_prompt(debug_view: dict[str, Any]) -> bool:
+    gate = dict(debug_view.get("missing_context_gate") or {})
+    if gate.get("status") == "blocked":
+        return True
+    resolution = dict(debug_view.get("context_resolution") or {})
+    if resolution.get("status") == "missing_active_context":
+        return True
+    tool_plan = dict(debug_view.get("tool_plan_v1") or {})
+    return tool_plan.get("mode") == "ask_for_context"
+
+
+def _requires_proposal_confirmation(debug_view: dict[str, Any], action_proposals: list[dict[str, Any]]) -> bool:
+    if action_proposals:
+        return True
+    tool_plan = dict(debug_view.get("tool_plan_v1") or {})
+    if bool(tool_plan.get("requires_proposal")):
+        return True
+    proposal = dict(debug_view.get("proposal") or {})
+    return bool(proposal.get("proposal_id"))
+
+
+def _contains_missing_context_guidance(text: str, output_language: str) -> bool:
+    lowered = str(text or "").lower()
+    if output_language.startswith("zh"):
+        return any(token in text for token in ("请选择", "先选择", "同步", "刷新", "打开", "选中"))
+    return any(token in lowered for token in ("select", "sync", "open", "choose", "pick", "provide context"))
+
+
+def _contains_proposal_confirmation_guidance(text: str, output_language: str) -> bool:
+    lowered = str(text or "").lower()
+    if output_language.startswith("zh"):
+        return any(token in text for token in ("提案", "确认", "预览", "审核", "批准"))
+    return any(token in lowered for token in ("proposal", "confirm", "confirmation", "review", "approve"))
+
+
 def _zh_replacements() -> list[tuple[str, str]]:
     return [
-        (r"当前请求上下文中已有选中资产；MCP/TCP 未启用或不可用时，后端使用该上下文作为兜底。", "我已读取当前选中的资产上下文。"),
+        (
+            r"当前请求上下文中已有选中资产；MCP/TCP 未启用或不可用时，后端使用该上下文作为兜底。",
+            "我已读取当前选中的资产上下文。",
+        ),
         (r"已通过\s*本地 Project Inventory 只读工具读取", "已从当前项目快照读取"),
         (r"已通过\s*Project Inventory 只读工具读取", "已从当前项目快照读取"),
         (r"已通过\s*UEAgentTool TCP 只读工具读取", "已从当前编辑器读取"),
