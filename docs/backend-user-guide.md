@@ -126,8 +126,16 @@ and intended for Debug View, eval, and regression checks.
   directly execute UE writes from the backend.
 
 `tool_use_summaries` are display-safe summaries of tool outputs. They keep item
-counts, status, warnings, and safe output keys, while hiding raw MCP payloads,
-raw JSON-RPC content, and large debug payloads from User View.
+counts, status, warnings, safe output keys, readable tool labels, evidence
+kinds, and target names, while hiding raw MCP payloads, raw JSON-RPC content,
+and large debug payloads from User View.
+
+The summary layer is domain-aware for common UE read-only tools: assets and
+Static Mesh settings, level Actors, Blueprint graphs, UMG widgets, material
+parameters, and Project Inventory counts. If a tool does not provide a
+handler-authored summary, the backend uses readable labels such as `Asset
+details` or `Selected assets` instead of exposing internal ids like
+`mcp_get_asset_details`.
 
 `response_critic` is a lightweight deterministic output guard. Before a task
 response is returned and persisted to chat history, the backend checks the
