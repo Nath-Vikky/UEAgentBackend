@@ -16,6 +16,7 @@ from app.agent.memory_manager import update_session_memory
 from app.agent.multi_agent import build_multi_agent_lite_trace
 from app.agent.react_trace import build_react_v2_trace
 from app.agent.response_composer import compose_unified_response
+from app.agent.response_critic import apply_response_critic
 from app.agent.router import classify_request
 from app.core.settings import Settings
 from app.db.models.audit import AuditLogModel
@@ -1140,6 +1141,10 @@ class TaskService:
                 "output_complete": output_complete,
                 "finish_reason": finish_reason,
             }
+        )
+        execution = apply_response_critic(
+            execution,
+            output_language=routing["locale"]["final_output_language"],
         )
         if persist_session_history and execution["assistant_message"].strip():
             append_messages(

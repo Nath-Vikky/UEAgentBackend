@@ -99,12 +99,12 @@ def live_mcp_readonly_result(
         },
     ]
     user_view = {
-        "title": _localized(output_language, "UE 实时只读工具结果", "Live UE Read-only Tool Result"),
+        "title": _localized(output_language, "UE 编辑器上下文结果", "Live UE Context Result"),
         "text": answer,
         "blocks": [
             UserViewBlock(
                 block_type="summary",
-                title=_localized(output_language, "工具结果摘要", "Tool Result Summary"),
+                title=_localized(output_language, "结果摘要", "Result Summary"),
                 text=answer,
                 data={
                     "tool_id": selected_tool_id,
@@ -222,8 +222,8 @@ def local_tool_registry_readonly_result(
         tool_result=tool_result,
         arguments=arguments,
         output_language=output_language,
-        source_label_zh="本地 Project Inventory 只读工具",
-        source_label_en="local Project Inventory read-only tool",
+        source_label_zh="当前项目快照",
+        source_label_en="the current project snapshot",
     )
     step_results = [
         {
@@ -246,12 +246,12 @@ def local_tool_registry_readonly_result(
         },
     ]
     user_view = {
-        "title": _localized(output_language, "本地只读工具结果", "Local Read-only Tool Result"),
+        "title": _localized(output_language, "项目快照结果", "Project Snapshot Result"),
         "text": answer,
         "blocks": [
             UserViewBlock(
                 block_type="summary",
-                title=_localized(output_language, "工具结果摘要", "Tool Result Summary"),
+                title=_localized(output_language, "结果摘要", "Result Summary"),
                 text=answer,
                 data={
                     "tool_id": selected_tool_id,
@@ -371,10 +371,10 @@ def selected_assets_context_result(
         [
             _localized(
                 output_language,
-                "当前请求上下文中已有选中资产；MCP/TCP 未启用或不可用时，后端使用该上下文作为兜底。",
-                "Selected assets are already available in request context; the backend used that context as fallback because MCP/TCP is disabled or unavailable.",
+                "我已读取当前选中的资产上下文。",
+                "I read the currently selected asset context.",
             ),
-            f"selected_asset_count={len(assets)}",
+            _localized(output_language, f"选中资产数量：{len(assets)}", f"Selected asset count: {len(assets)}"),
             _localized(output_language, "选中资产预览:", "Selected asset preview:") + "\n" + "\n".join(asset_lines),
         ]
     )
@@ -873,8 +873,8 @@ def _live_mcp_answer(
     tool_result: dict[str, Any],
     arguments: dict[str, Any],
     output_language: str,
-    source_label_zh: str = "UEAgentTool TCP 只读工具",
-    source_label_en: str = "UEAgentTool TCP read-only tool",
+    source_label_zh: str = "当前编辑器上下文",
+    source_label_en: str = "the current editor context",
 ) -> str:
     structured = _structured_content_for_answer(selected_tool_id=selected_tool_id, tool_result=tool_result)
     if selected_tool_id == "mcp_get_editor_context":

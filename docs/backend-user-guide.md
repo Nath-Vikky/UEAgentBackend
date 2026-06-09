@@ -129,6 +129,20 @@ and intended for Debug View, eval, and regression checks.
 counts, status, warnings, and safe output keys, while hiding raw MCP payloads,
 raw JSON-RPC content, and large debug payloads from User View.
 
+`response_critic` is a lightweight deterministic output guard. Before a task
+response is returned and persisted to chat history, the backend checks the
+visible User View text and blocks for internal implementation details such as
+`mcp_get_*`, `ToolSpec`, raw JSON/RPC wording, tool names, and raw result
+payloads. If such details are found, it repairs the user-facing text into a
+natural-language summary and keeps the raw diagnostics in Debug View. The
+report is available at:
+
+- `debug_view.response_critic`
+- `data.response_critic`
+
+This guard does not execute tools or change project facts. It only separates
+human-facing answers from developer diagnostics.
+
 `intent_draft` and `verified_intent` are the first step of the Improv6 Agent
 decision chain upgrade:
 

@@ -21,6 +21,7 @@ Unreal Editor Plugin
   -> FastAPI API
   -> Intent Router / Context Builder
   -> Agent Turn Context / Permission Gate
+  -> Response Critic / User View Guard
   -> Skill Executors / Workflow Orchestrator
   -> Tool Registry / Editor Operation Proposal
   -> Knowledge Base / Lexical Search / Optional Vector Search
@@ -32,6 +33,8 @@ selection/focus, Project Inventory status, RAG status, recent tool summaries,
 available tools, and a deterministic context-budget report. Tool execution is
 checked by a permission gate: read-only tools may run automatically, plan-only
 tools only draft plans, and editor writes must become user-confirmed Proposals.
+Before the response is returned, a lightweight response critic keeps User View
+human-readable and moves raw tool/MCP details to Debug View.
 
 主要目录：
 
