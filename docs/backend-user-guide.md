@@ -8357,3 +8357,24 @@ Safety boundary:
 - No trust for unknown external MCP write tools.
 - Existing UEAgentTool HTTP Proposal confirmation remains the default execution
   path until a future MCP write executor is tested in the editor.
+
+## 2026-06-09 Update: Backend Tooling Boundary Cleanup
+
+The MCP provider and Tool Registry Proposal bridge code has been split into
+smaller helper modules without changing public APIs:
+
+- `app/services/mcp_provider_matching.py` now owns live MCP tool normalization,
+  local `ToolSpec` matching, trust-state classification, external-tool blocking,
+  and provider row construction.
+- `app/services/tool_provider_service.py` remains the public facade for
+  `GET /api/v1/mcp/tool-providers`.
+- `app/services/tool_proposal_bridge_payloads.py` now owns MCP-style argument
+  normalization and active-context defaults for Blueprint, UMG, and Material
+  Proposal payloads.
+- `app/services/tool_proposal_bridge_service.py` remains the public facade for
+  `POST /api/v1/mcp/tool-registry/proposals/prepare` and
+  `POST /api/v1/mcp/tool-registry/proposals`.
+
+Frontend impact: no mandatory change. Response fields, Proposal confirmation,
+and UEAgentTool execution behavior are unchanged. The purpose of this cleanup is
+to make future MCP write mappings and editor tool additions smaller and safer.
