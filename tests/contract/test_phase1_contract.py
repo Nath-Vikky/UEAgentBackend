@@ -118,7 +118,11 @@ def test_chat_run_uses_active_target_memory_for_followup_asset_reference(client:
                 "selected_assets": ["/Game/Props/SM_Rock.SM_Rock"],
             },
             "payload": {"user_query": "Analyze this asset."},
-            "runtime_options": {"debug": True, "return_debug_projection": True},
+            "runtime_options": {
+                "debug": True,
+                "return_debug_projection": True,
+                "preferred_output_language": "en-US",
+            },
         },
     )
     assert first.status_code == 200
@@ -136,7 +140,11 @@ def test_chat_run_uses_active_target_memory_for_followup_asset_reference(client:
                 "active_panel": "AgentChat",
             },
             "payload": {"user_query": "Analyze this asset again."},
-            "runtime_options": {"debug": True, "return_debug_projection": True},
+            "runtime_options": {
+                "debug": True,
+                "return_debug_projection": True,
+                "preferred_output_language": "en-US",
+            },
         },
     )
     body = followup.json()
@@ -146,3 +154,38 @@ def test_chat_run_uses_active_target_memory_for_followup_asset_reference(client:
     assert body["debug_view"]["context_route_refinement"]["status"] == "applied"
     assert body["debug_view"]["context_resolution"]["target_id"] == "/Game/Props/SM_Rock.SM_Rock"
     assert body["debug_view"]["tool_plan_v1"]["requires_proposal"] is False
+
+
+def test_chat_run_missing_selected_asset_returns_user_action_prompt(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "contract_missing_selected_asset",
+                "messages": [{"role": "user", "content": "Analyze this asset."}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+            },
+            "payload": {"user_query": "Analyze this asset."},
+            "runtime_options": {
+                "debug": True,
+                "return_debug_projection": True,
+                "preferred_output_language": "en-US",
+            },
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["user_view"]["title"] == "Select a target first"
+    assert "Select the target in Unreal Editor" in body["assistant_message"]
+    assert body["retrieval_trace"]["mode"] == "not_used"
+    assert body["retrieval_trace"]["reason"] == "missing_active_context_gate"
+    assert body["debug_view"]["task_handler"]["handler_id"] == "missing_context"
+    assert body["debug_view"]["missing_context_gate"]["status"] == "blocked"
+    assert body["debug_view"]["context_resolution"]["status"] == "missing_active_context"
+    assert body["debug_view"]["tool_plan_v1"]["mode"] == "ask_for_context"
+    assert body["action_proposals"] == []

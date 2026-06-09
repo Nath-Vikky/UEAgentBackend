@@ -103,6 +103,7 @@ class UserView(BaseModel):
 class DebugView(BaseModel):
     raw_request: dict[str, Any] = Field(default_factory=dict)
     normalized_request: dict[str, Any] = Field(default_factory=dict)
+    task_handler: dict[str, Any] = Field(default_factory=dict)
     intent: dict[str, Any] = Field(default_factory=dict)
     route: dict[str, Any] = Field(default_factory=dict)
     skill: dict[str, Any] = Field(default_factory=dict)
@@ -128,6 +129,7 @@ class DebugView(BaseModel):
     llm_intent_draft: dict[str, Any] = Field(default_factory=dict)
     context_resolution: dict[str, Any] = Field(default_factory=dict)
     context_route_refinement: dict[str, Any] = Field(default_factory=dict)
+    missing_context_gate: dict[str, Any] = Field(default_factory=dict)
     verified_intent: dict[str, Any] = Field(default_factory=dict)
     tool_plan_v1: dict[str, Any] = Field(default_factory=dict)
     graph_framework: dict[str, Any] = Field(default_factory=dict)

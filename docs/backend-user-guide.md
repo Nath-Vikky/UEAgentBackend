@@ -8697,3 +8697,31 @@ Proposal confirmation flow.
 Frontend impact: no mandatory change. Existing Project Inventory sync and
 active editor context submission already provide the data needed by this
 memory layer.
+
+## 2026-06-09 Update: Missing Context Gate v1
+
+Agent Chat now stops selected/current-target questions before tool execution
+when no concrete target can be resolved. This covers prompts such as "this
+asset", "this Blueprint", "this actor", "this material", or "the current
+Widget" when the request does not include fresh UE context and Active Target
+Memory has no matching target.
+
+User-facing behavior:
+
+- The response asks the user to select the target in Unreal Editor or wait for
+  Project Inventory / Active Context sync.
+- RAG is not forced.
+- MCP/read-only tools are not called.
+- No write Proposal is created.
+
+Debug fields:
+
+- `debug_view.task_handler.handler_id = "missing_context"`
+- `debug_view.missing_context_gate`
+- `debug_view.context_resolution.status = "missing_active_context"`
+- `debug_view.tool_plan_v1.mode = "ask_for_context"`
+- `retrieval_trace.reason = "missing_active_context_gate"`
+
+Frontend impact: no mandatory change. The existing chat panel can render the
+text normally. A future UI may map the `sync_inventory` quick action to an
+explicit sync button.

@@ -12,6 +12,7 @@ from app.services.task_handlers.direct_answer import DirectAnswerHandler
 from app.services.task_handlers.editor_operation import EditorOperationProposalHandler
 from app.services.task_handlers.editor_workflow import EditorWorkflowPlanHandler
 from app.services.task_handlers.logs_analyze import LogsAnalyzeHandler
+from app.services.task_handlers.missing_context import MissingContextHandler
 from app.services.task_handlers.placeholder import PlaceholderTaskHandler
 from app.services.task_handlers.perf_analyze import PerfAnalyzeHandler
 from app.services.task_handlers.project_qa import ProjectQAHandler
@@ -84,6 +85,7 @@ class RouteExecutionDispatcher:
         self._project_qa_handler = ProjectQAHandler()
         self._direct_answer_handler = DirectAnswerHandler()
         self._placeholder_handler = PlaceholderTaskHandler()
+        self._missing_context_handler = MissingContextHandler()
 
     def execute(self, host: Any, context: TaskExecutionContext) -> dict[str, Any]:
         handler = self.select_handler(host, context)
@@ -95,6 +97,8 @@ class RouteExecutionDispatcher:
         route_type = str(context.routing.get("intent", {}).get("route_type") or "")
         if _should_keep_project_qa_for_how_to_question(context):
             return self._project_qa_handler
+        if _should_ask_for_missing_context(context):
+            return self._missing_context_handler
 
         editor_workflow_request = EditorWorkflowPlannerService.detect_chat_workflow_request(
             context.request,
@@ -124,3 +128,13 @@ class RouteExecutionDispatcher:
                 "handler_id": handler_id,
                 "strategy": "task_handler_adapter_v1",
             }
+
+
+def _should_ask_for_missing_context(context: TaskExecutionContext) -> bool:
+    if context.request.task_type not in {"agent_chat", "project_qa"}:
+        return False
+    tool_plan = dict(context.context_bundle.get("tool_plan_v1") or {})
+    if tool_plan.get("mode") == "ask_for_context":
+        return True
+    resolution = dict(context.context_bundle.get("context_resolution") or {})
+    return resolution.get("status") == "missing_active_context"
