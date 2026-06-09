@@ -6296,6 +6296,14 @@ caller can create the suggested `connect_blueprint_nodes` repair Proposal
 explicitly. These requests still create pending Proposals only and never execute
 or confirm editor writes automatically.
 
+2026-06-09 follow-up update: if that repair Proposal is confirmed, executed, and
+reported back with a successful result, workflow state links it through
+`follow_up_materialization.source_proposal_id`, marks the original step as
+`completed_after_repair`, clears `unresolved_workflow_blocking_flags`, and
+unlocks the next dependent workflow step. The frontend does not need to track a
+separate repair session; it can keep polling or posting the original workflow
+plan to `/workflows/state`.
+
 ## 2026-05-24 Tool Registry Proposal Bridge
 
 The backend now exposes a safe bridge from Tool Registry ids to pending editor

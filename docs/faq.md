@@ -60,7 +60,10 @@ does not create or execute the Proposal automatically.
 If this happened inside a multi-step workflow, call
 `POST /api/v1/editor-operations/workflows/state` with the original plan. The
 workflow state will keep the dependent compile step blocked and expose
-`follow_up_proposal_requests[]` for creating a pending repair Proposal.
+`follow_up_proposal_requests[]` for creating a pending repair Proposal. After
+the repair Proposal is confirmed, executed, and reported successfully, the same
+workflow state endpoint will mark the source step as `completed_after_repair`
+and unlock the next step.
 
 ## Are private notes or external course repositories included?
 

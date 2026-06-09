@@ -5620,6 +5620,59 @@ def test_editor_workflow_state_blocks_compile_and_suggests_follow_up_when_step_n
     assert follow_up_request["safety"]["creates_pending_proposal_only"] is True
     assert follow_up_request["safety"]["requires_user_confirmation"] is True
 
+    materialized_repair = client.post(follow_up_request["endpoint"], json=follow_up_request["request"])
+    assert materialized_repair.status_code == 200
+    materialized_body = materialized_repair.json()
+    repair_proposal_id = materialized_body["proposal"]["item"]["proposal_id"]
+    repair_context = materialized_body["proposal"]["operation"]["context"]
+    assert repair_context["follow_up_materialization"]["source_proposal_id"] == proposal_id
+    assert repair_context["workflow_repair_context"]["workflow_step_id"] == "step_0_add_blueprint_node_template"
+    assert repair_context["workflow_repair_context"]["workflow_plan_id"] == plan["plan_id"]
+
+    assert client.post(f"/api/v1/editor-operations/proposals/{repair_proposal_id}/confirm").status_code == 200
+    repair_result = client.post(
+        "/api/v1/editor-operations/results",
+        json={
+            "proposal_id": repair_proposal_id,
+            "operation_type": "connect_blueprint_nodes",
+            "execution_state": "completed",
+            "success": True,
+            "executed_by": "ue_plugin",
+            "transaction_id": f"ue_transaction_{repair_proposal_id}",
+            "result": {
+                "blueprint_path": "/Game/Blueprints/BP_PlayerCharacter",
+                "graph_name": "EventGraph",
+                "source_node_id": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEFFFFFFFF",
+                "target_node_id": "11111111-2222-3333-4444-555566667777",
+                "linked_pins": [{"source_pin": "then", "target_pin": "execute"}],
+                "compile_status": "succeeded",
+                "dirty": True,
+                "dirty_packages": ["/Game/Blueprints/BP_PlayerCharacter"],
+            },
+        },
+    )
+    assert repair_result.status_code == 200
+
+    repaired_state_response = client.post("/api/v1/editor-operations/workflows/state", json={"workflow_plan": plan})
+    assert repaired_state_response.status_code == 200
+    repaired_state = repaired_state_response.json()["workflow_state"]
+    assert repaired_state["status"] == "ready_for_next_step"
+    assert repaired_state["completed_step_ids"] == ["step_0_add_blueprint_node_template"]
+    assert repaired_state["next_ready_step_ids"] == ["step_1_compile_blueprint"]
+    assert repaired_state["follow_up_candidate_count"] == 0
+    assert repaired_state["ready_follow_up_candidate_count"] == 0
+    assert repaired_state["follow_up_proposal_requests"] == []
+    assert repaired_state["next_step_proposal_requests"][0]["workflow_step_id"] == "step_1_compile_blueprint"
+
+    repaired_first_step = repaired_state["step_states"][0]
+    assert repaired_first_step["status"] == "completed_after_repair"
+    assert repaired_first_step["completed"] is True
+    assert repaired_first_step["needs_attention"] is False
+    assert repaired_first_step["workflow_blocking_flags"] == ["expected_linked_pins_missing"]
+    assert repaired_first_step["unresolved_workflow_blocking_flags"] == []
+    assert repaired_first_step["repair_resolved"] is True
+    assert repaired_first_step["repair_records"][0]["proposal_id"] == repair_proposal_id
+
 
 def test_editor_workflow_step_materialization_rejects_not_ready_step(client: TestClient) -> None:
     plan_response = client.post(

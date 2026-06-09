@@ -128,6 +128,7 @@ class EditorWorkflowStateService:
             "follow_up_candidate_count": sum(
                 int(_as_dict(item.get("proposal_record")).get("follow_up", {}).get("candidate_count") or 0)
                 for item in step_states
+                if str(item.get("status") or "") in {"completed_needs_attention", "failed", "blocked"}
             ),
             "ready_follow_up_candidate_count": len(follow_up_proposal_requests),
             "follow_up_proposal_requests": follow_up_proposal_requests,
@@ -144,10 +145,14 @@ class EditorWorkflowStateService:
             .order_by(ProposalModel.updated_at.desc())
             .limit(safe_limit)
         )
+        proposals = list(self.db.scalars(statement))
+        repair_records_by_source_proposal_id = self._follow_up_repair_records_by_source(proposals)
         records: dict[str, dict[str, Any]] = {}
-        for proposal in self.db.scalars(statement):
+        for proposal in proposals:
             preview = _as_dict(proposal.dry_run_preview_json)
             context = _as_dict(preview.get("context"))
+            if _clean_text(_as_dict(context.get("follow_up_materialization")).get("source_proposal_id")):
+                continue
             workflow_context = _as_dict(context.get("workflow_materialization"))
             if _clean_text(workflow_context.get("workflow_plan_id")) != plan_id:
                 continue
@@ -159,6 +164,10 @@ class EditorWorkflowStateService:
             operation_diagnostics = _as_dict(result_summary.get("operation_diagnostics"))
             diagnostic_flags = _as_string_list(operation_diagnostics.get("diagnostic_flags"))
             blocking_flags = [flag for flag in diagnostic_flags if flag in WORKFLOW_BLOCKING_DIAGNOSTIC_FLAGS]
+            repair_records = repair_records_by_source_proposal_id.get(proposal.proposal_id, [])
+            successful_repairs = [item for item in repair_records if item.get("repair_success") is True]
+            repair_resolved = bool(successful_repairs)
+            unresolved_blocking_flags = [] if repair_resolved else blocking_flags
             follow_up = (
                 operation_follow_up_payload(
                     proposal_id=proposal.proposal_id,
@@ -181,10 +190,49 @@ class EditorWorkflowStateService:
                 "operation_result_available": bool(operation_result),
                 "diagnostic_flags": diagnostic_flags,
                 "workflow_blocking_flags": blocking_flags,
-                "blocks_workflow_dependency": bool(blocking_flags),
+                "unresolved_workflow_blocking_flags": unresolved_blocking_flags,
+                "blocks_workflow_dependency": bool(unresolved_blocking_flags),
+                "repair_resolved": repair_resolved,
+                "repair_records": successful_repairs[:5],
                 "follow_up": follow_up,
                 "workflow_materialization": workflow_context,
             }
+        return records
+
+    def _follow_up_repair_records_by_source(
+        self,
+        proposals: list[ProposalModel],
+    ) -> dict[str, list[dict[str, Any]]]:
+        records: dict[str, list[dict[str, Any]]] = {}
+        for proposal in proposals:
+            preview = _as_dict(proposal.dry_run_preview_json)
+            context = _as_dict(preview.get("context"))
+            materialization = _as_dict(context.get("follow_up_materialization"))
+            source_proposal_id = _clean_text(materialization.get("source_proposal_id"))
+            if not source_proposal_id:
+                continue
+            operation_result = _as_dict(preview.get("operation_result"))
+            result_summary = _as_dict(operation_result.get("result_summary"))
+            operation_diagnostics = _as_dict(result_summary.get("operation_diagnostics"))
+            diagnostic_flags = _as_string_list(operation_diagnostics.get("diagnostic_flags"))
+            blocking_flags = [flag for flag in diagnostic_flags if flag in WORKFLOW_BLOCKING_DIAGNOSTIC_FLAGS]
+            execution_state = _clean_text(operation_result.get("execution_state"))
+            repair_success = execution_state == "completed" and operation_result.get("success") is True and not blocking_flags
+            records.setdefault(source_proposal_id, []).append(
+                {
+                    "proposal_id": proposal.proposal_id,
+                    "source_proposal_id": source_proposal_id,
+                    "candidate_id": _clean_text(materialization.get("candidate_id")),
+                    "operation_type": _clean_text(preview.get("operation_type")),
+                    "tool_id": preview.get("tool_id"),
+                    "execution_state": execution_state,
+                    "success": operation_result.get("success"),
+                    "repair_success": repair_success,
+                    "diagnostic_flags": diagnostic_flags,
+                    "workflow_blocking_flags": blocking_flags,
+                    "updated_at": _isoformat(proposal.updated_at),
+                }
+            )
         return records
 
     @staticmethod
@@ -204,7 +252,9 @@ class EditorWorkflowStateService:
             execution_state = _clean_text(record.get("execution_state"))
             success = record.get("success")
             confirmation_state = _clean_text(record.get("confirmation_state"))
-            if execution_state == "completed" and success is True and bool(record.get("blocks_workflow_dependency")):
+            if execution_state == "completed" and success is True and bool(record.get("repair_resolved")):
+                status = "completed_after_repair"
+            elif execution_state == "completed" and success is True and bool(record.get("blocks_workflow_dependency")):
                 status = "completed_needs_attention"
             elif execution_state == "completed" and success is True:
                 status = "completed"
@@ -236,10 +286,15 @@ class EditorWorkflowStateService:
             "unmet_dependency_step_ids": unmet_dependencies,
             "status": status,
             "can_create_proposal": status == "ready_for_proposal",
-            "completed": status == "completed",
+            "completed": status in {"completed", "completed_after_repair"},
             "needs_attention": status in {"completed_needs_attention", "failed", "blocked", "cancelled"},
             "diagnostic_flags": _as_string_list(record.get("diagnostic_flags") if record else []),
             "workflow_blocking_flags": _as_string_list(record.get("workflow_blocking_flags") if record else []),
+            "unresolved_workflow_blocking_flags": _as_string_list(
+                record.get("unresolved_workflow_blocking_flags") if record else []
+            ),
+            "repair_resolved": bool(record.get("repair_resolved")) if record else False,
+            "repair_records": list(record.get("repair_records") or []) if record else [],
             "proposal_record": record or {},
         }
 
@@ -248,7 +303,7 @@ class EditorWorkflowStateService:
         if not step_states:
             return "empty_plan"
         statuses = {str(item.get("status") or "") for item in step_states}
-        if statuses <= {"completed"}:
+        if statuses <= {"completed", "completed_after_repair"}:
             return "completed"
         if statuses & {"completed_needs_attention", "failed", "blocked", "cancelled"}:
             return "needs_attention"
@@ -347,6 +402,17 @@ class EditorWorkflowStateService:
                         "request": {
                             "candidate": candidate,
                             "requested_by": "workflow_state_projection",
+                            "context": {
+                                "workflow_repair_context": {
+                                    "schema_version": "editor_workflow_repair_context_v1",
+                                    "workflow_plan_id": _clean_text(
+                                        _as_dict(record.get("workflow_materialization")).get("workflow_plan_id")
+                                    ),
+                                    "workflow_step_id": state.get("step_id"),
+                                    "source_proposal_id": proposal_id,
+                                    "candidate_id": candidate.get("candidate_id"),
+                                }
+                            },
                         },
                         "safety": {
                             "auto_execute": False,
