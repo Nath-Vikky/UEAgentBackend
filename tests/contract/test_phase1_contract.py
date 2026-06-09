@@ -37,6 +37,32 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     shutil.rmtree(runtime_root, ignore_errors=True)
 
 
+@pytest.fixture()
+def client_active_intent_drafter(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    runtime_root = Path(".test-runtime") / f"contract-active-{uuid.uuid4().hex}"
+    storage_dir = runtime_root / "storage"
+    shutil.rmtree(runtime_root, ignore_errors=True)
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("STORAGE_DIR", str(storage_dir.resolve()))
+    monkeypatch.setenv("UPLOAD_DIR", str((storage_dir / "uploads").resolve()))
+    monkeypatch.setenv("ARTIFACT_DIR", str((storage_dir / "artifacts").resolve()))
+    monkeypatch.setenv("KB_DIR", str((storage_dir / "kb").resolve()))
+    monkeypatch.setenv("KB_SOURCE_PATHS", "./knowledge")
+    monkeypatch.setenv("EMBEDDING_ENABLED", "false")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("AGENT_INTENT_DRAFTER_MODE", "active")
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+    get_session_factory.cache_clear()
+    with TestClient(create_app()) as test_client:
+        yield test_client
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+    get_session_factory.cache_clear()
+    shutil.rmtree(runtime_root, ignore_errors=True)
+
+
 def test_chat_run_contract_contains_phase1_top_level_fields(client: TestClient) -> None:
     response = client.post(
         "/api/v1/chat/runs",
@@ -100,6 +126,40 @@ def test_chat_run_contract_contains_phase1_top_level_fields(client: TestClient) 
     assert body["debug_view"]["subagent_runtime"]["version"] == "subagent_runtime_v1"
     assert body["data"]["subagent_runtime"]["version"] == "subagent_runtime_v1"
     assert body["intent"]["route_type"] in {"project_qa", "direct_answer", "single_tool", "workflow"}
+
+
+def test_active_intent_drafter_falls_back_without_llm_key(client_active_intent_drafter: TestClient) -> None:
+    response = client_active_intent_drafter.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": "contract_active_intent_no_key",
+                "messages": [{"role": "user", "content": "Analyze this asset."}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Props/SM_Rock.SM_Rock"],
+            },
+            "payload": {"user_query": "Analyze this asset."},
+            "runtime_options": {
+                "debug": True,
+                "return_debug_projection": True,
+                "preferred_output_language": "en-US",
+            },
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    llm_report = body["debug_view"]["llm_intent_draft"]
+    assert llm_report["mode"] == "active"
+    assert llm_report["status"] == "skipped"
+    assert llm_report["reason"] == "missing_openai_api_key"
+    assert body["debug_view"]["route"]["selected_tool_id"] == "mcp_get_asset_details"
+    assert body["debug_view"]["tool_plan_v1"]["mode"] == "read_only"
+    assert body["debug_view"]["tool_plan_self_check"]["status"] == "ok"
 
 
 def test_chat_run_uses_active_target_memory_for_followup_asset_reference(client: TestClient) -> None:

@@ -1057,6 +1057,8 @@ class TaskService:
             request=request,
             routing=refined_routing,
             actual_task_type=actual_task_type,
+            intent_draft_override=dict(context_bundle.get("intent_draft") or {}),
+            llm_intent_draft_report=dict(context_bundle.get("llm_intent_draft") or {}),
         )
         refined_context_bundle["context_route_refinement"] = report
         return (refined_routing, refined_context_bundle, actual_task_type)

@@ -18,7 +18,12 @@ def _request(content: str, *, selected_assets: list[str] | None = None) -> Unifi
     )
 
 
-def _routing(tool_id: str = "query_project_inventory", route_type: str = "project_qa") -> dict:
+def _routing(
+    tool_id: str = "query_project_inventory",
+    route_type: str = "project_qa",
+    *,
+    selected_context_query: bool = True,
+) -> dict:
     return {
         "locale": {"final_output_language": "en-US"},
         "intent": {
@@ -34,7 +39,7 @@ def _routing(tool_id: str = "query_project_inventory", route_type: str = "projec
             "selected_tool_id": tool_id,
             "candidate_tool_ids": [tool_id],
             "planner_confidence": 0.91,
-            "selected_context_query": True,
+            "selected_context_query": selected_context_query,
         },
     }
 
@@ -117,3 +122,75 @@ def test_intent_verifier_flags_missing_selected_context() -> None:
     assert verified["target_resolution_status"] == "missing_active_context"
     assert "missing_active_context" in verified["safety_flags"]
     assert verified["corrections"][0]["correction_id"] == "selected_context_needs_active_target"
+
+
+def test_inventory_scope_current_project_does_not_require_selected_asset() -> None:
+    request = _request("List the assets in my current project.")
+    routing = _routing(tool_id="query_project_inventory", route_type="project_qa", selected_context_query=False)
+    bundle = {
+        "agent_turn_context": {
+            "active_targets": {
+                "asset": {"available": False, "selected_assets": []},
+                "blueprint": {"available": False},
+                "level_actor": {"available": False},
+                "material": {"available": False},
+                "code": {"available": False},
+                "log": {"available": False},
+            }
+        }
+    }
+
+    draft = build_intent_draft(request=request, routing=routing, context_bundle=bundle)
+    verified = verify_intent(draft=draft, routing=routing, context_bundle=bundle, free_chat=True)
+
+    assert draft["target_kind"] == "project_inventory"
+    assert draft["needs_live_editor_context"] is False
+    assert verified["target_resolution_status"] == "not_required"
+
+
+def test_level_actor_list_does_not_require_selected_actor() -> None:
+    request = _request("List enemy actors in the current level.")
+    routing = _routing(tool_id="mcp_get_level_actors", route_type="single_tool", selected_context_query=False)
+    bundle = {
+        "agent_turn_context": {
+            "active_targets": {
+                "asset": {"available": False},
+                "blueprint": {"available": False},
+                "level_actor": {"available": False},
+                "material": {"available": False},
+                "code": {"available": False},
+                "log": {"available": False},
+            }
+        }
+    }
+
+    draft = build_intent_draft(request=request, routing=routing, context_bundle=bundle)
+    verified = verify_intent(draft=draft, routing=routing, context_bundle=bundle, free_chat=True)
+
+    assert draft["target_kind"] == "project_inventory"
+    assert verified["target_resolution_status"] == "not_required"
+
+
+def test_place_actor_request_does_not_require_existing_selected_actor() -> None:
+    request = _request("Place BP_EnemySpawner in the current level.")
+    routing = _routing(tool_id="editor_place_actor_in_level", route_type="single_tool", selected_context_query=False)
+    bundle = {
+        "agent_turn_context": {
+            "active_targets": {
+                "asset": {"available": False},
+                "blueprint": {"available": False},
+                "level_actor": {"available": False},
+                "material": {"available": False},
+                "code": {"available": False},
+                "log": {"available": False},
+            }
+        }
+    }
+
+    draft = build_intent_draft(request=request, routing=routing, context_bundle=bundle)
+    verified = verify_intent(draft=draft, routing=routing, context_bundle=bundle)
+
+    assert draft["target_kind"] == "project_inventory"
+    assert draft["requested_write"] is True
+    assert verified["target_resolution_status"] == "not_required"
+    assert verified["route_type"] == "proposal_wait"

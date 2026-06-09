@@ -95,6 +95,18 @@ def _target_from_tool(selected_tool_id: str | None) -> tuple[str, str] | None:
     return None
 
 
+def _uses_project_or_level_scope(route: dict[str, Any], selected_tool_id: str | None) -> bool:
+    if route.get("project_inventory_query"):
+        return True
+    if selected_tool_id in {
+        "query_project_inventory",
+        "mcp_get_level_actors",
+        "editor_place_actor_in_level",
+    }:
+        return True
+    return False
+
+
 def _text_suggests_selected_target(text: str) -> tuple[str, str] | None:
     lowered = text.lower()
     if any(token in lowered for token in ("this asset", "selected asset", "current asset")) or any(
@@ -153,7 +165,14 @@ def build_intent_draft(
     ]
     turn_context = dict(context_bundle.get("agent_turn_context") or {})
     active_targets = dict(turn_context.get("active_targets") or {})
-    selected_context_query = bool(route.get("selected_context_query") or keyword_report.get("active_context_reference"))
+    active_context_reference = bool(keyword_report.get("active_context_reference")) and not _uses_project_or_level_scope(
+        route,
+        str(selected_tool_id or ""),
+    )
+    selected_context_query = bool(
+        route.get("selected_context_query")
+        or active_context_reference
+    )
 
     target_kind, target_reference = ("none", "")
     if selected_context_query:
@@ -177,14 +196,14 @@ def build_intent_draft(
         intent.get("route_type") == "project_qa"
         or route.get("project_inventory_query")
         or selected_context_query
-        or bool(keyword_report.get("active_context_reference"))
+        or active_context_reference
         or target_kind.startswith("selected_")
         or target_kind.startswith("current_")
     )
     needs_live_editor_context = bool(
         str(selected_tool_id or "").startswith("mcp_")
         or selected_context_query
-        or bool(keyword_report.get("active_context_reference"))
+        or active_context_reference
         or target_kind in {"selected_asset", "selected_actor", "current_blueprint", "selected_material_instance"}
     )
     needs_knowledge = bool(intent.get("requires_rag") or selected_tool_id == "retrieve_project_knowledge")

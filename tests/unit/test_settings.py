@@ -96,6 +96,16 @@ def test_settings_accept_agent_intent_drafter_override(clean_list_env: None) -> 
     assert settings.agent_intent_drafter_min_confidence == 0.82
 
 
+def test_env_example_recommends_active_intent_drafter(monkeypatch: pytest.MonkeyPatch, clean_list_env: None) -> None:
+    monkeypatch.delenv("AGENT_INTENT_DRAFTER_MODE", raising=False)
+    monkeypatch.delenv("AGENT_INTENT_DRAFTER_MIN_CONFIDENCE", raising=False)
+
+    settings = Settings(_env_file=Path(".env.example"))
+
+    assert settings.agent_intent_drafter_mode == "active"
+    assert settings.agent_intent_drafter_min_confidence == 0.78
+
+
 def test_settings_accept_csv_for_web_search_list_fields(clean_list_env: None) -> None:
     env_file = _write_env_file(
         "web-search-lists.env",

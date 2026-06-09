@@ -8674,24 +8674,27 @@ can use it to display the Agent chain in a friendlier way than raw JSON.
 
 ## 2026-06-09 Update: Optional LLM Intent Drafter v2
 
-The Agent chain now has an optional LLM intent-drafting adapter. It is disabled
-by default, so existing deterministic routing remains the normal behavior.
+The Agent chain has an optional LLM intent-drafting adapter. The distributed
+`.env.example` now recommends `active` for local demos and normal hands-on use;
+if no `.env` is provided or the LLM call fails, deterministic routing remains
+the fallback behavior.
 
 Configuration:
 
 ```env
-AGENT_INTENT_DRAFTER_MODE=disabled
+AGENT_INTENT_DRAFTER_MODE=active
 AGENT_INTENT_DRAFTER_MIN_CONFIDENCE=0.78
 ```
 
 Modes:
 
-- `disabled`: default. Only deterministic router projection is used.
+- `active`: recommended `.env.example` mode for local demos. The LLM drafts the
+  route/tool plan, then deterministic guards verify context, confidence, tool
+  id, smalltalk, and Proposal-only write safety.
+- `disabled`: built-in fallback if no env is set. Only deterministic router
+  projection is used.
 - `shadow`: calls the configured LLM and records `llm_intent_draft`, but does
   not change routing or execution.
-- `active`: may apply the LLM draft only after JSON parsing, confidence gating,
-  tool allow-list validation, active-context checks, downgrade checks, and
-  side-effect safety checks.
 
 Safety rules:
 
@@ -8700,9 +8703,9 @@ Safety rules:
 - Missing active editor context blocks selected/current-context tool overrides.
 - Selected/current editor context questions cannot be downgraded to ordinary
   `direct_answer` when deterministic rules already detected live editor context.
-- A newly suggested confirmed-write tool is blocked unless deterministic rules
-  already detected a write intent. Even then, editor writes still create
-  Proposals and require user confirmation.
+- A newly suggested confirmed-write tool is blocked unless deterministic routing
+  or `route_keyword_verifier_v1` detected a write signal. Even then, editor
+  writes still create Proposals and require user confirmation.
 - LLM draft failure, invalid JSON, missing API key, or network failure falls
   back to deterministic routing.
 - `draft_delta` records how the LLM draft differs from deterministic routing.
@@ -9038,11 +9041,14 @@ What changed:
 Runtime modes:
 
 ```env
-AGENT_INTENT_DRAFTER_MODE=disabled
+AGENT_INTENT_DRAFTER_MODE=active
 AGENT_INTENT_DRAFTER_MIN_CONFIDENCE=0.78
 ```
 
-- `disabled` remains the safest default: deterministic routing only.
+- `active` is the recommended `.env.example` mode for local demo/use: the LLM
+  may route/tool-plan first, but only after verifier gates pass.
+- `disabled` remains the code-level safest fallback if no env is set:
+  deterministic routing only.
 - `shadow` calls the configured LLM and records `llm_intent_draft`, but does not
   change the final route.
 - `active` lets the LLM route/tool draft override deterministic routing only if
@@ -9064,3 +9070,36 @@ Current Router v3 eval coverage adds no-keyword LLM-led read-only inspection,
 pure-smalltalk tool blocking, write-without-signal blocking, and write-with-signal
 Proposal routing. The latest local run covers 41 cases; `llm_router_v3` cases
 are all passing, and the full decision eval remains above the configured gates.
+
+## 2026-06-09 Update: Router v3 Active Default Closeout
+
+The distributed `.env.example` now sets:
+
+```env
+AGENT_INTENT_DRAFTER_MODE=active
+AGENT_INTENT_DRAFTER_MIN_CONFIDENCE=0.78
+```
+
+This means a copied local `.env` lets the LLM draft route/tool intent first,
+then deterministic guards verify it. If `OPENAI_API_KEY` is empty or the model
+call fails, the backend records `llm_intent_draft.status=skipped` and keeps the
+deterministic route.
+
+This closeout also fixes an over-broad active-context signal:
+
+- `current project` inventory questions no longer require a selected asset.
+- `current level` Actor list questions no longer require a selected Actor.
+- `place actor in current level` no longer requires an existing selected Actor.
+- `llm_intent_draft` diagnostics are preserved even when
+  `context_route_refinement` rebuilds the context bundle.
+
+Latest local Agent Decision Eval after the fix:
+
+- `case_count`: 41
+- `overall_accuracy`: 1.0
+- `inventory`: 1.0
+- `level_actor`: 1.0
+- `llm_router_v3`: 1.0
+
+Frontend impact: no mandatory change. Existing Debug View can optionally show
+`llm_intent_draft.status/reason` to explain active-mode fallback.
