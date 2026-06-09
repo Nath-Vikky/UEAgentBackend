@@ -8,6 +8,8 @@ from app.services.editor_operations.blueprint_result_diagnostics import first_no
 from app.services.editor_operations.catalog import (
     EDITOR_OPERATION_FOLLOW_UP_MATERIALIZATION_VERSION,
     OPERATION_SPECS,
+    UMG_WIDGET_CLASS_ALIASES,
+    UMG_WIDGET_CLASS_ALLOWLIST,
 )
 
 
@@ -107,6 +109,25 @@ def operation_follow_up_payload(
             _retry_compile_blueprint_candidate(
                 proposal_id=proposal_id,
                 blueprint_path=blueprint_path,
+            )
+        )
+
+    if "verify_umg_widget_name" in action_ids:
+        candidates.append(
+            _create_missing_umg_widget_candidate(
+                proposal_id=proposal_id,
+                operation_type=str(preview.get("operation_type") or operation_result.get("operation_type") or ""),
+                result=result,
+                payload=payload,
+            )
+        )
+
+    if "verify_umg_parent_widget" in action_ids:
+        candidates.append(
+            _create_missing_umg_parent_widget_candidate(
+                proposal_id=proposal_id,
+                result=result,
+                payload=payload,
             )
         )
 
@@ -415,6 +436,170 @@ def _fixup_redirectors_candidate(*, proposal_id: str, folder_path: str) -> dict[
             "Review the folder scope before confirming because Unreal may update referencer packages.",
         ],
     }
+
+
+def _create_missing_umg_widget_candidate(
+    *,
+    proposal_id: str,
+    operation_type: str,
+    result: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    widget_blueprint_path = first_non_empty_text(
+        result.get("widget_blueprint_path"),
+        payload.get("widget_blueprint_path"),
+    )
+    widget_name = first_non_empty_text(
+        result.get("widget_name"),
+        result.get("source_widget_name"),
+        payload.get("widget_name"),
+    )
+    parent_widget_name = first_non_empty_text(
+        result.get("parent_widget_name"),
+        result.get("old_parent_name"),
+        payload.get("parent_widget_name"),
+        payload.get("new_parent_name"),
+    )
+    widget_class = _infer_missing_umg_widget_class(operation_type=operation_type, result=result, payload=payload)
+    text = first_non_empty_text(result.get("text"), payload.get("text"))
+    follow_payload = {
+        "widget_blueprint_path": widget_blueprint_path,
+        "widget_name": widget_name,
+        "widget_class": widget_class,
+        "parent_widget_name": parent_widget_name or "",
+        "text": text if widget_class == UMG_WIDGET_CLASS_ALIASES["textblock"] else "",
+        "is_variable": True,
+    }
+    missing_inputs = [
+        key
+        for key in ("widget_blueprint_path", "widget_name", "widget_class")
+        if not str(follow_payload.get(key) or "").strip()
+    ]
+    return _umg_add_widget_candidate(
+        proposal_id=proposal_id,
+        candidate_id="create_missing_umg_widget",
+        source_action_id="verify_umg_widget_name",
+        follow_payload=follow_payload,
+        missing_inputs=missing_inputs,
+        confidence="medium" if not missing_inputs else "low",
+        reason=(
+            "Create the missing target widget first, then retry the original UMG edit if the created widget is correct."
+        ),
+        safety_notes=[
+            "This only creates a pending add_umg_widget Proposal; UEAgentTool still needs user confirmation.",
+            "Confirm the widget class and parent before execution, especially for layout or appearance repairs.",
+        ],
+    )
+
+
+def _create_missing_umg_parent_widget_candidate(
+    *,
+    proposal_id: str,
+    result: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    widget_blueprint_path = first_non_empty_text(
+        result.get("widget_blueprint_path"),
+        payload.get("widget_blueprint_path"),
+    )
+    parent_widget_name = first_non_empty_text(
+        result.get("parent_widget_name"),
+        result.get("new_parent_name"),
+        payload.get("parent_widget_name"),
+        payload.get("new_parent_name"),
+    )
+    follow_payload = {
+        "widget_blueprint_path": widget_blueprint_path,
+        "widget_name": parent_widget_name,
+        "widget_class": UMG_WIDGET_CLASS_ALIASES["canvaspanel"],
+        "parent_widget_name": "",
+        "text": "",
+        "is_variable": True,
+    }
+    missing_inputs = [
+        key
+        for key in ("widget_blueprint_path", "widget_name")
+        if not str(follow_payload.get(key) or "").strip()
+    ]
+    return _umg_add_widget_candidate(
+        proposal_id=proposal_id,
+        candidate_id="create_missing_umg_parent_widget",
+        source_action_id="verify_umg_parent_widget",
+        follow_payload=follow_payload,
+        missing_inputs=missing_inputs,
+        confidence="medium" if not missing_inputs else "low",
+        reason="Create the missing parent panel as a CanvasPanel so the original child widget operation can be retried.",
+        safety_notes=[
+            "This creates only a pending add_umg_widget Proposal and does not execute automatically.",
+            "Review whether CanvasPanel is the intended parent panel before confirming.",
+        ],
+    )
+
+
+def _umg_add_widget_candidate(
+    *,
+    proposal_id: str,
+    candidate_id: str,
+    source_action_id: str,
+    follow_payload: dict[str, Any],
+    missing_inputs: list[str],
+    confidence: str,
+    reason: str,
+    safety_notes: list[str],
+) -> dict[str, Any]:
+    return {
+        "candidate_id": candidate_id,
+        "source_action_id": source_action_id,
+        "operation_type": "add_umg_widget",
+        "proposal_ready": not missing_inputs,
+        "missing_inputs": missing_inputs,
+        "confidence": confidence,
+        "reason": reason,
+        "payload": follow_payload,
+        "create_request_hint": {
+            "method": "POST",
+            "path": "/api/v1/editor-operations/proposals",
+            "json": {
+                "operation_type": "add_umg_widget",
+                "payload": follow_payload,
+                "reason": f"Follow up from proposal {proposal_id}: create missing UMG widget.",
+                "requested_by": "editor_operation_follow_up",
+                "context": {"source_proposal_id": proposal_id},
+            },
+        },
+        "requires_confirmation": True,
+        "auto_execute": False,
+        "safety_notes": safety_notes,
+    }
+
+
+def _infer_missing_umg_widget_class(*, operation_type: str, result: dict[str, Any], payload: dict[str, Any]) -> str:
+    explicit_class = _normalize_umg_widget_class_text(
+        first_non_empty_text(result.get("widget_class"), payload.get("widget_class"))
+    )
+    if explicit_class:
+        return explicit_class
+
+    if operation_type == "set_umg_widget_text":
+        return UMG_WIDGET_CLASS_ALIASES["textblock"]
+    if operation_type == "set_umg_widget_brush":
+        return UMG_WIDGET_CLASS_ALIASES["image"]
+    if operation_type == "set_umg_widget_appearance":
+        appearance = payload.get("appearance") if isinstance(payload.get("appearance"), dict) else {}
+        if any(key in appearance for key in ("color_and_opacity", "font_size")):
+            return UMG_WIDGET_CLASS_ALIASES["textblock"]
+
+    return ""
+
+
+def _normalize_umg_widget_class_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    alias = UMG_WIDGET_CLASS_ALIASES.get(text.replace("_", "").replace(" ", "").lower())
+    if alias:
+        return alias
+    return text if text in UMG_WIDGET_CLASS_ALLOWLIST else ""
 
 
 __all__ = [

@@ -73,6 +73,26 @@ The same workflow-state repair loop also covers failed Blueprint compile steps:
 `compile_failed` can surface a retry compile quick action, and a successful
 retry result can complete the original workflow step.
 
+## What should I do if a UMG operation says the widget or parent does not exist?
+
+Check the same follow-up endpoint:
+
+```http
+GET /api/v1/editor-operations/proposals/{proposal_id}/follow-ups
+```
+
+For common cases, the backend can suggest a pending `add_umg_widget` repair
+Proposal:
+
+- Missing `TextBlock` after `set_umg_widget_text`.
+- Missing `Image` after `set_umg_widget_brush`.
+- Missing parent panel after an add/reparent/layout operation.
+
+Ambiguous layout, visibility, or appearance repairs may be returned as
+`needs_manual_input` if the backend cannot safely infer the widget class. The
+repair is never executed automatically; the user still reviews and confirms the
+Proposal in UEAgentTool.
+
 ## Are private notes or external course repositories included?
 
 No. Public knowledge lives in `knowledge/`. Private notes or third-party source

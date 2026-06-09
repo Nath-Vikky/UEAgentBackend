@@ -8895,3 +8895,36 @@ empty-answer text, for example `工具结果`, `项目问答`, `回答`, and
 
 Frontend impact: no mandatory change. Existing User View rendering continues to
 work; Debug View can optionally show the new quality fields.
+
+## 2026-06-09 Update: UMG Follow-up Repair Candidates v1
+
+UMG editor-operation results now reuse the same follow-up Proposal contract used
+by Blueprint graph repair:
+
+```http
+GET /api/v1/editor-operations/proposals/{proposal_id}/follow-ups
+POST /api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal
+```
+
+Supported v1 repairs:
+
+- `umg_widget_unresolved` from `set_umg_widget_text` can suggest an
+  `add_umg_widget` Proposal for a missing `TextBlock`.
+- `umg_widget_unresolved` from `set_umg_widget_brush` can suggest an
+  `add_umg_widget` Proposal for a missing `Image`.
+- Layout, visibility, and appearance failures without a reliable widget class
+  stay as `needs_manual_input` candidates and are not exposed as ready quick
+  actions.
+- `umg_parent_unresolved` can suggest an `add_umg_widget` Proposal for a missing
+  parent `CanvasPanel`.
+
+Safety boundary:
+
+- The backend never executes the repair automatically.
+- Ready candidates create pending Proposals only.
+- UEAgentTool/user confirmation is still required before any Widget Blueprint is
+  changed.
+
+Frontend impact: no mandatory change if the client already renders
+`follow_up` and `user_view.quick_actions[]`. Existing Proposal confirmation and
+result-reporting flows can be reused.

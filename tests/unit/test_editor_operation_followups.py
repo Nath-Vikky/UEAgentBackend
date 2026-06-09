@@ -158,6 +158,139 @@ def test_operation_follow_up_payload_adds_redirector_candidate_after_asset_move(
     assert follow_up["candidates"][0]["payload"]["folder_path"] == "/Game/Blueprints"
 
 
+def test_operation_follow_up_payload_builds_umg_missing_text_widget_candidate() -> None:
+    payload = operation_follow_up_payload(
+        proposal_id="proposal_umg_text",
+        preview={
+            "operation_type": "set_umg_widget_text",
+            "tool_id": "editor_set_umg_widget_text",
+            "operation_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "text": "Ready",
+            },
+            "operation_result": {
+                "success": False,
+                "execution_state": "failed",
+                "result": {
+                    "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                    "widget_name": "TitleText",
+                    "error_code": "widget_not_found",
+                },
+                "result_summary": {
+                    "operation_diagnostics": {
+                        "diagnostic_flags": ["umg_widget_unresolved"],
+                        "repair_advice": {
+                            "status": "suggested",
+                            "actions": [{"action_id": "verify_umg_widget_name"}],
+                        },
+                    }
+                },
+            },
+        },
+        is_editor_operation=True,
+    )
+
+    follow_up = payload["follow_up"]
+    assert follow_up["status"] == "suggested"
+    assert follow_up["ready_candidate_count"] == 1
+    candidate = follow_up["candidates"][0]
+    assert candidate["candidate_id"] == "create_missing_umg_widget"
+    assert candidate["operation_type"] == "add_umg_widget"
+    assert candidate["proposal_ready"] is True
+    assert candidate["payload"] == {
+        "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+        "widget_name": "TitleText",
+        "widget_class": "/Script/UMG.TextBlock",
+        "parent_widget_name": "",
+        "text": "Ready",
+        "is_variable": True,
+    }
+    assert candidate["create_request_hint"]["json"]["context"]["source_proposal_id"] == "proposal_umg_text"
+    assert candidate["auto_execute"] is False
+
+
+def test_operation_follow_up_payload_keeps_umg_layout_candidate_manual_without_class() -> None:
+    payload = operation_follow_up_payload(
+        proposal_id="proposal_umg_layout",
+        preview={
+            "operation_type": "set_umg_widget_layout",
+            "tool_id": "editor_set_umg_widget_layout",
+            "operation_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "UnknownPanel",
+                "layout": {"position": {"x": 10, "y": 20}},
+            },
+            "operation_result": {
+                "success": False,
+                "execution_state": "failed",
+                "result": {"error_code": "widget_not_found"},
+                "result_summary": {
+                    "operation_diagnostics": {
+                        "diagnostic_flags": ["umg_widget_unresolved"],
+                        "repair_advice": {
+                            "status": "suggested",
+                            "actions": [{"action_id": "verify_umg_widget_name"}],
+                        },
+                    }
+                },
+            },
+        },
+        is_editor_operation=True,
+    )
+
+    follow_up = payload["follow_up"]
+    assert follow_up["status"] == "needs_manual_input"
+    assert follow_up["ready_candidate_count"] == 0
+    candidate = follow_up["candidates"][0]
+    assert candidate["candidate_id"] == "create_missing_umg_widget"
+    assert candidate["operation_type"] == "add_umg_widget"
+    assert candidate["proposal_ready"] is False
+    assert candidate["missing_inputs"] == ["widget_class"]
+    assert follow_up_quick_actions(proposal_id="proposal_umg_layout", follow_up=follow_up) == []
+
+
+def test_operation_follow_up_payload_builds_umg_missing_parent_candidate() -> None:
+    payload = operation_follow_up_payload(
+        proposal_id="proposal_umg_parent",
+        preview={
+            "operation_type": "add_umg_widget",
+            "tool_id": "editor_add_umg_widget",
+            "operation_payload": {
+                "widget_blueprint_path": "/Game/UI/WBP_MainHUD",
+                "widget_name": "TitleText",
+                "widget_class": "/Script/UMG.TextBlock",
+                "parent_widget_name": "RootCanvas",
+            },
+            "operation_result": {
+                "success": False,
+                "execution_state": "failed",
+                "result": {"parent_widget_name": "RootCanvas", "error_code": "parent_widget_not_found"},
+                "result_summary": {
+                    "operation_diagnostics": {
+                        "diagnostic_flags": ["umg_parent_unresolved"],
+                        "repair_advice": {
+                            "status": "suggested",
+                            "actions": [{"action_id": "verify_umg_parent_widget"}],
+                        },
+                    }
+                },
+            },
+        },
+        is_editor_operation=True,
+    )
+
+    follow_up = payload["follow_up"]
+    assert follow_up["status"] == "suggested"
+    candidate = follow_up["candidates"][0]
+    assert candidate["candidate_id"] == "create_missing_umg_parent_widget"
+    assert candidate["operation_type"] == "add_umg_widget"
+    assert candidate["proposal_ready"] is True
+    assert candidate["payload"]["widget_name"] == "RootCanvas"
+    assert candidate["payload"]["widget_class"] == "/Script/UMG.CanvasPanel"
+    assert candidate["payload"]["parent_widget_name"] == ""
+
+
 def test_materialize_follow_up_proposal_request_keeps_proposal_pending_and_contextual() -> None:
     follow_up = operation_follow_up_payload(
         proposal_id="proposal_4",

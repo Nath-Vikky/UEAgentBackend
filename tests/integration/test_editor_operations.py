@@ -1776,6 +1776,35 @@ def test_umg_result_summary_maps_widget_errors_to_repair_advice(client: TestClie
     assert body["user_view"]["status_hint"] == "needs_attention"
     block_types = [block["block_type"] for block in body["user_view"]["blocks"]]
     assert "editor_operation_umg_details" in block_types
+    assert body["follow_up"]["ready_candidate_count"] == 1
+    assert body["user_view"]["quick_actions"][0]["payload"]["candidate_id"] == "create_missing_umg_widget"
+
+    follow_ups = client.get(f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups")
+    assert follow_ups.status_code == 200
+    follow_up = follow_ups.json()["follow_up"]
+    assert follow_up["status"] == "suggested"
+    assert follow_up["ready_candidate_count"] == 1
+    candidate = follow_up["candidates"][0]
+    assert candidate["candidate_id"] == "create_missing_umg_widget"
+    assert candidate["operation_type"] == "add_umg_widget"
+    assert candidate["proposal_ready"] is True
+    assert candidate["payload"]["widget_class"] == "/Script/UMG.TextBlock"
+    assert candidate["payload"]["text"] == "Mission Ready"
+
+    materialized = client.post(
+        f"/api/v1/editor-operations/proposals/{proposal_id}/follow-ups/proposal",
+        json={"candidate": candidate, "requested_by": "integration_test"},
+    )
+    assert materialized.status_code == 200
+    materialized_body = materialized.json()
+    assert materialized_body["success"] is True
+    assert materialized_body["follow_up_step"]["operation_type"] == "add_umg_widget"
+    assert materialized_body["proposal"]["item"]["confirmation"]["state"] == "pending"
+    assert materialized_body["proposal"]["operation"]["operation_payload"]["widget_name"] == "TitleText"
+    assert (
+        materialized_body["proposal"]["operation"]["context"]["follow_up_materialization"]["source_proposal_id"]
+        == proposal_id
+    )
 
     diagnostics_summary = client.get(
         "/api/v1/editor-operations/diagnostics",
