@@ -339,6 +339,7 @@ def build_context_pack(
         },
         "conversation_layer": {
             "session_summary": context_bundle.get("session_summary") or {},
+            "active_target_memory": context_bundle.get("active_target_memory") or {},
             "recent_messages": _compact_recent_messages(context_bundle),
             "recent_message_count": len(context_bundle.get("recent_messages") or []),
         },
@@ -416,6 +417,7 @@ def build_context_pack(
             "has_material_focus": bool(material_focus.get("current_material_instance_inventory")),
             "selected_memory_count": len(selected_memory),
             "tool_observation_count": len(tool_summaries),
+            "active_target_memory_count": len((context_bundle.get("active_target_memory") or {}).get("items") or []),
         },
     }
 
@@ -454,6 +456,14 @@ def context_pack_prompt_excerpt(context_pack: dict[str, Any]) -> str:
     session_summary = dict(conversation.get("session_summary") or {})
     if session_summary.get("status") == "available":
         lines.append(f"- Session summary: {session_summary.get('summary_text')}")
+    active_target_memory = dict(conversation.get("active_target_memory") or {})
+    if active_target_memory.get("items"):
+        lines.append("- Last active editor targets:")
+        for item in list(active_target_memory.get("items") or [])[:5]:
+            lines.append(
+                "  - "
+                f"{item.get('target_kind')}: {item.get('display_name') or item.get('target_id')}"
+            )
     recent_messages = list(conversation.get("recent_messages") or [])
     if recent_messages:
         lines.append("- Recent messages:")

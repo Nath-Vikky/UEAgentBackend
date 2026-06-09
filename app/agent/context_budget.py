@@ -24,6 +24,7 @@ def _section_char_counts(context_bundle: dict[str, Any]) -> dict[str, int]:
     recent_messages = sum(_chars(item.get("content")) for item in context_bundle.get("recent_messages", []))
     tool_context = sum(_chars(item.get("summary") or item) for item in context_bundle.get("tool_context", []))
     memory = _chars(context_bundle.get("session_summary"))
+    memory += _chars(context_bundle.get("active_target_memory"))
     memory += _chars(context_bundle.get("long_term_memory"))
     memory += _chars(context_bundle.get("file_memory"))
     memory += _chars(context_bundle.get("web_memory"))

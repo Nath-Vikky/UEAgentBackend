@@ -8604,3 +8604,56 @@ Debug fields:
 
 Frontend impact: no mandatory change. This feature only affects backend
 decision diagnostics unless explicitly enabled in `.env`.
+
+## 2026-06-09 Update: Active Target Memory v1
+
+The backend now keeps a compact short-term memory of the latest active editor
+targets for each session. This is designed for follow-up prompts such as:
+
+- "分析一下这个资产"
+- "what about this Blueprint?"
+- "检查一下刚才那个材质"
+- "summarize the selected actor"
+
+What it stores:
+
+- target kind: `asset`, `blueprint`, `widget`, `level_actor`, `material`,
+  `code`, or `log`.
+- target id/path/reference, for example `/Game/Characters/BP_Player`.
+- a display name and the source task id.
+
+What it does not store:
+
+- raw source code.
+- raw asset details.
+- full MCP payloads.
+- cross-project user profiles.
+
+Flow:
+
+```text
+Task with active UE context
+-> build agent_turn_context.active_targets
+-> update session metadata_json.active_target_memory
+-> next task can use this memory if the current request says "this asset"
+   but does not include a fresh selected target
+```
+
+Priority:
+
+- Fresh UE frontend context always wins.
+- Active Target Memory is only used when the current request lacks a concrete
+  selected asset/Blueprint/widget/actor/material/code/log target.
+- If no current context and no active target memory are available, the backend
+  should ask the user to select/sync the target instead of inventing one.
+
+Debug fields:
+
+- `data.context_bundle.active_target_memory`
+- `debug_view.context_bundle.active_target_memory`
+- `debug_view.memory_summary.updated_active_target_memory`
+- `debug_view.context_pack.debug_summary.active_target_memory_count`
+
+Frontend impact: no mandatory change. Existing Project Inventory sync and
+active editor context submission already provide the data needed by this
+memory layer.

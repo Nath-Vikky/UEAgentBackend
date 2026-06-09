@@ -15,6 +15,7 @@ DEFAULT_TRIGGER_MESSAGE_COUNT = 8
 DEFAULT_KEEP_RECENT_MESSAGES = 6
 DEFAULT_MAX_SUMMARY_CHARS = 1800
 DEFAULT_LONG_TERM_MEMORY_LIMIT = 12
+ACTIVE_TARGET_MEMORY_VERSION = "active_target_memory_v1"
 
 
 def _clip(value: str, limit: int) -> str:
@@ -249,3 +250,131 @@ def update_session_memory(
     db.commit()
     db.refresh(session_model)
     return summary
+
+
+def read_active_target_memory(db: Session, session_id: str) -> dict[str, Any]:
+    session_model = db.get(SessionModel, session_id)
+    metadata = dict(session_model.metadata_json or {}) if session_model else {}
+    memory = metadata.get("active_target_memory")
+    if not isinstance(memory, dict):
+        return {"status": "not_found", "version": ACTIVE_TARGET_MEMORY_VERSION, "items": []}
+    items = [item for item in list(memory.get("items") or []) if isinstance(item, dict)]
+    return {
+        **memory,
+        "version": memory.get("version") or ACTIVE_TARGET_MEMORY_VERSION,
+        "status": "available" if items else "not_found",
+        "items": items,
+    }
+
+
+def update_active_target_memory(
+    db: Session,
+    session_id: str,
+    *,
+    context_bundle: dict[str, Any],
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    session_model = db.get(SessionModel, session_id)
+    if not session_model:
+        return {"status": "not_available", "reason": "session_not_found"}
+
+    items = _active_target_memory_items(context_bundle=context_bundle, task_id=task_id)
+    if not items:
+        return {"status": "not_triggered", "reason": "no_active_targets"}
+
+    metadata = dict(session_model.metadata_json or {})
+    existing = [
+        item for item in list((metadata.get("active_target_memory") or {}).get("items") or []) if isinstance(item, dict)
+    ]
+    merged = _merge_active_target_items(existing, items)
+    memory = {
+        "version": ACTIVE_TARGET_MEMORY_VERSION,
+        "status": "available",
+        "items": merged,
+        "updated_at": now_utc().isoformat(),
+        "policy": "Stores only compact last active editor targets for short-term pronoun resolution.",
+    }
+    metadata["active_target_memory"] = memory
+    session_model.metadata_json = metadata
+    db.add(session_model)
+    db.commit()
+    db.refresh(session_model)
+    return {
+        "status": "updated",
+        "version": ACTIVE_TARGET_MEMORY_VERSION,
+        "item_count": len(merged),
+        "latest_items": items,
+    }
+
+
+def _active_target_memory_items(*, context_bundle: dict[str, Any], task_id: str | None) -> list[dict[str, Any]]:
+    active_targets = dict((context_bundle.get("agent_turn_context") or {}).get("active_targets") or {})
+    now = now_utc().isoformat()
+    items: list[dict[str, Any]] = []
+    for target_kind, target in active_targets.items():
+        if target_kind == "has_any_active_target" or not isinstance(target, dict) or not target.get("available"):
+            continue
+        target_id = _active_target_id(target_kind, target)
+        if not target_id:
+            continue
+        items.append(
+            {
+                "target_kind": target_kind,
+                "target_id": target_id,
+                "display_name": _display_name(target_id),
+                "source": "active_context",
+                "source_task_id": task_id,
+                "updated_at": now,
+            }
+        )
+    return items
+
+
+def _merge_active_target_items(existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_kind: dict[str, dict[str, Any]] = {}
+    for item in existing:
+        kind = str(item.get("target_kind") or "")
+        if kind:
+            by_kind[kind] = item
+    for item in incoming:
+        kind = str(item.get("target_kind") or "")
+        if kind:
+            by_kind[kind] = item
+    ordered_kinds = ("asset", "blueprint", "widget", "level_actor", "material", "code", "log")
+    return [by_kind[kind] for kind in ordered_kinds if kind in by_kind]
+
+
+def _active_target_id(target_kind: str, target: dict[str, Any]) -> str:
+    if target_kind == "asset":
+        selected = list(target.get("selected_assets") or [])
+        return str(selected[0] if selected else "")
+    if target_kind == "blueprint":
+        return str(target.get("current_blueprint_path") or target.get("current_graph_name") or "")
+    if target_kind == "widget":
+        return str(
+            target.get("current_widget_blueprint_path")
+            or target.get("selected_widget_name")
+            or target.get("current_widget_name")
+            or ""
+        )
+    if target_kind == "level_actor":
+        selected = list(target.get("selected_actor_references") or [])
+        return str(target.get("current_actor_reference") or (selected[0] if selected else ""))
+    if target_kind == "material":
+        selected = list(target.get("selected_material_instance_paths") or [])
+        return str(target.get("current_material_instance_path") or (selected[0] if selected else ""))
+    if target_kind == "code":
+        selected = list(target.get("selected_files") or [])
+        return str(target.get("current_file") or (selected[0] if selected else ""))
+    if target_kind == "log":
+        return str(target.get("log_file_path") or target.get("source") or "")
+    return ""
+
+
+def _display_name(target_id: str) -> str:
+    text = str(target_id or "")
+    if "/" in text:
+        text = text.rsplit("/", 1)[-1]
+    if "." in text:
+        text = text.split(".", 1)[0]
+    return text or target_id

@@ -167,6 +167,7 @@ def build_agent_turn_context(
             "project_inventory": bool(inventory.get("has_snapshot") or inventory.get("status") == "available"),
             "rag": bool(retrieval.get("retrieved_docs") or retrieval.get("status") == "available"),
             "session_memory": bool((context_bundle.get("session_summary") or {}).get("summary_text")),
+            "active_target_memory": bool((context_bundle.get("active_target_memory") or {}).get("items")),
             "tool_summaries": bool(context_bundle.get("tool_context")),
             "recent_editor_operations": bool(context_bundle.get("recent_editor_operations")),
         },
