@@ -33,6 +33,8 @@ selection/focus, Project Inventory status, RAG status, recent tool summaries,
 available tools, and a deterministic context-budget report. Tool execution is
 checked by a permission gate: read-only tools may run automatically, plan-only
 tools only draft plans, and editor writes must become user-confirmed Proposals.
+The same chain exposes resolved context and a stable tool plan for debugging
+and future graph-based orchestration.
 Before the response is returned, a lightweight response critic keeps User View
 human-readable and moves raw tool/MCP details to Debug View.
 

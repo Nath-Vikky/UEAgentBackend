@@ -1070,7 +1070,9 @@ class TaskService:
         execution["debug_view"]["agent_turn_context"] = context_bundle.get("agent_turn_context", {})
         execution["debug_view"]["context_budget_report"] = context_bundle.get("context_budget_report", {})
         execution["debug_view"]["intent_draft"] = context_bundle.get("intent_draft", {})
+        execution["debug_view"]["context_resolution"] = context_bundle.get("context_resolution", {})
         execution["debug_view"]["verified_intent"] = context_bundle.get("verified_intent", {})
+        execution["debug_view"]["tool_plan_v1"] = context_bundle.get("tool_plan_v1", {})
         execution["debug_view"]["tool_registry_protocol"] = tool_protocol_summary()
         execution["debug_view"]["tool_execution_policy"] = TOOL_EXECUTION_POLICY
         execution["debug_view"]["tools"] = enrich_tool_debug_entries(
@@ -1089,7 +1091,9 @@ class TaskService:
         execution["data"]["agent_turn_context"] = context_bundle.get("agent_turn_context", {})
         execution["data"]["context_budget_report"] = context_bundle.get("context_budget_report", {})
         execution["data"]["intent_draft"] = context_bundle.get("intent_draft", {})
+        execution["data"]["context_resolution"] = context_bundle.get("context_resolution", {})
         execution["data"]["verified_intent"] = context_bundle.get("verified_intent", {})
+        execution["data"]["tool_plan_v1"] = context_bundle.get("tool_plan_v1", {})
         execution["planner_diagnostics"] = {
             **dict(execution.get("planner_diagnostics") or {}),
             "skill": skill_runtime,
@@ -1450,7 +1454,9 @@ class TaskService:
             "agent_turn_context": resolved_context_bundle.get("agent_turn_context", {}),
             "context_budget_report": resolved_context_bundle.get("context_budget_report", {}),
             "intent_draft": resolved_context_bundle.get("intent_draft", {}),
+            "context_resolution": resolved_context_bundle.get("context_resolution", {}),
             "verified_intent": resolved_context_bundle.get("verified_intent", {}),
+            "tool_plan_v1": resolved_context_bundle.get("tool_plan_v1", {}),
             "active_context": resolved_context_bundle.get("active_context", {}),
             "graph_framework": graph_framework_readiness_report(
                 review_fix_validate_graph_spec(),

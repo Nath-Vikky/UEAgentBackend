@@ -52,7 +52,9 @@ def build_agent_decision_trace(
     context_budget_report = dict(context_bundle.get("context_budget_report") or {})
     agent_turn_context = dict(context_bundle.get("agent_turn_context") or {})
     intent_draft = dict(context_bundle.get("intent_draft") or {})
+    context_resolution = dict(context_bundle.get("context_resolution") or {})
     verified_intent = dict(context_bundle.get("verified_intent") or {})
+    tool_plan_v1 = dict(context_bundle.get("tool_plan_v1") or {})
     context_pack = dict(context_bundle.get("context_pack") or {})
     context_pack_summary = dict(context_pack.get("debug_summary") or {})
     context_pack_budget = dict(context_pack.get("budget_layer") or {})
@@ -114,7 +116,9 @@ def build_agent_decision_trace(
                 "selected_tool_id": route.get("selected_tool_id"),
                 "project_signal_strength": route.get("project_signal_strength"),
                 "intent_draft": intent_draft,
+                "context_resolution": context_resolution,
                 "verified_intent": verified_intent,
+                "tool_plan_v1": tool_plan_v1,
             },
             warnings=[*list(route.get("warnings") or []), *list(verified_intent.get("safety_flags") or [])],
         ),
@@ -141,6 +145,7 @@ def build_agent_decision_trace(
                 "char_budget": context_budget.get("char_budget"),
                 "within_budget": context_budget.get("within_budget"),
                 "context_budget_report": context_budget_report,
+                "context_resolution": context_resolution,
                 "agent_turn_context": {
                     "version": agent_turn_context.get("version"),
                     "active_targets": agent_turn_context.get("active_targets", {}),
@@ -164,11 +169,15 @@ def build_agent_decision_trace(
             warnings=list(retrieval_trace.get("warnings") or []),
         ),
         "tool_decision": _decision(
-            decision=str(skill_runtime.get("skill_id") or route.get("selected_tool_id") or "none"),
-            reason="Mapped route and task type to a fixed built-in skill.",
-            source="skill_registry",
+            decision=str(tool_plan_v1.get("tool_id") or skill_runtime.get("skill_id") or route.get("selected_tool_id") or "none"),
+            reason="Projected route, verified intent, context resolution, and permission gate into a stable ToolPlan.",
+            source="tool_decision",
             confidence=route.get("planner_confidence"),
-            details=skill_runtime,
+            details={
+                "skill_runtime": skill_runtime,
+                "tool_plan_v1": tool_plan_v1,
+            },
+            warnings=list(tool_plan_v1.get("permission_decision", {}).get("warnings") or []),
         ),
         "memory_decision": _decision(
             decision=memory_status,

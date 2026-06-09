@@ -159,6 +159,23 @@ decision chain upgrade:
   intent drafter can emit the same schema, while the verifier keeps the final
   safety boundary.
 
+`context_resolution` and `tool_plan_v1` are the next structured steps in the
+same chain:
+
+- `context_resolution` resolves short references such as "this asset", "this
+  Blueprint", "this actor", or "the selected material" into a concrete UE
+  target. It records `status`, `source`, `target_id`, `target_display_name`,
+  available fields, and missing fields.
+- `tool_plan_v1` projects the verified intent and resolved context into a
+  stable tool plan. It records the selected tool, side-effect level, argument
+  draft, fallback tools, permission decision, and whether the request must
+  become a Proposal.
+
+These fields are currently diagnostic and orchestration inputs; existing task
+handlers still execute through the same public routes. They make the Agent
+decision chain easier to test, inspect, and eventually migrate to an LLM-led or
+LangGraph-style graph without changing the HTTP request shape.
+
 No UEAgentTool change is required for these fields. They are backend-side
 diagnostics and future Agent orchestration inputs.
 

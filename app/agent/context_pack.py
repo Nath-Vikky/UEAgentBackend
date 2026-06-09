@@ -295,7 +295,9 @@ def build_context_pack(
     budget = dict(context_bundle.get("budget") or {})
     budget_report = dict(context_bundle.get("context_budget_report") or {})
     intent_draft = dict(context_bundle.get("intent_draft") or {})
+    context_resolution = dict(context_bundle.get("context_resolution") or {})
     verified_intent = dict(context_bundle.get("verified_intent") or {})
+    tool_plan = dict(context_bundle.get("tool_plan_v1") or {})
 
     return {
         "version": CONTEXT_PACK_VERSION,
@@ -311,6 +313,12 @@ def build_context_pack(
                 "target_resolution_status": verified_intent.get("target_resolution_status"),
                 "selected_tool_id": verified_intent.get("selected_tool_id"),
                 "safety_flags": verified_intent.get("safety_flags", []),
+            },
+            "tool_plan": {
+                "mode": tool_plan.get("mode"),
+                "tool_id": tool_plan.get("tool_id"),
+                "side_effect_level": tool_plan.get("side_effect_level"),
+                "requires_proposal": tool_plan.get("requires_proposal"),
             },
         },
         "project_layer": {
@@ -352,6 +360,13 @@ def build_context_pack(
             "tool_observation_summary": tool_summaries,
             "recent_editor_operations": editor_operations,
             "proposal_policy": "Write-side editor actions remain pending Proposals until confirmed by the user.",
+            "tool_plan": {
+                "mode": tool_plan.get("mode"),
+                "tool_id": tool_plan.get("tool_id"),
+                "arguments": tool_plan.get("arguments", {}),
+                "fallback_tools": tool_plan.get("fallback_tools", []),
+                "requires_proposal": tool_plan.get("requires_proposal"),
+            },
         },
         "budget_layer": {
             **budget,
@@ -378,11 +393,23 @@ def build_context_pack(
                 "needs_knowledge": intent_draft.get("needs_knowledge"),
                 "requested_write": intent_draft.get("requested_write"),
             },
+            "context_resolution": {
+                "target_kind": context_resolution.get("target_kind"),
+                "status": context_resolution.get("status"),
+                "source": context_resolution.get("source"),
+                "target_id": context_resolution.get("target_id"),
+                "missing_fields": context_resolution.get("missing_fields", []),
+            },
             "verified_intent": {
                 "route_type": verified_intent.get("route_type"),
                 "target_resolution_status": verified_intent.get("target_resolution_status"),
                 "correction_count": len(verified_intent.get("corrections") or []),
                 "safety_flags": verified_intent.get("safety_flags", []),
+            },
+            "tool_plan": {
+                "mode": tool_plan.get("mode"),
+                "tool_id": tool_plan.get("tool_id"),
+                "requires_proposal": tool_plan.get("requires_proposal"),
             },
             "has_inventory_snapshot": inventory_focus.get("has_snapshot"),
             "has_level_actor_focus": bool(level_actor_focus.get("current_actor_inventory")),

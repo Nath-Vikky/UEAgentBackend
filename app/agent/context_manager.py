@@ -9,8 +9,10 @@ from app.agent.active_context import build_active_context
 from app.agent.context_builder import build_context_summary
 from app.agent.context_budget import build_context_budget_report
 from app.agent.context_pack import build_context_pack, context_pack_prompt_excerpt
+from app.agent.context_resolver import resolve_context
 from app.agent.intent_drafter import build_intent_draft
 from app.agent.intent_verifier import verify_intent
+from app.agent.tool_decision import build_tool_plan
 from app.agent.turn_context import build_agent_turn_context
 from app.agent.memory_providers import (
     FileMemoryProvider,
@@ -536,11 +538,23 @@ def build_context_bundle(
         routing=routing,
         context_bundle=bundle,
     )
+    bundle["context_resolution"] = resolve_context(
+        request=request,
+        routing=routing,
+        context_bundle=bundle,
+        intent_draft=bundle["intent_draft"],
+    )
     bundle["verified_intent"] = verify_intent(
         draft=bundle["intent_draft"],
         routing=routing,
         context_bundle=bundle,
         free_chat=request.task_type in {"agent_chat", "project_qa"},
+    )
+    bundle["tool_plan_v1"] = build_tool_plan(
+        intent_draft=bundle["intent_draft"],
+        verified_intent=bundle["verified_intent"],
+        context_resolution=bundle["context_resolution"],
+        routing=routing,
     )
     bundle["context_pack"] = build_context_pack(bundle)
     return bundle
