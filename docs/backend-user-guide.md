@@ -8506,3 +8506,31 @@ Routing boundary clarified in this slice:
 Frontend impact: no mandatory change. UEAgentTool can keep using the existing
 `POST /api/v1/chat/runs` and Proposal confirmation flow. The new eval is a
 backend quality gate for Agent routing and context decisions.
+
+## 2026-06-09 Update: ResponseSynthesizer v1
+
+The response projection chain now has two explicit layers:
+
+```text
+handler output
+-> ResponseSynthesizer
+-> ResponseCritic
+-> response_composer
+-> persisted UnifiedTaskResponse
+```
+
+`ResponseSynthesizer` is intentionally small. It does not call LLMs, does not
+execute tools, and does not change Proposal behavior. It only normalizes the
+user-facing response contract before the critic runs:
+
+- Ensures `user_view.title`, `user_view.text`, and `user_view.blocks` exist.
+- Chooses a readable `assistant_message` from handler text, `data.answer`,
+  block text, or a safe fallback message.
+- Writes `response_synthesizer_v1` diagnostics to `data` and `debug_view`.
+
+`ResponseCritic` still owns internal-tooling cleanup. This means the frontend
+continues to render the same `user_view` and `assistant_message` fields, while
+Debug View can explain whether the answer was handler-authored, synthesized
+from data, or safely defaulted.
+
+Frontend impact: no mandatory change.
