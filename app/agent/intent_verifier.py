@@ -20,7 +20,7 @@ def _target_available(target_kind: str, context_bundle: dict[str, Any]) -> bool:
         "asset": "asset",
         "current_blueprint": "blueprint",
         "blueprint": "blueprint",
-        "widget": "blueprint",
+        "widget": "widget",
         "selected_actor": "level_actor",
         "level_actor": "level_actor",
         "selected_material_instance": "material",

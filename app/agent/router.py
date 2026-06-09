@@ -124,6 +124,8 @@ SELECTED_CONTEXT_REFERENCE_HINTS = {
     "this object",
     "this blueprint",
     "this widget",
+    "this ui",
+    "this mesh",
     "this material",
     "that asset",
     "that actor",
@@ -138,6 +140,8 @@ SELECTED_CONTEXT_REFERENCE_HINTS = {
     "current object",
     "current blueprint",
     "current widget",
+    "current ui",
+    "current mesh",
     "current material",
     "it",
     "分析一下这个资产",
@@ -176,6 +180,8 @@ SELECTED_CONTEXT_REFERENCE_HINTS = {
     "当前材质",
     "它",
     "它的",
+    "这个 UI",
+    "这个UI",
 }
 SELECTED_CONTEXT_READ_INTENT_HINTS = {
     "analyze",
@@ -191,6 +197,10 @@ SELECTED_CONTEXT_READ_INTENT_HINTS = {
     "properties",
     "settings",
     "summary",
+    "does",
+    "has",
+    "have",
+    "how",
     "分析",
     "检查",
     "查看",
@@ -207,6 +217,7 @@ SELECTED_CONTEXT_READ_INTENT_HINTS = {
     "细节",
     "总结",
     "概括",
+    "怎么样",
 }
 EXPLICIT_TASK_REASONS = {
     "code_review": {
@@ -258,6 +269,10 @@ READONLY_MCP_TOOL_IDS = {
     "mcp_get_blueprint_node_details",
     "mcp_get_widget_tree",
     "mcp_get_umg_widget_details",
+    "mcp_get_material_instance_parameters",
+    "mcp_get_material_parameter_details",
+}
+LIVE_EDITOR_FACT_TOOL_IDS = {
     "mcp_get_material_instance_parameters",
     "mcp_get_material_parameter_details",
 }
@@ -680,16 +695,34 @@ def _looks_like_blueprint_node_template_request(latest_text: str, text_lower: st
             flags=re.IGNORECASE,
         )
         or re.search(r"/Game/[A-Za-z0-9_./-]+", latest_text, flags=re.IGNORECASE)
+        or "current blueprint" in text_lower
+        or "this blueprint" in text_lower
+        or "blueprint graph" in text_lower
+        or "\u5f53\u524d\u84dd\u56fe" in latest_text
+        or "\u8fd9\u4e2a\u84dd\u56fe" in latest_text
     )
-    has_print_string = any(
+    has_node_template = any(
         token in text_lower or token in latest_text
-        for token in ("print string", "printstring", "\u6253\u5370\u5b57\u7b26\u4e32", "\u6253\u5370\u6587\u672c")
+        for token in (
+            "print string",
+            "printstring",
+            "branch",
+            "delay",
+            "sequence",
+            "custom event",
+            "\u6253\u5370\u5b57\u7b26\u4e32",
+            "\u6253\u5370\u6587\u672c",
+            "\u5206\u652f",
+            "\u5ef6\u8fdf",
+            "\u5e8f\u5217",
+            "\u81ea\u5b9a\u4e49\u4e8b\u4ef6",
+        )
     )
     has_action = bool(re.search(r"\b(?:add|create|insert|place)\b", text_lower)) or any(
         token in latest_text
         for token in ("\u6dfb\u52a0", "\u52a0\u4e0a", "\u52a0\u4e00\u4e2a", "\u52a0\u4e2a", "\u589e\u52a0", "\u521b\u5efa", "\u63d2\u5165", "\u653e\u7f6e")
     )
-    return has_blueprint_target and has_print_string and has_action
+    return has_blueprint_target and has_node_template and has_action
 
 
 def _looks_like_readonly_mcp_blueprint_graph_request(latest_text: str, text_lower: str) -> bool:
@@ -712,7 +745,7 @@ def _looks_like_readonly_mcp_blueprint_node_details_request(latest_text: str, te
         return False
     has_read_intent = (
         _has_readonly_sensing_intent(latest_text, text_lower)
-        or bool(re.search(r"\b(?:what|which|show|inspect|read)\b", text_lower))
+        or bool(re.search(r"\b(?:what|which|show|inspect|read|does|has|have)\b", text_lower))
         or any(token in latest_text for token in ("\u4ec0\u4e48", "\u54ea\u4e9b", "\u67e5\u770b", "\u8bfb\u53d6"))
     )
     has_blueprint_target = (
@@ -725,6 +758,7 @@ def _looks_like_readonly_mcp_blueprint_node_details_request(latest_text: str, te
     has_node_detail_target = (
         "node detail" in text_lower
         or "node details" in text_lower
+        or "nodes" in text_lower
         or "node pins" in text_lower
         or "pin" in text_lower
         or "pins" in text_lower
@@ -743,10 +777,16 @@ def _looks_like_readonly_mcp_widget_tree_request(latest_text: str, text_lower: s
     if _looks_like_editor_write_request(latest_text, text_lower):
         return False
     has_read_intent = _has_readonly_sensing_intent(latest_text, text_lower)
+    if any(token in text_lower for token in ("layout", "ui layout", "widget layout")) or "\u5e03\u5c40" in latest_text:
+        has_read_intent = True
     has_widget_tree_target = (
         "widget tree" in text_lower
         or "umg tree" in text_lower
         or ("widget" in text_lower and "tree" in text_lower)
+        or "this ui" in text_lower
+        or "current ui" in text_lower
+        or "\u8fd9\u4e2a UI" in latest_text
+        or "\u8fd9\u4e2aUI" in latest_text
         or "\u63a7\u4ef6\u6811" in latest_text
         or ("UMG" in latest_text and "\u5c42\u7ea7" in latest_text)
     )
@@ -789,7 +829,10 @@ def _looks_like_readonly_mcp_umg_widget_details_request(latest_text: str, text_l
             latest_text,
         )
     )
-    return has_read_intent and has_umg_target and has_detail_target and has_named_widget
+    has_context_widget = any(token in text_lower for token in ("this widget", "current widget", "this ui", "current ui")) or any(
+        token in latest_text for token in ("\u8fd9\u4e2a UI", "\u8fd9\u4e2aUI", "\u8fd9\u4e2a\u63a7\u4ef6", "\u5f53\u524d\u63a7\u4ef6")
+    )
+    return has_read_intent and has_umg_target and has_detail_target and (has_named_widget or has_context_widget)
 
 
 def _looks_like_readonly_mcp_material_parameters_request(latest_text: str, text_lower: str) -> bool:
@@ -900,11 +943,13 @@ def _looks_like_readonly_mcp_level_actor_details_request(latest_text: str, text_
         or "actor transform" in text_lower
         or "actor component" in text_lower
         or "actor components" in text_lower
+        or ("actor" in text_lower and any(token in text_lower for token in ("component", "components", "inspect", "detail", "details")))
         or "actor tags" in text_lower
         or "actor folder" in text_lower
         or re.search(r"\bBP_[A-Za-z0-9_]+(?:_\d+)?\b", latest_text) is not None
         or "\u6f14\u5458\u8be6\u60c5" in latest_text
         or ("\u6f14\u5458" in latest_text and ("\u7ec4\u4ef6" in latest_text or "\u4f4d\u7f6e" in latest_text or "\u6807\u7b7e" in latest_text))
+        or ("Actor" in latest_text and "\u7ec4\u4ef6" in latest_text)
     )
     has_detail_target = (
         "detail" in text_lower
@@ -947,6 +992,7 @@ def _looks_like_readonly_mcp_static_mesh_details_request(latest_text: str, text_
     has_static_mesh_target = (
         "static mesh" in text_lower
         or "staticmesh" in text_lower
+        or ("mesh" in text_lower and ("nanite" in text_lower or "collision" in text_lower or "lod" in text_lower))
         or re.search(r"\bSM_[A-Za-z0-9_]+\b", latest_text) is not None
         or "\u9759\u6001\u7f51\u683c\u4f53" in latest_text
         or "\u9759\u6001\u7f51\u683c" in latest_text
@@ -1043,7 +1089,7 @@ def _looks_like_readonly_mcp_selected_assets_request(latest_text: str, text_lowe
 
 
 def _has_readonly_sensing_intent(latest_text: str, text_lower: str) -> bool:
-    return bool(re.search(r"\b(?:get|read|show|inspect|list|view|describe)\b", text_lower)) or any(
+    return bool(re.search(r"\b(?:get|read|show|inspect|list|view|describe|what|which|does|has|have|how)\b", text_lower)) or any(
         token in latest_text
         for token in (
             "\u8bfb\u53d6",
@@ -1053,6 +1099,7 @@ def _has_readonly_sensing_intent(latest_text: str, text_lower: str) -> bool:
             "\u663e\u793a",
             "\u770b\u4e00\u4e0b",
             "\u6709\u54ea\u4e9b",
+            "\u600e\u4e48\u6837",
         )
     )
 
@@ -1083,9 +1130,86 @@ def _looks_like_editor_write_request(latest_text: str, text_lower: str) -> bool:
     )
 
 
+def _looks_like_asset_rename_request(latest_text: str, text_lower: str) -> bool:
+    has_action = bool(re.search(r"\b(?:rename|change name)\b", text_lower)) or any(
+        token in latest_text for token in ("\u6539\u540d", "\u91cd\u547d\u540d")
+    )
+    has_asset_target = (
+        "asset" in text_lower
+        or "this asset" in text_lower
+        or re.search(r"\b(?:BP|WBP|ABP|SM|SK|MI|M|T|DA|DT|IA|IMC)_[A-Za-z0-9_]+\b", latest_text) is not None
+        or "\u8d44\u4ea7" in latest_text
+    )
+    return has_action and has_asset_target
+
+
+def _looks_like_asset_move_request(latest_text: str, text_lower: str) -> bool:
+    has_action = bool(re.search(r"\b(?:move|relocate)\b", text_lower)) or "\u79fb\u52a8" in latest_text
+    has_asset_target = "asset" in text_lower or "this asset" in text_lower or "\u8d44\u4ea7" in latest_text
+    has_destination = "/game/" in text_lower or "/Game/" in latest_text or "\u5230" in latest_text
+    return has_action and has_asset_target and has_destination
+
+
+def _looks_like_material_parameter_write_request(latest_text: str, text_lower: str) -> bool:
+    has_action = bool(re.search(r"\b(?:set|change|update|adjust)\b", text_lower)) or any(
+        token in latest_text for token in ("\u6539\u6210", "\u8bbe\u7f6e", "\u4fee\u6539", "\u8c03\u6574")
+    )
+    has_material = "material" in text_lower or "\u6750\u8d28" in latest_text
+    has_parameter = any(
+        token in text_lower
+        for token in ("roughness", "metallic", "opacity", "base color", "parameter", "scalar", "vector")
+    ) or any(token in latest_text for token in ("\u7c97\u7cd9\u5ea6", "\u91d1\u5c5e\u5ea6", "\u53c2\u6570", "\u989c\u8272"))
+    return has_action and has_material and has_parameter
+
+
+def _looks_like_umg_add_widget_request(latest_text: str, text_lower: str) -> bool:
+    has_action = bool(re.search(r"\b(?:add|create|insert)\b", text_lower)) or any(
+        token in latest_text for token in ("\u6dfb\u52a0", "\u52a0\u4e00\u4e2a", "\u52a0\u4e2a", "\u521b\u5efa", "\u63d2\u5165")
+    )
+    has_ui_target = any(token in text_lower for token in ("ui", "umg", "widget", "button", "textblock", "image")) or any(
+        token in latest_text for token in ("\u754c\u9762", "\u63a7\u4ef6", "\u6309\u94ae", "UI")
+    )
+    return has_action and has_ui_target
+
+
+def _looks_like_place_actor_request(latest_text: str, text_lower: str) -> bool:
+    has_action = bool(re.search(r"\b(?:place|spawn|add)\b", text_lower)) or any(
+        token in latest_text for token in ("\u653e\u7f6e", "\u751f\u6210", "\u6dfb\u52a0")
+    )
+    has_actor = (
+        "actor" in text_lower
+        or "current level" in text_lower
+        or re.search(r"\bBP_[A-Za-z0-9_]+\b", latest_text) is not None
+        or "\u5173\u5361" in latest_text
+    )
+    return has_action and has_actor
+
+
+def _looks_like_current_file_read_request(latest_text: str, text_lower: str) -> bool:
+    has_read = bool(re.search(r"\b(?:read|summarize|summarise|inspect)\b", text_lower)) or any(
+        token in latest_text for token in ("\u8bfb\u53d6", "\u603b\u7ed3", "\u89e3\u91ca", "\u67e5\u770b")
+    )
+    has_current_file = any(
+        token in text_lower for token in ("current file", "this file", "selected file", "c++ file", "cpp file")
+    ) or any(token in latest_text for token in ("\u5f53\u524d\u6587\u4ef6", "\u8fd9\u4e2a\u6587\u4ef6"))
+    return has_read and has_current_file
+
+
 def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
+    if _looks_like_current_file_read_request(latest_text, text_lower):
+        return "read_project_file"
+    if _looks_like_asset_move_request(latest_text, text_lower):
+        return "editor_move_assets"
+    if _looks_like_asset_rename_request(latest_text, text_lower):
+        return "editor_rename_asset"
+    if _looks_like_material_parameter_write_request(latest_text, text_lower):
+        return "editor_set_material_instance_parameter"
     if _looks_like_blueprint_node_template_request(latest_text, text_lower):
         return "editor_add_blueprint_node_template"
+    if _looks_like_umg_add_widget_request(latest_text, text_lower):
+        return "editor_add_umg_widget"
+    if _looks_like_place_actor_request(latest_text, text_lower):
+        return "editor_place_actor_in_level"
     if _looks_like_readonly_mcp_editor_context_request(latest_text, text_lower):
         return "mcp_get_editor_context"
     if _looks_like_readonly_mcp_level_actor_details_request(latest_text, text_lower):
@@ -1126,6 +1250,34 @@ def _looks_like_project_inventory_query(latest_text: str, text_lower: str) -> bo
         _hint_present(latest_text, text_lower, hint) for hint in PROJECT_INVENTORY_QUESTION_HINTS
     ) or "?" in latest_text or "？" in latest_text or "是什么" in latest_text or "有哪些" in latest_text
     return has_scope and has_fact and has_question
+
+
+def _project_inventory_should_route(
+    *,
+    signals: dict[str, Any],
+    selected_engineering_tool_id: str | None,
+    text_lower: str,
+) -> bool:
+    if not signals["project_inventory_query"]:
+        return False
+
+    # Explicit editor writes should keep the proposal-confirm-execute path.
+    if selected_engineering_tool_id and selected_engineering_tool_id not in READONLY_MCP_TOOL_IDS:
+        return False
+
+    # Material parameter values and explicit Actor listings are live editor facts,
+    # not broad project snapshot questions.
+    if selected_engineering_tool_id in LIVE_EDITOR_FACT_TOOL_IDS:
+        return False
+    if selected_engineering_tool_id == "mcp_get_level_actors" and "actor" in text_lower:
+        return False
+
+    # Questions anchored to the currently selected object usually need the focused
+    # read-only tool, unless no focused tool was found.
+    if selected_engineering_tool_id in READONLY_MCP_TOOL_IDS and signals.get("selected_context_query"):
+        return False
+
+    return True
 
 
 def _has_selected_editor_target(request: UnifiedTaskRequest) -> bool:
@@ -1583,6 +1735,7 @@ def classify_request(
         return {"locale": locale, **explicit}
 
     signals = _agent_chat_signals(request, latest_text=latest_text, text_lower=text_lower)
+    explicit_current_file_read = _looks_like_current_file_read_request(latest_text, text_lower)
     selected_tool_id = _detect_tool_id(latest_text, text_lower)
     selected_tool_spec = get_tool_spec(selected_tool_id)
     selected_engineering_tool_id = (
@@ -1600,7 +1753,32 @@ def classify_request(
         signal_min_margin=signal_min_margin,
     )
 
-    if signals["project_inventory_query"] and selected_engineering_tool_id not in READONLY_MCP_TOOL_IDS:
+    if selected_tool_id == "read_project_file" and explicit_current_file_read:
+        reason = _localized(
+            language,
+            "用户要求读取或总结当前项目文件，因此后端选择只读项目文件工具。",
+            "The user asked to read or summarize the current project file, so the backend selected the read-only project file tool.",
+        )
+        routing_result = {
+            "locale": locale,
+            **_project_qa_response(
+                language=language,
+                reason=reason,
+                planner_confidence=0.9,
+                decision_source="heuristic_current_file_read_signal",
+                signal_strength="strong",
+                signals=signals,
+                selected_tool_id="read_project_file",
+                candidate_tool_ids=["read_project_file", "retrieve_project_knowledge"],
+            ),
+        }
+        return _apply_signal_router_override(routing_result, language=language, signal_mode=signal_mode)
+
+    if _project_inventory_should_route(
+        signals=signals,
+        selected_engineering_tool_id=selected_engineering_tool_id,
+        text_lower=text_lower,
+    ):
         reason = _localized(
             language,
             "用户在自由聊天中询问当前项目的资产、代码或元数据事实，因此后端选择查询 Project Inventory。",

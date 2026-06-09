@@ -8464,3 +8464,45 @@ smaller helper modules without changing public APIs:
 Frontend impact: no mandatory change. Response fields, Proposal confirmation,
 and UEAgentTool execution behavior are unchanged. The purpose of this cleanup is
 to make future MCP write mappings and editor tool additions smaller and safer.
+
+## 2026-06-09 Update: Agent Decision Eval v1
+
+The backend now includes a deterministic Agent Decision Eval for the Improv6
+context-aware routing chain. It does not call a live LLM, does not launch Unreal
+Editor, and does not execute editor writes. It checks whether Agent Chat can
+choose the right high-level route, tool id, target kind, context resolution, and
+Proposal safety boundary from realistic natural-language prompts.
+
+Run it locally:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_agent_decision_eval.py --output storage\artifacts\evals\agent-decision-eval-latest.json
+```
+
+Current deterministic baseline:
+
+- Dataset: `tests/eval/agent_decision_dataset.jsonl`
+- Case count: 33
+- Covered prompt families: smalltalk, UE knowledge, Project Inventory, selected
+  asset/actor/static mesh/widget/material questions, current file reads, logs,
+  code review, and confirmed-write Proposal requests.
+- Metrics: `route_accuracy`, `tool_accuracy`, `target_kind_accuracy`,
+  `context_resolution_accuracy`, `tool_plan_accuracy`,
+  `proposal_safety_accuracy`, and `overall_accuracy`.
+- Latest local result for this slice: all listed metrics passed at `1.0`.
+
+Routing boundary clarified in this slice:
+
+- Explicit editor writes still create Proposals instead of Project Inventory
+  answers.
+- Material parameter value questions and explicit current-level Actor listings
+  prefer live/read-only editor sensing tools.
+- Broad current-project Blueprint graph/node fact questions can still prefer
+  Project Inventory when the prompt is about saved project facts.
+- `read_project_file` only takes over when the user explicitly asks to read,
+  inspect, or summarize a current/selected file; explanatory project questions
+  continue through normal Project QA.
+
+Frontend impact: no mandatory change. UEAgentTool can keep using the existing
+`POST /api/v1/chat/runs` and Proposal confirmation flow. The new eval is a
+backend quality gate for Agent routing and context decisions.

@@ -28,7 +28,7 @@ def _route(context_bundle: dict[str, Any], routing: dict[str, Any]) -> dict[str,
 
 
 def _target_from_active_targets(active_targets: dict[str, Any]) -> tuple[str, str]:
-    priority = ("asset", "blueprint", "level_actor", "material", "code", "log")
+    priority = ("asset", "blueprint", "widget", "level_actor", "material", "code", "log")
     for key in priority:
         target = dict(active_targets.get(key) or {})
         if not target.get("available"):
@@ -40,6 +40,16 @@ def _target_from_active_targets(active_targets: dict[str, Any]) -> tuple[str, st
             return (
                 "current_blueprint",
                 str(target.get("current_blueprint_path") or target.get("current_graph_name") or "current_blueprint"),
+            )
+        if key == "widget":
+            return (
+                "widget",
+                str(
+                    target.get("current_widget_blueprint_path")
+                    or target.get("selected_widget_name")
+                    or target.get("current_widget_name")
+                    or "current_widget"
+                ),
             )
         if key == "level_actor":
             refs = list(target.get("selected_actor_references") or [])
@@ -61,6 +71,10 @@ def _target_from_active_targets(active_targets: dict[str, Any]) -> tuple[str, st
 def _target_from_tool(selected_tool_id: str | None) -> tuple[str, str] | None:
     if not selected_tool_id:
         return None
+    if selected_tool_id == "editor_place_actor_in_level":
+        return ("project_inventory", "")
+    if selected_tool_id == "mcp_get_level_actors":
+        return ("project_inventory", "")
     if "asset" in selected_tool_id:
         return ("asset", "")
     if "blueprint" in selected_tool_id:
@@ -86,6 +100,8 @@ def _text_suggests_selected_target(text: str) -> tuple[str, str] | None:
         token in text for token in ("这个资产", "该资产", "当前资产", "选中的资产", "它")
     ):
         return ("selected_asset", "")
+    if any(token in lowered for token in ("this mesh", "selected mesh", "current mesh")):
+        return ("selected_asset", "")
     if any(token in lowered for token in ("this actor", "selected actor", "current actor")) or any(
         token in text for token in ("这个Actor", "这个 actor", "该Actor", "当前Actor", "选中Actor")
     ):
@@ -94,6 +110,10 @@ def _text_suggests_selected_target(text: str) -> tuple[str, str] | None:
         token in text for token in ("这个蓝图", "当前蓝图", "该蓝图")
     ):
         return ("current_blueprint", "")
+    if any(token in lowered for token in ("this widget", "current widget", "this ui", "current ui")) or any(
+        token in text for token in ("这个控件", "当前控件", "这个UI", "这个 UI")
+    ):
+        return ("widget", "")
     if any(token in lowered for token in ("this material", "selected material")) or any(
         token in text for token in ("这个材质", "当前材质", "该材质")
     ):

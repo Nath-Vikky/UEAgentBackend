@@ -50,6 +50,7 @@ def _target_available(value: Any) -> bool:
 def _active_targets(active_context: dict[str, Any]) -> dict[str, Any]:
     asset = dict(active_context.get("asset") or {})
     blueprint = dict(active_context.get("blueprint") or {})
+    widget = dict(active_context.get("widget") or {})
     level_actor = dict(active_context.get("level_actor") or {})
     material = dict(active_context.get("material") or {})
     code = dict(active_context.get("code") or {})
@@ -65,6 +66,16 @@ def _active_targets(active_context: dict[str, Any]) -> dict[str, Any]:
             "current_graph_name": blueprint.get("current_graph_name"),
             "selected_node_id": blueprint.get("selected_node_id"),
             "last_successful_operation": blueprint.get("last_successful_operation"),
+        },
+        "widget": {
+            "available": bool(
+                widget.get("current_widget_blueprint_path")
+                or widget.get("selected_widget_name")
+                or widget.get("current_widget_name")
+            ),
+            "current_widget_blueprint_path": widget.get("current_widget_blueprint_path"),
+            "selected_widget_name": widget.get("selected_widget_name"),
+            "current_widget_name": widget.get("current_widget_name"),
         },
         "level_actor": {
             "available": bool(

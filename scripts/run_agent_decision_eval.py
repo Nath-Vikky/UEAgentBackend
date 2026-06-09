@@ -1,0 +1,219 @@
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from app.agent.context_resolver import resolve_context
+from app.agent.intent_drafter import build_intent_draft
+from app.agent.intent_verifier import verify_intent
+from app.agent.router import classify_request
+from app.agent.tool_decision import build_tool_plan
+from app.agent.turn_context import build_agent_turn_context
+from app.schemas.requests import UnifiedTaskRequest
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run offline Improv6 Agent decision-chain evaluation.")
+    parser.add_argument(
+        "--dataset",
+        default="tests/eval/agent_decision_dataset.jsonl",
+        help="Path to the Agent decision JSONL dataset.",
+    )
+    parser.add_argument(
+        "--output",
+        default="storage/artifacts/evals/agent-decision-eval-latest.json",
+        help="Path for the JSON report.",
+    )
+    parser.add_argument("--min-route-accuracy", type=float, default=0.85)
+    parser.add_argument("--min-tool-accuracy", type=float, default=0.85)
+    parser.add_argument("--min-context-resolution-accuracy", type=float, default=0.85)
+    parser.add_argument("--min-tool-plan-accuracy", type=float, default=0.85)
+    parser.add_argument("--min-proposal-safety-accuracy", type=float, default=1.0)
+    return parser.parse_args()
+
+
+def load_jsonl(path: Path | str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in Path(path).read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if line:
+            rows.append(json.loads(line))
+    return rows
+
+
+def evaluate_agent_decision_case(case: dict[str, Any]) -> dict[str, Any]:
+    request = UnifiedTaskRequest(**case["request"])
+    routing = classify_request(request)
+    context_bundle = _context_bundle_for_case(case)
+    context_bundle["agent_turn_context"] = build_agent_turn_context(
+        request=request,
+        routing=routing,
+        context_bundle=context_bundle,
+    )
+    intent_draft = build_intent_draft(request=request, routing=routing, context_bundle=context_bundle)
+    context_resolution = resolve_context(
+        request=request,
+        routing=routing,
+        context_bundle=context_bundle,
+        intent_draft=intent_draft,
+    )
+    verified_intent = verify_intent(
+        draft=intent_draft,
+        routing=routing,
+        context_bundle=context_bundle,
+        free_chat=request.task_type in {"agent_chat", "project_qa"},
+    )
+    tool_plan = build_tool_plan(
+        intent_draft=intent_draft,
+        verified_intent=verified_intent,
+        context_resolution=context_resolution,
+        routing=routing,
+    )
+
+    route = dict(routing.get("route") or {})
+    intent = dict(routing.get("intent") or {})
+    expected = dict(case.get("expected") or {})
+    route_ok = _matches(expected.get("route_type"), intent.get("route_type"))
+    tool_ok = _matches(expected.get("selected_tool_id"), route.get("selected_tool_id"))
+    target_status_ok = _matches(expected.get("target_resolution_status"), context_resolution.get("status"))
+    context_source_ok = _matches(expected.get("context_source"), context_resolution.get("source"))
+    target_kind_ok = _matches(expected.get("target_kind"), context_resolution.get("target_kind"))
+    tool_plan_ok = _matches(expected.get("tool_plan_mode"), tool_plan.get("mode"))
+    proposal_required = expected.get("requires_proposal")
+    proposal_safety_ok = True if proposal_required is None else bool(tool_plan.get("requires_proposal")) == bool(proposal_required)
+
+    return {
+        "case_id": case["case_id"],
+        "tags": list(case.get("tags") or []),
+        "query": _query_for_request(request),
+        "expected": expected,
+        "actual": {
+            "route_type": intent.get("route_type"),
+            "selected_tool_id": route.get("selected_tool_id"),
+            "target_kind": context_resolution.get("target_kind"),
+            "target_resolution_status": context_resolution.get("status"),
+            "context_source": context_resolution.get("source"),
+            "tool_plan_mode": tool_plan.get("mode"),
+            "requires_proposal": tool_plan.get("requires_proposal"),
+        },
+        "checks": {
+            "route_ok": route_ok,
+            "tool_ok": tool_ok,
+            "target_kind_ok": target_kind_ok,
+            "context_resolution_ok": target_status_ok and context_source_ok,
+            "tool_plan_ok": tool_plan_ok,
+            "proposal_safety_ok": proposal_safety_ok,
+        },
+        "debug": {
+            "intent_draft": intent_draft,
+            "context_resolution": context_resolution,
+            "verified_intent": verified_intent,
+            "tool_plan": tool_plan,
+        },
+    }
+
+
+def summarize_agent_decision_cases(results: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(results)
+    if total == 0:
+        return {
+            "case_count": 0,
+            "route_accuracy": 0.0,
+            "tool_accuracy": 0.0,
+            "target_kind_accuracy": 0.0,
+            "context_resolution_accuracy": 0.0,
+            "tool_plan_accuracy": 0.0,
+            "proposal_safety_accuracy": 0.0,
+            "overall_accuracy": 0.0,
+        }
+    return {
+        "case_count": total,
+        "route_accuracy": _ratio(results, "route_ok"),
+        "tool_accuracy": _ratio(results, "tool_ok"),
+        "target_kind_accuracy": _ratio(results, "target_kind_ok"),
+        "context_resolution_accuracy": _ratio(results, "context_resolution_ok"),
+        "tool_plan_accuracy": _ratio(results, "tool_plan_ok"),
+        "proposal_safety_accuracy": _ratio(results, "proposal_safety_ok"),
+        "overall_accuracy": round(
+            sum(1 for item in results if all(item["checks"].values())) / total,
+            4,
+        ),
+    }
+
+
+def _context_bundle_for_case(case: dict[str, Any]) -> dict[str, Any]:
+    context = dict(case.get("context_bundle") or {})
+    context.setdefault("active_context", {})
+    context.setdefault("project_inventory_context", {})
+    context.setdefault("retrieval_context", {})
+    context.setdefault("tool_context", [])
+    context.setdefault("context_budget_report", {"version": "context_budget_v1", "estimated_chars": 0})
+    return context
+
+
+def _query_for_request(request: UnifiedTaskRequest) -> str:
+    text = str(request.payload.get("user_query") or request.payload.get("requirement_description") or "").strip()
+    if text:
+        return text
+    for message in reversed(request.session.messages):
+        if message.role == "user" and message.content.strip():
+            return message.content.strip()
+    return ""
+
+
+def _matches(expected: Any, actual: Any) -> bool:
+    if expected is None:
+        return True
+    if isinstance(expected, list):
+        return actual in expected
+    return actual == expected
+
+
+def _ratio(results: list[dict[str, Any]], check_name: str) -> float:
+    return round(sum(1 for item in results if item["checks"].get(check_name)) / len(results), 4)
+
+
+def main() -> int:
+    args = _parse_args()
+    dataset_path = Path(args.dataset).resolve()
+    if not dataset_path.exists():
+        raise SystemExit(f"Dataset not found: {dataset_path}")
+    results = [evaluate_agent_decision_case(case) for case in load_jsonl(dataset_path)]
+    report = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "dataset": str(dataset_path),
+        "summary": summarize_agent_decision_cases(results),
+        "cases": results,
+    }
+    output_text = json.dumps(report, ensure_ascii=False, indent=2)
+    if args.output == "-":
+        output_path = None
+    else:
+        output_path = Path(args.output).resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(output_text, encoding="utf-8")
+
+    print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
+    if output_path is None:
+        print(output_text)
+    else:
+        print(f"Saved report to: {output_path}")
+    summary = report["summary"]
+    if summary["route_accuracy"] < args.min_route_accuracy:
+        raise SystemExit("Agent decision eval route_accuracy is below threshold.")
+    if summary["tool_accuracy"] < args.min_tool_accuracy:
+        raise SystemExit("Agent decision eval tool_accuracy is below threshold.")
+    if summary["context_resolution_accuracy"] < args.min_context_resolution_accuracy:
+        raise SystemExit("Agent decision eval context_resolution_accuracy is below threshold.")
+    if summary["tool_plan_accuracy"] < args.min_tool_plan_accuracy:
+        raise SystemExit("Agent decision eval tool_plan_accuracy is below threshold.")
+    if summary["proposal_safety_accuracy"] < args.min_proposal_safety_accuracy:
+        raise SystemExit("Agent decision eval proposal_safety_accuracy is below threshold.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
