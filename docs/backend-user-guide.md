@@ -6274,6 +6274,8 @@ The endpoint reads Proposal records that contain
 - `next_step_proposal_requests[]`
 - `follow_up_proposal_requests[]`
 - `next_action`
+- `quick_actions[]`
+- `user_view`
 
 This endpoint is read-only. It does not create, confirm, execute, or batch
 submit workflow steps. Existing UEAgentTool UI does not need to call it, but a
@@ -6286,6 +6288,14 @@ confirmation.
 
 Frontend impact: no mandatory change. A future Workflow UI can show the plan,
 let the user submit one step at a time, and stop/skip steps safely.
+
+2026-06-09 UX update: workflow state now includes
+`user_view.schema_version = editor_workflow_state_user_view_v1` and
+display-ready `quick_actions[]`. The older machine-readable request arrays are
+unchanged. A frontend can render `workflow_state.user_view.text`, show blocks
+such as `editor_workflow_attention_steps` or `editor_workflow_ready_steps`, and
+submit `workflow_state.quick_actions[].payload` when the user clicks a repair
+or next-step button. These quick actions still create pending Proposals only.
 
 2026-06-09 update: workflow state now treats blocking result diagnostics as a
 dependency gate. For example, if a Blueprint `Print String` node was created

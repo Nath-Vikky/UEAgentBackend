@@ -5454,6 +5454,10 @@ def test_editor_workflow_state_projects_next_ready_step_from_results(client: Tes
     assert initial["status"] == "ready_for_next_step"
     assert initial["next_ready_step_ids"] == ["step_0_add_blueprint_node_template"]
     assert initial["step_states"][1]["status"] == "waiting_dependency"
+    assert initial["user_view"]["schema_version"] == "editor_workflow_state_user_view_v1"
+    assert initial["user_view"]["status_hint"] == "ready_for_next_step"
+    assert initial["quick_actions"][0]["payload"]["action_type"] == "create_workflow_step_proposal"
+    assert initial["quick_actions"][0]["payload"]["workflow_step_id"] == "step_0_add_blueprint_node_template"
 
     materialized = client.post(
         "/api/v1/editor-operations/workflows/steps/proposal",
@@ -5510,6 +5514,8 @@ def test_editor_workflow_state_projects_next_ready_step_from_results(client: Tes
     ]
     assert completed["step_states"][0]["status"] == "completed"
     assert completed["step_states"][1]["status"] == "ready_for_proposal"
+    assert completed["user_view"]["status_hint"] == "ready_for_next_step"
+    assert completed["user_view"]["quick_actions"][0]["payload"]["workflow_step_id"] == "step_1_compile_blueprint"
 
     compile_proposal = client.post(
         "/api/v1/editor-operations/workflows/steps/proposal",
@@ -5602,6 +5608,14 @@ def test_editor_workflow_state_blocks_compile_and_suggests_follow_up_when_step_n
     ]
     assert state["next_action"] == "create_follow_up_repair_proposal"
     assert state["ready_follow_up_candidate_count"] == 1
+    assert state["user_view"]["schema_version"] == "editor_workflow_state_user_view_v1"
+    assert state["user_view"]["status_hint"] == "needs_attention"
+    assert state["quick_actions"][0]["label"] == "Create Repair Proposal: connect_blueprint_nodes"
+    assert state["quick_actions"][0]["payload"]["candidate_id"] == "connect_expected_exec_pins"
+    assert state["user_view"]["quick_actions"][0]["payload"]["candidate_id"] == "connect_expected_exec_pins"
+    block_types = [block["block_type"] for block in state["user_view"]["blocks"]]
+    assert "editor_workflow_attention_steps" in block_types
+    assert "workflow_ready_actions" in block_types
 
     first_step, second_step = state["step_states"]
     assert first_step["status"] == "completed_needs_attention"
@@ -5663,6 +5677,9 @@ def test_editor_workflow_state_blocks_compile_and_suggests_follow_up_when_step_n
     assert repaired_state["ready_follow_up_candidate_count"] == 0
     assert repaired_state["follow_up_proposal_requests"] == []
     assert repaired_state["next_step_proposal_requests"][0]["workflow_step_id"] == "step_1_compile_blueprint"
+    assert repaired_state["user_view"]["status_hint"] == "ready_for_next_step"
+    assert repaired_state["quick_actions"][0]["payload"]["workflow_step_id"] == "step_1_compile_blueprint"
+    assert repaired_state["quick_actions"][0]["label"] == "Create Step Proposal: compile_blueprint"
 
     repaired_first_step = repaired_state["step_states"][0]
     assert repaired_first_step["status"] == "completed_after_repair"

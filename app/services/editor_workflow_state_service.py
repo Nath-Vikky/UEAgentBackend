@@ -102,11 +102,24 @@ class EditorWorkflowStateService:
             completed_step_ids=completed_step_ids_sorted,
         )
         follow_up_proposal_requests = self._follow_up_proposal_requests(step_states)
+        status = self._overall_status(step_states)
+        next_action = self._next_action(step_states, follow_up_proposal_requests=follow_up_proposal_requests)
+        quick_actions = self._quick_actions(
+            next_step_proposal_requests=next_step_proposal_requests,
+            follow_up_proposal_requests=follow_up_proposal_requests,
+        )
+        user_view = self._user_view(
+            workflow_type=_clean_text(safe_plan.get("workflow_type")),
+            status=status,
+            next_action=next_action,
+            step_states=step_states,
+            quick_actions=quick_actions,
+        )
         return {
             "schema_version": "editor_workflow_state_v1",
             "workflow_plan_id": plan_id,
             "workflow_type": _clean_text(safe_plan.get("workflow_type")),
-            "status": self._overall_status(step_states),
+            "status": status,
             "step_count": len(step_states),
             "completed_step_ids": completed_step_ids_sorted,
             "next_ready_step_ids": next_ready_step_ids,
@@ -132,7 +145,9 @@ class EditorWorkflowStateService:
             ),
             "ready_follow_up_candidate_count": len(follow_up_proposal_requests),
             "follow_up_proposal_requests": follow_up_proposal_requests,
-            "next_action": self._next_action(step_states, follow_up_proposal_requests=follow_up_proposal_requests),
+            "next_action": next_action,
+            "quick_actions": quick_actions,
+            "user_view": user_view,
             "auto_execute": False,
             "requires_user_confirmation_per_step": True,
         }
@@ -422,6 +437,144 @@ class EditorWorkflowStateService:
                     }
                 )
         return requests[:5]
+
+    @staticmethod
+    def _quick_actions(
+        *,
+        next_step_proposal_requests: list[dict[str, Any]],
+        follow_up_proposal_requests: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        actions: list[dict[str, Any]] = []
+        for request in follow_up_proposal_requests:
+            candidate_id = _clean_text(request.get("candidate_id")) or f"repair_{len(actions)}"
+            operation_type = _clean_text(request.get("operation_type")) or "editor_operation"
+            actions.append(
+                {
+                    "action_id": f"workflow_create_repair_proposal_{candidate_id}",
+                    "label": f"Create Repair Proposal: {operation_type}",
+                    "payload": request,
+                }
+            )
+        if actions:
+            return actions[:5]
+        for request in next_step_proposal_requests:
+            step_id = _clean_text(request.get("workflow_step_id")) or f"step_{len(actions)}"
+            operation_type = _clean_text(request.get("operation_type")) or "editor_operation"
+            actions.append(
+                {
+                    "action_id": f"workflow_create_step_proposal_{step_id}",
+                    "label": f"Create Step Proposal: {operation_type}",
+                    "payload": request,
+                }
+            )
+        return actions[:5]
+
+    @staticmethod
+    def _user_view(
+        *,
+        workflow_type: str,
+        status: str,
+        next_action: str,
+        step_states: list[dict[str, Any]],
+        quick_actions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        completed_count = sum(1 for item in step_states if bool(item.get("completed")))
+        attention_steps = [item for item in step_states if bool(item.get("needs_attention"))]
+        ready_steps = [item for item in step_states if item.get("status") == "ready_for_proposal"]
+        pending_steps = [
+            item
+            for item in step_states
+            if item.get("status") in {"pending_confirmation", "waiting_execution_result"}
+        ]
+        if status == "needs_attention" and quick_actions:
+            text = "The workflow needs a repair Proposal before it can continue."
+        elif status == "ready_for_next_step" and ready_steps:
+            text = "The workflow is ready for the next confirmed Proposal step."
+        elif status == "waiting_for_execution":
+            text = "The workflow is waiting for user confirmation or a UE execution result."
+        elif status == "completed":
+            text = "The workflow is complete."
+        elif status == "empty_plan":
+            text = "No workflow steps are available."
+        else:
+            text = "The workflow is not ready to continue yet."
+
+        blocks: list[dict[str, Any]] = [
+            {
+                "block_type": "editor_workflow_state_summary",
+                "title": "Workflow State",
+                "text": text,
+                "data": {
+                    "workflow_type": workflow_type,
+                    "status": status,
+                    "next_action": next_action,
+                    "step_count": len(step_states),
+                    "completed_count": completed_count,
+                    "attention_count": len(attention_steps),
+                    "ready_count": len(ready_steps),
+                    "pending_count": len(pending_steps),
+                    "quick_action_count": len(quick_actions),
+                },
+            }
+        ]
+        if attention_steps:
+            blocks.append(
+                {
+                    "block_type": "editor_workflow_attention_steps",
+                    "title": "Steps Needing Attention",
+                    "items": [
+                        {
+                            "step_id": item.get("step_id"),
+                            "title": item.get("title"),
+                            "status": item.get("status"),
+                            "operation_type": item.get("operation_type"),
+                            "workflow_blocking_flags": item.get("workflow_blocking_flags") or [],
+                            "unresolved_workflow_blocking_flags": item.get("unresolved_workflow_blocking_flags") or [],
+                        }
+                        for item in attention_steps[:5]
+                    ],
+                }
+            )
+        if ready_steps:
+            blocks.append(
+                {
+                    "block_type": "editor_workflow_ready_steps",
+                    "title": "Ready Steps",
+                    "items": [
+                        {
+                            "step_id": item.get("step_id"),
+                            "title": item.get("title"),
+                            "operation_type": item.get("operation_type"),
+                            "status": item.get("status"),
+                        }
+                        for item in ready_steps[:5]
+                    ],
+                }
+            )
+        if quick_actions:
+            blocks.append(
+                {
+                    "block_type": "workflow_ready_actions",
+                    "title": "Available Actions",
+                    "items": [
+                        {
+                            "action_id": item.get("action_id"),
+                            "label": item.get("label"),
+                            "action_type": _as_dict(item.get("payload")).get("action_type"),
+                        }
+                        for item in quick_actions[:5]
+                    ],
+                }
+            )
+
+        return {
+            "schema_version": "editor_workflow_state_user_view_v1",
+            "title": "Editor Workflow State",
+            "text": text,
+            "status_hint": status,
+            "blocks": blocks,
+            "quick_actions": quick_actions,
+        }
 
 
 __all__ = ["EditorWorkflowStateService"]

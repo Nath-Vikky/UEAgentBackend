@@ -65,6 +65,10 @@ the repair Proposal is confirmed, executed, and reported successfully, the same
 workflow state endpoint will mark the source step as `completed_after_repair`
 and unlock the next step.
 
+For UI clients, `workflow_state.user_view` and `workflow_state.quick_actions[]`
+are the easiest fields to render. The quick-action payload can be submitted
+only after the user chooses it; it still creates a pending Proposal.
+
 ## Are private notes or external course repositories included?
 
 No. Public knowledge lives in `knowledge/`. Private notes or third-party source
