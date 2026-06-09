@@ -98,3 +98,49 @@ def test_chat_run_contract_contains_phase1_top_level_fields(client: TestClient) 
     assert "route_type" in body["debug_view"]["route"]
     assert "raw_request" in body["debug_view"]
     assert body["intent"]["route_type"] in {"project_qa", "direct_answer", "single_tool", "workflow"}
+
+
+def test_chat_run_uses_active_target_memory_for_followup_asset_reference(client: TestClient) -> None:
+    session_id = "contract_active_target_memory_session"
+    first = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": session_id,
+                "messages": [{"role": "user", "content": "Analyze this asset."}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Props/SM_Rock.SM_Rock"],
+            },
+            "payload": {"user_query": "Analyze this asset."},
+            "runtime_options": {"debug": True, "return_debug_projection": True},
+        },
+    )
+    assert first.status_code == 200
+
+    followup = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": session_id,
+                "messages": [{"role": "user", "content": "Analyze this asset again."}],
+            },
+            "context": {
+                "project_name": "DemoProject",
+                "active_panel": "AgentChat",
+            },
+            "payload": {"user_query": "Analyze this asset again."},
+            "runtime_options": {"debug": True, "return_debug_projection": True},
+        },
+    )
+    body = followup.json()
+
+    assert followup.status_code == 200
+    assert body["debug_view"]["route"]["selected_tool_id"] == "mcp_get_asset_details"
+    assert body["debug_view"]["context_route_refinement"]["status"] == "applied"
+    assert body["debug_view"]["context_resolution"]["target_id"] == "/Game/Props/SM_Rock.SM_Rock"
+    assert body["debug_view"]["tool_plan_v1"]["requires_proposal"] is False

@@ -59,7 +59,7 @@ def refine_route_from_resolved_context(
         "locale": dict(routing.get("locale") or {}),
         "intent": {
             **dict(routing.get("intent") or {}),
-            "intent_type": "selected_context_question",
+            "intent_type": "task_request" if route_type == "single_tool" else "project_qa",
             "knowledge_relevance": "none",
             "requires_rag": False,
             "requires_tool": True,
