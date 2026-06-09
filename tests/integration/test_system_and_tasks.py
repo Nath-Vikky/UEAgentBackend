@@ -3401,6 +3401,90 @@ def test_code_generate_returns_draft_and_artifact(client: TestClient) -> None:
     assert artifacts.json()["items"]
 
 
+def test_code_generate_uses_llm_text_fallback_for_behavior_request(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fake_availability(self, config):  # type: ignore[no-untyped-def]
+        return (True, "")
+
+    def _fake_complete_json_object(self, *, messages, config):  # type: ignore[no-untyped-def]
+        return {
+            "ok": False,
+            "payload": None,
+            "reason": "json_parse_failed",
+            "error": "No JSON object found.",
+            "provider": "fake",
+            "model": "fake-code-model",
+            "profile_id": "default",
+            "text": (
+                "File: Source/RushBa/Private/CountdownActor.cpp\n"
+                "```cpp\n"
+                "#include \"CountdownActor.h\"\n\n"
+                "void ACountdownActor::BeginPlay()\n"
+                "{\n"
+                "    Super::BeginPlay();\n\n"
+                "    for (int32 Number = 10; Number >= 1; --Number)\n"
+                "    {\n"
+                "        UE_LOG(LogTemp, Log, TEXT(\"%d\"), Number);\n"
+                "    }\n"
+                "}\n"
+                "```\n"
+            ),
+            "usage": {"input_tokens": 12, "output_tokens": 40, "estimated_cost_usd": 0.0, "latency_ms": 1},
+        }
+
+    monkeypatch.setattr("app.services.llm_service.LLMService.availability", _fake_availability)
+    monkeypatch.setattr("app.services.llm_service.LLMService.complete_json_object", _fake_complete_json_object)
+
+    response = client.post(
+        "/api/v1/tasks/code-generate",
+        json={
+            "task_type": "code_generate",
+            "session": {
+                "session_id": "code_generate_countdown_llm_text_session",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "写一个从10减到1并输出到控制台的UE C++代码",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": "RushBa",
+                "active_panel": "CodeGenerator",
+                "current_module": "RushBa",
+            },
+            "payload": {
+                "user_query": "写一个从10减到1并输出到控制台的UE C++代码",
+                "requirement_description": "写一个从10减到1并输出到控制台的UE C++代码",
+                "target_type": "ue_cpp",
+                "target_module": "RushBa",
+                "domain_filters": ["code_reference"],
+            },
+            "ui_state": {"active_view": "user", "selected_panel": "CodeGenerator"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "zh-CN",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    body = response.json()
+    code_text = "\n".join(item["code"] for item in body["data"]["generated_items"])
+
+    assert response.status_code == 200
+    assert "live_llm" in body["data"]["generation_mode"]
+    assert "Source/RushBa/Private/CountdownActor.cpp" in body["data"]["code_draft"]
+    assert "for (int32 Number = 10; Number >= 1; --Number)" in code_text
+    assert "UE_LOG" in code_text
+    assert "GeneratedFeature" not in code_text
+    assert "llm_text_fallback_used" in body["data"]["warnings"]
+
+
 def test_code_generate_write_proposal_writes_files_after_confirmation(client: TestClient) -> None:
     project_root = Path(".test-workspace") / f"code-write-{uuid.uuid4().hex}"
     shutil.rmtree(project_root, ignore_errors=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.agent.context_builder import build_context_summary
@@ -65,6 +66,111 @@ def _normalize_generated_items(items: list[dict[str, Any]] | Any) -> list[dict[s
             }
         )
     return normalized
+
+
+_CODE_FENCE_RE = re.compile(r"```(?P<language>[A-Za-z0-9_+.#-]*)\s*\n(?P<code>.*?)```", re.DOTALL)
+_FILE_PATH_HINT_RE = re.compile(
+    r"(?:file|path|filename|source|文件|路径)\s*[:：]\s*`?(?P<path>[^`\r\n]+)`?",
+    re.IGNORECASE,
+)
+_SOURCE_PATH_RE = re.compile(
+    r"(?P<path>(?:Source|Plugins)/[A-Za-z0-9_./-]+\.(?:h|hpp|hh|inl|c|cc|cpp|cxx|cs|py|txt|md|json|ini))",
+    re.IGNORECASE,
+)
+
+
+def _module_name_for_request(request: UnifiedTaskRequest) -> str:
+    raw = str(
+        request.payload.get("target_module")
+        or request.payload.get("module_name")
+        or request.context.current_module
+        or request.context.project_name
+        or "YourModule"
+    ).strip()
+    cleaned = re.sub(r"[^A-Za-z0-9_]", "", raw)
+    return cleaned or "YourModule"
+
+
+def _fallback_path_for_llm_item(*, request: UnifiedTaskRequest, language: str, index: int) -> str:
+    module_name = _module_name_for_request(request)
+    normalized_language = language.lower().strip()
+    if normalized_language in {"cpp", "c++", "cxx", "cc"}:
+        return f"Source/{module_name}/Private/GeneratedSnippet{index}.cpp"
+    if normalized_language in {"h", "hpp", "header"}:
+        return f"Source/{module_name}/Public/GeneratedSnippet{index}.h"
+    if normalized_language in {"csharp", "cs"}:
+        return f"Source/{module_name}/GeneratedSnippet{index}.cs"
+    if normalized_language == "python":
+        return f"Scripts/GeneratedSnippet{index}.py"
+    return f"generated_snippet_{index}.txt"
+
+
+def _path_hint_before(text: str, fence_start: int) -> str:
+    prefix = text[:fence_start]
+    recent = "\n".join(prefix.splitlines()[-4:])
+    for pattern in (_FILE_PATH_HINT_RE, _SOURCE_PATH_RE):
+        matches = list(pattern.finditer(recent))
+        if matches:
+            return matches[-1].group("path").strip().strip("`'\" ")
+    return ""
+
+
+def _looks_like_code(text: str) -> bool:
+    lowered = text.lower()
+    markers = (
+        "#include",
+        "uclass",
+        "ustruct",
+        "ufunction",
+        "ue_log",
+        "void ",
+        "class ",
+        "for (",
+        "for(",
+        "while (",
+        "if (",
+        "return ",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _normalize_llm_text_generated_items(text: str, *, request: UnifiedTaskRequest) -> list[dict[str, Any]]:
+    raw_text = str(text or "").strip()
+    if not raw_text:
+        return []
+
+    items: list[dict[str, Any]] = []
+    for index, match in enumerate(_CODE_FENCE_RE.finditer(raw_text), start=1):
+        code = match.group("code").strip()
+        if not code:
+            continue
+        language = match.group("language").strip() or "cpp"
+        file_path = _path_hint_before(raw_text, match.start()) or _fallback_path_for_llm_item(
+            request=request,
+            language=language,
+            index=index,
+        )
+        items.append(
+            {
+                "label": file_path.split("/")[-1],
+                "file_path": file_path,
+                "language": _language_from_file_path(file_path) if file_path else language,
+                "code": code,
+            }
+        )
+
+    if not items and _looks_like_code(raw_text):
+        file_path = _fallback_path_for_llm_item(request=request, language="cpp", index=1)
+        items.append(
+            {
+                "label": file_path.split("/")[-1],
+                "file_path": file_path,
+                "language": _language_from_file_path(file_path),
+                "code": raw_text,
+            }
+        )
+
+    return _normalize_generated_items(items)
 
 
 def _reference_excerpt(item: dict[str, Any], limit: int = 500) -> str:
@@ -536,6 +642,28 @@ class CodeGenerationService:
         )
         result = self.llm_service.complete_json_object(messages=messages, config=chat_config)
         if not result["ok"]:
+            text_generated_items = _normalize_llm_text_generated_items(str(result.get("text") or ""), request=request)
+            if text_generated_items:
+                return {
+                    "ok": True,
+                    "generated_items": text_generated_items,
+                    "summary": "Generated code from the LLM text response after structured JSON parsing failed.",
+                    "notes": [
+                        "The model returned code-like text instead of the requested JSON schema.",
+                        "The backend extracted the code as a non-destructive draft.",
+                    ],
+                    "usage": result["usage"],
+                    "warnings": [f"structured_json_failed:{result['reason']}", "llm_text_fallback_used"],
+                }
+            retry = self._generate_with_llm_text(
+                request=request,
+                query=query,
+                support=support,
+                chat_config=chat_config,
+                fallback_from=result,
+            )
+            if retry["ok"]:
+                return retry
             return {
                 "ok": False,
                 "generated_items": [],
@@ -547,6 +675,16 @@ class CodeGenerationService:
 
         payload = result["payload"] or {}
         generated_items = _normalize_generated_items(payload.get("generated_items"))
+        if not generated_items:
+            retry = self._generate_with_llm_text(
+                request=request,
+                query=query,
+                support=support,
+                chat_config=chat_config,
+                fallback_from=result,
+            )
+            if retry["ok"]:
+                return retry
         return {
             "ok": bool(generated_items),
             "generated_items": generated_items,
@@ -554,6 +692,62 @@ class CodeGenerationService:
             "notes": [str(item).strip() for item in payload.get("notes") or [] if str(item).strip()],
             "usage": result["usage"],
             "warnings": [] if generated_items else ["empty_generated_items"],
+        }
+
+    def _generate_with_llm_text(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        query: str,
+        support: dict[str, Any],
+        chat_config: ChatRuntimeConfig,
+        fallback_from: dict[str, Any],
+    ) -> dict[str, Any]:
+        if str(fallback_from.get("reason") or "") not in {"json_parse_failed", "completed"}:
+            return {
+                "ok": False,
+                "generated_items": [],
+                "summary": "",
+                "notes": [],
+                "usage": fallback_from.get("usage") or {},
+                "warnings": [f"llm_text_retry_skipped:{fallback_from.get('reason') or 'unknown'}"],
+            }
+
+        result = self.llm_service.complete(
+            messages=self._generation_text_messages(request=request, query=query, support=support),
+            config=chat_config,
+        )
+        if not result.get("ok"):
+            return {
+                "ok": False,
+                "generated_items": [],
+                "summary": "",
+                "notes": [],
+                "usage": result.get("usage") or fallback_from.get("usage") or {},
+                "warnings": [
+                    f"structured_generation_failed:{fallback_from.get('reason') or 'unknown'}",
+                    f"text_generation_failed:{result.get('reason') or 'unknown'}",
+                ],
+            }
+        generated_items = _normalize_llm_text_generated_items(str(result.get("text") or ""), request=request)
+        return {
+            "ok": bool(generated_items),
+            "generated_items": generated_items,
+            "summary": (
+                "Generated code from a live LLM text fallback."
+                if generated_items
+                else ""
+            ),
+            "notes": [
+                "Structured JSON generation did not provide usable generated_items.",
+                "A text fallback was used and parsed into non-destructive generated items.",
+            ] if generated_items else [],
+            "usage": result.get("usage") or fallback_from.get("usage") or {},
+            "warnings": (
+                [f"structured_generation_failed:{fallback_from.get('reason') or 'unknown'}", "llm_text_retry_used"]
+                if generated_items
+                else ["empty_generated_items", "llm_text_retry_empty"]
+            ),
         }
 
     def _generation_messages(
@@ -605,6 +799,8 @@ class CodeGenerationService:
             '{"summary":"...","generated_items":[{"label":"...","file_path":"...","language":"...","code":"..."}],"notes":["..."]}. '
             "Do not wrap the JSON in markdown fences. "
             "When project-specific reference snippets are provided, align naming, structure, and style with them. "
+            "When no reference snippets are provided, still solve the user's requested behavior directly using general Unreal C++ knowledge. "
+            "Do not return an empty Actor skeleton unless the user explicitly asked for a skeleton. "
             "When review findings are provided, generate a focused fix draft that addresses those findings first. "
             "For Unreal C++ requests, prefer Source/<Module>/Public/<ClassName>.h and "
             "Source/<Module>/Private/<ClassName>.cpp instead of draft.txt. "
@@ -632,4 +828,26 @@ class CodeGenerationService:
         return [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
+        ]
+
+    def _generation_text_messages(
+        self,
+        *,
+        request: UnifiedTaskRequest,
+        query: str,
+        support: dict[str, Any],
+    ) -> list[dict[str, str]]:
+        base_messages = self._generation_messages(request=request, query=query, support=support)
+        text_system = (
+            "The previous structured JSON code-generation attempt was not usable. "
+            "Now return a concise non-destructive code draft as plain text. "
+            "For each generated file, write a line `File: Source/<Module>/Public/<Name>.h` or "
+            "`File: Source/<Module>/Private/<Name>.cpp`, followed by one fenced code block. "
+            "If the request is a small behavior such as a countdown printed to the console, implement that behavior directly. "
+            "Do not only return a generic BeginPlay/Tick skeleton unless that is the requested behavior. "
+            "Do not claim files were written to disk."
+        )
+        return [
+            {"role": "system", "content": text_system},
+            *base_messages[1:],
         ]

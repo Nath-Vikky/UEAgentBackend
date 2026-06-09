@@ -2196,6 +2196,16 @@ Code Generate 的质量很依赖 `knowledge/code-reference` 和 `knowledge/examp
 
 后续如果某类代码生成结果太空，优先补同类 `engine_notes` 和 `code_reference`，再考虑是否增强兜底模板。这样范围保持小而稳，不会变成复杂模板市场。
 
+2026-06-09 update: Code Generate 的生成顺序已经调整为“知识库增强 + LLM 自由生成 + 确定性模板兜底”：
+
+1. 先检索 `knowledge/code-reference`、`knowledge/examples`、`knowledge/engine-notes` 和相关 prompt pack。
+2. 如果 LLM 可用，优先要求模型返回结构化 `generated_items[]`。
+3. 如果模型没有按 JSON 返回，而是返回 Markdown fenced code block 或普通代码文本，后端会解析 `File: Source/...` 路径提示和代码块，转换为非破坏性的 `generated_items[]` 草稿。
+4. 如果知识库没有命中，但 LLM 可用，后端仍会要求 LLM 根据通用 UE C++ 知识直接实现用户需求，例如“从 10 减到 1 并输出到控制台”，而不是只返回空 Actor 骨架。
+5. 只有在 LLM 不可用或输出不可解析时，才退回内置确定性模板。
+
+这些输出仍然不会直接写入磁盘。前端展示 `generated_items[].code` 后，用户如果要落盘，仍需要走写入 Proposal / 用户确认 / 后端校验 / UEAgentTool 执行的链路。
+
 ### 18.16.1 Code Generate Preflight
 
 Code Generate 现在会在生成 `.h/.cpp` 草稿后自动运行轻量预检，输出：
