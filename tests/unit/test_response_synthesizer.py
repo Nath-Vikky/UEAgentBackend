@@ -53,6 +53,34 @@ def test_response_synthesizer_fills_missing_user_view_from_data_answer() -> None
     assert report["assistant_message_source"] == "user_view_text"
 
 
+def test_response_synthesizer_fills_missing_user_view_from_tool_summaries() -> None:
+    execution = {
+        "assistant_message": "",
+        "user_view": {"blocks": []},
+        "data": {
+            "tool_use_summaries": [
+                {"user_summary": "Asset details: SM_Rock; type: StaticMesh; Nanite: enabled."},
+                {"user_summary": "Material parameters: MI_Rock; parameters: Roughness."},
+            ]
+        },
+        "debug_view": {},
+    }
+
+    result = synthesize_execution_response(
+        execution,
+        output_language="en-US",
+        route_type="single_tool",
+        selected_tool_id="mcp_get_asset_details",
+    )
+
+    assert result["user_view"]["text"] == (
+        "Asset details: SM_Rock; type: StaticMesh; Nanite: enabled.\n"
+        "Material parameters: MI_Rock; parameters: Roughness."
+    )
+    assert result["assistant_message"] == result["user_view"]["text"]
+    assert result["data"]["response_synthesizer"]["text_source"] == "data.tool_use_summaries"
+
+
 def test_response_synthesizer_fills_missing_blocks_and_chinese_default() -> None:
     execution = {
         "assistant_message": "",

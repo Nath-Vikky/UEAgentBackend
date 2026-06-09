@@ -89,6 +89,9 @@ def _fallback_text(
         value = data.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip(), f"data.{key}"
+    tool_summary_text = _tool_summaries_text(data.get("tool_use_summaries"))
+    if tool_summary_text:
+        return tool_summary_text, "data.tool_use_summaries"
     for block in blocks:
         if not isinstance(block, dict):
             continue
@@ -97,6 +100,21 @@ def _fallback_text(
             if isinstance(value, str) and value.strip():
                 return value.strip(), f"block.{key}"
     return _default_empty_answer(output_language), "default_empty_answer"
+
+
+def _tool_summaries_text(value: Any) -> str:
+    if not isinstance(value, list):
+        return ""
+    lines: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("user_summary") or "").strip()
+        if text:
+            lines.append(text)
+        if len(lines) >= 3:
+            break
+    return "\n".join(lines)
 
 
 def _default_title(*, route_type: str, output_language: str) -> str:

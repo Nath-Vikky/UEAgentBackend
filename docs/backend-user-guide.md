@@ -137,6 +137,11 @@ handler-authored summary, the backend uses readable labels such as `Asset
 details` or `Selected assets` instead of exposing internal ids like
 `mcp_get_asset_details`.
 
+`ResponseSynthesizer` can also use these summaries as a final readable fallback
+when a handler returns structured data but no `assistant_message`,
+`user_view.text`, or `data.answer`. This keeps tool-style responses from
+falling back to an empty-answer message.
+
 `response_critic` is a lightweight deterministic output guard. Before a task
 response is returned and persisted to chat history, the backend checks the
 visible User View text and blocks for internal implementation details such as
