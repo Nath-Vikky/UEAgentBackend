@@ -1023,6 +1023,7 @@ class TaskService:
             llm_result=llm_result,
             mode=mode,
             min_confidence=self.settings.agent_intent_drafter_min_confidence,
+            context_resolution=dict(context_bundle.get("context_resolution") or {}),
         )
         refined_routing = outcome["routing"]
         actual_task_type = self._actual_task_type(request.task_type, refined_routing)

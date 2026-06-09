@@ -81,7 +81,13 @@ def test_shadow_mode_records_llm_draft_without_overriding_route() -> None:
     assert outcome["routing"]["intent"]["route_type"] == "direct_answer"
     assert outcome["intent_draft"]["source"] == "deterministic_router_projection"
     assert outcome["report"]["status"] == "shadow_completed"
+    assert outcome["report"]["version"] == "llm_intent_drafter_v2"
     assert outcome["report"]["llm_draft"]["candidate_tools"] == ["mcp_get_asset_details"]
+    assert outcome["report"]["draft_delta"]["changed_fields"]["candidate_tools"] == {
+        "deterministic": [],
+        "llm": ["mcp_get_asset_details"],
+    }
+    assert all(check["passed"] for check in outcome["report"]["safety_checks"])
 
 
 def test_active_mode_can_override_to_safe_readonly_tool() -> None:
@@ -112,6 +118,62 @@ def test_active_mode_can_override_to_safe_readonly_tool() -> None:
     assert outcome["report"]["applied"] is True
     assert outcome["intent_draft"]["source"] == "llm_intent_drafter_active"
     assert outcome["routing"]["intent"]["route_type"] == "single_tool"
+    assert outcome["routing"]["route"]["selected_tool_id"] == "mcp_get_asset_details"
+    assert all(check["passed"] for check in outcome["report"]["safety_checks"])
+
+
+def test_active_mode_blocks_tool_override_when_active_context_is_missing() -> None:
+    outcome = apply_llm_intent_draft(
+        deterministic_draft=_draft(),
+        routing=_routing(),
+        llm_result={
+            "ok": True,
+            "payload": {
+                "intent_type": "selected_context_question",
+                "route_type": "single_tool",
+                "target_kind": "selected_asset",
+                "selected_tool_id": "mcp_get_asset_details",
+                "needs_live_editor_context": True,
+                "confidence": 0.96,
+            },
+            "provider": "test",
+            "model": "fake",
+            "profile_id": "default",
+        },
+        mode="active",
+        min_confidence=0.78,
+        context_resolution={"status": "missing_active_context"},
+    )
+
+    assert outcome["report"]["status"] == "blocked"
+    assert outcome["report"]["reason"] == "missing_active_context_blocks_llm_override"
+    assert outcome["routing"]["route"]["selected_tool_id"] is None
+
+
+def test_active_mode_blocks_selected_context_downgrade_to_direct_answer() -> None:
+    outcome = apply_llm_intent_draft(
+        deterministic_draft=_draft(),
+        routing=_routing("mcp_get_asset_details", route_type="single_tool"),
+        llm_result={
+            "ok": True,
+            "payload": {
+                "intent_type": "smalltalk",
+                "route_type": "direct_answer",
+                "target_kind": "selected_asset",
+                "needs_live_editor_context": False,
+                "confidence": 0.96,
+            },
+            "provider": "test",
+            "model": "fake",
+            "profile_id": "default",
+        },
+        mode="active",
+        min_confidence=0.78,
+        context_resolution={"status": "resolved", "source": "selected_asset"},
+    )
+
+    assert outcome["report"]["status"] == "blocked"
+    assert outcome["report"]["reason"] == "selected_context_cannot_downgrade_to_direct_answer"
     assert outcome["routing"]["route"]["selected_tool_id"] == "mcp_get_asset_details"
 
 

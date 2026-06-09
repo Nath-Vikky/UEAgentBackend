@@ -8596,7 +8596,7 @@ Fields:
 Frontend impact: optional only. Existing UI can ignore it; a future Debug panel
 can use it to display the Agent chain in a friendlier way than raw JSON.
 
-## 2026-06-09 Update: Optional LLM Intent Drafter v1
+## 2026-06-09 Update: Optional LLM Intent Drafter v2
 
 The Agent chain now has an optional LLM intent-drafting adapter. It is disabled
 by default, so existing deterministic routing remains the normal behavior.
@@ -8614,23 +8614,31 @@ Modes:
 - `shadow`: calls the configured LLM and records `llm_intent_draft`, but does
   not change routing or execution.
 - `active`: may apply the LLM draft only after JSON parsing, confidence gating,
-  tool allow-list validation, and side-effect safety checks.
+  tool allow-list validation, active-context checks, downgrade checks, and
+  side-effect safety checks.
 
 Safety rules:
 
 - Unknown tool ids are rejected.
 - Low-confidence drafts are ignored.
+- Missing active editor context blocks selected/current-context tool overrides.
+- Selected/current editor context questions cannot be downgraded to ordinary
+  `direct_answer` when deterministic rules already detected live editor context.
 - A newly suggested confirmed-write tool is blocked unless deterministic rules
   already detected a write intent. Even then, editor writes still create
   Proposals and require user confirmation.
 - LLM draft failure, invalid JSON, missing API key, or network failure falls
   back to deterministic routing.
+- `draft_delta` records how the LLM draft differs from deterministic routing.
+- `safety_checks` records every rule gate used before an active override.
 
 Debug fields:
 
 - `debug_view.llm_intent_draft`
 - `debug_view.intent_draft`
 - `debug_view.verified_intent`
+- `debug_view.llm_intent_draft.draft_delta`
+- `debug_view.llm_intent_draft.safety_checks`
 - `debug_view.agent_dag.nodes[].evidence.llm_drafter_status`
 
 Frontend impact: no mandatory change. This feature only affects backend

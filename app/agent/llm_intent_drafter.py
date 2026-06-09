@@ -7,7 +7,7 @@ from app.schemas.requests import UnifiedTaskRequest
 from app.tools.registry import get_tool_spec
 
 
-LLM_INTENT_DRAFTER_VERSION = "llm_intent_drafter_v1"
+LLM_INTENT_DRAFTER_VERSION = "llm_intent_drafter_v2"
 LLM_INTENT_MODES = {"disabled", "shadow", "active"}
 ROUTE_TYPES = {"direct_answer", "project_qa", "single_tool", "workflow"}
 TARGET_KINDS = {
@@ -77,6 +77,7 @@ def apply_llm_intent_draft(
     llm_result: dict[str, Any] | None,
     mode: Literal["disabled", "shadow", "active"] | str,
     min_confidence: float,
+    context_resolution: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_mode = str(mode or "disabled").strip().lower()
     if normalized_mode not in LLM_INTENT_MODES:
@@ -96,6 +97,8 @@ def apply_llm_intent_draft(
         "llm_draft": {},
         "deterministic_draft": deterministic_draft,
         "routing_override": {},
+        "draft_delta": {},
+        "safety_checks": [],
     }
     if normalized_mode == "disabled":
         report_base["reason"] = "agent_intent_drafter_disabled"
@@ -126,6 +129,7 @@ def apply_llm_intent_draft(
     normalized = normalize_llm_intent_payload(payload, deterministic_draft=deterministic_draft)
     report_base["llm_draft"] = normalized["draft"]
     report_base["routing_override"] = normalized["routing_override"]
+    report_base["draft_delta"] = _draft_delta(deterministic_draft, normalized["draft"])
     if normalized["errors"]:
         report_base.update(
             {
@@ -135,6 +139,14 @@ def apply_llm_intent_draft(
             }
         )
         return {"routing": routing, "intent_draft": deterministic_draft, "report": report_base}
+
+    safety_checks = _override_safety_checks(
+        normalized=normalized,
+        routing=routing,
+        deterministic_draft=deterministic_draft,
+        context_resolution=dict(context_resolution or {}),
+    )
+    report_base["safety_checks"] = safety_checks
 
     if normalized_mode == "shadow":
         report_base.update({"status": "shadow_completed", "reason": "shadow_mode_no_override"})
@@ -151,7 +163,7 @@ def apply_llm_intent_draft(
         )
         return {"routing": routing, "intent_draft": deterministic_draft, "report": report_base}
 
-    block_reason = _active_override_block_reason(normalized, routing, deterministic_draft)
+    block_reason = _active_override_block_reason(safety_checks)
     if block_reason:
         report_base.update({"status": "blocked", "reason": block_reason})
         return {"routing": routing, "intent_draft": deterministic_draft, "report": report_base}
@@ -291,30 +303,109 @@ def _apply_routing_override(
     return updated
 
 
-def _active_override_block_reason(
+def _override_safety_checks(
+    *,
     normalized: dict[str, Any],
     routing: dict[str, Any],
     deterministic_draft: dict[str, Any],
-) -> str:
+    context_resolution: dict[str, Any],
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    _add_check(checks, "payload_valid", True, "normalized_payload_valid")
+
+    missing_context = context_resolution.get("status") == "missing_active_context"
+    _add_check(
+        checks,
+        "missing_context_gate",
+        not missing_context,
+        "missing_active_context_blocks_llm_override" if missing_context else "context_available_or_not_required",
+    )
+
     override = dict(normalized.get("routing_override") or {})
     route_type = override.get("route_type")
     selected_tool_id = override.get("selected_tool_id")
-    if route_type not in {"direct_answer", "project_qa", "single_tool", None}:
-        return f"unsupported_active_route:{route_type}"
-    if route_type == "single_tool" and not selected_tool_id:
-        return "single_tool_override_requires_selected_tool"
-    if selected_tool_id:
-        spec = get_tool_spec(selected_tool_id)
-        if not spec:
-            return "unknown_selected_tool"
-        existing_tool_id = str((routing.get("route") or {}).get("selected_tool_id") or "")
-        existing_spec = get_tool_spec(existing_tool_id)
-        if spec.side_effect_level not in {"read_only", "plan_only"}:
-            deterministic_write = bool(deterministic_draft.get("requested_write"))
-            existing_write = bool(existing_spec and existing_spec.side_effect_level not in {"read_only", "plan_only"})
-            if not deterministic_write and not existing_write:
-                return "confirmed_write_override_requires_deterministic_write_signal"
+    route_supported = route_type in {"direct_answer", "project_qa", "single_tool", None}
+    _add_check(checks, "route_supported", route_supported, f"route_type={route_type}")
+
+    single_tool_has_tool = route_type != "single_tool" or bool(selected_tool_id)
+    _add_check(
+        checks,
+        "single_tool_has_tool",
+        single_tool_has_tool,
+        "single_tool_override_requires_selected_tool",
+    )
+
+    spec = get_tool_spec(selected_tool_id) if selected_tool_id else None
+    tool_registered = not selected_tool_id or spec is not None
+    _add_check(checks, "selected_tool_registered", tool_registered, f"selected_tool_id={selected_tool_id or 'none'}")
+
+    existing_tool_id = str((routing.get("route") or {}).get("selected_tool_id") or "")
+    existing_spec = get_tool_spec(existing_tool_id)
+    deterministic_write = bool(deterministic_draft.get("requested_write"))
+    existing_write = bool(existing_spec and existing_spec.side_effect_level not in {"read_only", "plan_only"})
+    requested_write_safe = True
+    if spec and spec.side_effect_level not in {"read_only", "plan_only"}:
+        requested_write_safe = deterministic_write or existing_write
+    _add_check(
+        checks,
+        "write_override_has_rule_signal",
+        requested_write_safe,
+        (
+            "confirmed_write_override_requires_deterministic_write_signal"
+            if not requested_write_safe
+            else "write_override_has_deterministic_signal_or_not_write"
+        ),
+    )
+
+    direct_answer_safe = True
+    target_kind = str(deterministic_draft.get("target_kind") or "none")
+    selected_or_current_target = target_kind.startswith(("selected_", "current_")) or target_kind in {
+        "asset",
+        "blueprint",
+        "widget",
+        "material",
+        "level_actor",
+    }
+    if route_type == "direct_answer" and (deterministic_write or existing_write):
+        direct_answer_safe = False
+        reason = "write_intent_cannot_downgrade_to_direct_answer"
+    elif route_type == "direct_answer" and selected_or_current_target and bool(deterministic_draft.get("needs_live_editor_context")):
+        direct_answer_safe = False
+        reason = "selected_context_cannot_downgrade_to_direct_answer"
+    else:
+        reason = "direct_answer_override_safe_or_not_requested"
+    _add_check(checks, "direct_answer_downgrade_safe", direct_answer_safe, reason)
+    return checks
+
+
+def _active_override_block_reason(safety_checks: list[dict[str, Any]]) -> str:
+    for check in safety_checks:
+        if not bool(check.get("passed")):
+            return str(check.get("reason") or check.get("check_id") or "llm_override_blocked")
     return ""
+
+
+def _add_check(checks: list[dict[str, Any]], check_id: str, passed: bool, reason: str) -> None:
+    checks.append({"check_id": check_id, "passed": bool(passed), "reason": reason})
+
+
+def _draft_delta(deterministic_draft: dict[str, Any], llm_draft: dict[str, Any]) -> dict[str, Any]:
+    changed: dict[str, Any] = {}
+    for key in (
+        "intent_type",
+        "target_kind",
+        "target_reference",
+        "needs_project_context",
+        "needs_live_editor_context",
+        "needs_knowledge",
+        "requested_write",
+        "candidate_tools",
+    ):
+        before = deterministic_draft.get(key)
+        after = llm_draft.get(key)
+        if before != after:
+            changed[key] = {"deterministic": before, "llm": after}
+    return {"changed_field_count": len(changed), "changed_fields": changed}
 
 
 def _clean_tool_id(value: Any) -> str | None:
