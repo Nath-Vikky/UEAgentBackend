@@ -8534,3 +8534,33 @@ Debug View can explain whether the answer was handler-authored, synthesized
 from data, or safely defaulted.
 
 Frontend impact: no mandatory change.
+
+## 2026-06-09 Update: Agent DAG Projection v1
+
+Debug View now includes `agent_dag`, a framework-neutral projection of the
+current single-process Agent chain. It is not a new runtime framework and does
+not add extra LLM calls. It turns the existing backend pipeline into stable DAG
+metadata that can be reviewed, evaluated, or later mapped to LangGraph-style
+nodes.
+
+Current nodes:
+
+- `input`: normalize request and editor context.
+- `intent_draft`: draft user intent and candidate target.
+- `intent_verify`: apply deterministic corrections and safety checks.
+- `context_resolve`: resolve selected asset/actor/Blueprint/widget/material
+  references.
+- `tool_plan`: decide read-only tool, retrieval path, or Proposal plan.
+- `evidence_or_tool`: run retrieval/read-only sensing or create pending
+  Proposals.
+- `response_synthesize`: normalize `user_view` and `assistant_message`.
+- `response_critic`: clean internal-tooling leakage from User View.
+- `finalize`: persist the final `UnifiedTaskResponse`.
+
+The DAG also exposes linear `edges`, `summary`, and `migration_notes`. Write
+operations are still shown as `waiting_confirmation` when a Proposal exists;
+the DAG never means the backend executed a UE write.
+
+Frontend impact: optional only. Existing UI can ignore `debug_view.agent_dag`.
+If a future debug panel wants to visualize the Agent chain, this field is the
+preferred source.

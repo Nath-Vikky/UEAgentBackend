@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.agent.context_builder import build_context_summary
 from app.agent.context_manager import build_context_bundle, context_bundle_prompt_excerpt
 from app.agent.context_pack import build_context_pack
+from app.agent.agent_dag import build_agent_dag_projection
 from app.agent.decision_trace import build_agent_decision_trace
 from app.agent.graph_adapter import graph_framework_readiness_report, review_fix_validate_graph_spec
 from app.agent.memory_manager import update_session_memory
@@ -1219,6 +1220,20 @@ class TaskService:
         )
         execution["debug_view"]["react_trace"] = react_v2_trace
         execution["data"]["react_trace"] = react_v2_trace
+        agent_dag = build_agent_dag_projection(
+            request=request,
+            routing=routing,
+            context_bundle=context_bundle,
+            skill_runtime=skill_runtime,
+            retrieval_trace=execution["retrieval_trace"],
+            data=execution["data"],
+            debug_view=execution["debug_view"],
+            action_proposals=execution["action_proposals"],
+            task_status=task_status,
+            finish_reason=finish_reason,
+        )
+        execution["debug_view"]["agent_dag"] = agent_dag
+        execution["data"]["agent_dag"] = agent_dag
         trace_summary = build_trace_summary(
             trace_id,
             routing["intent"]["route_type"],
