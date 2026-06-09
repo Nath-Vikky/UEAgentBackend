@@ -35,10 +35,13 @@ def test_subagent_runtime_projects_completed_dag_nodes() -> None:
     )
 
     assert runtime["version"] == "subagent_runtime_v1"
+    assert runtime["mode"] == "dag_runtime_state"
     assert runtime["summary"]["state_count"] == 3
     assert runtime["summary"]["completed_count"] == 3
+    assert runtime["summary"]["quality_blocked_count"] == 0
     assert runtime["summary"]["current_focus"] == "finalize"
     assert runtime["states"][1]["output_summary"] == "mode=read_only, proposal=False"
+    assert runtime["states"][1]["quality_gate"]["status"] == "pass"
     assert runtime["boundary"]["no_extra_llm_calls"] is True
 
 
@@ -76,3 +79,37 @@ def test_subagent_runtime_focuses_waiting_confirmation_node() -> None:
     waiting = next(state for state in runtime["states"] if state["status"] == "waiting_confirmation")
     assert waiting["error"] is None
     assert "proposal_count=1" in waiting["recent_activities"]
+
+
+def test_subagent_runtime_focuses_quality_blocked_node() -> None:
+    runtime = build_subagent_runtime(
+        {
+            "nodes": [
+                {
+                    "node_id": "response_synthesize",
+                    "role": "ResponseSynthesizer",
+                    "status": "completed",
+                    "responsibility": "Build user view.",
+                    "evidence": {"user_view_ready": True},
+                    "quality_gate": {"status": "pass", "checks": []},
+                },
+                {
+                    "node_id": "response_critic",
+                    "role": "ResponseCritic",
+                    "status": "completed",
+                    "responsibility": "Guard user view.",
+                    "evidence": {"remaining_internal_tooling": True},
+                    "quality_gate": {
+                        "status": "block",
+                        "checks": [],
+                        "blocking_flags": ["remaining_internal_tooling_detected"],
+                    },
+                    "blocking_flags": ["remaining_internal_tooling_detected"],
+                },
+            ]
+        }
+    )
+
+    assert runtime["summary"]["quality_blocked_count"] == 1
+    assert runtime["summary"]["blocking_flags"] == ["remaining_internal_tooling_detected"]
+    assert runtime["summary"]["current_focus"] == "response_critic"

@@ -8535,13 +8535,14 @@ from data, or safely defaulted.
 
 Frontend impact: no mandatory change.
 
-## 2026-06-09 Update: Agent DAG Projection v1
+## 2026-06-09 Update: Agent Runtime DAG v2
 
-Debug View now includes `agent_dag`, a framework-neutral projection of the
-current single-process Agent chain. It is not a new runtime framework and does
-not add extra LLM calls. It turns the existing backend pipeline into stable DAG
-metadata that can be reviewed, evaluated, or later mapped to LangGraph-style
-nodes.
+Debug View now includes `agent_dag`, a framework-neutral runtime DAG for the
+current single-process Agent chain. It is still not a heavy orchestration
+framework and does not add extra LLM calls, but each node now carries a
+`quality_gate` so the backend can audit whether the Agent chain answered with
+enough context, avoided unsafe downgrades, and kept internal tooling out of
+User View.
 
 Current nodes:
 
@@ -8557,15 +8558,24 @@ Current nodes:
 - `response_critic`: clean internal-tooling leakage from User View.
 - `finalize`: persist the final `UnifiedTaskResponse`.
 
-The DAG also exposes linear `edges`, `summary`, and `migration_notes`. Write
-operations are still shown as `waiting_confirmation` when a Proposal exists;
-the DAG never means the backend executed a UE write.
+The DAG also exposes linear `edges`, `summary`, `run_status`,
+`blocking_flags`, and `migration_notes`. Write operations are still shown as
+`waiting_confirmation` when a Proposal exists; the DAG never means the backend
+executed a UE write.
+
+Quality gates:
+
+- `pass`: the node has enough evidence for the current path.
+- `warning`: the node is usable, but some diagnostic field is thin or the
+  answer may need review.
+- `block`: the node detected a hard safety or quality issue, such as missing
+  active context or remaining internal tool names in User View.
 
 Frontend impact: optional only. Existing UI can ignore `debug_view.agent_dag`.
 If a future debug panel wants to visualize the Agent chain, this field is the
 preferred source.
 
-## 2026-06-09 Update: SubAgent Runtime Projection v1
+## 2026-06-09 Update: SubAgent Runtime State v1
 
 Debug View now also includes `subagent_runtime`, a readable runtime-state
 projection derived from `agent_dag`.
@@ -8577,13 +8587,17 @@ It exposes:
 - `status`: `completed`, `skipped`, `waiting_confirmation`, or `failed`.
 - `input_summary` / `output_summary`: compact human-readable node summaries.
 - `recent_activities`: the most useful state facts for quick debugging.
+- `quality_gate`: the node-level pass/warning/block result from
+  `agent_dag_v2`.
+- `summary.quality_blocked_count` / `summary.blocking_flags`: compact runtime
+  quality summary.
 - `summary.current_focus`: the node that currently matters most, such as
   `evidence_or_tool` when a Proposal is waiting for user confirmation.
 
 Boundary:
 
-- It is projection-only.
-- It does not schedule parallel agents.
+- It is runtime-state only.
+- It does not schedule parallel agents yet.
 - It does not call extra LLMs.
 - It does not execute tools or writes.
 - Proposal safety is unchanged.

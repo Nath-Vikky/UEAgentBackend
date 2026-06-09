@@ -5,7 +5,7 @@ from typing import Any
 from app.schemas.requests import UnifiedTaskRequest
 
 
-AGENT_DAG_VERSION = "agent_dag_v1"
+AGENT_DAG_VERSION = "agent_dag_v2"
 
 
 def build_agent_dag_projection(
@@ -21,7 +21,7 @@ def build_agent_dag_projection(
     task_status: str,
     finish_reason: str,
 ) -> dict[str, Any]:
-    """Project the single-process Agent chain as a framework-neutral DAG."""
+    """Build a framework-neutral runtime DAG for the single-process Agent chain."""
 
     intent = dict(routing.get("intent") or {})
     route = dict(routing.get("route") or {})
@@ -91,6 +91,7 @@ def build_agent_dag_projection(
             "completed" if tool_plan or selected_tool_id else "skipped",
             "Project verified intent into a read-only tool, retrieval path, or confirmed-write Proposal plan.",
             {
+                "route_type": intent.get("route_type"),
                 "tool_id": selected_tool_id or None,
                 "mode": tool_plan.get("mode"),
                 "side_effect_level": tool_plan.get("side_effect_level"),
@@ -147,13 +148,18 @@ def build_agent_dag_projection(
 
     return {
         "version": AGENT_DAG_VERSION,
-        "mode": "single_process_framework_neutral_dag",
+        "mode": "single_process_runtime_dag",
         "framework": "custom_lightweight",
         "nodes": nodes,
         "edges": _linear_edges([node["node_id"] for node in nodes]),
         "summary": {
             "node_count": len(nodes),
             "completed_count": len([node for node in nodes if node["status"] == "completed"]),
+            "quality_pass_count": len([node for node in nodes if node["quality_gate"]["status"] == "pass"]),
+            "quality_warning_count": len([node for node in nodes if node["quality_gate"]["status"] == "warning"]),
+            "quality_blocked_count": len([node for node in nodes if node["quality_gate"]["status"] == "block"]),
+            "blocking_flags": _blocking_flags(nodes),
+            "run_status": _run_status(nodes, task_status=task_status, proposal_count=proposal_count),
             "route_type": intent.get("route_type"),
             "selected_tool_id": selected_tool_id or None,
             "proposal_count": proposal_count,
@@ -163,6 +169,7 @@ def build_agent_dag_projection(
             "langgraph_ready": True,
             "node_ids_are_stable": True,
             "side_effects_stay_behind_proposals": True,
+            "quality_gates_are_runtime_inputs": True,
         },
     }
 
@@ -174,12 +181,15 @@ def _node(
     responsibility: str,
     evidence: dict[str, Any],
 ) -> dict[str, Any]:
+    quality_gate = _quality_gate(node_id, status, evidence)
     return {
         "node_id": node_id,
         "role": role,
         "status": status,
         "responsibility": responsibility,
         "evidence": evidence,
+        "quality_gate": quality_gate,
+        "blocking_flags": list(quality_gate.get("blocking_flags") or []),
     }
 
 
@@ -198,3 +208,129 @@ def _evidence_status(retrieval_trace: dict[str, Any], selected_tool_id: str, pro
     if str(retrieval_trace.get("mode") or "not_used") != "not_used":
         return "completed"
     return "skipped"
+
+
+def _quality_gate(node_id: str, status: str, evidence: dict[str, Any]) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+    if node_id == "input":
+        _add_check(checks, "request_normalized", bool(evidence.get("task_type")), "request_has_task_type")
+    elif node_id == "intent_draft":
+        _add_check(checks, "intent_available", bool(evidence.get("intent_type")), "intent_type_available")
+        _add_check(checks, "target_kind_available", bool(evidence.get("target_kind")), "target_kind_available")
+    elif node_id == "intent_verify":
+        _add_check(checks, "route_available", bool(evidence.get("route_type")), "route_type_available")
+    elif node_id == "context_resolve":
+        context_status = str(evidence.get("status") or "")
+        missing_context = context_status == "missing_active_context"
+        _add_check(
+            checks,
+            "active_context_resolved_or_not_required",
+            not missing_context,
+            "missing_active_context" if missing_context else "context_resolved_or_not_required",
+            severity="block" if missing_context else "pass",
+        )
+    elif node_id == "tool_plan":
+        route_type = str(evidence.get("route_type") or "")
+        requires_tool = route_type == "single_tool"
+        _add_check(
+            checks,
+            "tool_selected_when_required",
+            bool(evidence.get("tool_id")) or not requires_tool,
+            "single_tool_route_requires_tool_id",
+            severity="block",
+        )
+    elif node_id == "evidence_or_tool":
+        proposal_count = int(evidence.get("proposal_count") or 0)
+        _add_check(
+            checks,
+            "proposal_waits_for_confirmation",
+            status != "waiting_confirmation" or proposal_count > 0,
+            "waiting_confirmation_requires_proposal",
+            severity="block",
+        )
+    elif node_id == "response_synthesize":
+        _add_check(
+            checks,
+            "user_view_ready",
+            bool(evidence.get("user_view_ready")) or status == "skipped",
+            "user_view_not_ready",
+            severity="warning",
+        )
+    elif node_id == "response_critic":
+        _add_check(
+            checks,
+            "answer_ok",
+            evidence.get("answer_ok") is not False,
+            "critic_answer_not_ok",
+            severity="warning",
+        )
+        _add_check(
+            checks,
+            "no_internal_tooling_leak",
+            not bool(evidence.get("remaining_internal_tooling")),
+            "remaining_internal_tooling_detected",
+            severity="block",
+        )
+    elif node_id == "finalize":
+        _add_check(
+            checks,
+            "task_not_failed",
+            str(evidence.get("task_status") or "") != "failed",
+            "task_failed",
+            severity="block",
+        )
+
+    if not checks:
+        _add_check(checks, "node_observed", status in {"completed", "skipped", "fallback", "waiting_confirmation"}, "node_state_recorded")
+
+    blocking_flags = [check["reason"] for check in checks if not check["passed"] and check["severity"] == "block"]
+    warning_flags = [check["reason"] for check in checks if not check["passed"] and check["severity"] == "warning"]
+    if blocking_flags:
+        gate_status = "block"
+    elif warning_flags:
+        gate_status = "warning"
+    else:
+        gate_status = "pass"
+    return {
+        "status": gate_status,
+        "checks": checks,
+        "blocking_flags": blocking_flags,
+        "warning_flags": warning_flags,
+    }
+
+
+def _add_check(
+    checks: list[dict[str, Any]],
+    check_id: str,
+    passed: bool,
+    reason: str,
+    *,
+    severity: str = "warning",
+) -> None:
+    checks.append(
+        {
+            "check_id": check_id,
+            "passed": bool(passed),
+            "reason": reason,
+            "severity": "pass" if passed else severity,
+        }
+    )
+
+
+def _blocking_flags(nodes: list[dict[str, Any]]) -> list[str]:
+    flags: list[str] = []
+    for node in nodes:
+        for flag in list(node.get("blocking_flags") or []):
+            if flag not in flags:
+                flags.append(str(flag))
+    return flags
+
+
+def _run_status(nodes: list[dict[str, Any]], *, task_status: str, proposal_count: int) -> str:
+    if any(node["quality_gate"]["status"] == "block" for node in nodes):
+        return "quality_blocked"
+    if proposal_count:
+        return "waiting_confirmation"
+    if task_status in {"completed", "failed", "cancelled"}:
+        return task_status
+    return "running"

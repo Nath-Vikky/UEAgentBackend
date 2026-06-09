@@ -17,7 +17,7 @@ def build_subagent_runtime(agent_dag: dict[str, Any]) -> dict[str, Any]:
     states = [_state_from_node(node) for node in nodes]
     return {
         "version": SUBAGENT_RUNTIME_VERSION,
-        "mode": "dag_projection_runtime_state",
+        "mode": "dag_runtime_state",
         "framework": agent_dag.get("framework") or "custom_lightweight",
         "states": states,
         "edges": list(agent_dag.get("edges") or []),
@@ -27,6 +27,9 @@ def build_subagent_runtime(agent_dag: dict[str, Any]) -> dict[str, Any]:
             "waiting_count": len([item for item in states if item["status"] == "waiting_confirmation"]),
             "failed_count": len([item for item in states if item["status"] == "failed"]),
             "skipped_count": len([item for item in states if item["status"] == "skipped"]),
+            "quality_blocked_count": len([item for item in states if item["quality_gate"]["status"] == "block"]),
+            "quality_warning_count": len([item for item in states if item["quality_gate"]["status"] == "warning"]),
+            "blocking_flags": _blocking_flags(states),
             "current_focus": _current_focus(states),
         },
         "boundary": {
@@ -49,6 +52,8 @@ def _state_from_node(node: dict[str, Any]) -> dict[str, Any]:
         "output_summary": _output_summary(node, evidence),
         "recent_activities": _activities(node, evidence),
         "error": _error_for_status(status, evidence),
+        "quality_gate": dict(node.get("quality_gate") or {"status": "pass", "checks": []}),
+        "blocking_flags": list(node.get("blocking_flags") or []),
     }
 
 
@@ -122,6 +127,9 @@ def _error_for_status(status: str, evidence: dict[str, Any]) -> str | None:
 
 
 def _current_focus(states: list[dict[str, Any]]) -> str:
+    for state in states:
+        if state.get("quality_gate", {}).get("status") == "block":
+            return str(state.get("node_id") or "")
     for status in ("failed", "waiting_confirmation", "running"):
         for state in states:
             if state["status"] == status:
@@ -130,6 +138,16 @@ def _current_focus(states: list[dict[str, Any]]) -> str:
     if completed:
         return str(completed[-1].get("node_id") or "")
     return ""
+
+
+def _blocking_flags(states: list[dict[str, Any]]) -> list[str]:
+    flags: list[str] = []
+    for state in states:
+        for flag in list(state.get("blocking_flags") or []):
+            flag_text = str(flag)
+            if flag_text and flag_text not in flags:
+                flags.append(flag_text)
+    return flags
 
 
 __all__ = ["SUBAGENT_RUNTIME_VERSION", "build_subagent_runtime"]

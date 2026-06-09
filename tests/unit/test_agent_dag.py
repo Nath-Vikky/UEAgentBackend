@@ -43,11 +43,14 @@ def test_agent_dag_projects_decision_chain_for_readonly_tool() -> None:
         finish_reason="completed",
     )
 
-    assert dag["version"] == "agent_dag_v1"
-    assert dag["mode"] == "single_process_framework_neutral_dag"
+    assert dag["version"] == "agent_dag_v2"
+    assert dag["mode"] == "single_process_runtime_dag"
     assert dag["summary"]["selected_tool_id"] == "mcp_get_asset_details"
     assert dag["summary"]["completed_count"] >= 7
+    assert dag["summary"]["run_status"] == "completed"
+    assert dag["summary"]["quality_blocked_count"] == 0
     assert dag["migration_notes"]["langgraph_ready"] is True
+    assert dag["migration_notes"]["quality_gates_are_runtime_inputs"] is True
     assert [node["node_id"] for node in dag["nodes"]] == [
         "input",
         "intent_draft",
@@ -90,5 +93,47 @@ def test_agent_dag_marks_write_tool_as_waiting_confirmation() -> None:
 
     evidence_node = next(node for node in dag["nodes"] if node["node_id"] == "evidence_or_tool")
     assert evidence_node["status"] == "waiting_confirmation"
+    assert evidence_node["quality_gate"]["status"] == "pass"
+    assert dag["summary"]["run_status"] == "waiting_confirmation"
     assert dag["summary"]["proposal_count"] == 1
     assert dag["migration_notes"]["side_effects_stay_behind_proposals"] is True
+
+
+def test_agent_dag_quality_gate_blocks_internal_tool_leak() -> None:
+    request = UnifiedTaskRequest.model_validate(
+        {
+            "task_type": "agent_chat",
+            "session": {"session_id": "s1", "messages": [{"role": "user", "content": "Analyze this asset"}]},
+            "payload": {"user_query": "Analyze this asset"},
+        }
+    )
+
+    dag = build_agent_dag_projection(
+        request=request,
+        routing={
+            "intent": {"route_type": "single_tool", "intent_type": "selected_context_question"},
+            "route": {"selected_tool_id": "mcp_get_asset_details"},
+        },
+        context_bundle={
+            "intent_draft": {"intent_type": "selected_context_question", "target_kind": "selected_asset"},
+            "verified_intent": {"corrections": [], "safety_flags": []},
+            "context_resolution": {"target_kind": "selected_asset", "status": "resolved", "source": "selected_assets"},
+            "tool_plan_v1": {"tool_id": "mcp_get_asset_details", "mode": "readonly_tool"},
+        },
+        skill_runtime={"skill_id": "ToolRegistryReadOnly"},
+        retrieval_trace={"mode": "local_tool_registry_readonly", "retrieved_docs": []},
+        data={
+            "response_synthesizer": {"user_view_ready": True},
+            "response_critic": {"answer_ok": True, "remaining_internal_tooling": True},
+        },
+        debug_view={},
+        action_proposals=[],
+        task_status="completed",
+        finish_reason="completed",
+    )
+
+    critic_node = next(node for node in dag["nodes"] if node["node_id"] == "response_critic")
+    assert critic_node["quality_gate"]["status"] == "block"
+    assert critic_node["blocking_flags"] == ["remaining_internal_tooling_detected"]
+    assert dag["summary"]["run_status"] == "quality_blocked"
+    assert dag["summary"]["blocking_flags"] == ["remaining_internal_tooling_detected"]
