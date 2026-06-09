@@ -8725,3 +8725,37 @@ Debug fields:
 Frontend impact: no mandatory change. The existing chat panel can render the
 text normally. A future UI may map the `sync_inventory` quick action to an
 explicit sync button.
+
+## 2026-06-09 Update: Agent Decision Eval v2
+
+The offline Agent decision evaluation now checks more than route/tool
+classification. It includes safety gates that match the current Agent Chat
+behavior:
+
+- Small talk must not select a tool.
+- Missing selected/current-target context must return `ask_for_context`.
+- Editor writes must remain Proposal-only.
+- Results are grouped by tags such as `smalltalk`, `missing_context`,
+  `selected_context`, `write`, `blueprint`, `widget`, `material`, and
+  `level_actor`.
+
+Run it with:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_agent_decision_eval.py --output storage\artifacts\evals\agent-decision-eval-latest.json
+```
+
+The report now includes:
+
+- `no_tool_safety_accuracy`
+- `no_tool_safety_case_count`
+- `missing_context_gate_accuracy`
+- `missing_context_gate_case_count`
+- `tag_breakdown`
+
+`response_critic_v1` also has regression coverage for normal UTF-8 Chinese
+answers. User View should hide MCP/tool/raw payload wording and keep readable
+Chinese summaries; raw diagnostics remain in Debug View.
+
+Frontend impact: no mandatory change. This is backend validation and User View
+sanitization behavior only.

@@ -53,6 +53,7 @@ def test_response_critic_removes_internal_tooling_from_user_view() -> None:
     assert cleaned["user_view"]["blocks"][0]["data"] == {"asset_count": 1}
     assert cleaned["debug_view"]["response_critic"]["leaked_internal_tooling"] is True
     assert cleaned["debug_view"]["response_critic"]["remaining_internal_tooling"] is False
+    assert cleaned["debug_view"]["response_critic"]["repair_instruction"].startswith("User View 已转换")
 
 
 def test_response_critic_keeps_plain_answer_unchanged() -> None:
