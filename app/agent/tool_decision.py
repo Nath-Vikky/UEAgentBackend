@@ -17,6 +17,7 @@ def build_tool_plan(
     selected_tool_id = str(selected_tool_id) if selected_tool_id else None
     spec = get_tool_spec(selected_tool_id)
     permission = dict(verified_intent.get("permission_decision") or {})
+    route = dict(routing.get("route") or {})
     target_status = str(context_resolution.get("status") or "not_required")
     side_effect_level = spec.side_effect_level if spec else "none"
     requires_proposal = bool(permission.get("requires_user_confirmation")) or side_effect_level not in {
@@ -24,12 +25,17 @@ def build_tool_plan(
         "read_only",
         "plan_only",
     }
+    allow_missing_inventory = (
+        selected_tool_id == "query_project_inventory"
+        and bool(route.get("allow_missing_context_inventory_query"))
+    )
 
     mode = _mode(
         selected_tool_id=selected_tool_id,
         permission=permission,
         target_status=target_status,
         side_effect_level=side_effect_level,
+        allow_missing_inventory=allow_missing_inventory,
     )
     arguments = _argument_draft(
         selected_tool_id=selected_tool_id,
@@ -65,8 +71,9 @@ def _mode(
     permission: dict[str, Any],
     target_status: str,
     side_effect_level: str,
+    allow_missing_inventory: bool,
 ) -> str:
-    if target_status == "missing_active_context" and selected_tool_id != "query_project_inventory":
+    if target_status == "missing_active_context" and not allow_missing_inventory:
         return "ask_for_context"
     if not selected_tool_id:
         return "direct_answer"

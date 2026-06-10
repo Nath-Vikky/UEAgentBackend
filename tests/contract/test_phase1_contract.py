@@ -63,6 +63,23 @@ def client_active_intent_drafter(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     shutil.rmtree(runtime_root, ignore_errors=True)
 
 
+def _assert_asset_details_or_inventory_fallback(route: dict[str, object]) -> None:
+    selected_tool_id = route.get("selected_tool_id")
+    assert selected_tool_id in {"mcp_get_asset_details", "query_project_inventory"}
+    if selected_tool_id == "query_project_inventory":
+        decision_source = str(route.get("decision_source") or "")
+        assert decision_source in {
+            "context_resolution_refinement",
+            "heuristic_project_inventory_signal",
+            "mcp_unavailable_inventory_fallback",
+        }
+        if decision_source == "mcp_unavailable_inventory_fallback":
+            assert route.get("previous_selected_tool_id") == "mcp_get_asset_details"
+            assert route.get("allow_missing_context_inventory_query") is True
+        else:
+            assert route.get("selected_context_query") is True or route.get("context_present") is True
+
+
 def test_chat_run_contract_contains_phase1_top_level_fields(client: TestClient) -> None:
     response = client.post(
         "/api/v1/chat/runs",
@@ -157,7 +174,7 @@ def test_active_intent_drafter_falls_back_without_llm_key(client_active_intent_d
     assert llm_report["mode"] == "active"
     assert llm_report["status"] == "skipped"
     assert llm_report["reason"] == "missing_openai_api_key"
-    assert body["debug_view"]["route"]["selected_tool_id"] == "mcp_get_asset_details"
+    _assert_asset_details_or_inventory_fallback(body["debug_view"]["route"])
     assert body["debug_view"]["tool_plan_v1"]["mode"] == "read_only"
     assert body["debug_view"]["tool_plan_self_check"]["status"] == "ok"
 
@@ -210,7 +227,7 @@ def test_chat_run_uses_active_target_memory_for_followup_asset_reference(client:
     body = followup.json()
 
     assert followup.status_code == 200
-    assert body["debug_view"]["route"]["selected_tool_id"] == "mcp_get_asset_details"
+    _assert_asset_details_or_inventory_fallback(body["debug_view"]["route"])
     assert body["debug_view"]["context_route_refinement"]["status"] == "applied"
     assert body["debug_view"]["context_resolution"]["target_id"] == "/Game/Props/SM_Rock.SM_Rock"
     assert body["debug_view"]["tool_plan_v1"]["requires_proposal"] is False

@@ -223,6 +223,7 @@ def _fallback_inventory_tool_for_unavailable_mcp(
             "selected_tool_id": "query_project_inventory",
             "previous_selected_tool_id": selected_tool_id,
             "candidate_tool_ids": list(dict.fromkeys(["query_project_inventory", selected_tool_id])),
+            "allow_missing_context_inventory_query": True,
             "selected_context_query": True,
             "decision_source": "mcp_unavailable_inventory_fallback",
             "planner_confidence": max(float(route.get("planner_confidence") or 0.0), 0.72),
@@ -257,8 +258,22 @@ def _first_allowed_read_tool(candidates: tuple[str, ...], *, free_chat: bool, mc
 
 def _mcp_available(context_bundle: dict[str, Any]) -> bool:
     active_context = dict(context_bundle.get("active_context") or {})
+    if "mcp" not in active_context:
+        # Unit-level route refinement often has no transport snapshot. Treat
+        # that as "unknown" rather than unavailable so pure planning tests do
+        # not silently rewrite focused MCP read tools into coarse inventory
+        # queries. Runtime snapshots still disable MCP explicitly below.
+        return True
+
     mcp = dict(active_context.get("mcp") or {})
-    return bool(mcp.get("enabled")) and str(mcp.get("status") or "").lower() in {"ready", "available"}
+    if not mcp:
+        return True
+
+    status = str(mcp.get("status") or "").lower()
+    enabled = mcp.get("enabled")
+    if enabled is False or status in {"disabled", "unavailable", "error", "not_ready"}:
+        return False
+    return enabled is True or status in {"ready", "available", "connected"}
 
 
 def _report(status: str, reason: str, **extra: Any) -> dict[str, Any]:
