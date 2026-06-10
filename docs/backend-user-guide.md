@@ -9103,3 +9103,71 @@ Latest local Agent Decision Eval after the fix:
 
 Frontend impact: no mandatory change. Existing Debug View can optionally show
 `llm_intent_draft.status/reason` to explain active-mode fallback.
+
+## 2026-06-10 Update: Multi-session Memory Workspace
+
+The backend now supports a lightweight multi-session workspace for future
+multi-chat UI. The current UE frontend can keep using one chat window, but a
+future sidebar can create and switch independent conversations without mixing
+history or short-term memory.
+
+Session APIs:
+
+```text
+GET    /api/v1/sessions?project_name=RushBa&include_archived=false
+POST   /api/v1/sessions
+PATCH  /api/v1/sessions/{session_id}
+POST   /api/v1/sessions/{session_id}/archive
+POST   /api/v1/sessions/{session_id}/clear
+GET    /api/v1/sessions/{session_id}/history
+GET    /api/v1/sessions/{session_id}/tasks
+GET    /api/v1/sessions/{session_id}/memory
+POST   /api/v1/sessions/{session_id}/memory/forget
+```
+
+Session metadata can now store lightweight UI fields:
+
+```json
+{
+  "title": "Blueprint debugging",
+  "window_kind": "agent_chat",
+  "archived": false,
+  "pinned": true,
+  "memory_policy": {
+    "session_memory_enabled": true,
+    "project_memory_enabled": true
+  }
+}
+```
+
+Memory boundaries:
+
+- Turn memory is rebuilt from the latest request and is not persisted.
+- Session memory is isolated by `session_id`.
+- Active target memory and conversation focus memory never cross sessions.
+- Project long-term memory can cross sessions only when `project_name` matches.
+- Fresh UE editor context always wins over remembered context.
+- Clearing a session removes chat history, tasks, session summary, active target
+  memory, and conversation focus memory, but preserves explicit project
+  long-term memory.
+
+Explicit memory-write prompts such as `remember`, `记住`, `project convention`,
+and `项目约定` are route-locked as chat memory writes. This prevents selected
+asset/Blueprint/tool keywords from hijacking a request like:
+
+```text
+Remember this project convention: Blueprint assets use prefix BP_ and this
+project uses UE 5.4.
+```
+
+Frontend impact: no mandatory change. If the UE plugin adds multi-chat later,
+use `GET /api/v1/sessions` for the session rail, `POST /api/v1/sessions` for
+New Chat, `PATCH` for rename/pin metadata, `/archive` for hiding old threads,
+`/clear` for clearing the current thread, and `/history` + `/tasks` when
+switching sessions.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\test_system_and_tasks.py::test_session_memory_isolated_but_project_long_term_memory_crosses_same_project tests\integration\test_system_and_tasks.py::test_session_workspace_list_update_archive_and_memory_scope tests\integration\test_system_and_tasks.py::test_tool_tasks_do_not_pollute_agent_chat_session_history -q
+```

@@ -134,6 +134,8 @@ def _should_ask_for_missing_context(context: TaskExecutionContext) -> bool:
     if context.request.task_type not in {"agent_chat", "project_qa"}:
         return False
     tool_plan = dict(context.context_bundle.get("tool_plan_v1") or {})
+    if str(tool_plan.get("tool_id") or "") == "query_project_inventory":
+        return False
     if tool_plan.get("mode") == "ask_for_context":
         return True
     resolution = dict(context.context_bundle.get("context_resolution") or {})

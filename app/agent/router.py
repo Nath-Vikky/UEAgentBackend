@@ -73,6 +73,20 @@ TASK_ACTION_HINTS = {
     "执行",
     "性能",
 }
+MEMORY_WRITE_HINTS = {
+    "remember",
+    "keep in mind",
+    "from now on",
+    "project convention",
+    "convention",
+    "记住",
+    "请记住",
+    "项目约定",
+    "约定",
+    "以后都",
+    "保存为记忆",
+    "加入记忆",
+}
 CONTEXT_REFERENCE_HINTS = {
     "this file",
     "current file",
@@ -1195,6 +1209,10 @@ def _looks_like_current_file_read_request(latest_text: str, text_lower: str) -> 
     return has_read and has_current_file
 
 
+def _looks_like_memory_write_request(latest_text: str, text_lower: str) -> bool:
+    return any(hint in text_lower or hint in latest_text for hint in MEMORY_WRITE_HINTS)
+
+
 def _detect_tool_id(latest_text: str, text_lower: str) -> str | None:
     if _looks_like_current_file_read_request(latest_text, text_lower):
         return "read_project_file"
@@ -1752,6 +1770,25 @@ def classify_request(
         signal_min_confidence=signal_min_confidence,
         signal_min_margin=signal_min_margin,
     )
+
+    if _looks_like_memory_write_request(latest_text, text_lower):
+        reason = _localized(
+            language,
+            "用户明确要求记住偏好、规则或项目约定，因此本轮优先作为会话记忆写入处理，不让当前选中资产或工具关键词抢占路由。",
+            "The user explicitly asked the assistant to remember a preference, rule, or project convention, so this turn stays in chat memory instead of being captured by the selected asset or tool keywords.",
+        )
+        return {
+            "locale": locale,
+            **_direct_answer_response(
+                language=language,
+                reason=reason,
+                planner_confidence=0.92,
+                knowledge_relevance="none",
+                decision_source="explicit_memory_write_signal",
+                signal_strength="strong",
+                signals=signals,
+            ),
+        }
 
     if selected_tool_id == "read_project_file" and explicit_current_file_read:
         reason = _localized(

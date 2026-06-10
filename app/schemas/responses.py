@@ -249,6 +249,20 @@ class SessionResponse(BaseModel):
     errors: list[ErrorDetail] = Field(default_factory=list)
 
 
+class SessionListResponse(BaseModel):
+    success: bool
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
+class SessionMemoryResponse(BaseModel):
+    success: bool
+    session_id: str
+    memory: dict[str, Any] = Field(default_factory=dict)
+    errors: list[ErrorDetail] = Field(default_factory=list)
+
+
 class SessionHistoryResponse(BaseModel):
     success: bool
     session_id: str

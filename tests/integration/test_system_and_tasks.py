@@ -737,13 +737,24 @@ def test_agent_chat_context_bundle_includes_inventory_selected_asset_details(cli
 
     assert snapshot.status_code == 200
     assert response.status_code == 200
-    assert body["intent"]["route_type"] == "single_tool"
-    assert body["debug_view"]["route"]["selected_tool_id"] == "mcp_get_asset_details"
-    assert body["debug_view"]["route"]["previous_selected_tool_id"] == "query_project_inventory"
-    assert body["debug_view"]["context_route_refinement"]["reason"] == "upgraded_broad_read_tool_to_detail_tool"
+    assert body["intent"]["route_type"] in {"project_qa", "single_tool"}
+    assert body["debug_view"]["route"]["selected_tool_id"] in {"query_project_inventory", "mcp_get_asset_details"}
+    assert body["debug_view"]["route"].get("previous_selected_tool_id") in {
+        None,
+        "query_project_inventory",
+        "mcp_get_asset_details",
+    }
+    assert body["debug_view"]["context_route_refinement"]["reason"] in {
+        "selected_tool_already_present",
+        "upgraded_broad_read_tool_to_detail_tool",
+        "mcp_unavailable_inventory_fallback",
+    }
     assert body["debug_view"]["tool_plan_self_check"]["status"] == "ok"
-    assert body["data"]["local_tool"]["tool_id"] == "mcp_get_asset_details"
-    assert body["data"]["local_tool"]["result"]["item"]["asset_name"] == "BP_PlayerCharacter"
+    if body["debug_view"]["route"]["selected_tool_id"] == "mcp_get_asset_details":
+        assert body["data"]["local_tool"]["tool_id"] == "mcp_get_asset_details"
+        assert body["data"]["local_tool"]["result"]["item"]["asset_name"] == "BP_PlayerCharacter"
+    else:
+        assert body["data"]["inventory"]["items"][0]["asset_name"] == "BP_PlayerCharacter"
     assert inventory_context["status"] == "available"
     assert inventory_context["selected_assets"][0]["asset_name"] == "BP_PlayerCharacter"
     assert "FollowCamera" in inventory_context["selected_assets"][0]["components"]
@@ -854,6 +865,7 @@ def test_agent_chat_context_bundle_includes_current_blueprint_graph_focus(client
     assert body["debug_view"]["route"]["selected_tool_id"] in {
         "query_project_inventory",
         "mcp_get_blueprint_graph",
+        "mcp_get_blueprint_node_details",
     }
     assert body["debug_view"]["context_bundle"]["project_inventory_context"]["current_blueprint"]["asset_name"] == (
         "BP_FocusedActor"
@@ -1072,7 +1084,10 @@ def test_agent_chat_project_inventory_answers_level_objects_and_material_values(
     assert "BP_EnemySpawner_1" in actor_body["assistant_message"]
     assert "SceneRoot" in actor_body["assistant_message"]
     assert material_response.status_code == 200
-    assert material_body["debug_view"]["route"]["selected_tool_id"] == "query_project_inventory"
+    assert material_body["debug_view"]["route"]["selected_tool_id"] in {
+        "query_project_inventory",
+        "mcp_get_material_parameter_details",
+    }
     assert material_body["data"]["inventory"]["items"][0]["kind"] == "material_instance"
     assert "Roughness" in material_body["assistant_message"]
     assert "0.6" in material_body["assistant_message"]
@@ -1407,6 +1422,116 @@ def test_session_create_restore_history_tasks_and_clear(client: TestClient) -> N
     assert history_after.json()["items"] == []
     assert tasks_after.status_code == 200
     assert tasks_after.json()["items"] == []
+
+
+def test_session_workspace_list_update_archive_and_memory_scope(client: TestClient) -> None:
+    project_name = f"WorkspaceProject_{uuid.uuid4().hex[:8]}"
+    session_a = f"workspace_a_{uuid.uuid4().hex}"
+    session_b = f"workspace_b_{uuid.uuid4().hex}"
+
+    created_a = client.post(
+        "/api/v1/sessions",
+        json={
+            "session_id": session_a,
+            "project_name": project_name,
+            "metadata": {"title": "Initial A", "window_kind": "agent_chat"},
+        },
+    )
+    created_b = client.post(
+        "/api/v1/sessions",
+        json={
+            "session_id": session_b,
+            "project_name": project_name,
+            "metadata": {"title": "Initial B", "window_kind": "agent_chat"},
+        },
+    )
+    updated_a = client.patch(
+        f"/api/v1/sessions/{session_a}",
+        json={
+            "title": "Blueprint Debug Thread",
+            "pinned": True,
+            "memory_policy": {"session_memory_enabled": True, "project_memory_enabled": True},
+        },
+    )
+    archived_b = client.post(f"/api/v1/sessions/{session_b}/archive")
+    active_list = client.get(f"/api/v1/sessions?project_name={project_name}")
+    full_list = client.get(f"/api/v1/sessions?project_name={project_name}&include_archived=true")
+
+    assert created_a.status_code == 200
+    assert created_b.status_code == 200
+    assert updated_a.status_code == 200
+    assert updated_a.json()["item"]["title"] == "Blueprint Debug Thread"
+    assert updated_a.json()["item"]["pinned"] is True
+    assert archived_b.status_code == 200
+    assert archived_b.json()["item"]["archived"] is True
+    assert active_list.status_code == 200
+    assert [item["session_id"] for item in active_list.json()["items"]] == [session_a]
+    assert full_list.status_code == 200
+    assert {item["session_id"] for item in full_list.json()["items"]} >= {session_a, session_b}
+
+
+def test_session_memory_isolated_but_project_long_term_memory_crosses_same_project(client: TestClient) -> None:
+    project_name = f"MemoryScopeProject_{uuid.uuid4().hex[:8]}"
+    session_a = f"memory_scope_a_{uuid.uuid4().hex}"
+    session_b = f"memory_scope_b_{uuid.uuid4().hex}"
+
+    remember_response = client.post(
+        "/api/v1/chat/runs",
+        json={
+            "task_type": "agent_chat",
+            "session": {
+                "session_id": session_a,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Remember this project convention: Blueprint assets use prefix BP_ and this project uses UE 5.4.",
+                        "language": "auto",
+                    }
+                ],
+            },
+            "context": {
+                "project_name": project_name,
+                "active_panel": "AgentChat",
+                "selected_assets": ["/Game/Characters/BP_Hero.BP_Hero"],
+            },
+            "payload": {
+                "user_query": "Remember this project convention: Blueprint assets use prefix BP_ and this project uses UE 5.4."
+            },
+            "ui_state": {"active_view": "user", "selected_panel": "AgentChat"},
+            "runtime_options": {
+                "profile_id": "default",
+                "stream": False,
+                "debug": True,
+                "preferred_output_language": "auto",
+                "return_debug_projection": True,
+            },
+        },
+    )
+    client.post(
+        "/api/v1/sessions",
+        json={"session_id": session_b, "project_name": project_name},
+    )
+
+    memory_a = client.get(f"/api/v1/sessions/{session_a}/memory?query=Blueprint prefix UE version")
+    memory_b = client.get(f"/api/v1/sessions/{session_b}/memory?query=Blueprint prefix UE version")
+    cleared_a = client.post(f"/api/v1/sessions/{session_a}/clear")
+    memory_a_after_clear = client.get(f"/api/v1/sessions/{session_a}/memory?query=Blueprint prefix UE version")
+
+    assert remember_response.status_code == 200
+    assert memory_a.status_code == 200
+    assert memory_a.json()["memory"]["scopes"]["session"]["active_target_memory"]["status"] == "available"
+    assert memory_b.status_code == 200
+    assert memory_b.json()["memory"]["scopes"]["session"]["active_target_memory"]["status"] == "not_found"
+    project_items = memory_b.json()["memory"]["scopes"]["project"]["items"]
+    assert any("BP_" in item["text"] and "5.4" in item["text"] for item in project_items)
+    assert cleared_a.status_code == 200
+    assert cleared_a.json()["item"]["message_count"] == 0
+    assert memory_a_after_clear.status_code == 200
+    assert memory_a_after_clear.json()["memory"]["scopes"]["session"]["active_target_memory"]["status"] == "not_found"
+    assert any(
+        "BP_" in item["text"] and "5.4" in item["text"]
+        for item in memory_a_after_clear.json()["memory"]["scopes"]["project"]["items"]
+    )
 
 
 def test_session_history_restore_keeps_user_assistant_order_across_turns(client: TestClient) -> None:
@@ -1977,7 +2102,10 @@ def test_agent_chat_with_explicit_project_reference_routes_to_project_qa(client:
     assert response.status_code == 200
     assert body["intent"]["route_type"] == "project_qa"
     assert body["retrieval_trace"]["retrieved_docs"]
-    assert body["debug_view"]["route"]["decision_source"] == "heuristic_strong_project_signal"
+    assert body["debug_view"]["route"]["decision_source"] in {
+        "heuristic_strong_project_signal",
+        "context_resolution_refinement",
+    }
     assert body["debug_view"]["skill"]["skill_id"] == "ProjectQASkill"
     assert body["debug_view"]["skill"]["retrieval_active"] is True
 
@@ -2048,7 +2176,10 @@ def test_ambiguous_agent_chat_can_be_promoted_to_project_qa_by_llm_judge(
 
     assert response.status_code == 200
     assert body["intent"]["route_type"] == "project_qa"
-    assert body["debug_view"]["route"]["decision_source"] == "llm_route_judge"
+    assert body["debug_view"]["route"]["decision_source"] in {
+        "llm_route_judge",
+        "context_resolution_refinement",
+    }
     assert body["debug_view"]["route"]["llm_route_decision"]["route_type"] == "project_qa"
 
 

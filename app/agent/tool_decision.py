@@ -66,7 +66,7 @@ def _mode(
     target_status: str,
     side_effect_level: str,
 ) -> str:
-    if target_status == "missing_active_context":
+    if target_status == "missing_active_context" and selected_tool_id != "query_project_inventory":
         return "ask_for_context"
     if not selected_tool_id:
         return "direct_answer"

@@ -1005,6 +1005,8 @@ class TaskService:
         chat_config: ChatRuntimeConfig,
     ) -> tuple[dict[str, Any], dict[str, Any], str]:
         mode = self.settings.agent_intent_drafter_mode
+        if (routing.get("route") or {}).get("decision_source") == "explicit_memory_write_signal":
+            return (routing, context_bundle, self._actual_task_type(request.task_type, routing))
         if mode == "disabled" or request.task_type not in {"agent_chat", "project_qa"}:
             return (routing, context_bundle, self._actual_task_type(request.task_type, routing))
 
@@ -1043,6 +1045,12 @@ class TaskService:
         routing: dict[str, Any],
         context_bundle: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any], str]:
+        if (routing.get("route") or {}).get("decision_source") == "explicit_memory_write_signal":
+            context_bundle["context_route_refinement"] = {
+                "status": "skipped",
+                "reason": "explicit_memory_write_route_locked",
+            }
+            return (routing, context_bundle, self._actual_task_type(request.task_type, routing))
         refined_routing, report = refine_route_from_resolved_context(
             routing=routing,
             context_bundle=context_bundle,
@@ -1287,6 +1295,7 @@ class TaskService:
                     }
                 ],
             )
+        if persist_session_history:
             memory_update = update_session_memory(self.db, request.session.session_id)
             execution["debug_view"]["memory_summary"] = {
                 **dict(execution["debug_view"].get("memory_summary") or {}),

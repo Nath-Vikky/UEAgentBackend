@@ -142,6 +142,20 @@ class SessionCreateRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SessionUpdateRequest(BaseModel):
+    title: str | None = None
+    window_kind: str | None = None
+    archived: bool | None = None
+    pinned: bool | None = None
+    memory_policy: dict[str, Any] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SessionMemoryForgetRequest(BaseModel):
+    scopes: list[Literal["active_target", "conversation_focus", "summary"]] = Field(default_factory=list)
+    memory_ids: list[str] = Field(default_factory=list)
+
+
 class CodeReviewFileListRequest(BaseModel):
     project_root: str
     source_roots: list[str] = Field(default_factory=lambda: ["Source", "Plugins"])

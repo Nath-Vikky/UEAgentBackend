@@ -135,6 +135,28 @@ def get_session(db: Session, session_id: str) -> SessionModel | None:
     return db.get(SessionModel, session_id)
 
 
+def list_sessions(
+    db: Session,
+    *,
+    project_name: str | None = None,
+    include_archived: bool = False,
+    limit: int = 50,
+) -> list[SessionModel]:
+    statement = select(SessionModel)
+    if project_name:
+        statement = statement.where(SessionModel.project_name == project_name)
+    statement = statement.order_by(desc(SessionModel.updated_at))
+    fetch_limit = max(1, min(limit * 3 if not include_archived else limit, 300))
+    sessions = list(db.scalars(statement.limit(fetch_limit)))
+    if include_archived:
+        return sessions
+    return [
+        session
+        for session in sessions
+        if not bool((session.metadata_json or {}).get("archived"))
+    ][:limit]
+
+
 def list_session_messages(
     db: Session,
     session_id: str,
@@ -182,7 +204,8 @@ def clear_session_state(db: Session, session_id: str) -> SessionModel | None:
     metadata = dict(session_model.metadata_json or {})
     metadata.pop("memory_summary", None)
     metadata.pop("session_summary", None)
-    metadata.pop("long_term_memory_items", None)
+    metadata.pop("active_target_memory", None)
+    metadata.pop("conversation_focus_memory", None)
     session_model.metadata_json = {
         **metadata,
         "cleared": True,
