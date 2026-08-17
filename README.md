@@ -1,6 +1,6 @@
 # UEAgentCraft Backend
 
-UEAgentCraft Backend 是一个面向 Unreal Editor 研发场景的本地 AI Agent 后端，配合 UE 编辑器插件使用：
+UEAgentCraft Backend 是一个面向虚幻引擎研发场景的本地 AI Agent 后端，配合 UE 编辑器插件使用：
 
 https://github.com/Nath-Vikky/UEAgentTool
 
